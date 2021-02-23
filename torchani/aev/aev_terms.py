@@ -91,7 +91,7 @@ class AngularTerms(torch.nn.Module):
         return self.EtaA.numel() * self.Zeta.numel() * self.ShfA.numel() * self.ShfZ.numel()
 
     def length(self, num_species: int) -> int:
-        return self.sublength() * num_species * (num_species + 1) // 2
+        return self.sublength() * (num_species * (num_species + 1) // 2)
 
     def forward(self, vectors12: Tensor) -> Tensor:
         """Compute the angular subAEV terms of the center atom given neighbor pairs.

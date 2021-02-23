@@ -80,11 +80,6 @@ class AEVComputer(torch.nn.Module):
     num_species: Final[int]
     num_species_pairs: Final[int]
 
-    radial_sublength: Final[int]
-    radial_length: Final[int]
-    angular_sublength: Final[int]
-    angular_length: Final[int]
-    aev_length: Final[int]
     triu_index: Tensor
     use_cuda_extension: Final[bool]
 
@@ -104,17 +99,6 @@ class AEVComputer(torch.nn.Module):
         self.angular_terms = AngularTerms(EtaA, Zeta, ShfA, ShfZ, Rca, cutoff_function=cutoff_function)
         self.radial_terms = RadialTerms(EtaR, ShfR, Rcr, cutoff_function=cutoff_function)
 
-        # The length of radial subaev of a single species
-        self.radial_sublength = self.radial_terms.sublength()
-        # The length of full radial aev
-        self.radial_length = self.radial_terms.length(num_species)
-        # The length of angular subaev of a single species
-        self.angular_sublength = self.angular_terms.sublength()
-        # The length of full angular aev
-        self.angular_length = self.angular_terms.length(num_species)
-        # The length of full aev
-        self.aev_length = self.radial_terms.length(num_species) + self.angular_terms.length(num_species)
-
         self.register_buffer('triu_index', self.calculate_triu_index(num_species).to(device=self.radial_terms.EtaR.device))
         # Set up default cell and compute default shifts.
         # These values are used when cell and pbc switch are not given.
@@ -124,6 +108,15 @@ class AEVComputer(torch.nn.Module):
         default_shifts = self.compute_shifts(default_cell, default_pbc, cutoff)
         self.register_buffer('default_cell', default_cell)
         self.register_buffer('default_shifts', default_shifts)
+
+    def radial_length(self) -> int:
+        return self.radial_terms.length(self.num_species)
+
+    def angular_length(self) -> int:
+        return self.angular_terms.length(self.num_species)
+
+    def aev_length(self) -> int:
+        return self.radial_length() + self.angular_length()
         
     @classmethod
     def cover_linearly(cls, radial_cutoff: float, angular_cutoff: float,
