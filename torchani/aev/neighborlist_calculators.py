@@ -1,0 +1,116 @@
+import torch
+import math
+from torch import Tensor
+import sys
+from typing import Optional, Tuple
+from .cutoffs import CutoffCosine, CutoffSmooth
+
+if sys.version_info[:2] < (3, 7):
+    class FakeFinal:
+        def __getitem__(self, x):
+            return x
+    Final = FakeFinal()
+else:
+    from torch.jit import Final
+
+
+class FullPairwise(torch.nn.Module):
+
+    cutoff: Final[float]
+
+    def __init__(self, cutoff : float):
+        """Compute pairs of atoms that are neighbors (doesn't use PBC)
+    
+        Arguments:
+            padding_mask (:class:`torch.Tensor`): boolean tensor of shape
+                (molecules, atoms) for padding mask. 1 == is padding.
+            coordinates (:class:`torch.Tensor`): tensor of shape
+                (molecules, atoms, 3) for atom coordinates.
+            cutoff (float): the cutoff inside which atoms are considered pairs
+        """
+        super().__init__()
+        self.cutoff = cutoff
+    
+    def forward(self, species: Tensor, coordinates: Tensor, cell: Optional[Tensor] = None, shifts: Optional[Tensor] = None) -> Tensor:
+        padding_mask = species == -1
+        coordinates = coordinates.detach().masked_fill(padding_mask.unsqueeze(-1), math.nan)
+        current_device = coordinates.device
+        num_atoms = padding_mask.shape[1]
+        num_mols = padding_mask.shape[0]
+        p12_all = torch.triu_indices(num_atoms, num_atoms, 1, device=current_device)
+        p12_all_flattened = p12_all.view(-1)
+    
+        pair_coordinates = coordinates.index_select(1, p12_all_flattened).view(num_mols, 2, -1, 3)
+        distances = (pair_coordinates[:, 0, ...] - pair_coordinates[:, 1, ...]).norm(2, -1)
+        in_cutoff = (distances <= self.cutoff).nonzero()
+        molecule_index, pair_index = in_cutoff.unbind(1)
+        molecule_index *= num_atoms
+        atom_index12 = p12_all[:, pair_index] + molecule_index
+        return atom_index12
+
+
+class FullPairwisePBC(torch.nn.Module):
+
+    cutoff: Final[float]
+
+    def __init__(self, cutoff : float):
+        """Compute pairs of atoms that are neighbors (doesn't use PBC)
+    
+        Arguments:
+            padding_mask (:class:`torch.Tensor`): boolean tensor of shape
+                (molecules, atoms) for padding mask. 1 == is padding.
+            coordinates (:class:`torch.Tensor`): tensor of shape
+                (molecules, atoms, 3) for atom coordinates.
+            cutoff (float): the cutoff inside which atoms are considered pairs
+        """
+        super().__init__()
+        self.cutoff = cutoff
+
+    def forward(self, species: Tensor, coordinates: Tensor, cell: Tensor, shifts: Tensor) -> Tuple[Tensor, Tensor]:
+        """Compute pairs of atoms that are neighbors, 
+
+        Arguments:
+            padding_mask (:class:`torch.Tensor`): boolean tensor of shape
+                (molecules, atoms) for padding mask. 1 == is padding.
+            coordinates (:class:`torch.Tensor`): tensor of shape
+                (molecules, atoms, 3) for atom coordinates.
+            cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three vectors
+                defining unit cell: tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
+            cutoff (float): the cutoff inside which atoms are considered pairs
+            shifts (:class:`torch.Tensor`): tensor of shape (?, 3) storing shifts
+        """
+        padding_mask = (species == -1)
+        coordinates = coordinates.detach().masked_fill(padding_mask.unsqueeze(-1), math.nan)
+        cell = cell.detach()
+        num_atoms = padding_mask.shape[1]
+        num_mols = padding_mask.shape[0]
+        all_atoms = torch.arange(num_atoms, device=cell.device)
+
+        # Step 2: center cell
+        # torch.triu_indices is faster than combinations
+        p12_center = torch.triu_indices(num_atoms, num_atoms, 1, device=cell.device)
+        shifts_center = shifts.new_zeros((p12_center.shape[1], 3))
+
+        # Step 3: cells with shifts
+        # shape convention (shift index, molecule index, atom index, 3)
+        num_shifts = shifts.shape[0]
+        all_shifts = torch.arange(num_shifts, device=cell.device)
+        prod = torch.cartesian_prod(all_shifts, all_atoms, all_atoms).t()
+        shift_index = prod[0]
+        p12 = prod[1:]
+        shifts_outside = shifts.index_select(0, shift_index)
+
+        # Step 4: combine results for all cells
+        shifts_all = torch.cat([shifts_center, shifts_outside])
+        p12_all = torch.cat([p12_center, p12], dim=1)
+        shift_values = shifts_all.to(cell.dtype) @ cell
+
+        # step 5, compute distances, and find all pairs within cutoff
+        selected_coordinates = coordinates.index_select(1, p12_all.view(-1)).view(num_mols, 2, -1, 3)
+        distances = (selected_coordinates[:, 0, ...] - selected_coordinates[:, 1, ...] + shift_values).norm(2, -1)
+        in_cutoff = (distances <= self.cutoff).nonzero()
+        molecule_index, pair_index = in_cutoff.unbind(1)
+        molecule_index *= num_atoms
+        atom_index12 = p12_all[:, pair_index]
+        shifts = shifts_all.index_select(0, pair_index)
+        return molecule_index + atom_index12, shifts
