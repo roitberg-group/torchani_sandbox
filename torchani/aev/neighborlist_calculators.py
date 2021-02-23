@@ -66,7 +66,7 @@ class FullPairwisePBC(torch.nn.Module):
         super().__init__()
         self.cutoff = cutoff
 
-    def forward(self, species: Tensor, coordinates: Tensor, cell: Tensor, shifts: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(self, species: Tensor, coordinates: Tensor, cell_pbc: Optional[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Tensor]:
         """Compute pairs of atoms that are neighbors, 
 
         Arguments:
@@ -77,8 +77,12 @@ class FullPairwisePBC(torch.nn.Module):
             cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three vectors
                 defining unit cell: tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
             cutoff (float): the cutoff inside which atoms are considered pairs
-            shifts (:class:`torch.Tensor`): tensor of shape (?, 3) storing shifts
+            pbc (:class:`torch.Tensor`): boolean tensor of shape (3,) storing wheather pbc is required
+
         """
+        assert cell_pbc is not None
+        cell, pbc = cell_pbc
+        shifts = self.compute_shifts(cell, pbc)
         padding_mask = (species == -1)
         coordinates = coordinates.detach().masked_fill(padding_mask.unsqueeze(-1), math.nan)
         cell = cell.detach()
@@ -114,3 +118,43 @@ class FullPairwisePBC(torch.nn.Module):
         atom_index12 = p12_all[:, pair_index]
         shifts = shifts_all.index_select(0, pair_index)
         return molecule_index + atom_index12, shifts
+
+    def compute_shifts(self, cell: Tensor, pbc: Tensor) -> Tensor:
+        """Compute the shifts of unit cell along the given cell vectors to make it
+        large enough to contain all pairs of neighbor atoms with PBC under
+        consideration
+
+        Arguments:
+            cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three
+            vectors defining unit cell:
+                tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
+            pbc (:class:`torch.Tensor`): boolean vector of size 3 storing
+                if pbc is enabled for that direction.
+
+        Returns:
+            :class:`torch.Tensor`: long tensor of shifts. the center cell and
+                symmetric cells are not included.
+        """
+        reciprocal_cell = cell.inverse().t()
+        inv_distances = reciprocal_cell.norm(2, -1)
+        num_repeats = torch.ceil(self.cutoff * inv_distances).to(torch.long)
+        num_repeats = torch.where(pbc, num_repeats, num_repeats.new_zeros(()))
+        r1 = torch.arange(1, num_repeats[0].item() + 1, device=cell.device)
+        r2 = torch.arange(1, num_repeats[1].item() + 1, device=cell.device)
+        r3 = torch.arange(1, num_repeats[2].item() + 1, device=cell.device)
+        o = torch.zeros(1, dtype=torch.long, device=cell.device)
+        return torch.cat([
+            torch.cartesian_prod(r1, r2, r3),
+            torch.cartesian_prod(r1, r2, o),
+            torch.cartesian_prod(r1, r2, -r3),
+            torch.cartesian_prod(r1, o, r3),
+            torch.cartesian_prod(r1, o, o),
+            torch.cartesian_prod(r1, o, -r3),
+            torch.cartesian_prod(r1, -r2, r3),
+            torch.cartesian_prod(r1, -r2, o),
+            torch.cartesian_prod(r1, -r2, -r3),
+            torch.cartesian_prod(o, r2, r3),
+            torch.cartesian_prod(o, r2, o),
+            torch.cartesian_prod(o, r2, -r3),
+            torch.cartesian_prod(o, o, r3),
+        ])

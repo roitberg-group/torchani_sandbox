@@ -76,8 +76,6 @@ class AEVComputer(torch.nn.Module):
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
-    Rcr: Final[float]
-    Rca: Final[float]
     num_species: Final[int]
     num_species_pairs: Final[int]
 
@@ -86,8 +84,6 @@ class AEVComputer(torch.nn.Module):
 
     def __init__(self, Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, use_cuda_extension=False, cutoff_function='cosine'):
         super().__init__()
-        self.Rcr = Rcr
-        self.Rca = Rca
         assert Rca <= Rcr, "Current implementation of AEVComputer assumes Rca <= Rcr"
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
@@ -97,11 +93,25 @@ class AEVComputer(torch.nn.Module):
             assert has_cuaev, "AEV cuda extension is not installed"
         self.use_cuda_extension = use_cuda_extension
 
+        self.register_buffer('triu_index', self.calculate_triu_index(num_species))
+
+        # radial and angular calculators
         self.angular_terms = AngularTerms(EtaA, Zeta, ShfA, ShfZ, Rca, cutoff_function=cutoff_function)
         self.radial_terms = RadialTerms(EtaR, ShfR, Rcr, cutoff_function=cutoff_function)
-        self.register_buffer('triu_index', self.calculate_triu_index(num_species).to(device=self.radial_terms.EtaR.device))
+
+        # neighborlist currently uses radial cutoff
         self.neighborlist = FullPairwise(Rcr)
         self.neighborlist_pbc = FullPairwisePBC(Rcr)
+
+
+    @staticmethod
+    def calculate_triu_index(num_species: int) -> Tensor:
+        species1, species2 = torch.triu_indices(num_species, num_species).unbind(0)
+        pair_index = torch.arange(species1.shape[0], dtype=torch.long)
+        ret = torch.zeros(num_species, num_species, dtype=torch.long)
+        ret[species1, species2] = pair_index
+        ret[species2, species1] = pair_index
+        return ret
 
     def radial_length(self) -> int:
         return self.radial_terms.length(self.num_species)
@@ -137,13 +147,10 @@ class AEVComputer(torch.nn.Module):
         EtaR = torch.tensor([float(radial_eta)])
         EtaA = torch.tensor([float(angular_eta)])
         Zeta = torch.tensor([float(zeta)])
-
         ShfR = torch.linspace(radial_start, radial_cutoff, radial_dist_divisions + 1)[:-1]
         ShfA = torch.linspace(angular_start, angular_cutoff, angular_dist_divisions + 1)[:-1]
         angle_start = math.pi / (2 * angle_sections)
-
         ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) + angle_start)[:-1]
-
         return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
 
     def constants(self):
@@ -195,25 +202,20 @@ class AEVComputer(torch.nn.Module):
         assert species.dim() == 2
         assert species.shape == coordinates.shape[:-1]
         assert coordinates.shape[-1] == 3
+        assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
 
         if self.use_cuda_extension:
             assert (cell is None and pbc is None), "cuaev does not support PBC"
             aev = compute_cuaev(species, coordinates, self.triu_index, self.constants(), self.num_species, None)
             return SpeciesAEV(species, aev)
-
-        if cell is None and pbc is None:
-            aev = self.compute_aev(species, coordinates, None)
+        if (cell is not None and pbc is not None):
+            aev = self.compute_aev(species, coordinates, (cell, pbc))
         else:
-            assert (cell is not None and pbc is not None)
-            cutoff = max(self.Rcr, self.Rca)
-            shifts = self.compute_shifts(cell, pbc, cutoff)
-            aev = self.compute_aev(species, coordinates, (cell, shifts))
-
+            aev = self.compute_aev(species, coordinates, None)
         return SpeciesAEV(species, aev)
 
 
-
-    def compute_aev(self, species: Tensor, coordinates: Tensor, cell_shifts: Optional[Tuple[Tensor, Tensor]]) -> Tensor:
+    def compute_aev(self, species: Tensor, coordinates: Tensor, cell_pbc: Optional[Tuple[Tensor, Tensor]]) -> Tensor:
 
         num_molecules = species.shape[0]
         num_atoms = species.shape[1]
@@ -221,13 +223,13 @@ class AEVComputer(torch.nn.Module):
         coordinates = coordinates_.flatten(0, 1)
 
         # PBC calculation is bypassed if there are no shifts
-        if cell_shifts is None:
+        if cell_pbc is None:
             atom_index12 = self.neighborlist(species, coordinates_)
             selected_coordinates = coordinates.index_select(0, atom_index12.view(-1)).view(2, -1, 3)
             vec = selected_coordinates[0] - selected_coordinates[1]
         else:
-            cell, shifts = cell_shifts
-            atom_index12, shifts = self.neighborlist_pbc(species, coordinates_, cell, shifts)
+            cell = cell_pbc[0]
+            atom_index12, shifts = self.neighborlist_pbc(species, coordinates_, cell_pbc)
             shift_values = shifts.to(cell.dtype) @ cell
             selected_coordinates = coordinates.index_select(0, atom_index12.view(-1)).view(2, -1, 3)
             vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
@@ -249,7 +251,7 @@ class AEVComputer(torch.nn.Module):
 
         # Rca is usually much smaller than Rcr, using neighbor list with cutoff=Rcr is a waste of resources
         # Now we will get a smaller neighbor list that only cares about atoms with distances <= Rca
-        even_closer_indices = (distances <= self.Rca).nonzero().flatten()
+        even_closer_indices = (distances <= self.angular_terms.cutoff).nonzero().flatten()
         atom_index12 = atom_index12.index_select(1, even_closer_indices)
         species12 = species12.index_select(1, even_closer_indices)
         vec = vec.index_select(0, even_closer_indices)
@@ -265,48 +267,6 @@ class AEVComputer(torch.nn.Module):
         angular_aev.index_add_(0, index, angular_terms_)
         angular_aev = angular_aev.reshape(num_molecules, num_atoms, self.angular_length())
         return torch.cat([radial_aev, angular_aev], dim=-1)
-
-    @staticmethod
-    def compute_shifts(cell: Tensor, pbc: Tensor, cutoff: float) -> Tensor:
-        """Compute the shifts of unit cell along the given cell vectors to make it
-        large enough to contain all pairs of neighbor atoms with PBC under
-        consideration
-
-        Arguments:
-            cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three
-            vectors defining unit cell:
-                tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
-            cutoff (float): the cutoff inside which atoms are considered pairs
-            pbc (:class:`torch.Tensor`): boolean vector of size 3 storing
-                if pbc is enabled for that direction.
-
-        Returns:
-            :class:`torch.Tensor`: long tensor of shifts. the center cell and
-                symmetric cells are not included.
-        """
-        reciprocal_cell = cell.inverse().t()
-        inv_distances = reciprocal_cell.norm(2, -1)
-        num_repeats = torch.ceil(cutoff * inv_distances).to(torch.long)
-        num_repeats = torch.where(pbc, num_repeats, num_repeats.new_zeros(()))
-        r1 = torch.arange(1, num_repeats[0].item() + 1, device=cell.device)
-        r2 = torch.arange(1, num_repeats[1].item() + 1, device=cell.device)
-        r3 = torch.arange(1, num_repeats[2].item() + 1, device=cell.device)
-        o = torch.zeros(1, dtype=torch.long, device=cell.device)
-        return torch.cat([
-            torch.cartesian_prod(r1, r2, r3),
-            torch.cartesian_prod(r1, r2, o),
-            torch.cartesian_prod(r1, r2, -r3),
-            torch.cartesian_prod(r1, o, r3),
-            torch.cartesian_prod(r1, o, o),
-            torch.cartesian_prod(r1, o, -r3),
-            torch.cartesian_prod(r1, -r2, r3),
-            torch.cartesian_prod(r1, -r2, o),
-            torch.cartesian_prod(r1, -r2, -r3),
-            torch.cartesian_prod(o, r2, r3),
-            torch.cartesian_prod(o, r2, o),
-            torch.cartesian_prod(o, r2, -r3),
-            torch.cartesian_prod(o, o, r3),
-        ])
 
     def triple_by_molecule(self, atom_index12: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         """Input: indices for pairs of atoms that are close to each other.
@@ -353,11 +313,3 @@ class AEVComputer(torch.nn.Module):
         torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
         return cumsum
 
-    @staticmethod
-    def calculate_triu_index(num_species: int) -> Tensor:
-        species1, species2 = torch.triu_indices(num_species, num_species).unbind(0)
-        pair_index = torch.arange(species1.shape[0], dtype=torch.long)
-        ret = torch.zeros(num_species, num_species, dtype=torch.long)
-        ret[species1, species2] = pair_index
-        ret[species2, species1] = pair_index
-        return ret
