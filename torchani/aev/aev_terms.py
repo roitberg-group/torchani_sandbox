@@ -12,7 +12,6 @@ if sys.version_info[:2] < (3, 7):
 else:
     from torch.jit import Final
 
-
 class RadialTerms(torch.nn.Module):
 
     cutoff: Final[float]
@@ -21,6 +20,8 @@ class RadialTerms(torch.nn.Module):
         super().__init__()
         self.cutoff = cutoff
 
+        # convert constant tensors to a ready-to-broadcast shape
+        # shape convension (..., EtaR, ShfR)
         self.register_buffer('EtaR', EtaR.view(-1, 1))
         self.register_buffer('ShfR', ShfR.view(1, -1))
 
@@ -72,6 +73,8 @@ class AngularTerms(torch.nn.Module):
         super().__init__()
         self.cutoff = cutoff
 
+        # convert constant tensors to a ready-to-broadcast shape
+        # shape convension (..., EtaA, Zeta, ShfA, ShfZ)
         self.register_buffer('EtaA', EtaA.view(-1, 1, 1, 1))
         self.register_buffer('Zeta', Zeta.view(1, -1, 1, 1))
         self.register_buffer('ShfA', ShfA.view(1, 1, -1, 1))

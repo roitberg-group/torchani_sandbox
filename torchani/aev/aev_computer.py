@@ -103,17 +103,6 @@ class AEVComputer(torch.nn.Module):
         self.angular_terms = AngularTerms(EtaA, Zeta, ShfA, ShfZ, Rca, cutoff_function=cutoff_function)
         self.radial_terms = RadialTerms(EtaR, ShfR, Rcr, cutoff_function=cutoff_function)
 
-        # convert constant tensors to a ready-to-broadcast shape
-        # shape convension (..., EtaR, ShfR)
-        self.register_buffer('EtaR', EtaR.view(-1, 1))
-        self.register_buffer('ShfR', ShfR.view(1, -1))
-        # shape convension (..., EtaA, Zeta, ShfA, ShfZ)
-        self.register_buffer('EtaA', EtaA.view(-1, 1, 1, 1))
-        self.register_buffer('Zeta', Zeta.view(1, -1, 1, 1))
-        self.register_buffer('ShfA', ShfA.view(1, 1, -1, 1))
-        self.register_buffer('ShfZ', ShfZ.view(1, 1, 1, -1))
-
-
         # The length of radial subaev of a single species
         self.radial_sublength = self.radial_terms.sublength()
         # The length of full radial aev
@@ -126,18 +115,16 @@ class AEVComputer(torch.nn.Module):
         self.aev_length = self.radial_length + self.angular_length
         self.sizes = self.num_species, self.radial_sublength, self.radial_length, self.angular_sublength, self.angular_length
 
-        self.register_buffer('triu_index', self.calculate_triu_index(num_species).to(device=self.EtaR.device))
-
+        self.register_buffer('triu_index', self.calculate_triu_index(num_species).to(device=self.radial_terms.EtaR.device))
         # Set up default cell and compute default shifts.
         # These values are used when cell and pbc switch are not given.
-        cutoff = max(self.Rcr, self.Rca)
-        default_cell = torch.eye(3, dtype=self.EtaR.dtype, device=self.EtaR.device)
-        default_pbc = torch.zeros(3, dtype=torch.bool, device=self.EtaR.device)
+        cutoff = max(self.radial_terms.cutoff, self.angular_terms.cutoff)
+        default_cell = torch.eye(3, dtype=self.radial_terms.EtaR.dtype, device=self.radial_terms.EtaR.device)
+        default_pbc = torch.zeros(3, dtype=torch.bool, device=self.radial_terms.EtaR.device)
         default_shifts = self.compute_shifts(default_cell, default_pbc, cutoff)
         self.register_buffer('default_cell', default_cell)
         self.register_buffer('default_shifts', default_shifts)
         
-
     @classmethod
     def cover_linearly(cls, radial_cutoff: float, angular_cutoff: float,
                        radial_eta: float, angular_eta: float,
@@ -173,7 +160,8 @@ class AEVComputer(torch.nn.Module):
         return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
 
     def constants(self):
-        return self.Rcr, self.EtaR, self.ShfR, self.Rca, self.ShfZ, self.EtaA, self.Zeta, self.ShfA
+        return self.radial_terms.cutoff, self.radial_terms.EtaR, self.radial_terms.ShfR, \
+                self.angular_terms.cutoff, self.angular_terms.ShfZ, self.angular_terms.EtaA, self.angular_terms.Zeta, self.angular_terms.ShfA
 
     def forward(self, input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
