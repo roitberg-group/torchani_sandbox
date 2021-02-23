@@ -185,7 +185,7 @@ class TestPBCSeeEachOther(torchani.testing.TestCase):
         species = torch.tensor([[0, 0]])
         cell = torch.eye(3, dtype=torch.double) * 10
         pbc = torch.ones(3, dtype=torch.bool)
-        allshifts = torchani.aev.compute_shifts(cell, pbc, 1)
+        allshifts = torchani.AEVComputer.compute_shifts(cell, pbc, 1)
 
         xyz1 = torch.tensor([0.1, 0.1, 0.1])
         xyz2s = [
@@ -200,7 +200,7 @@ class TestPBCSeeEachOther(torchani.testing.TestCase):
 
         for xyz2 in xyz2s:
             coordinates = torch.stack([xyz1, xyz2]).to(torch.double).unsqueeze(0)
-            atom_index12, _ = torchani.aev.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
+            atom_index12, _ = torchani.AEVComputer.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -208,7 +208,7 @@ class TestPBCSeeEachOther(torchani.testing.TestCase):
     def testPBCSurfaceSeeEachOther(self):
         cell = torch.eye(3, dtype=torch.double) * 10
         pbc = torch.ones(3, dtype=torch.bool)
-        allshifts = torchani.aev.compute_shifts(cell, pbc, 1)
+        allshifts = torchani.AEVComputer.compute_shifts(cell, pbc, 1)
         species = torch.tensor([[0, 0]])
 
         for i in range(3):
@@ -218,7 +218,7 @@ class TestPBCSeeEachOther(torchani.testing.TestCase):
             xyz2[i] = 9.9
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _ = torchani.aev.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
+            atom_index12, _ = torchani.AEVComputer.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -226,7 +226,7 @@ class TestPBCSeeEachOther(torchani.testing.TestCase):
     def testPBCEdgesSeeEachOther(self):
         cell = torch.eye(3, dtype=torch.double) * 10
         pbc = torch.ones(3, dtype=torch.bool)
-        allshifts = torchani.aev.compute_shifts(cell, pbc, 1)
+        allshifts = torchani.AEVComputer.compute_shifts(cell, pbc, 1)
         species = torch.tensor([[0, 0]])
 
         for i, j in itertools.combinations(range(3), 2):
@@ -239,7 +239,7 @@ class TestPBCSeeEachOther(torchani.testing.TestCase):
                 xyz2[j] = new_j
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _ = torchani.aev.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
+            atom_index12, _ = torchani.AEVComputer.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -249,13 +249,13 @@ class TestPBCSeeEachOther(torchani.testing.TestCase):
         cell = ase.geometry.cellpar_to_cell([10, 10, 10 * math.sqrt(2), 90, 45, 90])
         cell = torch.tensor(ase.geometry.complete_cell(cell), dtype=torch.double)
         pbc = torch.ones(3, dtype=torch.bool)
-        allshifts = torchani.aev.compute_shifts(cell, pbc, 1)
+        allshifts = torchani.AEVComputer.compute_shifts(cell, pbc, 1)
 
         xyz1 = torch.tensor([0.1, 0.1, 0.05], dtype=torch.double)
         xyz2 = torch.tensor([10.0, 0.1, 0.1], dtype=torch.double)
 
         coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-        atom_index12, _ = torchani.aev.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
+        atom_index12, _ = torchani.AEVComputer.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
         atom_index1, atom_index2 = atom_index12.unbind(0)
         self.assertEqual(atom_index1.tolist(), [0])
         self.assertEqual(atom_index2.tolist(), [1])
