@@ -40,7 +40,9 @@ def compute_cuaev(species: Tensor, coordinates: Tensor, triu_index: Tensor,
 
     assert cell_shifts is None, "Current implementation of cuaev does not support pbc."
     species_int = species.to(torch.int32)
-    return torch.ops.cuaev.cuComputeAEV(coordinates, species_int, Rcr, Rca, EtaR.flatten(), ShfR.flatten(), EtaA.flatten(), Zeta.flatten(), ShfA.flatten(), ShfZ.flatten(), num_species)
+    return torch.ops.cuaev.cuComputeAEV(coordinates, species_int, Rcr, Rca,
+            EtaR.flatten(), ShfR.flatten(), EtaA.flatten(), Zeta.flatten(),
+            ShfA.flatten(), ShfZ.flatten(), num_species)
 
 
 if not has_cuaev:
@@ -83,7 +85,6 @@ class AEVComputer(torch.nn.Module):
     angular_sublength: Final[int]
     angular_length: Final[int]
     aev_length: Final[int]
-    sizes: Final[Tuple[int, int, int, int, int]]
     triu_index: Tensor
     use_cuda_extension: Final[bool]
 
@@ -112,8 +113,7 @@ class AEVComputer(torch.nn.Module):
         # The length of full angular aev
         self.angular_length = self.angular_terms.length(num_species)
         # The length of full aev
-        self.aev_length = self.radial_length + self.angular_length
-        self.sizes = self.num_species, self.radial_sublength, self.radial_length, self.angular_sublength, self.angular_length
+        self.aev_length = self.radial_terms.length(num_species) + self.angular_terms.length(num_species)
 
         self.register_buffer('triu_index', self.calculate_triu_index(num_species).to(device=self.radial_terms.EtaR.device))
         # Set up default cell and compute default shifts.
@@ -250,11 +250,11 @@ class AEVComputer(torch.nn.Module):
 
         # compute radial aev
         radial_terms_ = self.radial_terms(distances)
-        radial_aev = radial_terms_.new_zeros((num_molecules * num_atoms * self.num_species, self.radial_sublength))
+        radial_aev = radial_terms_.new_zeros((num_molecules * num_atoms * self.num_species, self.radial_terms.sublength()))
         index12 = atom_index12 * self.num_species + species12.flip(0)
         radial_aev.index_add_(0, index12[0], radial_terms_)
         radial_aev.index_add_(0, index12[1], radial_terms_)
-        radial_aev = radial_aev.reshape(num_molecules, num_atoms, self.radial_length)
+        radial_aev = radial_aev.reshape(num_molecules, num_atoms, self.radial_terms.length(self.num_species))
 
         # Rca is usually much smaller than Rcr, using neighbor list with cutoff=Rcr is a waste of resources
         # Now we will get a smaller neighbor list that only cares about atoms with distances <= Rca
@@ -269,10 +269,10 @@ class AEVComputer(torch.nn.Module):
         vec12 = vec.index_select(0, pair_index12.view(-1)).view(2, -1, 3) * sign12.unsqueeze(-1)
         species12_ = torch.where(sign12 == 1, species12_small[1], species12_small[0])
         angular_terms_ = self.angular_terms(vec12)
-        angular_aev = angular_terms_.new_zeros((num_molecules * num_atoms * self.num_species_pairs, self.angular_sublength))
+        angular_aev = angular_terms_.new_zeros((num_molecules * num_atoms * self.num_species_pairs, self.angular_terms.sublength()))
         index = central_atom_index * self.num_species_pairs + self.triu_index[species12_[0], species12_[1]]
         angular_aev.index_add_(0, index, angular_terms_)
-        angular_aev = angular_aev.reshape(num_molecules, num_atoms, self.angular_length)
+        angular_aev = angular_aev.reshape(num_molecules, num_atoms, self.angular_terms.length(self.num_species))
         return torch.cat([radial_aev, angular_aev], dim=-1)
 
     @staticmethod
