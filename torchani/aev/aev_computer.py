@@ -103,11 +103,6 @@ class AEVComputer(torch.nn.Module):
         # Set up default cell and compute default shifts.
         # These values are used when cell and pbc switch are not given.
         cutoff = max(self.radial_terms.cutoff, self.angular_terms.cutoff)
-        default_cell = torch.eye(3, dtype=self.radial_terms.EtaR.dtype, device=self.radial_terms.EtaR.device)
-        default_pbc = torch.zeros(3, dtype=torch.bool, device=self.radial_terms.EtaR.device)
-        default_shifts = self.compute_shifts(default_cell, default_pbc, cutoff)
-        self.register_buffer('default_cell', default_cell)
-        self.register_buffer('default_shifts', default_shifts)
 
     def radial_length(self) -> int:
         return self.radial_terms.length(self.num_species)
