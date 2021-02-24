@@ -2,13 +2,14 @@ import torch
 import math
 from torch import Tensor
 import sys
-from typing import Optional, Tuple
-from .cutoffs import CutoffCosine, CutoffSmooth
+from typing import Tuple
 
 if sys.version_info[:2] < (3, 7):
+
     class FakeFinal:
         def __getitem__(self, x):
             return x
+
     Final = FakeFinal()
 else:
     from torch.jit import Final
@@ -18,10 +19,10 @@ class FullPairwise(torch.nn.Module):
 
     cutoff: Final[float]
 
-    def __init__(self, cutoff : float):
-        """Compute pairs of atoms that are neighbors, uses pbc depending on 
+    def __init__(self, cutoff: float):
+        """Compute pairs of atoms that are neighbors, uses pbc depending on
         weather pbc.any() is True or not
-    
+
         Arguments:
             padding_mask (:class:`torch.Tensor`): boolean tensor of shape
                 (molecules, atoms) for padding mask. 1 == is padding.
@@ -33,8 +34,9 @@ class FullPairwise(torch.nn.Module):
         self.cutoff = cutoff
         # not needed by this simple implementation
         self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
-    
-    def forward(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
+
+    def forward(self, species: Tensor, coordinates: Tensor, cell: Tensor,
+                pbc: Tensor) -> Tuple[Tensor, Tensor]:
         """Arguments:
             padding_mask (:class:`torch.Tensor`): boolean tensor of shape
                 (molecules, atoms) for padding mask. 1 == is padding.
@@ -50,28 +52,39 @@ class FullPairwise(torch.nn.Module):
 
         return self._full_pairwise(species, coordinates, cell, pbc)
 
-    def _full_pairwise(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
+    def _full_pairwise(self, species: Tensor, coordinates: Tensor,
+                       cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
         # cell and pbc are unused
         padding_mask = species == -1
-        coordinates = coordinates.detach().masked_fill(padding_mask.unsqueeze(-1), math.nan)
+        coordinates = coordinates.detach().masked_fill(
+            padding_mask.unsqueeze(-1), math.nan)
         current_device = coordinates.device
         num_atoms = padding_mask.shape[1]
         num_mols = padding_mask.shape[0]
-        p12_all = torch.triu_indices(num_atoms, num_atoms, 1, device=current_device)
+        p12_all = torch.triu_indices(num_atoms,
+                                     num_atoms,
+                                     1,
+                                     device=current_device)
         p12_all_flattened = p12_all.view(-1)
-    
-        pair_coordinates = coordinates.index_select(1, p12_all_flattened).view(num_mols, 2, -1, 3)
-        distances = (pair_coordinates[:, 0, ...] - pair_coordinates[:, 1, ...]).norm(2, -1)
+
+        pair_coordinates = coordinates.index_select(1, p12_all_flattened).view(
+            num_mols, 2, -1, 3)
+        distances = (pair_coordinates[:, 0, ...] -
+                     pair_coordinates[:, 1, ...]).norm(2, -1)
         in_cutoff = (distances <= self.cutoff).nonzero()
         molecule_index, pair_index = in_cutoff.unbind(1)
         molecule_index *= num_atoms
         atom_index12 = p12_all[:, pair_index] + molecule_index
-        return atom_index12, torch.zeros(3, dtype=coordinates.dtype, device=coordinates.device)
+        return atom_index12, torch.zeros(3,
+                                         dtype=coordinates.dtype,
+                                         device=coordinates.device)
 
-    def _full_pairwise_pbc(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
+    def _full_pairwise_pbc(self, species: Tensor, coordinates: Tensor,
+                           cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
         shifts = self.compute_shifts(cell, pbc)
         padding_mask = (species == -1)
-        coordinates = coordinates.detach().masked_fill(padding_mask.unsqueeze(-1), math.nan)
+        coordinates = coordinates.detach().masked_fill(
+            padding_mask.unsqueeze(-1), math.nan)
         cell = cell.detach()
         num_atoms = padding_mask.shape[1]
         num_mols = padding_mask.shape[0]
@@ -79,7 +92,10 @@ class FullPairwise(torch.nn.Module):
 
         # Step 2: center cell
         # torch.triu_indices is faster than combinations
-        p12_center = torch.triu_indices(num_atoms, num_atoms, 1, device=cell.device)
+        p12_center = torch.triu_indices(num_atoms,
+                                        num_atoms,
+                                        1,
+                                        device=cell.device)
         shifts_center = shifts.new_zeros((p12_center.shape[1], 3))
 
         # Step 3: cells with shifts
@@ -97,8 +113,12 @@ class FullPairwise(torch.nn.Module):
         shift_values = shifts_all.to(cell.dtype) @ cell
 
         # step 5, compute distances, and find all pairs within cutoff
-        selected_coordinates = coordinates.index_select(1, p12_all.view(-1)).view(num_mols, 2, -1, 3)
-        distances = (selected_coordinates[:, 0, ...] - selected_coordinates[:, 1, ...] + shift_values).norm(2, -1)
+        selected_coordinates = coordinates.index_select(1,
+                                                        p12_all.view(-1)).view(
+                                                            num_mols, 2, -1, 3)
+        distances = (selected_coordinates[:, 0, ...] -
+                     selected_coordinates[:, 1, ...] + shift_values).norm(
+                         2, -1)
         in_cutoff = (distances <= self.cutoff).nonzero()
         molecule_index, pair_index = in_cutoff.unbind(1)
         molecule_index *= num_atoms
@@ -148,7 +168,8 @@ class FullPairwise(torch.nn.Module):
         ])
 
     @torch.jit.export
-    def _compute_bounding_cell(self, coordinates : Tensor, eps : float) -> Tuple[Tensor, Tensor]:
+    def _compute_bounding_cell(self, coordinates: Tensor,
+                               eps: float) -> Tuple[Tensor, Tensor]:
         # this works but its not needed for this naive implementation
         # This should return a bounding cell
         # for the molecule, in all cases, also it displaces coordinates a fixed
@@ -158,8 +179,8 @@ class FullPairwise(torch.nn.Module):
         # add an epsilon to pad due to floating point precision
         min_ = torch.min(coordinates.view(-1, 3), dim=0)[0] - eps
         max_ = torch.max(coordinates.view(-1, 3), dim=0)[0] + eps
-        largest_dist = max_ - min_ 
-        coordinates =  coordinates - min_  
+        largest_dist = max_ - min_
+        coordinates = coordinates - min_
         cell = self.default_cell * largest_dist
         assert (coordinates > 0.0).all()
         assert (coordinates < torch.norm(cell, dim=1)).all()

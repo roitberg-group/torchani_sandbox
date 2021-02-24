@@ -1,22 +1,28 @@
 import torch
-import math
 from torch import Tensor
 import sys
-from .cutoffs import CutoffCosine, CutoffSmooth
+from .cutoffs import CutoffCosine
 
 if sys.version_info[:2] < (3, 7):
+
     class FakeFinal:
         def __getitem__(self, x):
             return x
+
     Final = FakeFinal()
 else:
     from torch.jit import Final
+
 
 class RadialTerms(torch.nn.Module):
 
     cutoff: Final[float]
 
-    def __init__(self, EtaR : Tensor, ShfR : Tensor, cutoff : float, cutoff_function=CutoffCosine):
+    def __init__(self,
+                 EtaR: Tensor,
+                 ShfR: Tensor,
+                 cutoff: float,
+                 cutoff_function=CutoffCosine):
         super().__init__()
         self.cutoff = cutoff
 
@@ -58,12 +64,17 @@ class RadialTerms(torch.nn.Module):
         return ret.flatten(start_dim=1)
 
 
-
 class AngularTerms(torch.nn.Module):
 
     cutoff: Final[float]
 
-    def __init__(self, EtaA : Tensor, Zeta : Tensor, ShfA : Tensor, ShfZ : Tensor, cutoff : float, cutoff_function=CutoffCosine):
+    def __init__(self,
+                 EtaA: Tensor,
+                 Zeta: Tensor,
+                 ShfA: Tensor,
+                 ShfZ: Tensor,
+                 cutoff: float,
+                 cutoff_function=CutoffCosine):
         super().__init__()
         self.cutoff = cutoff
 
@@ -76,7 +87,8 @@ class AngularTerms(torch.nn.Module):
         self.cutoff_function = cutoff_function(cutoff)
 
     def sublength(self) -> int:
-        return self.EtaA.numel() * self.Zeta.numel() * self.ShfA.numel() * self.ShfZ.numel()
+        return self.EtaA.numel() * self.Zeta.numel() * self.ShfA.numel(
+        ) * self.ShfZ.numel()
 
     def length(self, num_species: int) -> int:
         return self.sublength() * (num_species * (num_species + 1) // 2)
@@ -96,13 +108,15 @@ class AngularTerms(torch.nn.Module):
         """
         vectors12 = vectors12.view(2, -1, 3, 1, 1, 1, 1)
         distances12 = vectors12.norm(2, dim=-5)
-        cos_angles = vectors12.prod(0).sum(1) / torch.clamp(distances12.prod(0), min=1e-10)
+        cos_angles = vectors12.prod(0).sum(1) / torch.clamp(
+            distances12.prod(0), min=1e-10)
         # 0.95 is multiplied to the cos values to prevent acos from returning NaN.
         angles = torch.acos(0.95 * cos_angles)
 
         fcj12 = self.cutoff_function(distances12)
-        factor1 = ((1 + torch.cos(angles - self.ShfZ)) / 2) ** self.Zeta
-        factor2 = torch.exp(-self.EtaA * (distances12.sum(0) / 2 - self.ShfA) ** 2)
+        factor1 = ((1 + torch.cos(angles - self.ShfZ)) / 2)**self.Zeta
+        factor2 = torch.exp(-self.EtaA *
+                            (distances12.sum(0) / 2 - self.ShfA)**2)
         ret = 2 * factor1 * factor2 * fcj12.prod(0)
         # At this point, ret now has shape
         # (conformations x atoms, ?, ?, ?, ?) where ? depend on constants.
