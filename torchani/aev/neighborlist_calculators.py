@@ -30,8 +30,12 @@ class FullPairwise(torch.nn.Module):
         """
         super().__init__()
         self.cutoff = cutoff
+        # not needed by this simple implementation
+        self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
+        self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool))
     
-    def forward(self, species: Tensor, coordinates: Tensor, cell: Optional[Tensor] = None, shifts: Optional[Tensor] = None) -> Tensor:
+    def forward(self, species: Tensor, coordinates: Tensor, cell_pbc: Optional[Tuple[Tensor, Tensor]] = None) -> Tuple[Tensor, Tensor]:
+        # cell_pbc is unused
         padding_mask = species == -1
         coordinates = coordinates.detach().masked_fill(padding_mask.unsqueeze(-1), math.nan)
         current_device = coordinates.device
@@ -46,7 +50,25 @@ class FullPairwise(torch.nn.Module):
         molecule_index, pair_index = in_cutoff.unbind(1)
         molecule_index *= num_atoms
         atom_index12 = p12_all[:, pair_index] + molecule_index
-        return atom_index12
+        return atom_index12, torch.zeros(3, dtype=coordinates.dtype, device=coordinates.device)
+
+    @torch.jit.export
+    def _compute_bounding_cell(self, coordinates : Tensor, eps : float) -> Tuple[Tensor, Tensor]:
+        # this works but its not needed for this naive implementation
+        # This should return a bounding cell
+        # for the molecule, in all cases, also it displaces coordinates a fixed
+        # value, so that they fit inside the cell completely. This should have
+        # no effects on forces or energies
+
+        # add an epsilon to pad due to floating point precision
+        min_ = torch.min(coordinates.view(-1, 3), dim=0)[0] - eps
+        max_ = torch.max(coordinates.view(-1, 3), dim=0)[0] + eps
+        largest_dist = max_ - min_ 
+        coordinates =  coordinates - min_  
+        cell = self.default_cell * largest_dist
+        assert (coordinates > 0.0).all()
+        assert (coordinates < torch.norm(cell, dim=1)).all()
+        return coordinates, cell
 
 
 class FullPairwisePBC(torch.nn.Module):
@@ -117,6 +139,7 @@ class FullPairwisePBC(torch.nn.Module):
         molecule_index *= num_atoms
         atom_index12 = p12_all[:, pair_index]
         shifts = shifts_all.index_select(0, pair_index)
+
         return molecule_index + atom_index12, shifts
 
     def compute_shifts(self, cell: Tensor, pbc: Tensor) -> Tensor:

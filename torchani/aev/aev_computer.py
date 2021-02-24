@@ -38,7 +38,6 @@ def compute_cuaev(species: Tensor, coordinates: Tensor, triu_index: Tensor,
                   constants: Tuple[float, Tensor, Tensor, float, Tensor, Tensor, Tensor, Tensor],
                   num_species: int, cell_shifts: Optional[Tuple[Tensor, Tensor]]) -> Tensor:
     Rcr, EtaR, ShfR, Rca, ShfZ, EtaA, Zeta, ShfA = constants
-
     assert cell_shifts is None, "Current implementation of cuaev does not support pbc."
     species_int = species.to(torch.int32)
     return torch.ops.cuaev.cuComputeAEV(coordinates, species_int, Rcr, Rca,
@@ -93,6 +92,8 @@ class AEVComputer(torch.nn.Module):
         self.use_cuda_extension = use_cuda_extension
 
         self.register_buffer('triu_index', self.calculate_triu_index(num_species))
+        self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
+        self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool))
 
         # radial and angular calculators
         self.angular_terms = AngularTerms(EtaA, Zeta, ShfA, ShfZ, Rca, cutoff_function=cutoff_function)
@@ -198,42 +199,35 @@ class AEVComputer(torch.nn.Module):
             unchanged, and AEVs is a tensor of shape ``(N, A, self.aev_length())``
         """
         species, coordinates = input_
+        # check shapes for correctness
         assert species.dim() == 2
-        assert species.shape == coordinates.shape[:-1]
-        assert coordinates.shape[-1] == 3
+        assert coordinates.dim() == 3
+        assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
         assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
 
+        cell_pbc = (cell, pbc) if (cell is not None and pbc is not None) else None
+
         if self.use_cuda_extension:
-            assert (cell is None and pbc is None), "cuaev does not support PBC"
-            aev = compute_cuaev(species, coordinates, self.triu_index, self._constants(), self.num_species, None)
+            aev = compute_cuaev(species, coordinates, self.triu_index, self._constants(), self.num_species, cell_pbc)
             return SpeciesAEV(species, aev)
 
-        cell_pbc = (cell, pbc) if (cell is not None and pbc is not None) else None
+        if cell_pbc is None:
+            cell_pbc = (self.default_cell, self.default_pbc)
         aev = self.compute_aev(species, coordinates, cell_pbc)
         return SpeciesAEV(species, aev)
 
-    @staticmethod
-    def compute_bounding_cell(coordinates : Tensor):
-        # TODO this should return a bounding cell
-        # for the molecule, in all cases
-        return torch.eye(3).to(dtype=coordinates.dtype, device=coordinates.device)
+    def compute_aev(self, species: Tensor, coordinates: Tensor, cell_pbc: Tuple[Tensor, Tensor]) -> Tensor:
 
-
-    def compute_aev(self, species: Tensor, coordinates: Tensor, cell_pbc: Optional[Tuple[Tensor, Tensor]] = None) -> Tensor:
-        coordinates_ = coordinates
-        coordinates = coordinates_.flatten(0, 1)
-
-        # PBC calculation is bypassed if there are no shifts
-        if cell_pbc is None:
-            atom_index12 = self.neighborlist(species, coordinates_)
-            selected_coordinates = coordinates.index_select(0, atom_index12.view(-1)).view(2, -1, 3)
-            vec = selected_coordinates[0] - selected_coordinates[1]
+        cell, pbc = cell_pbc
+        if not pbc.any():
+            atom_index12, shifts = self.neighborlist(species, coordinates, cell_pbc)
         else:
-            cell = cell_pbc[0]
-            atom_index12, shifts = self.neighborlist_pbc(species, coordinates_, cell_pbc)
-            shift_values = shifts.to(cell.dtype) @ cell
-            selected_coordinates = coordinates.index_select(0, atom_index12.view(-1)).view(2, -1, 3)
-            vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
+            atom_index12, shifts = self.neighborlist_pbc(species, coordinates, cell_pbc)
+
+        shift_values = shifts.to(cell.dtype) @ cell
+        coordinates = coordinates.flatten(0, 1)
+        selected_coordinates = coordinates.view(-1, 3).index_select(0, atom_index12.view(-1)).view(2, -1, 3)
+        vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
          
         species12 = species.flatten()[atom_index12]
         distances = vec.norm(2, -1)

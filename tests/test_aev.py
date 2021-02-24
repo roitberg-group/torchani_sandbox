@@ -125,6 +125,18 @@ class TestAEV(_TestAEVBase):
         _, aev = self.aev_computer((species, coordinates))
         self.assertFalse(torch.isnan(aev).any())
 
+    def testBoundingCell(self):
+        # AEV should not output NaN even when coordinates are superimposed
+        datafile = os.path.join(path, f'test_data/ANI1_subset/10')
+        with open(datafile, 'rb') as f:
+            coordinates, species, _, _, _, _ = pickle.load(f)
+            coordinates = torch.from_numpy(coordinates)
+            species = torch.from_numpy(species)
+        
+        coordinates, cell = self.aev_computer.neighborlist._compute_bounding_cell(coordinates, 1e-5)
+        self.assertTrue((coordinates > 0.0).all())
+        self.assertTrue((coordinates < torch.norm(cell, dim=1)).all())
+
     def testPadding(self):
         species_coordinates = []
         radial_angular = []
