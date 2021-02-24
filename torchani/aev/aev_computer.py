@@ -211,39 +211,48 @@ class AEVComputer(torch.nn.Module):
             aev = compute_cuaev(species, coordinates, cell, pbc, self._constants())
             return SpeciesAEV(species, aev)
 
-        aev = self.compute_aev(species, coordinates, cell, pbc)
+        atom_index12, shift_indices = self.compute_neighborlist(species, coordinates, cell, pbc)
+        shift_values = shift_indices.to(cell.dtype) @ cell
+        aev = self.compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
 
-    def compute_aev(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
 
-        if not pbc.any():
-            atom_index12, shifts = self.neighborlist(species, coordinates, cell, pbc)
-        else:
-            atom_index12, shifts = self.neighborlist_pbc(species, coordinates, cell, pbc)
-
-        shift_values = shifts.to(cell.dtype) @ cell
-        coordinates = coordinates.flatten(0, 1)
-        selected_coordinates = coordinates.view(-1, 3).index_select(0, atom_index12.view(-1)).view(2, -1, 3)
-        vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
-
+    def compute_aev(self, species: Tensor, coordinates: Tensor, atom_index12: Tensor, shift_values: Tensor) -> Tensor:
+        
         species12 = species.flatten()[atom_index12]
+        vec = self._compute_difference_vector(coordinates, atom_index12, shift_values)
+
         distances = vec.norm(2, -1)
+        radial_aev = self._compute_radial_aev(species12, distances, atom_index12, species.shape)
 
-        radial_aev = self.compute_radial_aev(species12, distances, atom_index12, species.shape)
-
-        # Rca is usually much smaller than Rcr, using neighbor list with cutoff=Rcr is a waste of resources
-        # Now we will get a smaller neighbor list that only cares about atoms with distances <= Rca
+        # Rca is usually much smaller than Rcr, using neighbor list with
+        # cutoff = Rcr is a waste of resources Now we will get a smaller neighbor
+        # list that only cares about atoms with distances <= Rca
         even_closer_indices = (distances <= self.angular_terms.cutoff).nonzero().flatten()
 
         atom_index12 = atom_index12.index_select(1, even_closer_indices)
         species12 = species12.index_select(1, even_closer_indices)
         vec = vec.index_select(0, even_closer_indices)
 
-        angular_aev = self.compute_angular_aev(species12, vec, atom_index12, species.shape)
+        angular_aev = self._compute_angular_aev(species12, vec, atom_index12, species.shape)
 
         return torch.cat([radial_aev, angular_aev], dim=-1)
 
-    def compute_angular_aev(self, species12: Tensor, vec : Tensor, atom_index12 : Tensor, species_shape : List[int]) -> Tensor:
+    @staticmethod
+    def _compute_difference_vector(coordinates : Tensor, atom_index12: Tensor, shift_values : Tensor) -> Tensor:
+        coordinates = coordinates.flatten(0, 1)
+        selected_coordinates = coordinates.view(-1, 3).index_select(0, atom_index12.view(-1)).view(2, -1, 3)
+        vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
+        return vec
+
+    def compute_neighborlist(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
+        if not pbc.any():
+            atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
+        else:
+            atom_index12, shift_indices = self.neighborlist_pbc(species, coordinates, cell, pbc)
+        return atom_index12, shift_indices
+
+    def _compute_angular_aev(self, species12: Tensor, vec : Tensor, atom_index12 : Tensor, species_shape : List[int]) -> Tensor:
         num_molecules, num_atoms = species_shape
 
         central_atom_index, pair_index12, sign12 = self.triple_by_molecule(atom_index12)
@@ -258,7 +267,7 @@ class AEVComputer(torch.nn.Module):
         angular_aev = angular_aev.reshape(num_molecules, num_atoms, self.angular_length())
         return angular_aev
 
-    def compute_radial_aev(self, species12: Tensor, distances : Tensor, atom_index12 : Tensor, species_shape : List[int]) -> Tensor:
+    def _compute_radial_aev(self, species12: Tensor, distances : Tensor, atom_index12 : Tensor, species_shape : List[int]) -> Tensor:
         num_molecules, num_atoms = species_shape
 
         radial_terms_ = self.radial_terms(distances)
