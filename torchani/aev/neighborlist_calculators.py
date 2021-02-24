@@ -19,7 +19,8 @@ class FullPairwise(torch.nn.Module):
     cutoff: Final[float]
 
     def __init__(self, cutoff : float):
-        """Compute pairs of atoms that are neighbors (doesn't use PBC)
+        """Compute pairs of atoms that are neighbors, uses pbc depending on 
+        weather pbc.any() is True or not
     
         Arguments:
             padding_mask (:class:`torch.Tensor`): boolean tensor of shape
@@ -34,8 +35,23 @@ class FullPairwise(torch.nn.Module):
         self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
     
     def forward(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
+        """Arguments:
+            padding_mask (:class:`torch.Tensor`): boolean tensor of shape
+                (molecules, atoms) for padding mask. 1 == is padding.
+            coordinates (:class:`torch.Tensor`): tensor of shape
+                (molecules, atoms, 3) for atom coordinates.
+            cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three vectors
+                defining unit cell: tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
+            cutoff (float): the cutoff inside which atoms are considered pairs
+            pbc (:class:`torch.Tensor`): boolean tensor of shape (3,) storing wheather pbc is required
+        """
+        if pbc.any():
+            return self._full_pairwise_pbc(species, coordinates, cell, pbc)
+
+        return self._full_pairwise(species, coordinates, cell, pbc)
+
+    def _full_pairwise(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
         # cell and pbc are unused
-        assert not pbc.any()
         padding_mask = species == -1
         coordinates = coordinates.detach().masked_fill(padding_mask.unsqueeze(-1), math.nan)
         current_device = coordinates.device
@@ -52,57 +68,7 @@ class FullPairwise(torch.nn.Module):
         atom_index12 = p12_all[:, pair_index] + molecule_index
         return atom_index12, torch.zeros(3, dtype=coordinates.dtype, device=coordinates.device)
 
-    @torch.jit.export
-    def _compute_bounding_cell(self, coordinates : Tensor, eps : float) -> Tuple[Tensor, Tensor]:
-        # this works but its not needed for this naive implementation
-        # This should return a bounding cell
-        # for the molecule, in all cases, also it displaces coordinates a fixed
-        # value, so that they fit inside the cell completely. This should have
-        # no effects on forces or energies
-
-        # add an epsilon to pad due to floating point precision
-        min_ = torch.min(coordinates.view(-1, 3), dim=0)[0] - eps
-        max_ = torch.max(coordinates.view(-1, 3), dim=0)[0] + eps
-        largest_dist = max_ - min_ 
-        coordinates =  coordinates - min_  
-        cell = self.default_cell * largest_dist
-        assert (coordinates > 0.0).all()
-        assert (coordinates < torch.norm(cell, dim=1)).all()
-        return coordinates, cell
-
-
-class FullPairwisePBC(torch.nn.Module):
-
-    cutoff: Final[float]
-
-    def __init__(self, cutoff : float):
-        """Compute pairs of atoms that are neighbors (doesn't use PBC)
-    
-        Arguments:
-            padding_mask (:class:`torch.Tensor`): boolean tensor of shape
-                (molecules, atoms) for padding mask. 1 == is padding.
-            coordinates (:class:`torch.Tensor`): tensor of shape
-                (molecules, atoms, 3) for atom coordinates.
-            cutoff (float): the cutoff inside which atoms are considered pairs
-        """
-        super().__init__()
-        self.cutoff = cutoff
-
-    def forward(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
-        """Compute pairs of atoms that are neighbors, 
-
-        Arguments:
-            padding_mask (:class:`torch.Tensor`): boolean tensor of shape
-                (molecules, atoms) for padding mask. 1 == is padding.
-            coordinates (:class:`torch.Tensor`): tensor of shape
-                (molecules, atoms, 3) for atom coordinates.
-            cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three vectors
-                defining unit cell: tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
-            cutoff (float): the cutoff inside which atoms are considered pairs
-            pbc (:class:`torch.Tensor`): boolean tensor of shape (3,) storing wheather pbc is required
-
-        """
-        assert pbc.any()
+    def _full_pairwise_pbc(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
         shifts = self.compute_shifts(cell, pbc)
         padding_mask = (species == -1)
         coordinates = coordinates.detach().masked_fill(padding_mask.unsqueeze(-1), math.nan)
@@ -180,3 +146,21 @@ class FullPairwisePBC(torch.nn.Module):
             torch.cartesian_prod(o, r2, -r3),
             torch.cartesian_prod(o, o, r3),
         ])
+
+    @torch.jit.export
+    def _compute_bounding_cell(self, coordinates : Tensor, eps : float) -> Tuple[Tensor, Tensor]:
+        # this works but its not needed for this naive implementation
+        # This should return a bounding cell
+        # for the molecule, in all cases, also it displaces coordinates a fixed
+        # value, so that they fit inside the cell completely. This should have
+        # no effects on forces or energies
+
+        # add an epsilon to pad due to floating point precision
+        min_ = torch.min(coordinates.view(-1, 3), dim=0)[0] - eps
+        max_ = torch.max(coordinates.view(-1, 3), dim=0)[0] + eps
+        largest_dist = max_ - min_ 
+        coordinates =  coordinates - min_  
+        cell = self.default_cell * largest_dist
+        assert (coordinates > 0.0).all()
+        assert (coordinates < torch.norm(cell, dim=1)).all()
+        return coordinates, cell

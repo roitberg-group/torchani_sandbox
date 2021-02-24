@@ -9,7 +9,7 @@ import importlib_metadata
 
 from .cutoffs import CutoffCosine, CutoffSmooth
 from .aev_terms import AngularTerms, RadialTerms
-from .neighborlist_calculators import FullPairwise, FullPairwisePBC
+from .neighborlist_calculators import FullPairwise
 
 has_cuaev = 'torchani.cuaev' in importlib_metadata.metadata(__package__.split('.')[0]).get_all('Provides')
 
@@ -79,7 +79,7 @@ class AEVComputer(torch.nn.Module):
 
     use_cuda_extension: Final[bool]
 
-    def __init__(self, Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, use_cuda_extension=False, cutoff_function='cosine'):
+    def __init__(self, Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, use_cuda_extension=False, cutoff_function='cosine', neighborlist_function="full_pairwise"):
         super().__init__()
         assert Rca <= Rcr, "Current implementation of AEVComputer assumes Rca <= Rcr"
         self.num_species = num_species
@@ -99,8 +99,10 @@ class AEVComputer(torch.nn.Module):
         self.radial_terms = RadialTerms(EtaR, ShfR, Rcr, cutoff_function=cutoff_function)
 
         # neighborlist currently uses radial cutoff
-        self.neighborlist = FullPairwise(Rcr)
-        self.neighborlist_pbc = FullPairwisePBC(Rcr)
+        if neighborlist_function == 'full_pairwise':
+            self.neighborlist = FullPairwise(Rcr)
+        else:
+            self.neighborlist = None
 
     @staticmethod
     def calculate_triu_index(num_species: int) -> Tensor:
@@ -211,7 +213,7 @@ class AEVComputer(torch.nn.Module):
             aev = compute_cuaev(species, coordinates, cell, pbc, self._constants())
             return SpeciesAEV(species, aev)
 
-        atom_index12, shift_indices = self.compute_neighborlist(species, coordinates, cell, pbc)
+        atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
         shift_values = shift_indices.to(cell.dtype) @ cell
         aev = self.compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
@@ -244,13 +246,6 @@ class AEVComputer(torch.nn.Module):
         selected_coordinates = coordinates.view(-1, 3).index_select(0, atom_index12.view(-1)).view(2, -1, 3)
         vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
         return vec
-
-    def compute_neighborlist(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
-        if not pbc.any():
-            atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
-        else:
-            atom_index12, shift_indices = self.neighborlist_pbc(species, coordinates, cell, pbc)
-        return atom_index12, shift_indices
 
     def _compute_angular_aev(self, species12: Tensor, vec : Tensor, atom_index12 : Tensor, species_shape : List[int]) -> Tensor:
         num_molecules, num_atoms = species_shape
