@@ -26,9 +26,9 @@ class Calculator(ase.calculators.calculator.Calculator):
 
     implemented_properties = ['energy', 'forces', 'stress', 'free_energy']
 
-    def __init__(self, species, model, overwrite=False):
+    def __init__(self, model, overwrite=False):
         super().__init__()
-        self.species_to_tensor = utils.ChemicalSymbolsToInts(species)
+        self.species_to_tensor = model._species_to_tensor
         self.model = model
         # Since ANI is used in inference mode, no gradients on model parameters are required here
         for p in self.model.parameters():
