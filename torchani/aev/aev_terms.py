@@ -16,7 +16,7 @@ class RadialTerms(torch.nn.Module):
 
     cutoff: Final[float]
 
-    def __init__(self, EtaR : Tensor, ShfR : Tensor, cutoff : float, cutoff_function='smooth'):
+    def __init__(self, EtaR : Tensor, ShfR : Tensor, cutoff : float, cutoff_function=CutoffCosine):
         super().__init__()
         self.cutoff = cutoff
 
@@ -24,13 +24,7 @@ class RadialTerms(torch.nn.Module):
         # shape convension (..., EtaR, ShfR)
         self.register_buffer('EtaR', EtaR.view(-1, 1))
         self.register_buffer('ShfR', ShfR.view(1, -1))
-
-        if cutoff_function == 'smooth':
-            self.cutoff_function = CutoffSmooth(cutoff)
-        elif cutoff_function == 'cosine':
-            self.cutoff_function = CutoffCosine(cutoff)
-        else:
-            raise ValueError(f"The cutoff function {cutoff_function} is not implemented")
+        self.cutoff_function = cutoff_function(cutoff)
 
     def sublength(self) -> int:
         return self.EtaR.numel() * self.ShfR.numel()
@@ -69,7 +63,7 @@ class AngularTerms(torch.nn.Module):
 
     cutoff: Final[float]
 
-    def __init__(self, EtaA : Tensor, Zeta : Tensor, ShfA : Tensor, ShfZ : Tensor, cutoff : float, cutoff_function='smooth'):
+    def __init__(self, EtaA : Tensor, Zeta : Tensor, ShfA : Tensor, ShfZ : Tensor, cutoff : float, cutoff_function=CutoffCosine):
         super().__init__()
         self.cutoff = cutoff
 
@@ -79,13 +73,7 @@ class AngularTerms(torch.nn.Module):
         self.register_buffer('Zeta', Zeta.view(1, -1, 1, 1))
         self.register_buffer('ShfA', ShfA.view(1, 1, -1, 1))
         self.register_buffer('ShfZ', ShfZ.view(1, 1, 1, -1))
-
-        if cutoff_function == 'smooth':
-            self.cutoff_function = CutoffSmooth(cutoff)
-        elif cutoff_function == 'cosine':
-            self.cutoff_function = CutoffCosine(cutoff)
-        else:
-            raise ValueError(f"The cutoff function {cutoff_function} is not implemented")
+        self.cutoff_function = cutoff_function(cutoff)
 
     def sublength(self) -> int:
         return self.EtaA.numel() * self.Zeta.numel() * self.ShfA.numel() * self.ShfZ.numel()

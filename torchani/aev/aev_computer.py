@@ -79,7 +79,10 @@ class AEVComputer(torch.nn.Module):
 
     use_cuda_extension: Final[bool]
 
-    def __init__(self, Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, use_cuda_extension=False, cutoff_function='cosine', neighborlist_function="full_pairwise"):
+    def __init__(self, Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species,
+            use_cuda_extension=False,
+            cutoff_function=CutoffCosine,
+            neighborlist=FullPairwise):
         super().__init__()
         assert Rca <= Rcr, "Current implementation of AEVComputer assumes Rca <= Rcr"
         self.num_species = num_species
@@ -98,11 +101,8 @@ class AEVComputer(torch.nn.Module):
         self.angular_terms = AngularTerms(EtaA, Zeta, ShfA, ShfZ, Rca, cutoff_function=cutoff_function)
         self.radial_terms = RadialTerms(EtaR, ShfR, Rcr, cutoff_function=cutoff_function)
 
-        # neighborlist currently uses radial cutoff
-        if neighborlist_function == 'full_pairwise':
-            self.neighborlist = FullPairwise(Rcr)
-        else:
-            self.neighborlist = None
+        # neighborlist uses radial cutoff only
+        self.neighborlist = neighborlist(Rcr) if neighborlist is not None else None
 
     @staticmethod
     def calculate_triu_index(num_species: int) -> Tensor:
@@ -247,7 +247,8 @@ class AEVComputer(torch.nn.Module):
         vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
         return vec
 
-    def _compute_angular_aev(self, species12: Tensor, vec : Tensor, atom_index12 : Tensor, species_shape : List[int]) -> Tensor:
+    def _compute_angular_aev(self, species12: Tensor, vec : Tensor,
+            atom_index12 : Tensor, species_shape : List[int]) -> Tensor:
         num_molecules, num_atoms = species_shape
 
         central_atom_index, pair_index12, sign12 = self.triple_by_molecule(atom_index12)
@@ -262,7 +263,8 @@ class AEVComputer(torch.nn.Module):
         angular_aev = angular_aev.reshape(num_molecules, num_atoms, self.angular_length())
         return angular_aev
 
-    def _compute_radial_aev(self, species12: Tensor, distances : Tensor, atom_index12 : Tensor, species_shape : List[int]) -> Tensor:
+    def _compute_radial_aev(self, species12: Tensor, distances : Tensor,
+            atom_index12 : Tensor, species_shape : List[int]) -> Tensor:
         num_molecules, num_atoms = species_shape
 
         radial_terms_ = self.radial_terms(distances)
@@ -317,3 +319,4 @@ class AEVComputer(torch.nn.Module):
         cumsum = torch.zeros_like(input_)
         torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
         return cumsum
+
