@@ -69,8 +69,7 @@ class FullPairwise(torch.nn.Module):
 
         pair_coordinates = coordinates.index_select(1, p12_all_flattened).view(
             num_mols, 2, -1, 3)
-        distances = (pair_coordinates[:, 0, ...] -
-                     pair_coordinates[:, 1, ...]).norm(2, -1)
+        distances = (pair_coordinates[:, 0, ...] - pair_coordinates[:, 1, ...]).norm(2, -1)
         in_cutoff = (distances <= self.cutoff).nonzero()
         molecule_index, pair_index = in_cutoff.unbind(1)
         molecule_index *= num_atoms
@@ -116,9 +115,7 @@ class FullPairwise(torch.nn.Module):
         selected_coordinates = coordinates.index_select(1,
                                                         p12_all.view(-1)).view(
                                                             num_mols, 2, -1, 3)
-        distances = (selected_coordinates[:, 0, ...] -
-                     selected_coordinates[:, 1, ...] + shift_values).norm(
-                         2, -1)
+        distances = (selected_coordinates[:, 0, ...] - selected_coordinates[:, 1, ...] + shift_values).norm(2, -1)
         in_cutoff = (distances <= self.cutoff).nonzero()
         molecule_index, pair_index = in_cutoff.unbind(1)
         molecule_index *= num_atoms

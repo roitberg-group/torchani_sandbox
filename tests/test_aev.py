@@ -132,7 +132,7 @@ class TestAEV(_TestAEVBase):
             coordinates, species, _, _, _, _ = pickle.load(f)
             coordinates = torch.from_numpy(coordinates)
             species = torch.from_numpy(species)
-        
+
         coordinates, cell = self.aev_computer.neighborlist._compute_bounding_cell(coordinates, 1e-5)
         self.assertTrue((coordinates > 0.0).all())
         self.assertTrue((coordinates < torch.norm(cell, dim=1)).all())

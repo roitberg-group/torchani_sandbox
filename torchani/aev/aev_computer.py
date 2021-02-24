@@ -188,13 +188,14 @@ class AEVComputer(torch.nn.Module):
         ShfA = torch.linspace(angular_start, angular_cutoff,
                               angular_dist_divisions + 1)[:-1]
         angle_start = math.pi / (2 * angle_sections)
-        ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) +
-                angle_start)[:-1]
+        ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) + angle_start)[:-1]
         return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
 
     def _constants(self):
-        return self.radial_terms.cutoff, self.radial_terms.EtaR, self.radial_terms.ShfR, \
-                self.angular_terms.cutoff, self.angular_terms.ShfZ, self.angular_terms.EtaA, self.angular_terms.Zeta, self.angular_terms.ShfA, self.num_species
+        return self.radial_terms.cutoff, self.radial_terms.EtaR,\
+            self.radial_terms.ShfR, self.angular_terms.cutoff,\
+            self.angular_terms.ShfZ, self.angular_terms.EtaA,\
+            self.angular_terms.Zeta, self.angular_terms.ShfA, self.num_species
 
     def forward(self,
                 input_: Tuple[Tensor, Tensor],
@@ -276,8 +277,7 @@ class AEVComputer(torch.nn.Module):
         # Rca is usually much smaller than Rcr, using neighbor list with
         # cutoff = Rcr is a waste of resources Now we will get a smaller neighbor
         # list that only cares about atoms with distances <= Rca
-        even_closer_indices = (distances <=
-                               self.angular_terms.cutoff).nonzero().flatten()
+        even_closer_indices = (distances <= self.angular_terms.cutoff).nonzero().flatten()
 
         atom_index12 = atom_index12.index_select(1, even_closer_indices)
         species12 = species12.index_select(1, even_closer_indices)
@@ -368,8 +368,7 @@ class AEVComputer(torch.nn.Module):
         n = pair_sizes.shape[0]
         intra_pair_indices = torch.tril_indices(
             m, m, -1, device=ai1.device).unsqueeze(1).expand(-1, n, -1)
-        mask = (torch.arange(intra_pair_indices.shape[2], device=ai1.device) <
-                pair_sizes.unsqueeze(1)).flatten()
+        mask = (torch.arange(intra_pair_indices.shape[2], device=ai1.device) < pair_sizes.unsqueeze(1)).flatten()
         sorted_local_index12 = intra_pair_indices.flatten(1, 2)[:, mask]
         sorted_local_index12 += self.cumsum_from_zero(counts).index_select(
             0, pair_indices)

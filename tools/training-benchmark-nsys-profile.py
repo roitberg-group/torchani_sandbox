@@ -32,6 +32,7 @@ def time_func(key, func):
 
     return wrapper
 
+
 def time_functions_in_model(model, function_names_list):
     # Wrap all the functions from "function_names_list" from the model
     # "model" with a timer
@@ -42,9 +43,8 @@ def time_functions_in_model(model, function_names_list):
 def enable_timers(model):
     # enable timers
     aev_computer = model[0]
-    functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev',
-            '_compute_difference_vector',
-            'compute_aev', 'triple_by_molecule']
+    functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
+                             'compute_aev', 'triple_by_molecule']
 
     time_functions_in_model(aev_computer, functions_to_time_aev)
 

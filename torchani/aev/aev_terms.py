@@ -115,8 +115,7 @@ class AngularTerms(torch.nn.Module):
 
         fcj12 = self.cutoff_function(distances12)
         factor1 = ((1 + torch.cos(angles - self.ShfZ)) / 2)**self.Zeta
-        factor2 = torch.exp(-self.EtaA *
-                            (distances12.sum(0) / 2 - self.ShfA)**2)
+        factor2 = torch.exp(-self.EtaA * (distances12.sum(0) / 2 - self.ShfA)**2)
         ret = 2 * factor1 * factor2 * fcj12.prod(0)
         # At this point, ret now has shape
         # (conformations x atoms, ?, ?, ?, ?) where ? depend on constants.
