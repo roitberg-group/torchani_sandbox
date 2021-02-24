@@ -34,10 +34,9 @@ class SpeciesAEV(NamedTuple):
     aevs: Tensor
 
 
-def compute_cuaev(species: Tensor, coordinates: Tensor, triu_index: Tensor,
-                  constants: Tuple[float, Tensor, Tensor, float, Tensor, Tensor, Tensor, Tensor],
-                  num_species: int, cell: Tensor, pbc: Tensor) -> Tensor:
-    Rcr, EtaR, ShfR, Rca, ShfZ, EtaA, Zeta, ShfA = constants
+def compute_cuaev(species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor,
+        constants: Tuple[float, Tensor, Tensor, float, Tensor, Tensor, Tensor, Tensor, int]) -> Tensor:
+    Rcr, EtaR, ShfR, Rca, ShfZ, EtaA, Zeta, ShfA, num_species = constants
     assert not pbc.any(), "Current implementation of cuaev does not support pbc."
     species_int = species.to(torch.int32)
     return torch.ops.cuaev.cuComputeAEV(coordinates, species_int, Rcr, Rca,
@@ -121,7 +120,7 @@ class AEVComputer(torch.nn.Module):
 
     def aev_length(self) -> int:
         return self.radial_length() + self.angular_length()
-        
+
     @classmethod
     def cover_linearly(cls, radial_cutoff: float, angular_cutoff: float,
                        radial_eta: float, angular_eta: float,
@@ -155,7 +154,7 @@ class AEVComputer(torch.nn.Module):
 
     def _constants(self):
         return self.radial_terms.cutoff, self.radial_terms.EtaR, self.radial_terms.ShfR, \
-                self.angular_terms.cutoff, self.angular_terms.ShfZ, self.angular_terms.EtaA, self.angular_terms.Zeta, self.angular_terms.ShfA
+                self.angular_terms.cutoff, self.angular_terms.ShfZ, self.angular_terms.EtaA, self.angular_terms.Zeta, self.angular_terms.ShfA, self.num_species
 
     def forward(self, input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -209,7 +208,7 @@ class AEVComputer(torch.nn.Module):
         pbc = pbc if pbc is not None else self.default_pbc
 
         if self.use_cuda_extension:
-            aev = compute_cuaev(species, coordinates, self.triu_index, self._constants(), self.num_species, cell, pbc)
+            aev = compute_cuaev(species, coordinates, cell, pbc, self._constants())
             return SpeciesAEV(species, aev)
 
         aev = self.compute_aev(species, coordinates, cell, pbc)
@@ -226,7 +225,7 @@ class AEVComputer(torch.nn.Module):
         coordinates = coordinates.flatten(0, 1)
         selected_coordinates = coordinates.view(-1, 3).index_select(0, atom_index12.view(-1)).view(2, -1, 3)
         vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
-         
+
         species12 = species.flatten()[atom_index12]
         distances = vec.norm(2, -1)
 
