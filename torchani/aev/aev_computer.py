@@ -320,3 +320,33 @@ class AEVComputer(torch.nn.Module):
         torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
         return cumsum
 
+class AEVComputerBare(torch.nn.Module):
+
+    def __init__(self, *args, **kwargs):
+        """Bare version of the AEVComputer, with no internal neighborlist"""
+
+        if 'neighborlist' not in kwargs.keys():
+            kwargs.update({'neighborlist' : None})
+        if 'use_cuda_extension' not in kwargs.keys():
+            kwargs.update({'use_cuda_extension' : False})
+
+        assert kwargs['neighborlist'] is None, "AEVComputerBare doesn't use a neighborlist"
+        assert not kwargs['use_cuda_extension'], "AEVComputerBare doesn't suport cuaev"
+        super().__init__(*args, **kwargs)
+
+    def forward(self, input_: Tuple[Tensor, Tensor], cell : Tensor,
+            atom_index12: Tensor, shift_indices: Tensor) -> SpeciesAEV:
+        """Compute AEVs
+        Returns:
+            NamedTuple: Species and AEVs. species are the species from the input
+            unchanged, and AEVs is a tensor of shape ``(N, A, self.aev_length())``
+        """
+        species, coordinates = input_
+        # check shapes for correctness
+        assert species.dim() == 2
+        assert coordinates.dim() == 3
+        assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
+
+        shift_values = shift_indices.to(cell.dtype) @ cell
+        aev = self.compute_aev(species, coordinates, atom_index12, shift_values)
+        return SpeciesAEV(species, aev)
