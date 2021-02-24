@@ -32,8 +32,8 @@ class TestAEVConstructor(torchani.testing.TestCase):
                         'angle_sections': 8,
                         'num_species': 4}
         aev_computer_alt = torchani.AEVComputer.cover_linearly(**ani1x_values)
-        constants = aev_computer.constants()
-        constants_alt = aev_computer_alt.constants()
+        constants = aev_computer._constants()
+        constants_alt = aev_computer_alt._constants()
         for c, ca in zip(constants, constants_alt):
             self.assertEqual(c, ca)
 
