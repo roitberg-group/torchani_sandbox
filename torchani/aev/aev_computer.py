@@ -154,6 +154,49 @@ class AEVComputer(torch.nn.Module):
         ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) + angle_start)[:-1]
         return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
 
+    @classmethod
+    def like_1x(cls):
+        kwargs = {
+            'radial_cutoff': 5.2,
+            'angular_cutoff': 3.5,
+            'radial_eta': 16.0,
+            'angular_eta': 8.0,
+            'radial_dist_divisions': 16,
+            'angular_dist_divisions': 4,
+            'zeta': 32.0,
+            'angle_sections': 8,
+            'num_species': 4,
+            'angular_start': 0.9,
+            'radial_start': 0.9
+        }
+        return cls.cover_linearly(**kwargs)
+
+    @classmethod
+    def like_2x(cls):
+        kwargs = {
+            'radial_cutoff': 5.1,
+            'angular_cutoff': 3.5,
+            'radial_eta': 19.7,
+            'angular_eta': 12.5,
+            'radial_dist_divisions': 16,
+            'angular_dist_divisions': 8,
+            'zeta': 14.1,
+            'angle_sections': 4,
+            'num_species': 7,
+            'angular_start': 0.8,
+            'radial_start': 0.8
+        }
+        # note that there is a small difference of 1 digit in one decimal place
+        # in the eight element of ShfR this element is 2.6812 using this method
+        # and 2.6813 for the actual network, but this is not significant for
+        # retraining purposes
+        return cls.cover_linearly(**kwargs)
+
+    @classmethod
+    def like_1ccx(cls):
+        # just a synonym
+        return cls.like_ani1x()
+
     def _constants(self):
         return self.radial_terms.cutoff, self.radial_terms.EtaR, self.radial_terms.ShfR, \
                 self.angular_terms.cutoff, self.angular_terms.ShfZ, self.angular_terms.EtaA, self.angular_terms.Zeta, self.angular_terms.ShfA, self.num_species
