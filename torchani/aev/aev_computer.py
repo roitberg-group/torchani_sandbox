@@ -15,7 +15,7 @@ has_cuaev = 'torchani.cuaev' in importlib_metadata.metadata(__package__.split('.
 
 if has_cuaev:
     # We need to import torchani.cuaev to tell PyTorch to initialize torch.ops.cuaev
-    from . import cuaev  # type: ignore # noqa: F401
+    from .. import cuaev  # type: ignore # noqa: F401
 else:
     warnings.warn("cuaev not installed")
 
