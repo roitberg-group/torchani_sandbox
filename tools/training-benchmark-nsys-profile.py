@@ -32,18 +32,25 @@ def time_func(key, func):
 
     return wrapper
 
+def time_functions_in_model(model, function_names_list):
+    # Wrap all the functions from "function_names_list" from the model
+    # "model" with a timer
+    for n in function_names_list:
+        setattr(model, n, time_func(n, getattr(model, n)))
+
 
 def enable_timers(model):
-    torchani.aev.cutoff_cosine = time_func('cutoff_cosine', torchani.aev.cutoff_cosine)
-    torchani.aev.radial_terms = time_func('radial_terms', torchani.aev.radial_terms)
-    torchani.aev.angular_terms = time_func('angular_terms', torchani.aev.angular_terms)
-    torchani.aev.compute_shifts = time_func('compute_shifts', torchani.aev.compute_shifts)
-    torchani.aev.neighbor_pairs = time_func('neighbor_pairs', torchani.aev.neighbor_pairs)
-    torchani.aev.neighbor_pairs_nopbc = time_func('neighbor_pairs_nopbc', torchani.aev.neighbor_pairs_nopbc)
-    torchani.aev.triu_index = time_func('triu_index', torchani.aev.triu_index)
-    torchani.aev.cumsum_from_zero = time_func('cumsum_from_zero', torchani.aev.cumsum_from_zero)
-    torchani.aev.triple_by_molecule = time_func('triple_by_molecule', torchani.aev.triple_by_molecule)
-    torchani.aev.compute_aev = time_func('compute_aev', torchani.aev.compute_aev)
+    # enable timers
+    aev_computer = model[0]
+    functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev',
+            '_compute_difference_vector',
+            'compute_aev', 'triple_by_molecule']
+
+    time_functions_in_model(aev_computer, functions_to_time_aev)
+
+    functions_to_time_neighborlist = ['_full_pairwise', '_full_pairwise_pbc']
+    time_functions_in_model(aev_computer.neighborlist, functions_to_time_neighborlist)
+
     model[1].forward = time_func('nn forward', model[1].forward)
 
 
