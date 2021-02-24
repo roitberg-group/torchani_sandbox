@@ -32,10 +32,10 @@ class FullPairwise(torch.nn.Module):
         self.cutoff = cutoff
         # not needed by this simple implementation
         self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
-        self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool))
     
-    def forward(self, species: Tensor, coordinates: Tensor, cell_pbc: Optional[Tuple[Tensor, Tensor]] = None) -> Tuple[Tensor, Tensor]:
-        # cell_pbc is unused
+    def forward(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
+        # cell and pbc are unused
+        assert not pbc.any()
         padding_mask = species == -1
         coordinates = coordinates.detach().masked_fill(padding_mask.unsqueeze(-1), math.nan)
         current_device = coordinates.device
@@ -88,7 +88,7 @@ class FullPairwisePBC(torch.nn.Module):
         super().__init__()
         self.cutoff = cutoff
 
-    def forward(self, species: Tensor, coordinates: Tensor, cell_pbc: Optional[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Tensor]:
+    def forward(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
         """Compute pairs of atoms that are neighbors, 
 
         Arguments:
@@ -102,8 +102,7 @@ class FullPairwisePBC(torch.nn.Module):
             pbc (:class:`torch.Tensor`): boolean tensor of shape (3,) storing wheather pbc is required
 
         """
-        assert cell_pbc is not None
-        cell, pbc = cell_pbc
+        assert pbc.any()
         shifts = self.compute_shifts(cell, pbc)
         padding_mask = (species == -1)
         coordinates = coordinates.detach().masked_fill(padding_mask.unsqueeze(-1), math.nan)

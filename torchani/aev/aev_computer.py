@@ -36,9 +36,9 @@ class SpeciesAEV(NamedTuple):
 
 def compute_cuaev(species: Tensor, coordinates: Tensor, triu_index: Tensor,
                   constants: Tuple[float, Tensor, Tensor, float, Tensor, Tensor, Tensor, Tensor],
-                  num_species: int, cell_shifts: Optional[Tuple[Tensor, Tensor]]) -> Tensor:
+                  num_species: int, cell: Tensor, pbc: Tensor) -> Tensor:
     Rcr, EtaR, ShfR, Rca, ShfZ, EtaA, Zeta, ShfA = constants
-    assert cell_shifts is None, "Current implementation of cuaev does not support pbc."
+    assert not pbc.any(), "Current implementation of cuaev does not support pbc."
     species_int = species.to(torch.int32)
     return torch.ops.cuaev.cuComputeAEV(coordinates, species_int, Rcr, Rca,
             EtaR.flatten(), ShfR.flatten(), EtaA.flatten(), Zeta.flatten(),
@@ -205,24 +205,22 @@ class AEVComputer(torch.nn.Module):
         assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
         assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
 
-        cell_pbc = (cell, pbc) if (cell is not None and pbc is not None) else None
+        cell = cell if cell is not None else self.default_cell
+        pbc = pbc if pbc is not None else self.default_pbc
 
         if self.use_cuda_extension:
-            aev = compute_cuaev(species, coordinates, self.triu_index, self._constants(), self.num_species, cell_pbc)
+            aev = compute_cuaev(species, coordinates, self.triu_index, self._constants(), self.num_species, cell, pbc)
             return SpeciesAEV(species, aev)
 
-        if cell_pbc is None:
-            cell_pbc = (self.default_cell, self.default_pbc)
-        aev = self.compute_aev(species, coordinates, cell_pbc)
+        aev = self.compute_aev(species, coordinates, cell, pbc)
         return SpeciesAEV(species, aev)
 
-    def compute_aev(self, species: Tensor, coordinates: Tensor, cell_pbc: Tuple[Tensor, Tensor]) -> Tensor:
+    def compute_aev(self, species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
 
-        cell, pbc = cell_pbc
         if not pbc.any():
-            atom_index12, shifts = self.neighborlist(species, coordinates, cell_pbc)
+            atom_index12, shifts = self.neighborlist(species, coordinates, cell, pbc)
         else:
-            atom_index12, shifts = self.neighborlist_pbc(species, coordinates, cell_pbc)
+            atom_index12, shifts = self.neighborlist_pbc(species, coordinates, cell, pbc)
 
         shift_values = shifts.to(cell.dtype) @ cell
         coordinates = coordinates.flatten(0, 1)
