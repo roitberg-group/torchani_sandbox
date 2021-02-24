@@ -63,11 +63,11 @@ def time_func(key, func):
     return wrapper
 
 
-def time_functions_in_module(module, function_names_list):
-    # Wrap all the functions from "function_names_list" from the module
-    # "module" with a timer
+def time_functions_in_model(model, function_names_list):
+    # Wrap all the functions from "function_names_list" from the model
+    # "model" with a timer
     for n in function_names_list:
-        setattr(module, n, time_func(f'{module.__name__}.{n}', getattr(module, n)))
+        setattr(model, n, time_func(n, getattr(model, n)))
 
 
 if __name__ == "__main__":
@@ -118,12 +118,14 @@ if __name__ == "__main__":
     timers = {}
 
     # enable timers
-    functions_to_time = ['cutoff_cosine', 'radial_terms', 'angular_terms',
-                         'compute_shifts', 'neighbor_pairs',
-                         'neighbor_pairs_nopbc', 'cumsum_from_zero',
-                         'triple_by_molecule', 'compute_aev']
+    functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev',
+            '_compute_difference_vector',
+            'compute_aev', 'triple_by_molecule']
 
-    time_functions_in_module(torchani.aev, functions_to_time)
+    time_functions_in_model(aev_computer, functions_to_time_aev)
+
+    functions_to_time_neighborlist = ['_full_pairwise', '_full_pairwise_pbc']
+    time_functions_in_model(aev_computer.neighborlist, functions_to_time_neighborlist)
 
     model[0].forward = time_func('total', model[0].forward)
     model[1].forward = time_func('forward', model[1].forward)
@@ -158,7 +160,7 @@ if __name__ == "__main__":
 
     print('=> more detail about benchmark')
     for k in timers:
-        if k.startswith('torchani.'):
+        if k not in ['forward', 'total']:
             print('{} - {:.2f}s'.format(k, timers[k]))
     print('Total AEV - {:.2f}s'.format(timers['total']))
     print('NN - {:.2f}s'.format(timers['forward']))
