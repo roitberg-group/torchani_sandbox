@@ -36,6 +36,7 @@ from . import utils
 from . import neurochem
 from . import models
 from . import units
+from . import modules
 from pkg_resources import get_distribution, DistributionNotFound
 import warnings
 from . import testing

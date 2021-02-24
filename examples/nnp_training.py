@@ -43,6 +43,7 @@ import pickle
 
 # helper function to convert energy unit from Hartree to kcal/mol
 from torchani.units import hartree2kcalmol
+from torchani.modules import atomic_networks
 
 # device to run the training
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -127,48 +128,12 @@ print('Self atomic energies: ', energy_shifter.self_energies)
 # When iterating the dataset, we will get a dict of name->property mapping
 #
 ###############################################################################
-# Now let's define atomic neural networks.
-aev_dim = aev_computer.aev_length
-
-H_network = torch.nn.Sequential(
-    torch.nn.Linear(aev_dim, 160),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(160, 128),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(128, 96),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(96, 1)
-)
-
-C_network = torch.nn.Sequential(
-    torch.nn.Linear(aev_dim, 144),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(144, 112),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(112, 96),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(96, 1)
-)
-
-N_network = torch.nn.Sequential(
-    torch.nn.Linear(aev_dim, 128),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(128, 112),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(112, 96),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(96, 1)
-)
-
-O_network = torch.nn.Sequential(
-    torch.nn.Linear(aev_dim, 128),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(128, 112),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(112, 96),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(96, 1)
-)
+# Now let's define atomic neural networks, we use convenience builders to 
+# make networks like the ANI-1x ones.
+H_network = atomic_networks.make_like_1x('H')
+C_network = atomic_networks.make_like_1x('C')
+N_network = atomic_networks.make_like_1x('N')
+O_network = atomic_networks.make_like_1x('O')
 
 nn = torchani.ANIModel([H_network, C_network, N_network, O_network])
 print(nn)
