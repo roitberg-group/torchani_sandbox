@@ -18,11 +18,13 @@ dyn = ase.md.verlet.VelocityVerlet(molecule, timestep=1 * ase.units.fs)
 
 dyn.run(1000)  # warm up
 
+
 def time_functions_in_model(model, function_names_list):
     # Wrap all the functions from "function_names_list" from the model
     # "model" with a timer
     for n in function_names_list:
         setattr(model, n, time_func(n, getattr(model, n)))
+
 
 def time_func(key, func):
 
@@ -33,6 +35,7 @@ def time_func(key, func):
         return ret
 
     return wrapper
+
 
 # enable timers
 functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
