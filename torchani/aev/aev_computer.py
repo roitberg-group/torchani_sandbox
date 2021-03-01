@@ -211,7 +211,7 @@ class AEVComputer(torch.nn.Module):
                     if you want periodic table indexing.
 
                 .. note:: The coordinates, and cell are in Angstrom.
-             
+
                 If you want to apply periodic boundary conditions, then the input
                 would be a tuple of two tensors (species, coordinates) and two keyword
                 arguments `cell=...` , and `pbc=...` where species and coordinates are
