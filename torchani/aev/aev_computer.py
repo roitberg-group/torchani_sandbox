@@ -1,11 +1,11 @@
-import torch
-
-from torch import Tensor
 import math
-from typing import Tuple, Optional, NamedTuple, List
 import sys
+from typing import Tuple, Optional, NamedTuple, List
 import warnings
 import importlib_metadata
+
+import torch
+from torch import Tensor
 
 from .cutoffs import CutoffCosine
 from .aev_terms import AngularTerms, RadialTerms
@@ -88,27 +88,26 @@ class AEVComputer(torch.nn.Module):
     use_cuda_extension: Final[bool]
 
     def __init__(self,
-                 Rcr,
-                 Rca,
-                 EtaR,
-                 ShfR,
-                 EtaA,
-                 Zeta,
-                 ShfA,
-                 ShfZ,
-                 num_species,
+                Rcr: float,
+                Rca: float,
+                EtaR: Tensor,
+                ShfR: Tensor,
+                EtaA: Tensor,
+                Zeta: Tensor,
+                ShfA: Tensor,
+                ShfZ: Tensor,
+                num_species: int,
                  use_cuda_extension=False,
                  cutoff_function=CutoffCosine,
                  neighborlist=FullPairwise):
         super().__init__()
         assert Rca <= Rcr, "Current implementation of AEVComputer assumes Rca <= Rcr"
-        self.num_species = num_species
-        self.num_species_pairs = num_species * (num_species + 1) // 2
-
         # cuda aev
         if use_cuda_extension:
             assert has_cuaev, "AEV cuda extension is not installed"
         self.use_cuda_extension = use_cuda_extension
+        self.num_species = num_species
+        self.num_species_pairs = num_species * (num_species + 1) // 2
 
         self.register_buffer('triu_index',
                              self.calculate_triu_index(num_species))
@@ -128,8 +127,7 @@ class AEVComputer(torch.nn.Module):
                                         cutoff_function=cutoff_function)
 
         # neighborlist uses radial cutoff only
-        self.neighborlist = neighborlist(
-            Rcr) if neighborlist is not None else None
+        self.neighborlist = neighborlist(Rcr) if neighborlist is not None else None
 
     @staticmethod
     def calculate_triu_index(num_species: int) -> Tensor:

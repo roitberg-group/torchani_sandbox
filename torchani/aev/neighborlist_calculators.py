@@ -80,7 +80,7 @@ class FullPairwise(torch.nn.Module):
 
     def _full_pairwise_pbc(self, species: Tensor, coordinates: Tensor,
                            cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
-        shifts = self.compute_shifts(cell, pbc)
+        shifts = self._compute_shifts(cell, pbc)
         padding_mask = (species == -1)
         coordinates = coordinates.detach().masked_fill(
             padding_mask.unsqueeze(-1), math.nan)
@@ -124,7 +124,7 @@ class FullPairwise(torch.nn.Module):
 
         return molecule_index + atom_index12, shifts
 
-    def compute_shifts(self, cell: Tensor, pbc: Tensor) -> Tensor:
+    def _compute_shifts(self, cell: Tensor, pbc: Tensor) -> Tensor:
         """Compute the shifts of unit cell along the given cell vectors to make it
         large enough to contain all pairs of neighbor atoms with PBC under
         consideration

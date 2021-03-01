@@ -1,17 +1,6 @@
 import torch
 from torch import Tensor
-import sys
 from .cutoffs import CutoffCosine
-
-if sys.version_info[:2] < (3, 7):
-
-    class FakeFinal:
-        def __getitem__(self, x):
-            return x
-
-    Final = FakeFinal()
-else:
-    from torch.jit import Final
 
 
 class RadialTerms(torch.nn.Module):
@@ -28,20 +17,17 @@ class RadialTerms(torch.nn.Module):
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
 
-    cutoff: Final[float]
-
     def __init__(self,
                  EtaR: Tensor,
                  ShfR: Tensor,
                  cutoff: float,
                  cutoff_function=CutoffCosine):
         super().__init__()
-        self.cutoff = cutoff
-
         # convert constant tensors to a ready-to-broadcast shape
         # shape convension (..., EtaR, ShfR)
         self.register_buffer('EtaR', EtaR.view(-1, 1))
         self.register_buffer('ShfR', ShfR.view(1, -1))
+        self.register_buffer('cutoff', torch.tensor(cutoff))
         self.cutoff_function = cutoff_function(cutoff)
 
     def sublength(self) -> int:
@@ -78,8 +64,6 @@ class AngularTerms(torch.nn.Module):
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
 
-    cutoff: Final[float]
-
     def __init__(self,
                  EtaA: Tensor,
                  Zeta: Tensor,
@@ -88,14 +72,13 @@ class AngularTerms(torch.nn.Module):
                  cutoff: float,
                  cutoff_function=CutoffCosine):
         super().__init__()
-        self.cutoff = cutoff
-
         # convert constant tensors to a ready-to-broadcast shape
         # shape convension (..., EtaA, Zeta, ShfA, ShfZ)
         self.register_buffer('EtaA', EtaA.view(-1, 1, 1, 1))
         self.register_buffer('Zeta', Zeta.view(1, -1, 1, 1))
         self.register_buffer('ShfA', ShfA.view(1, 1, -1, 1))
         self.register_buffer('ShfZ', ShfZ.view(1, 1, 1, -1))
+        self.register_buffer('cutoff', torch.tensor(cutoff))
         self.cutoff_function = cutoff_function(cutoff)
 
     def sublength(self) -> int:
