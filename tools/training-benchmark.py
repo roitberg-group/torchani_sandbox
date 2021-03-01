@@ -116,13 +116,12 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=0.000001)
     mse = torch.nn.MSELoss(reduction='none')
 
-
     # enable timers
     functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
                              'compute_aev', 'triple_by_molecule']
     functions_to_time_neighborlist = ['_full_pairwise', '_full_pairwise_pbc']
 
-    timers = {k : 0.0 for k in functions_to_time_aev + functions_to_time_neighborlist}
+    timers = {k: 0.0 for k in functions_to_time_aev + functions_to_time_neighborlist}
 
     time_functions_in_model(aev_computer, functions_to_time_aev)
     time_functions_in_model(aev_computer.neighborlist, functions_to_time_neighborlist)
