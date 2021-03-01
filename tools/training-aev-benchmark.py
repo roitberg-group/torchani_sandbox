@@ -224,19 +224,19 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--num_epochs',
                         help='epochs',
                         default=1, type=int)
-    parser = parser.parse_args()
+    args = parser.parse_args()
 
     print('=> loading dataset...')
-    if parser.pickle:
-        f = open(parser.dataset_path, 'rb')
+    if args.pickle:
+        f = open(args.dataset_path, 'rb')
         dataset_shuffled = pickle.load(f)
         f.close()
     else:
         shifter = torchani.EnergyShifter(None)
-        dataset = torchani.data.load(parser.dataset_path, additional_properties=('forces',)).subtract_self_energies(shifter).species_to_indices()
+        dataset = torchani.data.load(args.dataset_path, additional_properties=('forces',)).subtract_self_energies(shifter).species_to_indices()
         print('=> Caching shuffled dataset...')
-        dataset_shuffled = list(dataset.shuffle().collate(parser.batch_size))
-        f = open(f'{parser.dataset_path}.pickle', 'wb')
+        dataset_shuffled = list(dataset.shuffle().collate(args.batch_size))
+        f = open(f'{args.dataset_path}.pickle', 'wb')
         pickle.dump(dataset_shuffled, f)
         f.close()
 
@@ -252,17 +252,17 @@ if __name__ == "__main__":
     print("\n\n=> Test 1: USE cuda extension, Energy training")
     torch.cuda.empty_cache()
     gc.collect()
-    benchmark(parser, dataset_shuffled, use_cuda_extension=True, force_inference=False)
+    benchmark(args, dataset_shuffled, use_cuda_extension=True, force_inference=False)
     print("\n\n=> Test 2: NO cuda extension, Energy training")
     torch.cuda.empty_cache()
     gc.collect()
-    benchmark(parser, dataset_shuffled, use_cuda_extension=False, force_inference=False)
+    benchmark(args, dataset_shuffled, use_cuda_extension=False, force_inference=False)
 
     print("\n\n=> Test 3: USE cuda extension, Force and Energy inference")
     torch.cuda.empty_cache()
     gc.collect()
-    benchmark(parser, dataset_shuffled, use_cuda_extension=True, force_inference=True)
+    benchmark(args, dataset_shuffled, use_cuda_extension=True, force_inference=True)
     print("\n\n=> Test 4: NO cuda extension, Force and Energy inference")
     torch.cuda.empty_cache()
     gc.collect()
-    benchmark(parser, dataset_shuffled, use_cuda_extension=False, force_inference=True)
+    benchmark(args, dataset_shuffled, use_cuda_extension=False, force_inference=True)
