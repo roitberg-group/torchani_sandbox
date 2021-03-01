@@ -219,7 +219,7 @@ class AEVComputer(torch.nn.Module):
                     if you want periodic table indexing.
 
                 .. note:: The coordinates, and cell are in Angstrom.
-
+             
                 If you want to apply periodic boundary conditions, then the input
                 would be a tuple of two tensors (species, coordinates) and two keyword
                 arguments `cell=...` , and `pbc=...` where species and coordinates are
@@ -302,7 +302,7 @@ class AEVComputer(torch.nn.Module):
                              species_shape: List[int]) -> Tensor:
         num_molecules, num_atoms = species_shape
 
-        central_atom_index, pair_index12, sign12 = self.triple_by_molecule(
+        central_atom_index, pair_index12, sign12 = self._triple_by_molecule(
             atom_index12)
         species12_small = species12[:, pair_index12]
         vec12 = vec.index_select(0, pair_index12.view(-1)).view(
@@ -337,7 +337,7 @@ class AEVComputer(torch.nn.Module):
                                         self.radial_length())
         return radial_aev
 
-    def triple_by_molecule(
+    def _triple_by_molecule(
             self, atom_index12: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         """Input: indices for pairs of atoms that are close to each other.
         each pair only appear once, i.e. only one of the pairs (1, 2) and
@@ -370,7 +370,7 @@ class AEVComputer(torch.nn.Module):
             m, m, -1, device=ai1.device).unsqueeze(1).expand(-1, n, -1)
         mask = (torch.arange(intra_pair_indices.shape[2], device=ai1.device) < pair_sizes.unsqueeze(1)).flatten()
         sorted_local_index12 = intra_pair_indices.flatten(1, 2)[:, mask]
-        sorted_local_index12 += self.cumsum_from_zero(counts).index_select(
+        sorted_local_index12 += self._cumsum_from_zero(counts).index_select(
             0, pair_indices)
 
         # unsort result from last part
@@ -382,7 +382,7 @@ class AEVComputer(torch.nn.Module):
         return central_atom_index, local_index12 % n, sign12
 
     @staticmethod
-    def cumsum_from_zero(input_: Tensor) -> Tensor:
+    def _cumsum_from_zero(input_: Tensor) -> Tensor:
         cumsum = torch.zeros_like(input_)
         torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
         return cumsum

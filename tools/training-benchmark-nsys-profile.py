@@ -44,7 +44,7 @@ def enable_timers(model):
     # enable timers
     aev_computer = model[0]
     functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
-                             'compute_aev', 'triple_by_molecule']
+                             'compute_aev', '_triple_by_molecule']
 
     time_functions_in_model(aev_computer, functions_to_time_aev)
 

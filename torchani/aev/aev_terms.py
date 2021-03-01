@@ -15,6 +15,18 @@ else:
 
 
 class RadialTerms(torch.nn.Module):
+    """Compute the radial subAEV terms of the center atom given neighbors
+
+    This correspond to equation (3) in the `ANI paper`_. This function just
+    compute the terms. The sum in the equation is not computed.
+    The input tensor have shape (conformations, atoms, N), where ``N``
+    is the number of neighbor atoms within the cutoff radius and output
+    tensor should have shape
+    (conformations, atoms, ``self.radial_sublength()``)
+
+    .. _ANI paper:
+        http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
+    """
 
     cutoff: Final[float]
 
@@ -39,18 +51,6 @@ class RadialTerms(torch.nn.Module):
         return self.sublength() * num_species
 
     def forward(self, distances: Tensor) -> Tensor:
-        """Compute the radial subAEV terms of the center atom given neighbors
-
-        This correspond to equation (3) in the `ANI paper`_. This function just
-        compute the terms. The sum in the equation is not computed.
-        The input tensor have shape (conformations, atoms, N), where ``N``
-        is the number of neighbor atoms within the cutoff radius and output
-        tensor should have shape
-        (conformations, atoms, ``self.radial_sublength()``)
-
-        .. _ANI paper:
-            http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
-        """
         distances = distances.view(-1, 1, 1)
         fc = self.cutoff_function(distances)
         # Note that in the equation in the paper there is no 0.25
@@ -65,6 +65,18 @@ class RadialTerms(torch.nn.Module):
 
 
 class AngularTerms(torch.nn.Module):
+    """Compute the angular subAEV terms of the center atom given neighbor pairs.
+
+    This correspond to equation (4) in the `ANI paper`_. This function just
+    compute the terms. The sum in the equation is not computed.
+    The input tensor have shape (conformations, atoms, N), where N
+    is the number of neighbor atom pairs within the cutoff radius and
+    output tensor should have shape
+    (conformations, atoms, ``self.angular_sublength()``)
+
+    .. _ANI paper:
+        http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
+    """
 
     cutoff: Final[float]
 
@@ -94,18 +106,6 @@ class AngularTerms(torch.nn.Module):
         return self.sublength() * (num_species * (num_species + 1) // 2)
 
     def forward(self, vectors12: Tensor) -> Tensor:
-        """Compute the angular subAEV terms of the center atom given neighbor pairs.
-
-        This correspond to equation (4) in the `ANI paper`_. This function just
-        compute the terms. The sum in the equation is not computed.
-        The input tensor have shape (conformations, atoms, N), where N
-        is the number of neighbor atom pairs within the cutoff radius and
-        output tensor should have shape
-        (conformations, atoms, ``self.angular_sublength()``)
-
-        .. _ANI paper:
-            http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
-        """
         vectors12 = vectors12.view(2, -1, 3, 1, 1, 1, 1)
         distances12 = vectors12.norm(2, dim=-5)
         cos_angles = vectors12.prod(0).sum(1) / torch.clamp(
