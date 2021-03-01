@@ -118,7 +118,7 @@ if __name__ == "__main__":
 
     # enable timers
     functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
-                             'compute_aev', '_triple_by_molecule']
+                             '_compute_aev', '_triple_by_molecule']
     functions_to_time_neighborlist = ['_full_pairwise', '_full_pairwise_pbc']
 
     timers = {k: 0.0 for k in functions_to_time_aev + functions_to_time_neighborlist}

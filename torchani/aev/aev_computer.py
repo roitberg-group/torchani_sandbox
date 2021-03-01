@@ -36,7 +36,7 @@ class SpeciesAEV(NamedTuple):
     aevs: Tensor
 
 
-def compute_cuaev(
+def _compute_cuaev(
     species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor,
     constants: Tuple[float, Tensor, Tensor, float, Tensor, Tensor, Tensor,
                      Tensor, int]
@@ -53,7 +53,7 @@ def compute_cuaev(
 
 
 if not has_cuaev:
-    compute_cuaev = torch.jit.unused(compute_cuaev)
+    _compute_cuaev = torch.jit.unused(_compute_cuaev)
 
 
 class AEVComputer(torch.nn.Module):
@@ -252,18 +252,18 @@ class AEVComputer(torch.nn.Module):
         pbc = pbc if pbc is not None else self.default_pbc
 
         if self.use_cuda_extension:
-            aev = compute_cuaev(species, coordinates, cell, pbc,
+            aev = _compute_cuaev(species, coordinates, cell, pbc,
                                 self._constants())
             return SpeciesAEV(species, aev)
 
         atom_index12, shift_indices = self.neighborlist(
             species, coordinates, cell, pbc)
         shift_values = shift_indices.to(cell.dtype) @ cell
-        aev = self.compute_aev(species, coordinates, atom_index12,
+        aev = self._compute_aev(species, coordinates, atom_index12,
                                shift_values)
         return SpeciesAEV(species, aev)
 
-    def compute_aev(self, species: Tensor, coordinates: Tensor,
+    def _compute_aev(self, species: Tensor, coordinates: Tensor,
                     atom_index12: Tensor, shift_values: Tensor) -> Tensor:
 
         species12 = species.flatten()[atom_index12]
