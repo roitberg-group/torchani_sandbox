@@ -110,7 +110,7 @@ class AEVComputer(torch.nn.Module):
         self.num_species_pairs = num_species * (num_species + 1) // 2
 
         self.register_buffer('triu_index',
-                             self.calculate_triu_index(num_species))
+                             self._calculate_triu_index(num_species))
         self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
         self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool))
 
@@ -130,7 +130,7 @@ class AEVComputer(torch.nn.Module):
         self.neighborlist = neighborlist(Rcr) if neighborlist is not None else None
 
     @staticmethod
-    def calculate_triu_index(num_species: int) -> Tensor:
+    def _calculate_triu_index(num_species: int) -> Tensor:
         # helper method for initialization
         species1, species2 = torch.triu_indices(num_species,
                                                 num_species).unbind(0)
@@ -188,12 +188,6 @@ class AEVComputer(torch.nn.Module):
         angle_start = math.pi / (2 * angle_sections)
         ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) + angle_start)[:-1]
         return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
-
-    def _constants(self):
-        return self.radial_terms.cutoff, self.radial_terms.EtaR,\
-            self.radial_terms.ShfR, self.angular_terms.cutoff,\
-            self.angular_terms.ShfZ, self.angular_terms.EtaA,\
-            self.angular_terms.Zeta, self.angular_terms.ShfA, self.num_species
 
     def forward(self,
                 input_: Tuple[Tensor, Tensor],
@@ -378,6 +372,12 @@ class AEVComputer(torch.nn.Module):
         n = atom_index12.shape[1]
         sign12 = ((local_index12 < n).to(torch.int8) * 2) - 1
         return central_atom_index, local_index12 % n, sign12
+
+    def _constants(self):
+        return self.radial_terms.cutoff, self.radial_terms.EtaR,\
+            self.radial_terms.ShfR, self.angular_terms.cutoff,\
+            self.angular_terms.ShfZ, self.angular_terms.EtaA,\
+            self.angular_terms.Zeta, self.angular_terms.ShfA, self.num_species
 
     @staticmethod
     def _cumsum_from_zero(input_: Tensor) -> Tensor:
