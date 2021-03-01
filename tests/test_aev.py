@@ -127,7 +127,7 @@ class TestAEV(_TestAEVBase):
 
     def testBoundingCell(self):
         # AEV should not output NaN even when coordinates are superimposed
-        datafile = os.path.join(path, f'test_data/ANI1_subset/10')
+        datafile = os.path.join(path, 'test_data/ANI1_subset/10')
         with open(datafile, 'rb') as f:
             coordinates, species, _, _, _, _ = pickle.load(f)
             coordinates = torch.from_numpy(coordinates)
