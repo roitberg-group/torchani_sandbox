@@ -323,37 +323,18 @@ class TransformableIterable:
 
         return f
 
-    def split_for_ani_ensemble_training(self, perc_validation=0.1, k=8):
-        # by default the function generates 10% validation set and 8 training sets, 
-        # each of which leaves 1/8 of the total training set out, this means each 
-        # network is trained on 0.9 * (1 - 1/8) = 0.7875 of the data, 
-        # and all networks are validated on the *same* 10% of the data
-        validation, training = self.split(perc_validation, None)
-
-        # the last division percentage is None to ensure all the dataset gets used up
-        nums = [1/k] * (k - 1)  + [None]
-        split_training = training.split(*nums)
-        training_sets = []
-        for s in split_training :
-            # this creates a view of the list composed of all splits except split s
-            # it does not copy any of the tensors so the memory doesn't blow up, 
-            # but the tensors are copied if collated, so be careful when collating this
-            kth_training_set = [item for split in split_training if split is not s for item in split]
-            training_sets.append(TransformableIterable(kth_training_set, self.transformations + ('split_for_ani_ensemble_training',)))
-
-        return training_sets, validation
-
-
     def split_for_cross_validation(self, k=8):
-        # split data set into k sets, and then arrange k training sets  and k
+        # split data set into k folds (subsets), and then arrange k training sets  and k
         # associated validation sets, in each case leaving the kth split out as
         # a validation set. This is the same scheme used in k-fold cross validation
-        nums = [1/k] * (k - 1)  + [None]
+        nums = [1 / k] * (k - 1) + [None]
         split_data = self.split(*nums)
         training_sets = []
         validation_sets = []
         for s in split_data:
-            # see split_for_ani_ensemble_training for this comprehension
+            # this creates a view of the list composed of all splits except split s
+            # it does not copy any of the tensors so the memory doesn't blow up,
+            # but the tensors are copied if collated, so be careful when collating this
             kth_training_set = [item for split in split_data if split is not s for item in split]
             training_sets.append(TransformableIterable(kth_training_set, self.transformations + ('split_for_cross_validation',)))
             validation_sets.append(s)

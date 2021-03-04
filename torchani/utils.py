@@ -1,11 +1,37 @@
-import torch
-from torch import Tensor
-import torch.utils.data
 import math
+import torch
+import gc
+import pickle
+from pathlib import Path
 from collections import defaultdict
 from typing import Tuple, NamedTuple, Optional
-from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
+
+from torch import Tensor
+import torch.utils.data
 from .nn import SpeciesEnergies
+from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
+
+
+def pickle_cross_validation_datasets(training_sets, validation_sets, self_energies, path='./datasets', batch_size=2560):
+    # path is the path to store all pickled datasets, by default it is ./datasets
+
+    if isinstance(path, str):
+        path = Path(path).resolve()
+
+    assert isinstance(path, Path)
+    assert isinstance(self_energies, Tensor)
+
+    if not path.is_dir():
+        path.mkdir()
+
+    for j, (t, v) in enumerate(zip(training_sets, validation_sets)):
+        tr = t.collate(batch_size).cache()
+        vl = v.collate(batch_size).cache()
+        with open(path.joinpath(f'dataset_{j}.pkl'), 'wb') as f:
+            pickle.dump({'training': tr, 'validation': vl, 'self_energies': self_energies.cpu()}, f)
+        del tr
+        del vl
+        gc.collect()
 
 
 def stack_with_padding(properties, padding):
