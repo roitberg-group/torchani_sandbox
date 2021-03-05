@@ -405,6 +405,7 @@ def load(path, additional_properties=()):
 
     return TransformableIterable(IterableAdapter(lambda: conformations()))
 
+
 def load_pickled_dataset(path):
     print(f'Unpickling preprocessed dataset found in {path}')
     with open(path, 'rb') as f:
@@ -414,6 +415,7 @@ def load_pickled_dataset(path):
     self_energies = dataset['self_energies']
     return training, validation, self_energies
 
+
 def pickle_cross_validation_datasets(training_sets, validation_sets, self_energies, directory='./datasets', suffix='dataset', batch_size=2560):
     # path is the path to store all pickled datasets, by default it is ./datasets
 
@@ -421,7 +423,7 @@ def pickle_cross_validation_datasets(training_sets, validation_sets, self_energi
         path = Path(directory).resolve()
     else:
         assert isinstance(directory, Path)
-        path = directory/sdf
+        path = directory
     assert isinstance(self_energies, Tensor)
 
     if not path.is_dir():
@@ -436,5 +438,6 @@ def pickle_cross_validation_datasets(training_sets, validation_sets, self_energi
         del tr
         del vl
         gc.collect()
+
 
 __all__ = ['load', 'collate_fn', 'load_pickled_dataset', 'pickle_cross_validation_datasets']
