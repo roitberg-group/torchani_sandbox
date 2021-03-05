@@ -106,6 +106,10 @@ import random
 from collections import Counter
 import numpy
 import gc
+import pickle
+from pathlib import Path
+from torch import Tensor
+from tqdm import tqdm
 
 PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None  # type: ignore
 if PKBAR_INSTALLED:
@@ -363,6 +367,8 @@ class TransformableIterable:
 
 
 def load(path, additional_properties=()):
+    if isinstance(path, Path):
+        path = path.as_posix()
     properties = PROPERTIES + additional_properties
 
     def h5_files(path):
@@ -399,5 +405,36 @@ def load(path, additional_properties=()):
 
     return TransformableIterable(IterableAdapter(lambda: conformations()))
 
+def load_pickled_dataset(path):
+    print(f'Unpickling preprocessed dataset found in {path}')
+    with open(path, 'rb') as f:
+        dataset = pickle.load(f)
+    training = dataset['training']
+    validation = dataset['validation']
+    self_energies = dataset['self_energies']
+    return training, validation, self_energies
 
-__all__ = ['load', 'collate_fn']
+def pickle_cross_validation_datasets(training_sets, validation_sets, self_energies, directory='./datasets', suffix='dataset', batch_size=2560):
+    # path is the path to store all pickled datasets, by default it is ./datasets
+
+    if isinstance(directory, str):
+        path = Path(directory).resolve()
+    else:
+        assert isinstance(directory, Path)
+        path = directory/sdf
+    assert isinstance(self_energies, Tensor)
+
+    if not path.is_dir():
+        path.mkdir()
+
+    for j, (t, v) in tqdm(enumerate(zip(training_sets, validation_sets)), total=len(training_sets)):
+        print(f"Pickling dataset {j} ...")
+        tr = t.collate(batch_size).cache()
+        vl = v.collate(batch_size).cache()
+        with open(path.joinpath(f'{suffix}_{j}.pkl'), 'wb') as f:
+            pickle.dump({'training': tr, 'validation': vl, 'self_energies': self_energies.cpu()}, f)
+        del tr
+        del vl
+        gc.collect()
+
+__all__ = ['load', 'collate_fn', 'load_pickled_dataset', 'pickle_cross_validation_datasets']
