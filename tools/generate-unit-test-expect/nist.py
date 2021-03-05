@@ -22,7 +22,7 @@ with open(os.path.join(path, 'nist-dataset/result.json')) as f:
         for atype, x, y, z in atoms:
             species.append(atype)
             coordinates.append([x, y, z])
-        pickleobj = neurochem((numpy.array(coordinates), species))
+        pickleobj = neurochem(numpy.array(coordinates), species)
         pickle_objects.append(pickleobj)
         mol_count += 1
 
