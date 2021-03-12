@@ -3,7 +3,6 @@ name: cuda
 on:
   pull_request:
     paths:
-      - 'ci/trigger.test'
       - 'ci/trigger.testall'
   push:
     branches:
