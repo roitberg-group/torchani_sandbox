@@ -2,7 +2,7 @@ name: unittests
 
 on:
   repository_dispatch:
-    types: [unittests-command]
+    types: [work-command]
 
 jobs:
   unittests:
