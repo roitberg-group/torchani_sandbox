@@ -1,8 +1,10 @@
 name: flake8
 
 on:
-  repository_dispatch:
-    types: [work-command]
+  pull_request:
+  push:
+    branches:
+      - master
 
 jobs:
   flake8:
