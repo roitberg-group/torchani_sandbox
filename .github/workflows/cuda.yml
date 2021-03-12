@@ -3,7 +3,11 @@ name: cuda
 on:
   pull_request:
     paths:
-      - 'ci/trigger.testall'
+      - 'setup.py'
+      - 'torchani/cuaev/**'
+      - 'torchani/aev.py'
+      - 'ci/**'
+      - 'test/test_cuaev.py'
   push:
     branches:
       - master
@@ -17,7 +21,7 @@ on:
 jobs:
   cuda:
 
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       max-parallel: 4
       matrix:
