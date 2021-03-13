@@ -1,4 +1,4 @@
-name: Dispatcher
+name: slash_comment
 
 on:
   issue_comment:
