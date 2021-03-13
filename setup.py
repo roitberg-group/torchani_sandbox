@@ -16,7 +16,6 @@ if FAST_BUILD_CUAEV:
 if not BUILD_CUAEV_ALL_SM and not FAST_BUILD_CUAEV:
     log.warn("Will not install cuaev")  # type: ignore
 
-
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
