@@ -29,12 +29,7 @@ jobs:
     - name: Install TorchANI
       run: python setup.py install
     - name: Download data files
-      run: |
-        if [ -d download ]; then
-          echo Already Downloaded
-        else
-          ./download.sh
-        fi
+      run: ./download.sh
     # build docs
     - name: Build documents
       run: sphinx-build docs build

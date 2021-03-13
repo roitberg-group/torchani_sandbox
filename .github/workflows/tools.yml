@@ -32,12 +32,7 @@ jobs:
     - name: Install TorchANI
       run: python setup.py install
     - name: Download data files
-      run: |
-        if [ -d download ]; then
-          echo Already Downloaded
-        else
-          ./download.sh
-        fi
+      run: ./download.sh
     - name: Inference benchmark
       run: python tools/inference-benchmark.py --tqdm dataset/xyz_files/CH4-5.xyz
     - name: COMP6 Benchmark
