@@ -1,10 +1,8 @@
 name: Cancel
 
 on:
-  pull_request:
-  push:
-    branches:
-      - master
+  repository_dispatch:
+    types: [cancel-command]
 
 jobs:
   cancel:
