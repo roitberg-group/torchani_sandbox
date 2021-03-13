@@ -24,7 +24,12 @@ jobs:
     - name: Install TorchANI
       run: python setup.py install
     - name: Download data files
-      run: ./download.sh
+      run: |
+        if [ -d download ]; then
+          echo Already Downloaded
+        else
+          ./download.sh
+        fi
     # double check that this is indeed run under a release
     - name: Fail build on non-release commits
       run: git describe --exact-match --tags HEAD

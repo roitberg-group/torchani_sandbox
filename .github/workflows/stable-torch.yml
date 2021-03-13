@@ -30,6 +30,11 @@ jobs:
     - name: Install TorchANI
       run: python setup.py install
     - name: Download data files
-      run: ./download.sh
+      run: |
+        if [ -d download ]; then
+          echo Already Downloaded
+        else
+          ./download.sh
+        fi
     - name: Run tests
       run: pytest
