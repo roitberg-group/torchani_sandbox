@@ -94,7 +94,7 @@ def cuda_extension(build_all=False):
     return CUDAExtension(
         name='torchani.cuaev',
         pkg='torchani.cuaev',
-        sources=["torchani/cuaev/cuaev.cpp", "torchani/cuaev/aev.cu"],
+        sources=["torchani/cuaev/aev.cu"],
         include_dirs=include_dirs,
         extra_compile_args={'cxx': ['-std=c++14'], 'nvcc': nvcc_args})
 
