@@ -159,24 +159,6 @@ __global__ void pairwiseDistanceSingleMolecule(
     __syncthreads();
     for (int jj = threadIdx.x; jj < ATOM_J_PER_TILE; jj += blockDim.x) {
       int j = jj + ATOM_J_PER_TILE * tileidx;
-<<<<<<< HEAD
-      if (j >= max_natoms_per_mol)
-        return;
-      float3 delta = make_float3(s_coord_j[jj].x - coord_i.x, s_coord_j[jj].y - coord_i.y, s_coord_j[jj].z - coord_i.z);
-      SpeciesT type_j = species_t[mol_idx][j];
-      DataT Rsq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
-      if (type_i != -1 && type_j != -1 && i != j) {
-        DataT Rij = sqrt(Rsq);
-        if (Rij <= Rcr) {
-          int pidx = atomicAdd(&s_pcounter_i[ii], 1);
-          PairDist d;
-          d.Rij = Rij;
-          d.midx = mol_idx;
-          d.i = i;
-          d.j = j;
-          d_Rij[mol_idx * natom_pairs + i * (max_natoms_per_mol - 1) + pidx] = d;
-          printf("i %d, j %d, pidx %d, Rij %f\n", i, j, pidx, Rij);
-=======
       if (j < max_natoms_per_mol) {
         float3 delta =
             make_float3(s_coord_j[jj].x - coord_i.x, s_coord_j[jj].y - coord_i.y, s_coord_j[jj].z - coord_i.z);
@@ -194,7 +176,6 @@ __global__ void pairwiseDistanceSingleMolecule(
             d_Rij[mol_idx * natom_pairs + i * (max_natoms_per_mol - 1) + pidx] = d;
             // printf("i %d, j %d, pidx %d, Rij %f\n", i, j, pidx, Rij);
           }
->>>>>>> 65c5544... singleMol neighborlist remove thrust::fill, replace deviceSelcet with cutoffSelect
         }
       }
     }
