@@ -9,7 +9,7 @@ from torch import Tensor
 
 from .cutoffs import CutoffCosine
 from .aev_terms import AngularTerms, RadialTerms
-from .neighborlist_calculators import FullPairwise
+from .neighbors import FullPairwise
 
 has_cuaev = 'torchani.cuaev' in importlib_metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
