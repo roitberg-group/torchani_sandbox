@@ -97,9 +97,9 @@ class AEVComputer(torch.nn.Module):
                 ShfA: Tensor,
                 ShfZ: Tensor,
                 num_species: int,
-                 use_cuda_extension=False,
-                 cutoff_function=CutoffCosine,
-                 neighborlist=FullPairwise):
+                use_cuda_extension=False,
+                cutoff_function=CutoffCosine,
+                neighborlist=FullPairwise):
         super().__init__()
         assert Rca <= Rcr, "Current implementation of AEVComputer assumes Rca <= Rcr"
         # cuda aev
