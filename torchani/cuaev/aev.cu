@@ -298,11 +298,14 @@ __global__ void cuAngularAEVs(
   IndexT nShfA = ShfA_t.size(0);
   IndexT nShfZ = ShfZ_t.size(0);
 
-  PairDist d = d_centralAtom[cIdx];
+  // PairDist d = d_centralAtom[cIdx];
   int start_idx = d_centerAtomStartIdx[cIdx];
   int jnum = d_nPairsPerCenterAtom[cIdx];
+  PairDist d = d_Rij[start_idx];
 
   // center atom
+  // int i = d.i;
+  // int mol_idx = d.midx;
   int i = d.i;
   int mol_idx = d.midx;
 
@@ -462,11 +465,14 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
   IndexT nShfA = ShfA_t.size(0);
   IndexT nShfZ = ShfZ_t.size(0);
 
-  PairDist d = d_centralAtom[cIdx];
+  // PairDist d = d_centralAtom[cIdx];
   int start_idx = d_centerAtomStartIdx[cIdx];
   int jnum = d_nPairsPerCenterAtom[cIdx];
+  PairDist d = d_Rij[start_idx];
 
   // center atom
+  // int i = d.i;
+  // int mol_idx = d.midx;
   int i = d.i;
   int mol_idx = d.midx;
 
@@ -770,16 +776,17 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
 }
 
 template <int ATOM_I_PER_BLOCK>
-__global__ void cutoffSelect(
+__global__ void cutoffSelect1(
     const PairDist* __restrict__ d_in,
     PairDist* __restrict__ d_out,
+    PairDist* __restrict__ new_d_out,
     const int* __restrict__ nums_per_row,
     const int* __restrict__ startidx_per_row,
     float new_cutoff,
     int* __restrict__ new_nums_per_row,
     int num_rows,
     int max_natoms_per_mol) {
-  __shared__ int s_pcounter_i[ATOM_I_PER_BLOCK];
+  __shared__ int s_new_pcounter_i[ATOM_I_PER_BLOCK];
   __shared__ int s_num_max;
   int i = blockIdx.x * blockDim.y + threadIdx.y;
   int num_i = nums_per_row[i];
@@ -793,7 +800,7 @@ __global__ void cutoffSelect(
     return;
 
   if (idx < ATOM_I_PER_BLOCK) {
-    s_pcounter_i[idx] = 0;
+    s_new_pcounter_i[idx] = 0;
     int ii = blockIdx.x * blockDim.y + idx;
     int num_max = ii < num_rows ? nums_per_row[ii] : 0;
 
@@ -809,6 +816,56 @@ __global__ void cutoffSelect(
   for (int jj = threadIdx.x; jj < s_num_max && jj < num_i; jj += blockDim.x) {
     PairDist d = d_in[natom_pairs * mol_idx + i * (max_natoms_per_mol - 1) + jj];
     d_out[start_i + jj] = d;
+    if (d.Rij <= new_cutoff) {
+      int pidx = atomicAdd(&s_new_pcounter_i[ii], 1);
+      new_d_out[start_i + pidx] = d;
+    }
+  }
+
+  if (threadIdx.x == 0 && i < num_rows) {
+    // printf("i %d, pidx %d\n", i, s_pcounter_i[ii]);
+    new_nums_per_row[i] = s_new_pcounter_i[ii];
+  }
+}
+
+template <int ATOM_I_PER_BLOCK>
+__global__ void cutoffSelect2(
+    const PairDist* __restrict__ d_in,
+    PairDist* __restrict__ d_out,
+    const int* __restrict__ nums_per_row,
+    const int* __restrict__ startidx_per_row_out,
+    const int* __restrict__ startidx_per_row_in,
+    int num_rows,
+    int max_natoms_per_mol) {
+  __shared__ int s_num_max;
+  int i = blockIdx.x * blockDim.y + threadIdx.y;
+  int num_i = nums_per_row[i];
+  int start_i_out = startidx_per_row_out[i];
+  int start_i_in = startidx_per_row_in[i];
+  int ii = threadIdx.y;
+  int idx = blockDim.x * threadIdx.y + threadIdx.x;
+  constexpr int mol_idx = 0;
+  int natom_pairs = max_natoms_per_mol * (max_natoms_per_mol - 1);
+
+  if (i >= num_rows)
+    return;
+
+  if (idx < ATOM_I_PER_BLOCK) {
+    int ii = blockIdx.x * blockDim.y + idx;
+    int num_max = ii < num_rows ? nums_per_row[ii] : 0;
+
+    for (int offset = 16; offset > 0; offset /= 2) {
+      num_max = max(num_max, __shfl_down_sync(0xFFFFFFFF, num_max, offset));
+    }
+    if (idx == 0) {
+      s_num_max = num_max;
+    }
+  }
+  __syncthreads();
+
+  for (int jj = threadIdx.x; jj < s_num_max && jj < num_i; jj += blockDim.x) {
+    PairDist d = d_in[start_i_in + jj];
+    d_out[start_i_out + jj] = d;
   }
 }
 
@@ -949,9 +1006,16 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
   int nRadialRij;
   Tensor tensor_angularRij;
   PairDist* d_angularRij;
+  Tensor tensor_tmp_angularRij;
+  PairDist* d_tmp_angularRij;
+  Tensor angularNumPairsPerAtom_t;
+  int* angularNumPairsPerAtom_p;
+  Tensor angularPairStartIdx_t;
+  int* angularPairStartIdx_p;
   int nAngularRij;
   auto buffer_count = allocator.allocate(sizeof(int));
   int* d_count_out = (int*)buffer_count.get();
+  int ncenter_atoms;
 
   if (n_molecules == 1) {
     // radial_num_per_atom ranges from 10 - 60
@@ -981,25 +1045,46 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
     tensor_radialRij = torch::empty(sizeof(PairDist) * nRadialRij, d_options);
     d_radialRij = (PairDist*)tensor_radialRij.data_ptr();
 
-    tensor_angularRij = torch::empty(sizeof(PairDist) * nRadialRij, d_options);
-    d_angularRij = (PairDist*)tensor_angularRij.data_ptr();
+    tensor_tmp_angularRij = torch::empty(sizeof(PairDist) * nRadialRij, d_options);
+    d_tmp_angularRij = (PairDist*)tensor_tmp_angularRij.data_ptr();
 
-    Tensor angularNumPairsPerAtom_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
-    int* angularNumPairsPerAtom_p = (int*)angularNumPairsPerAtom_t.data_ptr();
+    angularNumPairsPerAtom_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
+    angularNumPairsPerAtom_p = (int*)angularNumPairsPerAtom_t.data_ptr();
 
     {
       int ATOM_J_PER_TILE = 16;
       dim3 block(ATOM_J_PER_TILE, ATOM_I_PER_BLOCK, 1);
       int blocks = (n_molecules * max_natoms_per_mol + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
-      cutoffSelect<ATOM_I_PER_BLOCK><<<blocks, block>>>(
+      cutoffSelect1<ATOM_I_PER_BLOCK><<<blocks, block>>>(
           d_Rij,
           d_radialRij,
+          d_tmp_angularRij,
           radialNumPairsPerAtom_p,
           radialPairStartIdx_p,
           Rca,
           angularNumPairsPerAtom_p,
           n_molecules * max_natoms_per_mol,
           max_natoms_per_mol);
+
+      angularPairStartIdx_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
+      angularPairStartIdx_p = (int*)angularPairStartIdx_t.data_ptr();
+      cubScan(angularNumPairsPerAtom_p, angularPairStartIdx_p, n_molecules * max_natoms_per_mol, stream);
+      nAngularRij =
+          angularPairStartIdx_t[totalatoms - 1].item<int>() + angularNumPairsPerAtom_t[totalatoms - 1].item<int>();
+      printf("nAngularRij %d\n", nAngularRij);
+
+      tensor_angularRij = torch::empty(sizeof(PairDist) * nRadialRij, d_options);
+      d_angularRij = (PairDist*)tensor_angularRij.data_ptr();
+
+      cutoffSelect2<ATOM_I_PER_BLOCK><<<blocks, block>>>(
+          d_tmp_angularRij,
+          d_angularRij,
+          angularNumPairsPerAtom_p,
+          angularPairStartIdx_p,
+          radialPairStartIdx_p,
+          n_molecules * max_natoms_per_mol,
+          max_natoms_per_mol);
+      ncenter_atoms = n_molecules * max_natoms_per_mol;
     }
 
   } else {
@@ -1049,34 +1134,38 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
       aev_params.radial_sublength,
       nRadialRij);
 
-  // reuse buffer allocated for all Rij
-  // d_angularRij will store all the Rij required in Angular AEV computation
-  tensor_angularRij = torch::empty(sizeof(PairDist) * nRadialRij, d_options);
-  d_angularRij = (PairDist*)tensor_angularRij.data_ptr();
+  if (n_molecules > 1) {
+    // reuse buffer allocated for all Rij
+    // d_angularRij will store all the Rij required in Angular AEV computation
+    tensor_angularRij = torch::empty(sizeof(PairDist) * nRadialRij, d_options);
+    d_angularRij = (PairDist*)tensor_angularRij.data_ptr();
 
-  // Extract Rijs that is needed for AngularAEV comptuation i.e. all the Rij
-  // <= Rca
-  nAngularRij = cubDeviceSelect(
-      d_radialRij,
-      d_angularRij,
-      nRadialRij,
-      d_count_out,
-      [=] __device__(const PairDist d) { return d.Rij <= Rca; },
-      stream);
-
+    // Extract Rijs that is needed for AngularAEV comptuation i.e. all the Rij
+    // <= Rca
+    nAngularRij = cubDeviceSelect(
+        d_radialRij,
+        d_angularRij,
+        nRadialRij,
+        d_count_out,
+        [=] __device__(const PairDist d) { return d.Rij <= Rca; },
+        stream);
+  }
+  // TODO remove this
   Tensor tensor_centralAtom = torch::empty(sizeof(PairDist) * nAngularRij, d_options);
   PairDist* d_centralAtom = (PairDist*)tensor_centralAtom.data_ptr();
 
-  Tensor tensor_numPairsPerCenterAtom = torch::empty(sizeof(int) * nAngularRij, d_options);
-  int* d_numPairsPerCenterAtom = (int*)tensor_numPairsPerCenterAtom.data_ptr();
+  if (n_molecules > 1) {
+    angularNumPairsPerAtom_t = torch::empty(sizeof(int) * nAngularRij, d_options);
+    angularNumPairsPerAtom_p = (int*)angularNumPairsPerAtom_t.data_ptr();
 
-  // group by center atom
-  int ncenter_atoms = cubEncode(d_angularRij, d_centralAtom, d_numPairsPerCenterAtom, nAngularRij, d_count_out, stream);
+    // group by center atom
+    ncenter_atoms = cubEncode(d_angularRij, d_centralAtom, angularNumPairsPerAtom_p, nAngularRij, d_count_out, stream);
 
-  Tensor tensor_centerAtomStartIdx = torch::empty(sizeof(int) * ncenter_atoms, d_options);
-  int* d_centerAtomStartIdx = (int*)tensor_centerAtomStartIdx.data_ptr();
+    angularPairStartIdx_t = torch::empty(sizeof(int) * ncenter_atoms, d_options);
+    angularPairStartIdx_p = (int*)angularPairStartIdx_t.data_ptr();
 
-  cubScan(d_numPairsPerCenterAtom, d_centerAtomStartIdx, ncenter_atoms, stream);
+    cubScan(angularNumPairsPerAtom_p, angularPairStartIdx_p, ncenter_atoms, stream);
+  }
 
   {
     const int nthreads_per_catom = 32;
@@ -1091,7 +1180,7 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
       return (sm_aev + sxyz + sRij + sfc + sj) * ncatom_per_tpb;
     };
 
-    int maxNbrsPerCenterAtom = cubMax(d_numPairsPerCenterAtom, ncenter_atoms, d_count_out, stream);
+    int maxNbrsPerCenterAtom = cubMax(angularNumPairsPerAtom_p, ncenter_atoms, d_count_out, stream);
     int maxnbrs_per_atom_aligned = align<4>(maxNbrsPerCenterAtom);
     int smem_size_aligned = smem_size(maxnbrs_per_atom_aligned, block_size / nthreads_per_catom);
     int angular_length_aligned = align<4>(aev_params.angular_length);
@@ -1106,8 +1195,8 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
         aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
         d_angularRij,
         d_centralAtom,
-        d_numPairsPerCenterAtom,
-        d_centerAtomStartIdx,
+        angularNumPairsPerAtom_p,
+        angularPairStartIdx_p,
         aev_params.Rca,
         aev_params.angular_length,
         aev_params.angular_sublength,
@@ -1125,8 +1214,8 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
         nRadialRij,
         nAngularRij,
         tensor_centralAtom,
-        tensor_numPairsPerCenterAtom,
-        tensor_centerAtomStartIdx,
+        angularNumPairsPerAtom_t,
+        angularPairStartIdx_t,
         maxnbrs_per_atom_aligned,
         angular_length_aligned,
         ncenter_atoms,
