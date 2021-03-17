@@ -26,6 +26,18 @@ constexpr int csubaev_offsets(int i, int j, int n) {
   return starting + offset;
 }
 
+// convert pair index to reversed j index
+// e.g. convert following indices
+// [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14]
+// to j:
+// [ 1,  2,  2,  3,  3,  3,  4,  4,  4,  4,  5,  5,  5,  5,  5]
+// then k will be:
+// [ 0,  0,  1,  0,  1,  2,  0,  1,  2,  3,  0,  1,  2,  3,  4]
+constexpr int pairidx_to_j(int n) {
+  int j = ceil((sqrt(8 * (n + 1) + 1.f) - 1) / 2.f); // x (x + 1) / 2 = n --> x = (-b + sqrt(1 + 8n)) / 2
+  return j;
+}
+
 struct alignas(4 * sizeof(int)) PairDist {
   float Rij;
   int midx; // TODO remove midx
@@ -260,37 +272,29 @@ __global__ void cuAngularAEVs(
     int ncentral_atoms) {
   extern __shared__ DataT smem[];
 
-  constexpr int threads_per_catom = TILEX * TILEY;
-  static_assert(threads_per_catom == C10_WARP_SIZE);
-  int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
-  int cIdx = gIdx / threads_per_catom; // central atom id
+  int cIdx = blockIdx.x; // central atom id
+  int tIdx = threadIdx.y * blockDim.x + threadIdx.x; // local thread idx
+  float3* pos_t_3 = reinterpret_cast<float3*>(&pos_t[0][0][0]);
+  const int max_natoms_per_mol = pos_t.size(1);
 
   if (cIdx >= ncentral_atoms)
     return;
 
-  int groupIdx = threadIdx.x / threads_per_catom;
-  int laneIdx = threadIdx.x % threads_per_catom;
-  int ncatom_per_tpb = blockDim.x / threads_per_catom;
+  int laneIdx = threadIdx.x;
 
-  DataT* saev = &smem[groupIdx * angular_length_aligned];
+  DataT* saev = &smem[0];
 
-  int offset = ncatom_per_tpb * angular_length_aligned;
-  DataT* sdx = &smem[offset + groupIdx * maxnbrs_per_atom_aligned];
+  int offset = angular_length_aligned;
+  float3* svec = reinterpret_cast<float3*>(&smem[offset]);
 
-  offset += ncatom_per_tpb * maxnbrs_per_atom_aligned;
-  DataT* sdy = &smem[offset + groupIdx * maxnbrs_per_atom_aligned];
+  offset += 3 * maxnbrs_per_atom_aligned;
+  DataT* sdist = &smem[offset];
 
-  offset += ncatom_per_tpb * maxnbrs_per_atom_aligned;
-  DataT* sdz = &smem[offset + groupIdx * maxnbrs_per_atom_aligned];
+  offset += maxnbrs_per_atom_aligned;
+  DataT* sfc = &smem[offset];
 
-  offset += ncatom_per_tpb * maxnbrs_per_atom_aligned;
-  DataT* sdist = &smem[offset + groupIdx * maxnbrs_per_atom_aligned];
-
-  offset += ncatom_per_tpb * maxnbrs_per_atom_aligned;
-  DataT* sfc = &smem[offset + groupIdx * maxnbrs_per_atom_aligned];
-
-  offset += ncatom_per_tpb * maxnbrs_per_atom_aligned;
-  int* stype = (int*)&smem[offset + groupIdx * maxnbrs_per_atom_aligned];
+  offset += maxnbrs_per_atom_aligned;
+  int* stype = (int*)&smem[offset];
 
   DataT EtaA = EtaA_t[0];
   DataT Zeta = Zeta_t[0];
@@ -298,90 +302,76 @@ __global__ void cuAngularAEVs(
   IndexT nShfA = ShfA_t.size(0);
   IndexT nShfZ = ShfZ_t.size(0);
 
-  // PairDist d = d_centralAtom[cIdx];
   int start_idx = d_centerAtomStartIdx[cIdx];
   int jnum = d_nPairsPerCenterAtom[cIdx];
+  int totalpairs = jnum * (jnum - 1) / 2;
   PairDist d = d_Rij[start_idx];
 
   // center atom
-  // int i = d.i;
-  // int mol_idx = d.midx;
   int i = d.i;
   int mol_idx = d.midx;
 
-  for (int iaev = laneIdx; iaev < angular_length; iaev += threads_per_catom) {
+  for (int iaev = tIdx; iaev < angular_length; iaev += blockDim.x * blockDim.y) {
     saev[iaev] = 0;
   }
 
-  DataT xi = pos_t[mol_idx][i][0];
-  DataT yi = pos_t[mol_idx][i][1];
-  DataT zi = pos_t[mol_idx][i][2];
+  float3 coord_i = pos_t_3[mol_idx * max_natoms_per_mol + i];
 
-  for (int jj = laneIdx; jj < jnum; jj += threads_per_catom) {
+  for (int jj = tIdx; jj < jnum; jj += blockDim.x * blockDim.y) {
     PairDist dij = d_Rij[start_idx + jj];
     int j = dij.j;
     DataT Rij = dij.Rij;
     SpeciesT type_j = species_t[mol_idx][j];
-    sdx[jj] = pos_t[mol_idx][j][0] - xi;
-    sdy[jj] = pos_t[mol_idx][j][1] - yi;
-    sdz[jj] = pos_t[mol_idx][j][2] - zi;
+    float3 coord_j = pos_t_3[mol_idx * max_natoms_per_mol + j];
+    svec[jj] = make_float3(coord_j.x - coord_i.x, coord_j.y - coord_i.y, coord_j.z - coord_i.z);
     stype[jj] = type_j;
     sdist[jj] = Rij;
     DataT fc_ij = 0.5 * cos(PI * Rij / Rca) + 0.5;
     sfc[jj] = fc_ij;
   }
+  __syncthreads();
 
   short2 tile = make_short2(laneIdx % TILEX, laneIdx / TILEX);
-  // must sync if threads_per_catom != 32 (wrap size) to make sure shared data is ready
-  // __syncthreads
 
-  for (int jj = 0; jj < jnum; jj++) {
+  for (int n = threadIdx.y; n < totalpairs; n += blockDim.y) {
+    int jj = pairidx_to_j(n);
+    int kk = n - jj * (jj - 1) / 2; // 0-indexed
+    jj = jnum - jj - 1;
+    kk += jj + 1;
+    // printf("n %d, jnum %d, jj %d, kk %d\n", n, jnum, jj, kk);
     const DataT Rij = sdist[jj];
     SpeciesT type_j = stype[jj];
-
     DataT fc_ij = sfc[jj];
+    const DataT Rik = sdist[kk];
+    SpeciesT type_k = stype[kk];
+    DataT fc_ik = sfc[kk];
 
-    for (int kk_start = jj + 1; kk_start < jnum; kk_start += threads_per_catom) {
-      int kk = kk_start + laneIdx;
-      DataT theta = 0;
-      if (kk < jnum) {
-        const DataT Rik = sdist[kk];
-        theta = acos(0.95 * (sdx[jj] * sdx[kk] + sdy[jj] * sdy[kk] + sdz[jj] * sdz[kk]) / (Rij * Rik));
-      }
+    DataT theta =
+        acos(0.95 * (svec[jj].x * svec[kk].x + svec[jj].y * svec[kk].y + svec[jj].z * svec[kk].z) / (Rij * Rik));
+    // DataT theta = 1.0;
+    DataT Rijk = (Rij + Rik) / 2;
+    DataT fc_ijk = fc_ij * fc_ik;
 
-      for (int srcLane = 0; srcLane < C10_WARP_SIZE && (kk_start + srcLane) < jnum; ++srcLane) {
-        int kk = kk_start + srcLane;
-        DataT theta_ijk = __shfl_sync(0xFFFFFFFF, theta, srcLane);
+    IndexT subaev_offset = angular_sublength * csubaev_offsets(type_j, type_k, num_species);
 
-        const DataT Rik = sdist[kk];
-        SpeciesT type_k = stype[kk];
+    for (int itheta = tile.x; itheta < nShfZ; itheta += TILEX) {
+      DataT ShfZ = ShfZ_t[itheta];
 
-        DataT fc_ik = sfc[kk];
+      DataT factor1 = pow((1 + cos(theta - ShfZ)) / 2, Zeta);
 
-        DataT Rijk = (Rij + Rik) / 2;
-        DataT fc_ijk = fc_ij * fc_ik;
+      for (int ishfr = tile.y; ishfr < nShfA; ishfr += TILEY) {
+        DataT ShfA = ShfA_t[ishfr];
+        DataT factor2 = exp(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
 
-        IndexT subaev_offset = angular_sublength * csubaev_offsets(type_j, type_k, num_species);
+        DataT res = 2 * factor1 * factor2 * fc_ijk;
 
-        for (int itheta = tile.x; itheta < nShfZ; itheta += TILEX) {
-          DataT ShfZ = ShfZ_t[itheta];
-
-          DataT factor1 = pow((1 + cos(theta_ijk - ShfZ)) / 2, Zeta);
-
-          for (int ishfr = tile.y; ishfr < nShfA; ishfr += TILEY) {
-            DataT ShfA = ShfA_t[ishfr];
-            DataT factor2 = exp(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
-
-            DataT res = 2 * factor1 * factor2 * fc_ijk;
-
-            saev[subaev_offset + ishfr * nShfZ + itheta] += res;
-          }
-        }
+        atomicAdd(&saev[subaev_offset + ishfr * nShfZ + itheta], res);
       }
     }
   }
+  __syncthreads();
 
-  for (int iaev = laneIdx; iaev < angular_length; iaev += threads_per_catom) {
+  for (int iaev = tIdx; iaev < angular_length; iaev += blockDim.x * blockDim.y) {
     aev_t[mol_idx][i][radial_length + iaev] = saev[iaev];
   }
 }
@@ -1168,8 +1158,7 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
   }
 
   {
-    const int nthreads_per_catom = 32;
-    const int nblocks_angAEV = (ncenter_atoms * nthreads_per_catom + block_size - 1) / block_size;
+    dim3 block(C10_WARP_SIZE, 4, 1);
     auto smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
       int sm_aev = sizeof(float) * align<4>(aev_params.angular_length); // (angular_length / 4 + 1) * 4
       int sxyz = sizeof(float) * max_nbrs * 3;
@@ -1177,15 +1166,18 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
       int sfc = sizeof(float) * max_nbrs;
       int sj = sizeof(int) * max_nbrs;
 
+      // e.g. when max_nbrs is 2
+      // ANI1x: (20 * 6 * 4 + 324 * 4) * 2 = 3552
+      // ANI2x: (20 * 6 * 4 + 896 * 4) * 2 = 8128
       return (sm_aev + sxyz + sRij + sfc + sj) * ncatom_per_tpb;
     };
 
     int maxNbrsPerCenterAtom = cubMax(angularNumPairsPerAtom_p, ncenter_atoms, d_count_out, stream);
     int maxnbrs_per_atom_aligned = align<4>(maxNbrsPerCenterAtom);
-    int smem_size_aligned = smem_size(maxnbrs_per_atom_aligned, block_size / nthreads_per_catom);
+    int smem_size_aligned = smem_size(maxnbrs_per_atom_aligned, 1);
     int angular_length_aligned = align<4>(aev_params.angular_length);
     printf("maxnbrs_per_atom_aligned %d -- angular smem_size %d\n", maxnbrs_per_atom_aligned, smem_size_aligned);
-    cuAngularAEVs<<<nblocks_angAEV, block_size, smem_size_aligned, stream>>>(
+    cuAngularAEVs<<<ncenter_atoms, block, smem_size_aligned, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
         aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
