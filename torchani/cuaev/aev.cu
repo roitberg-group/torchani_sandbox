@@ -350,7 +350,7 @@ __global__ void cuAngularAEVs(
 
   for (int n = threadIdx.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE; n += blockDim.y) {
     // store 1 blocksize of theta to share mem
-    if (n % BLOCK_SIZE < BLOCK_Y) {  // only run once for every block_x iterations
+    if (n % BLOCK_SIZE < BLOCK_Y) { // only run once for every block_x iterations
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
         int jj = pairidx_to_j(m);
