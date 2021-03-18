@@ -350,7 +350,7 @@ __global__ void cuAngularAEVs(
 
   for (int n = threadIdx.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE; n += blockDim.y) {
     // store 1 blocksize of theta to share mem
-    if (n % BLOCK_SIZE < BLOCK_Y) {
+    if (n % BLOCK_SIZE < BLOCK_Y) {  // only run once for every block_x iterations
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
         int jj = pairidx_to_j(m);
@@ -398,7 +398,7 @@ __global__ void cuAngularAEVs(
 
           DataT res = 2 * factor1 * factor2 * fc_ijk;
 
-          atomicAdd(&saev[subaev_offset + ishfr * nShfZ + itheta], res); // really slow, 3.8ms -> 2.9ms
+          atomicAdd(&saev[subaev_offset + ishfr * nShfZ + itheta], res);
           // saev[subaev_offset + ishfr * nShfZ + itheta] += res;
           // saev[0] = res;
         }
