@@ -251,17 +251,17 @@ __global__ void pairwiseDistance_backward_or_doublebackward(
 
 template <typename SpeciesT, typename DataT, typename IndexT = int, int TILEX = 8, int TILEY = 4>
 __global__ void cuAngularAEVs(
-    torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
-    torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> pos_t,
-    torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> ShfA_t,
-    torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> ShfZ_t,
-    torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> EtaA_t,
-    torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> Zeta_t,
+    const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
+    const torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> pos_t,
+    const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> ShfA_t,
+    const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> ShfZ_t,
+    const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> EtaA_t,
+    const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> Zeta_t,
     torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> aev_t,
-    PairDist* d_Rij,
-    PairDist* d_centralAtom,
-    int* d_nPairsPerCenterAtom,
-    int* d_centerAtomStartIdx,
+    const PairDist* __restrict__ d_Rij,
+    const PairDist* __restrict__ d_centralAtom,
+    const int* __restrict__ d_nPairsPerCenterAtom,
+    const int* __restrict__ d_centerAtomStartIdx,
     float Rca,
     int angular_length,
     int angular_sublength,
@@ -274,7 +274,7 @@ __global__ void cuAngularAEVs(
 
   int cIdx = blockIdx.x; // central atom id
   int tIdx = threadIdx.y * blockDim.x + threadIdx.x; // local thread idx
-  float3* pos_t_3 = reinterpret_cast<float3*>(&pos_t[0][0][0]);
+  const float3* pos_t_3 = reinterpret_cast<const float3*>(&pos_t[0][0][0]);
   const int max_natoms_per_mol = pos_t.size(1);
 
   if (cIdx >= ncentral_atoms)
@@ -355,12 +355,12 @@ __global__ void cuAngularAEVs(
     IndexT subaev_offset = angular_sublength * csubaev_offsets(type_j, type_k, num_species);
 
     for (int itheta = tile.x; itheta < nShfZ; itheta += TILEX) {
-      DataT ShfZ = ShfZ_t[itheta];
+      DataT ShfZ = __ldg(&ShfZ_t[itheta]);
 
       DataT factor1 = pow((1 + cos(theta - ShfZ)) / 2, Zeta);
 
       for (int ishfr = tile.y; ishfr < nShfA; ishfr += TILEY) {
-        DataT ShfA = ShfA_t[ishfr];
+        DataT ShfA = __ldg(&ShfA_t[ishfr]);
         DataT factor2 = exp(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
 
         DataT res = 2 * factor1 * factor2 * fc_ijk;
@@ -560,14 +560,14 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
         IndexT subaev_offset = angular_sublength * csubaev_offsets(type_j, type_k, num_species);
 
         for (int itheta = tile.x; itheta < nShfZ; itheta += TILEX) {
-          DataT ShfZ = ShfZ_t[itheta];
+          DataT ShfZ = __ldg(&ShfZ_t[itheta]);
 
           DataT factor1 = pow((1 + cos(theta_ijk - ShfZ)) / 2, Zeta);
           DataT grad_factor1_theta = 1.0 / 2.0 * Zeta * pow((1 + cos(ShfZ - theta_ijk)) / 2, Zeta - 1) *
               sin(ShfZ - theta_ijk); // tricky 100ms improved
 
           for (int ishfr = tile.y; ishfr < nShfA; ishfr += TILEY) {
-            DataT ShfA = ShfA_t[ishfr];
+            DataT ShfA = __ldg(&ShfA_t[ishfr]);
             DataT factor2 = exp(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
             DataT grad_factor2_dist = -EtaA * (Rijk - ShfA) * factor2;
 
@@ -698,7 +698,7 @@ __global__ void cuRadialAEVs(
   DataT fc = 0.5 * cos(PI * Rij / Rcr) + 0.5;
 
   for (int ishfr = laneIdx; ishfr < nShfR; ishfr += THREADS_PER_RIJ) {
-    DataT ShfR = ShfR_t[ishfr];
+    DataT ShfR = __ldg(&ShfR_t[ishfr]);
 
     DataT GmR = 0.25 * exp(-EtaR * (Rij - ShfR) * (Rij - ShfR)) * fc;
 
@@ -750,7 +750,7 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
   }
 
   for (int ishfr = laneIdx; ishfr < nShfR; ishfr += THREADS_PER_RIJ) {
-    DataT ShfR = ShfR_t[ishfr];
+    DataT ShfR = __ldg(&ShfR_t[ishfr]);
 
     DataT GmR = 0.25 * exp(-EtaR * (Rij - ShfR) * (Rij - ShfR));
     DataT GmR_grad = -EtaR * (-2 * ShfR + 2 * Rij) * GmR;
