@@ -249,7 +249,8 @@ __global__ void pairwiseDistance_backward_or_doublebackward(
   }
 }
 
-template <typename SpeciesT, typename DataT, typename IndexT = int, int TILEX = 8, int TILEY = 4>
+// TODO: TILEX is 8 for ANI1x, 4 for ANI2x
+template <int BLOCK_X, int BLOCK_Y, typename SpeciesT, typename DataT, typename IndexT = int, int TILEX = 4, int TILEY = 8>
 __global__ void cuAngularAEVs(
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
     const torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> pos_t,
@@ -270,7 +271,11 @@ __global__ void cuAngularAEVs(
     int maxnbrs_per_atom_aligned,
     int angular_length_aligned,
     int ncentral_atoms) {
+
+  constexpr int BLOCK_SIZE = BLOCK_X * BLOCK_Y;
+
   extern __shared__ DataT smem[];
+  __shared__ float s_theta[BLOCK_SIZE];
 
   int cIdx = blockIdx.x; // central atom id
   int tIdx = threadIdx.y * blockDim.x + threadIdx.x; // local thread idx
@@ -322,50 +327,75 @@ __global__ void cuAngularAEVs(
     int j = dij.j;
     DataT Rij = dij.Rij;
     SpeciesT type_j = species_t[mol_idx][j];
-    float3 coord_j = pos_t_3[mol_idx * max_natoms_per_mol + j];
+    float3 coord_j = pos_t_3[mol_idx * max_natoms_per_mol + j]; // memory coalessing is not a big deal here, but need 7
+                                                                // more registers
+    // SpeciesT type_j = 1;
+    // float3 coord_j = make_float3(1.0, 1.0, 1.0);
     svec[jj] = make_float3(coord_j.x - coord_i.x, coord_j.y - coord_i.y, coord_j.z - coord_i.z);
     stype[jj] = type_j;
     sdist[jj] = Rij;
-    DataT fc_ij = 0.5 * cos(PI * Rij / Rca) + 0.5;
+    DataT fc_ij = 0.5 * __cosf(PI * Rij / Rca) + 0.5; // cos() is increasing registers per thread from 32 to 45, __cosf() from 32 to 38
+    // DataT fc_ij = 0.5;
     sfc[jj] = fc_ij;
   }
   __syncthreads();
 
   short2 tile = make_short2(laneIdx % TILEX, laneIdx / TILEX);
 
-  for (int n = threadIdx.y; n < totalpairs; n += blockDim.y) {
-    int jj = pairidx_to_j(n);
-    int kk = n - jj * (jj - 1) / 2; // 0-indexed
-    jj = jnum - jj - 1;
-    kk += jj + 1;
-    // printf("n %d, jnum %d, jj %d, kk %d\n", n, jnum, jj, kk);
-    const DataT Rij = sdist[jj];
-    SpeciesT type_j = stype[jj];
-    DataT fc_ij = sfc[jj];
-    const DataT Rik = sdist[kk];
-    SpeciesT type_k = stype[kk];
-    DataT fc_ik = sfc[kk];
+  for (int n = threadIdx.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE; n += blockDim.y) {
+    // store 1 blocksize of theta to share mem
+    if (n % BLOCK_SIZE < BLOCK_Y) {
+      int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
+      if (m < totalpairs) {
+        int jj = pairidx_to_j(m);
+        int kk = m - jj * (jj - 1) / 2; // 0-indexed
+        jj = jnum - jj - 1;
+        kk += jj + 1;
+        const DataT Rij = sdist[jj];
+        const DataT Rik = sdist[kk];
+        s_theta[tIdx] =
+            acosf(0.95 * (svec[jj].x * svec[kk].x + svec[jj].y * svec[kk].y + svec[jj].z * svec[kk].z) / (Rij * Rik));
+      }
+      __syncthreads();
+    }
+    // run angular calculation
+    if (n < totalpairs) {
+      int jj = pairidx_to_j(n);
+      int kk = n - jj * (jj - 1) / 2; // 0-indexed
+      jj = jnum - jj - 1;
+      kk += jj + 1;
+      // printf("n %d, jnum %d, jj %d, kk %d\n", n, jnum, jj, kk);
+      const DataT Rij = sdist[jj];
+      SpeciesT type_j = stype[jj];
+      DataT fc_ij = sfc[jj];
+      const DataT Rik = sdist[kk];
+      SpeciesT type_k = stype[kk];
+      DataT fc_ik = sfc[kk];
 
-    DataT theta =
-        acos(0.95 * (svec[jj].x * svec[kk].x + svec[jj].y * svec[kk].y + svec[jj].z * svec[kk].z) / (Rij * Rik));
-    // DataT theta = 1.0;
-    DataT Rijk = (Rij + Rik) / 2;
-    DataT fc_ijk = fc_ij * fc_ik;
+      DataT theta = s_theta[n % BLOCK_SIZE];
+      // DataT theta = 1.0;
+      DataT Rijk = (Rij + Rik) / 2;
+      DataT fc_ijk = fc_ij * fc_ik;
 
-    IndexT subaev_offset = angular_sublength * csubaev_offsets(type_j, type_k, num_species);
+      IndexT subaev_offset = angular_sublength * csubaev_offsets(type_j, type_k, num_species);
 
-    for (int itheta = tile.x; itheta < nShfZ; itheta += TILEX) {
-      DataT ShfZ = __ldg(&ShfZ_t[itheta]);
+      for (int itheta = tile.x; itheta < nShfZ; itheta += TILEX) {
+        DataT ShfZ = __ldg(&ShfZ_t[itheta]);
 
-      DataT factor1 = pow((1 + cos(theta - ShfZ)) / 2, Zeta);
+        DataT factor1 = __powf((1 + __cosf(theta - ShfZ)) / 2, Zeta);
+        // DataT factor1 = 1.0;
 
-      for (int ishfr = tile.y; ishfr < nShfA; ishfr += TILEY) {
-        DataT ShfA = __ldg(&ShfA_t[ishfr]);
-        DataT factor2 = exp(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
+        for (int ishfr = tile.y; ishfr < nShfA; ishfr += TILEY) {
+          DataT ShfA = __ldg(&ShfA_t[ishfr]);
+          DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
+          // DataT factor2 = 1.0;
 
-        DataT res = 2 * factor1 * factor2 * fc_ijk;
+          DataT res = 2 * factor1 * factor2 * fc_ijk;
 
-        atomicAdd(&saev[subaev_offset + ishfr * nShfZ + itheta], res);
+          atomicAdd(&saev[subaev_offset + ishfr * nShfZ + itheta], res); // really slow, 3.8ms -> 2.9ms
+          // saev[subaev_offset + ishfr * nShfZ + itheta] += res;
+          // saev[0] = res;
+        }
       }
     }
   }
@@ -1158,7 +1188,6 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
   }
 
   {
-    dim3 block(C10_WARP_SIZE, 4, 1);
     auto smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
       int sm_aev = sizeof(float) * align<4>(aev_params.angular_length); // (angular_length / 4 + 1) * 4
       int sxyz = sizeof(float) * max_nbrs * 3;
@@ -1177,7 +1206,8 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
     int smem_size_aligned = smem_size(maxnbrs_per_atom_aligned, 1);
     int angular_length_aligned = align<4>(aev_params.angular_length);
     printf("maxnbrs_per_atom_aligned %d -- angular smem_size %d\n", maxnbrs_per_atom_aligned, smem_size_aligned);
-    cuAngularAEVs<<<ncenter_atoms, block, smem_size_aligned, stream>>>(
+    constexpr dim3 block(C10_WARP_SIZE, 4, 1);
+    cuAngularAEVs<block.x, block.y><<<ncenter_atoms, block, smem_size_aligned, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
         aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
