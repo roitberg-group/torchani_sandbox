@@ -340,8 +340,7 @@ __global__ void cuAngularAEVs(
     svec[jj] = make_float3(coord_j.x - coord_i.x, coord_j.y - coord_i.y, coord_j.z - coord_i.z);
     stype[jj] = type_j;
     sdist[jj] = Rij;
-    DataT fc_ij = 0.5 * __cosf(PI * Rij / Rca) +
-        0.5; // cos() is increasing registers per thread from 32 to 45, __cosf() from 32 to 38
+    DataT fc_ij = 0.5 * __cosf(PI * Rij / Rca) + 0.5; // cos() increase registers from 32 to 45, __cosf() to 38
     // DataT fc_ij = 0.5;
     sfc[jj] = fc_ij;
   }
