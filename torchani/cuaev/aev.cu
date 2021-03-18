@@ -250,7 +250,14 @@ __global__ void pairwiseDistance_backward_or_doublebackward(
 }
 
 // TODO: TILEX is 8 for ANI1x, 4 for ANI2x
-template <int BLOCK_X, int BLOCK_Y, typename SpeciesT, typename DataT, typename IndexT = int, int TILEX = 4, int TILEY = 8>
+template <
+    int BLOCK_X,
+    int BLOCK_Y,
+    typename SpeciesT,
+    typename DataT,
+    typename IndexT = int,
+    int TILEX = 4,
+    int TILEY = 8>
 __global__ void cuAngularAEVs(
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
     const torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> pos_t,
@@ -271,7 +278,6 @@ __global__ void cuAngularAEVs(
     int maxnbrs_per_atom_aligned,
     int angular_length_aligned,
     int ncentral_atoms) {
-
   constexpr int BLOCK_SIZE = BLOCK_X * BLOCK_Y;
 
   extern __shared__ DataT smem[];
@@ -334,7 +340,8 @@ __global__ void cuAngularAEVs(
     svec[jj] = make_float3(coord_j.x - coord_i.x, coord_j.y - coord_i.y, coord_j.z - coord_i.z);
     stype[jj] = type_j;
     sdist[jj] = Rij;
-    DataT fc_ij = 0.5 * __cosf(PI * Rij / Rca) + 0.5; // cos() is increasing registers per thread from 32 to 45, __cosf() from 32 to 38
+    DataT fc_ij = 0.5 * __cosf(PI * Rij / Rca) +
+        0.5; // cos() is increasing registers per thread from 32 to 45, __cosf() from 32 to 38
     // DataT fc_ij = 0.5;
     sfc[jj] = fc_ij;
   }
