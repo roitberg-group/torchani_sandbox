@@ -3,6 +3,7 @@ import torch
 import torchani
 import unittest
 import pickle
+from ase.io import read
 from torchani.testing import TestCase, make_tensor
 
 path = os.path.dirname(os.path.realpath(__file__))
@@ -314,6 +315,24 @@ class TestCUAEV(TestCase):
                 cuaev_grad = coordinates.grad
                 self.assertEqual(cu_aev, aev, atol=5e-5, rtol=5e-5)
                 self.assertEqual(cuaev_grad, aev_grad, atol=5e-4, rtol=5e-4)
+
+    def testPDB(self):
+        nnp_ref = torchani.models.ANI2x(periodic_table_index=True, model_index=None).to(self.device)
+        nnp_cuaev = torchani.models.ANI2x(periodic_table_index=True, model_index=None).to(self.device)
+        nnp_cuaev.aev_computer.use_cuda_extension = True
+
+        files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
+        for file in files:
+            filepath = os.path.join(path, f'../dataset/pdb/{file}')
+            mol = read(filepath)
+            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
+            positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
+            speciesPositions = nnp_ref.species_converter((species, positions))
+            species, coordinates = speciesPositions
+
+            _, aev = nnp_ref.aev_computer((species, coordinates))
+            _, cu_aev = nnp_cuaev.aev_computer((species, coordinates))
+            self.assertEqual(cu_aev, aev)
 
 
 if __name__ == '__main__':
