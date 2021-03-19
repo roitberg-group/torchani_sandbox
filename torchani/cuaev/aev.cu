@@ -12,6 +12,12 @@
 #define PI 3.141592653589793
 using torch::Tensor;
 
+#ifdef DEBUG
+#define DEBUG_TEST 1
+#else
+#define DEBUG_TEST 0
+#endif
+
 // fetch from the following matrix
 // [[ 0,  1,  2,  3,  4],
 //  [ 1,  5,  6,  7,  8],
@@ -351,6 +357,7 @@ __global__ void cuAngularAEVs(
   for (int n = threadIdx.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE; n += blockDim.y) {
     // store 1 blocksize of theta to share mem
     if (n % BLOCK_SIZE < BLOCK_Y) { // only run once for every block_x iterations
+      __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
         int jj = pairidx_to_j(m);
@@ -1047,7 +1054,8 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
     // radial_num_per_atom ranges from 10 - 60
     Tensor radialNumPairsPerAtom_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
     int* radialNumPairsPerAtom_p = (int*)radialNumPairsPerAtom_t.data_ptr();
-    printf("single molecule, %d atoms\n", max_natoms_per_mol);
+    if (DEBUG_TEST)
+      printf("single molecule, %d atoms\n", max_natoms_per_mol);
     constexpr int ATOM_I_PER_BLOCK = 32;
     constexpr int ATOM_J_PER_SUBTILE = 32;
     constexpr int ATOM_J_PER_TILE = ATOM_I_PER_BLOCK * ATOM_J_PER_SUBTILE;
@@ -1066,7 +1074,8 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
     cubScan(radialNumPairsPerAtom_p, radialPairStartIdx_p, n_molecules * max_natoms_per_mol, stream);
     int totalatoms = n_molecules * max_natoms_per_mol;
     nRadialRij = radialPairStartIdx_t[totalatoms - 1].item<int>() + radialNumPairsPerAtom_t[totalatoms - 1].item<int>();
-    printf("nRadialRij %d\n", nRadialRij);
+    if (DEBUG_TEST)
+      printf("nRadialRij %d\n", nRadialRij);
 
     tensor_radialRij = torch::empty(sizeof(PairDist) * nRadialRij, d_options);
     d_radialRij = (PairDist*)tensor_radialRij.data_ptr();
@@ -1097,7 +1106,8 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
       cubScan(angularNumPairsPerAtom_p, angularPairStartIdx_p, n_molecules * max_natoms_per_mol, stream);
       nAngularRij =
           angularPairStartIdx_t[totalatoms - 1].item<int>() + angularNumPairsPerAtom_t[totalatoms - 1].item<int>();
-      printf("nAngularRij %d\n", nAngularRij);
+      if (DEBUG_TEST)
+        printf("nAngularRij %d\n", nAngularRij);
 
       tensor_angularRij = torch::empty(sizeof(PairDist) * nRadialRij, d_options);
       d_angularRij = (PairDist*)tensor_angularRij.data_ptr();
@@ -1211,7 +1221,8 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
     int maxnbrs_per_atom_aligned = align<4>(maxNbrsPerCenterAtom);
     int smem_size_aligned = smem_size(maxnbrs_per_atom_aligned, 1);
     int angular_length_aligned = align<4>(aev_params.angular_length);
-    printf("maxnbrs_per_atom_aligned %d -- angular smem_size %d\n", maxnbrs_per_atom_aligned, smem_size_aligned);
+    if (DEBUG_TEST)
+      printf("maxnbrs_per_atom_aligned %d -- angular smem_size %d\n", maxnbrs_per_atom_aligned, smem_size_aligned);
     constexpr dim3 block(C10_WARP_SIZE, 4, 1);
     cuAngularAEVs<block.x, block.y><<<ncenter_atoms, block, smem_size_aligned, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
