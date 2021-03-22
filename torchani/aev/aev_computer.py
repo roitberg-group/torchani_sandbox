@@ -36,24 +36,12 @@ class SpeciesAEV(NamedTuple):
     aevs: Tensor
 
 
-def _compute_cuaev(
-    species: Tensor, coordinates: Tensor, cell: Tensor, pbc: Tensor,
-    constants: Tuple[float, Tensor, Tensor, float, Tensor, Tensor, Tensor,
-                     Tensor, int]
-) -> Tensor:
-    Rcr, EtaR, ShfR, Rca, ShfZ, EtaA, Zeta, ShfA, num_species = constants
-    assert not pbc.any(
-    ), "Current implementation of cuaev does not support pbc."
-    species_int = species.to(torch.int32)
-    return torch.ops.cuaev.cuComputeAEV(coordinates, species_int, Rcr, Rca,
-                                        EtaR.flatten(), ShfR.flatten(),
-                                        EtaA.flatten(), Zeta.flatten(),
-                                        ShfA.flatten(), ShfZ.flatten(),
-                                        num_species)
-
-
-if not has_cuaev:
-    _compute_cuaev = torch.jit.unused(_compute_cuaev)
+def jit_unused_if_no_cuaev(condition=has_cuaev):
+    def decorator(func):
+        if not condition:
+            return torch.jit.unused(func)
+        return func
+    return decorator
 
 
 class AEVComputer(torch.nn.Module):
@@ -102,9 +90,6 @@ class AEVComputer(torch.nn.Module):
                 neighborlist=FullPairwise):
         super().__init__()
         assert Rca <= Rcr, "Current implementation of AEVComputer assumes Rca <= Rcr"
-        # cuda aev
-        if use_cuda_extension:
-            assert has_cuaev, "AEV cuda extension is not installed"
         self.use_cuda_extension = use_cuda_extension
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
@@ -128,6 +113,29 @@ class AEVComputer(torch.nn.Module):
 
         # neighborlist uses radial cutoff only
         self.neighborlist = neighborlist(Rcr) if neighborlist is not None else None
+
+        # cuda aev
+        if use_cuda_extension:
+            assert has_cuaev, "AEV cuda extension is not installed"
+        # Should create only when use_cuda_extension is True.
+        # However jit needs to know cuaev_computer's Type even when use_cuda_extension is False, because it is enabled when cuaev is available
+        if has_cuaev:
+            self._init_cuaev_computer()
+        # When has_cuaev is true, and use_cuda_extension is false, and user enable use_cuda_extension afterwards,
+        # then another init_cuaev_computer will be needed
+        self._cuaev_enabled = True if self.use_cuda_extension else False
+
+    @jit_unused_if_no_cuaev()
+    def _init_cuaev_computer(self):
+        self.cuaev_computer = torch.classes.cuaev.CuaevComputer(self.radial_terms.cutoff.item(),
+                                                                self.angular_terms.cutoff.item(),
+                                                                self.radial_terms.EtaR.flatten(),
+                                                                self.radial_terms.ShfR.flatten(),
+                                                                self.angular_terms.EtaA.flatten(),
+                                                                self.angular_terms.Zeta.flatten(),
+                                                                self.angular_terms.ShfA.flatten(),
+                                                                self.angular_terms.ShfZ.flatten(),
+                                                                self.num_species)
 
     @staticmethod
     def _calculate_triu_index(num_species: int) -> Tensor:
@@ -235,25 +243,30 @@ class AEVComputer(torch.nn.Module):
         # check shapes for correctness
         assert species.dim() == 2
         assert coordinates.dim() == 3
-        assert (species.shape == coordinates.shape[:2]) and (
-            coordinates.shape[2] == 3)
-        assert (cell is not None and pbc is not None) or (cell is None
-                                                          and pbc is None)
+        assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
+        assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
 
         cell = cell if cell is not None else self.default_cell
         pbc = pbc if pbc is not None else self.default_pbc
 
         if self.use_cuda_extension:
-            aev = _compute_cuaev(species, coordinates, cell, pbc,
-                                self._constants())
+            assert not pbc.any(), "cuaev currently does not support PBC"
+            # if use_cuda_extension is enabled after initialization
+            aev = self._compute_cuaev(species, coordinates)
+            if not self._cuaev_enabled:
+                self._init_cuaev_computer()
             return SpeciesAEV(species, aev)
 
-        atom_index12, shift_indices = self.neighborlist(
-            species, coordinates, cell, pbc)
+        atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
         shift_values = shift_indices.to(cell.dtype) @ cell
-        aev = self._compute_aev(species, coordinates, atom_index12,
-                               shift_values)
+        aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
+
+    @jit_unused_if_no_cuaev()
+    def _compute_cuaev(self, species, coordinates):
+        species_int = species.to(torch.int32)
+        aev = torch.ops.cuaev.run(coordinates, species_int, self.cuaev_computer)
+        return aev
 
     def _compute_aev(self, species: Tensor, coordinates: Tensor,
                     atom_index12: Tensor, shift_values: Tensor) -> Tensor:
