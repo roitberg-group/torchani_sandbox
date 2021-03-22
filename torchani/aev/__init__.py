@@ -1,3 +1,3 @@
-from .aev_computer import AEVComputer, SpeciesAEV, has_cuaev
+from .aev_computer import AEVComputer, SpeciesAEV, cuaev_is_installed
 
-__all__ = ['AEVComputer', 'SpeciesAEV', 'has_cuaev']
+__all__ = ['AEVComputer', 'SpeciesAEV', 'cuaev_is_installed']

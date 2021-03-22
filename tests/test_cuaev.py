@@ -10,7 +10,7 @@ path = os.path.dirname(os.path.realpath(__file__))
 
 skipIfNoGPU = unittest.skipIf(not torch.cuda.is_available(),
                               'There is no device to run this test')
-skipIfNoCUAEV = unittest.skipIf(not torchani.aev.has_cuaev, "only valid when cuaev is installed")
+skipIfNoCUAEV = unittest.skipIf(not torchani.aev.cuaev_is_installed, "only valid when cuaev is installed")
 
 
 @skipIfNoCUAEV

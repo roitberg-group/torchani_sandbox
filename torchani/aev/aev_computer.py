@@ -11,10 +11,10 @@ from .cutoffs import CutoffCosine
 from .aev_terms import AngularTerms, RadialTerms
 from .neighbors import FullPairwise
 
-has_cuaev = 'torchani.cuaev' in importlib_metadata.metadata(
+cuaev_is_installed = 'torchani.cuaev' in importlib_metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
 
-if has_cuaev:
+if cuaev_is_installed:
     # We need to import torchani.cuaev to tell PyTorch to initialize torch.ops.cuaev
     from .. import cuaev  # type: ignore # noqa: F401
 else:
@@ -36,11 +36,11 @@ class SpeciesAEV(NamedTuple):
     aevs: Tensor
 
 
-def jit_unused_if_no_cuaev(condition=has_cuaev):
+def jit_unused_if_no_cuaev(condition=cuaev_is_installed):
     def decorator(func):
         if not condition:
             return torch.jit.unused(func)
-        return func
+        return torch.jit.export(func)
     return decorator
 
 
@@ -72,7 +72,6 @@ class AEVComputer(torch.nn.Module):
     """
     num_species: Final[int]
     num_species_pairs: Final[int]
-
     use_cuda_extension: Final[bool]
 
     def __init__(self,
@@ -115,15 +114,13 @@ class AEVComputer(torch.nn.Module):
         self.neighborlist = neighborlist(Rcr) if neighborlist is not None else None
 
         # cuda aev
-        if use_cuda_extension:
-            assert has_cuaev, "AEV cuda extension is not installed"
-        # Should create only when use_cuda_extension is True.
-        # However jit needs to know cuaev_computer's Type even when use_cuda_extension is False, because it is enabled when cuaev is available
-        if has_cuaev:
+        if self.use_cuda_extension:
+            assert cuaev_is_installed, "AEV cuda extension is not installed"
+        # cuaev_computer is created only when use_cuda_extension is True.
+        # However jit needs to know cuaev_computer's Type even when
+        # use_cuda_extension is False
+        if cuaev_is_installed:
             self._init_cuaev_computer()
-        # When has_cuaev is true, and use_cuda_extension is false, and user enable use_cuda_extension afterwards,
-        # then another init_cuaev_computer will be needed
-        self._cuaev_enabled = True if self.use_cuda_extension else False
 
     @jit_unused_if_no_cuaev()
     def _init_cuaev_computer(self):
@@ -251,10 +248,7 @@ class AEVComputer(torch.nn.Module):
 
         if self.use_cuda_extension:
             assert not pbc.any(), "cuaev currently does not support PBC"
-            # if use_cuda_extension is enabled after initialization
             aev = self._compute_cuaev(species, coordinates)
-            if not self._cuaev_enabled:
-                self._init_cuaev_computer()
             return SpeciesAEV(species, aev)
 
         atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
