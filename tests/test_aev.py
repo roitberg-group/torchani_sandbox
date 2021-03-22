@@ -174,7 +174,7 @@ class TestPBCSeeEachOther(TestCase):
     def setUp(self):
         consts = torchani.neurochem.Constants(const_file)
         self.aev_computer = torchani.AEVComputer(**consts).to(torch.double)
-        neighborlist_calculator = torchani.aev.neighborlist_calculators.FullPairwise(1.0)
+        neighborlist_calculator = torchani.aev.neighbors.FullPairwise(1.0)
         self.neighborlist_pbc = neighborlist_calculator._full_pairwise_pbc
 
     def testTranslationalInvariancePBC(self):
