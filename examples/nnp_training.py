@@ -128,7 +128,7 @@ print('Self atomic energies: ', energy_shifter.self_energies)
 #
 ###############################################################################
 # Now let's define atomic neural networks.
-aev_dim = aev_computer.aev_length
+aev_dim = aev_computer.aev_length()
 
 H_network = torch.nn.Sequential(
     torch.nn.Linear(aev_dim, 160),

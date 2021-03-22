@@ -61,7 +61,7 @@ print('Self atomic energies: ', energy_shifter.self_energies)
 
 ###############################################################################
 # The code to define networks, optimizers, are mostly the same
-aev_dim = aev_computer.aev_length
+aev_dim = aev_computer.aev_length()
 
 H_network = torch.nn.Sequential(
     torch.nn.Linear(aev_dim, 160),
