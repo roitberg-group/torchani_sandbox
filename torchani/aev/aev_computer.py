@@ -409,21 +409,28 @@ class AEVComputerBare(AEVComputer):
         """Bare version of the AEVComputer, with no internal neighborlist"""
 
         if 'neighborlist' not in kwargs.keys():
-            kwargs.update({'neighborlist' : None})
+            kwargs.update({'neighborlist': None})
         if 'use_cuda_extension' not in kwargs.keys():
-            kwargs.update({'use_cuda_extension' : False})
+            kwargs.update({'use_cuda_extension': False})
 
         assert kwargs['neighborlist'] is None, "AEVComputerBare doesn't use a neighborlist"
         assert not kwargs['use_cuda_extension'], "AEVComputerBare doesn't suport cuaev"
         super().__init__(*args, **kwargs)
 
-    def forward(self, input_: Tuple[Tensor, Tensor], atom_index12: Tensor, shift_values: Tensor) -> SpeciesAEV:
+    def forward(self, input_: Tuple[Tensor, Tensor],
+                atom_index12: Optional[Tensor] = None,
+                shift_values: Optional[Tensor] = None) -> SpeciesAEV:
         """Compute AEVs
         Returns:
             NamedTuple: Species and AEVs. species are the species from the input
             unchanged, and AEVs is a tensor of shape ``(N, A, self.aev_length)``
         """
         species, coordinates = input_
+
+        # It is convenient to keep these arguments optional due to JIT, but
+        # actually they are needed for this class
+        assert atom_index12 is not None
+        assert shift_values is not None
         # check shapes for correctness
         assert species.dim() == 2
         assert coordinates.dim() == 3
