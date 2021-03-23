@@ -453,7 +453,7 @@ class AEVComputerBare(AEVComputer):
         aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
 
-    def _screen_with_cutoff(self, coordinates: Tensor, shift_values: Tensor, shift_values: Tensor, cutoff: Tensor):
+    def _screen_with_cutoff(self, coordinates: Tensor, atom_index12: Tensor, shift_values: Tensor, cutoff: Tensor):
         # screen neighbors that are further away than a given cutoff
         vec = self._compute_difference_vector(coordinates, atom_index12, shift_values)
         distances_sq = vec.pow(2).sum(-1)
