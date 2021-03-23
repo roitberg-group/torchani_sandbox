@@ -498,7 +498,7 @@ if sys.version_info[0] > 2:
 
             # construct networks
             input_size, network_setup = network_setup
-            if input_size != self.aev_computer.aev_length():
+            if input_size != self.aev_computer.aev_length:
                 raise ValueError('AEV size and input size does not match')
             atomic_nets = OrderedDict()
             for atom_type in self.consts.species:

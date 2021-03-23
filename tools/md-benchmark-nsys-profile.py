@@ -19,6 +19,13 @@ dyn = ase.md.verlet.VelocityVerlet(molecule, timestep=1 * ase.units.fs)
 dyn.run(1000)  # warm up
 
 
+def time_functions_in_model(model, function_names_list):
+    # Wrap all the functions from "function_names_list" from the model
+    # "model" with a timer
+    for n in function_names_list:
+        setattr(model, n, time_func(n, getattr(model, n)))
+
+
 def time_func(key, func):
 
     def wrapper(*args, **kwargs):
@@ -30,16 +37,16 @@ def time_func(key, func):
     return wrapper
 
 
-torchani.aev.cutoff_cosine = time_func('cutoff_cosine', torchani.aev.cutoff_cosine)
-torchani.aev.radial_terms = time_func('radial_terms', torchani.aev.radial_terms)
-torchani.aev.angular_terms = time_func('angular_terms', torchani.aev.angular_terms)
-torchani.aev.compute_shifts = time_func('compute_shifts', torchani.aev.compute_shifts)
-torchani.aev.neighbor_pairs = time_func('neighbor_pairs', torchani.aev.neighbor_pairs)
-torchani.aev.neighbor_pairs_nopbc = time_func('neighbor_pairs_nopbc', torchani.aev.neighbor_pairs_nopbc)
-torchani.aev.triu_index = time_func('triu_index', torchani.aev.triu_index)
-torchani.aev.cumsum_from_zero = time_func('cumsum_from_zero', torchani.aev.cumsum_from_zero)
-torchani.aev.triple_by_molecule = time_func('triple_by_molecule', torchani.aev.triple_by_molecule)
-torchani.aev.compute_aev = time_func('compute_aev', torchani.aev.compute_aev)
+# enable timers
+functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
+                         '_compute_aev', '_triple_by_molecule']
+functions_to_time_neighborlist = ['_full_pairwise', '_full_pairwise_pbc']
+
+timers = {k: 0.0 for k in functions_to_time_aev + functions_to_time_neighborlist}
+
+aev_computer = model.aev_computer
+time_functions_in_model(aev_computer, functions_to_time_aev)
+time_functions_in_model(aev_computer.neighborlist, functions_to_time_neighborlist)
 
 torch.cuda.cudart().cudaProfilerStart()
 autonvtx(model)
