@@ -165,6 +165,10 @@ class AEVComputer(torch.nn.Module):
         self.aev_length = self.radial_length + self.angular_length
 
     @classmethod
+    def like_1x(cls, **init_kwargs):
+        return cls.cover_linearly(5.2, 3.5, 16.0, 8.0, 16, 4, 32.0, 8, 4, **init_kwargs)
+
+    @classmethod
     def cover_linearly(cls,
                        radial_cutoff: float,
                        angular_cutoff: float,
@@ -176,7 +180,8 @@ class AEVComputer(torch.nn.Module):
                        angle_sections: int,
                        num_species: int,
                        angular_start: float = 0.9,
-                       radial_start: float = 0.9):
+                       radial_start: float = 0.9,
+                       **init_kwargs):
         r""" Provides a convenient way to linearly fill cutoffs
 
         This is a user friendly constructor that builds an
@@ -202,7 +207,7 @@ class AEVComputer(torch.nn.Module):
                               angular_dist_divisions + 1)[:-1]
         angle_start = math.pi / (2 * angle_sections)
         ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) + angle_start)[:-1]
-        return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
+        return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, **init_kwargs)
 
     def forward(self,
                 input_: Tuple[Tensor, Tensor],
