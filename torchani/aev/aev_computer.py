@@ -403,7 +403,7 @@ class AEVComputer(torch.nn.Module):
         return cumsum
 
 
-class AEVComputerBare(torch.nn.Module):
+class AEVComputerBare(AEVComputer):
 
     def __init__(self, *args, **kwargs):
         """Bare version of the AEVComputer, with no internal neighborlist"""
