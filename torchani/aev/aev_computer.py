@@ -339,7 +339,11 @@ class AEVComputer(torch.nn.Module):
         radial_aev = radial_terms_.new_zeros(
             (num_molecules * num_atoms * self.num_species,
              self.radial_sublength))
+        print("species12 shape", species12.shape)
+        print("atom_index12 shape", atom_index12.shape)
         index12 = atom_index12 * self.num_species + species12.flip(0)
+        print("radial terms shape", radial_terms_.shape)
+        print("index12 shape", index12.shape)
         radial_aev.index_add_(0, index12[0], radial_terms_)
         radial_aev.index_add_(0, index12[1], radial_terms_)
         radial_aev = radial_aev.reshape(num_molecules, num_atoms,
@@ -367,7 +371,8 @@ class AEVComputer(torch.nn.Module):
             sorted_ai1, return_inverse=False, return_counts=True)
 
         # compute central_atom_index
-        pair_sizes = counts * (counts - 1) // 2
+        one = torch.tensor(1, device=atom_index12.device, dtype=atom_index12.dtype)
+        pair_sizes = torch.div(counts * (counts - one), 2, rounding_mode='floor')
         pair_indices = torch.repeat_interleave(pair_sizes)
         central_atom_index = uniqued_central_atom_index.index_select(
             0, pair_indices)
@@ -437,9 +442,31 @@ class AEVComputerBare(AEVComputer):
         assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
 
         # check shapes of neighborlist
-        assert atom_index12.dim() == 2 and atom_index12.shape[1] == 2
+        assert atom_index12.dim() == 2 and atom_index12.shape[0] == 2
         assert shift_values.dim() == 2 and shift_values.shape[1] == 3
-        assert atom_index12.shape[0] == shift_values.shape[0]
+        assert atom_index12.shape[1] == shift_values.shape[0]
+        print('max index', atom_index12.max())
+        print('min index', atom_index12.min())
+        
+        # first we prescreen the input neighborlist in case some of the values are
+        # at distances larger than the cutoff for the radial terms
+        # this may happen if the neighborlist uses some sort of skin value to rebuild
+        atom_index12, shift_values = self._screen_with_cutoff(coordinates.detach(), 
+                                                              atom_index12.detach(), 
+                                                              shift_values.detach(), 
+                                                              self.radial_terms.cutoff.detach())
 
         aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
+
+    def _screen_with_cutoff(self, coordinates: Tensor, shift_values: Tensor, shift_values: Tensor, cutoff: Tensor):
+        # screen neighbors that are further away than a given cutoff
+        vec = self._compute_difference_vector(coordinates.detach(), atom_index12, shift_values.detach())
+        distances_sq = vec.pow(2).sum(-1)
+        close_indices = (distances_sq <= cutoff**2).nonzero().flatten()
+        atom_index12 = atom_index12.index_select(1, even_closer_indices)
+        return atom_index12, shift_values
+        
+
+
+
