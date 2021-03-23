@@ -434,5 +434,5 @@ class AEVComputerBare(AEVComputer):
         assert shift_values.dim() == 2 and shift_values.shape[1] == 3
         assert atom_index12.shape[0] == shift_values.shape[0]
 
-        aev = self.compute_aev(species, coordinates, atom_index12, shift_values)
+        aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
