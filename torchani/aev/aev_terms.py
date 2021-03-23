@@ -11,7 +11,7 @@ class RadialTerms(torch.nn.Module):
     The input tensor have shape (conformations, atoms, N), where ``N``
     is the number of neighbor atoms within the cutoff radius and output
     tensor should have shape
-    (conformations, atoms, ``self.radial_sublength()``)
+    (conformations, atoms, ``self.sublength()``)
 
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
@@ -32,9 +32,6 @@ class RadialTerms(torch.nn.Module):
 
     def sublength(self) -> int:
         return self.EtaR.numel() * self.ShfR.numel()
-
-    def length(self, num_species: int) -> int:
-        return self.sublength() * num_species
 
     def forward(self, distances: Tensor) -> Tensor:
         distances = distances.view(-1, 1, 1)
@@ -58,7 +55,7 @@ class AngularTerms(torch.nn.Module):
     The input tensor have shape (conformations, atoms, N), where N
     is the number of neighbor atom pairs within the cutoff radius and
     output tensor should have shape
-    (conformations, atoms, ``self.angular_sublength()``)
+    (conformations, atoms, ``self.sublength()``)
 
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
@@ -82,11 +79,7 @@ class AngularTerms(torch.nn.Module):
         self.cutoff_function = cutoff_function(cutoff)
 
     def sublength(self) -> int:
-        return self.EtaA.numel() * self.Zeta.numel() * self.ShfA.numel(
-        ) * self.ShfZ.numel()
-
-    def length(self, num_species: int) -> int:
-        return self.sublength() * (num_species * (num_species + 1) // 2)
+        return self.EtaA.numel() * self.Zeta.numel() * self.ShfA.numel() * self.ShfZ.numel()
 
     def forward(self, vectors12: Tensor) -> Tensor:
         vectors12 = vectors12.view(2, -1, 3, 1, 1, 1, 1)

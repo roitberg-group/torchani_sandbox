@@ -11,7 +11,7 @@ class _TestAEVBase(TestCase):
         const_file = os.path.join(path, '../torchani/resources/ani-1x_8x/rHCNO-5.2R_16-3.5A_a4-8.params')  # noqa: E501
         consts = torchani.neurochem.Constants(const_file)
         self.aev_computer = torchani.AEVComputer(**consts)
-        self.radial_length = self.aev_computer.radial_length()
+        self.radial_length = self.aev_computer.radial_length
         self.debug = False
 
     def assertAEVEqual(self, expected_radial, expected_angular, aev):

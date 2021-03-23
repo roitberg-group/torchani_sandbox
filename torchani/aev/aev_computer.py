@@ -72,6 +72,13 @@ class AEVComputer(torch.nn.Module):
     """
     num_species: Final[int]
     num_species_pairs: Final[int]
+
+    angular_length: Final[int]
+    angular_sublength: Final[int]
+    radial_length: Final[int]
+    radial_sublength: Final[int]
+    aev_length: Final[int]
+
     use_cuda_extension: Final[bool]
 
     def __init__(self,
@@ -113,6 +120,9 @@ class AEVComputer(torch.nn.Module):
         # neighborlist uses radial cutoff only
         self.neighborlist = neighborlist(Rcr) if neighborlist is not None else None
 
+        # length variables are updated once radial and angular terms are initialized
+        self._update_lengths()
+
         # cuda aev
         if self.use_cuda_extension:
             assert cuaev_is_installed, "AEV cuda extension is not installed"
@@ -145,14 +155,14 @@ class AEVComputer(torch.nn.Module):
         ret[species2, species1] = pair_index
         return ret
 
-    def radial_length(self) -> int:
-        return self.radial_terms.length(self.num_species)
-
-    def angular_length(self) -> int:
-        return self.angular_terms.length(self.num_species)
-
-    def aev_length(self) -> int:
-        return self.radial_length() + self.angular_length()
+    def _update_lengths(self):
+        # the lengths of buffers can't be changed with load_state_dict so we can
+        # cache all lengths in the model itself
+        self.radial_sublength = self.radial_terms.sublength()
+        self.angular_sublength = self.angular_terms.sublength()
+        self.radial_length = self.radial_sublength * self.num_species
+        self.angular_length = self.angular_sublength * self.num_species_pairs
+        self.aev_length = self.radial_length + self.angular_length
 
     @classmethod
     def cover_linearly(cls,
@@ -234,7 +244,7 @@ class AEVComputer(torch.nn.Module):
 
         Returns:
             NamedTuple: Species and AEVs. species are the species from the input
-            unchanged, and AEVs is a tensor of shape ``(N, A, self.aev_length())``
+            unchanged, and AEVs is a tensor of shape ``(N, A, self.aev_length)``
         """
         species, coordinates = input_
         # check shapes for correctness
@@ -312,12 +322,12 @@ class AEVComputer(torch.nn.Module):
         angular_terms_ = self.angular_terms(vec12)
         angular_aev = angular_terms_.new_zeros(
             (num_molecules * num_atoms * self.num_species_pairs,
-             self.angular_terms.sublength()))
+             self.angular_sublength))
         index = central_atom_index * self.num_species_pairs + self.triu_index[
             species12_[0], species12_[1]]
         angular_aev.index_add_(0, index, angular_terms_)
         angular_aev = angular_aev.reshape(num_molecules, num_atoms,
-                                          self.angular_length())
+                                          self.angular_length)
         return angular_aev
 
     def _compute_radial_aev(self, species12: Tensor, distances: Tensor,
@@ -328,12 +338,12 @@ class AEVComputer(torch.nn.Module):
         radial_terms_ = self.radial_terms(distances)
         radial_aev = radial_terms_.new_zeros(
             (num_molecules * num_atoms * self.num_species,
-             self.radial_terms.sublength()))
+             self.radial_sublength))
         index12 = atom_index12 * self.num_species + species12.flip(0)
         radial_aev.index_add_(0, index12[0], radial_terms_)
         radial_aev.index_add_(0, index12[1], radial_terms_)
         radial_aev = radial_aev.reshape(num_molecules, num_atoms,
-                                        self.radial_length())
+                                        self.radial_length)
         return radial_aev
 
     def _triple_by_molecule(
