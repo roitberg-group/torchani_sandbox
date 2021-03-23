@@ -300,7 +300,6 @@ class AEVComputer(torch.nn.Module):
     @staticmethod
     def _compute_difference_vector(coordinates: Tensor, atom_index12: Tensor,
                                    shift_values: Tensor) -> Tensor:
-        coordinates = coordinates.flatten(0, 1)
         selected_coordinates = coordinates.view(-1, 3).index_select(
             0, atom_index12.view(-1)).view(2, -1, 3)
         vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
