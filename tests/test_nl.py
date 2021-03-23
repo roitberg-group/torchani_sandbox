@@ -8,7 +8,7 @@ from torchani.geometry import tile_into_cube
 import torchani
 from tqdm import tqdm
 
-with open('test_nl_data.pkl', 'rb') as f:
+with open('nl_data.pkl', 'rb') as f:
     vector_bucket_index_compare = pickle.load(f)
 
 
