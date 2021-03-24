@@ -438,7 +438,7 @@ class AEVComputerForRepulsion(AEVComputer):
         atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
         shift_values = shift_indices.to(cell.dtype) @ cell
         aev, distances = self._compute_aev(species, coordinates, atom_index12, shift_values)
-        return SpeciesAEV(species, aev), atom_index12, distances
+        return SpeciesAEVForRepulsion(species, aev, atom_index12, distances)
 
     def _compute_aev(self, species: Tensor, coordinates: Tensor,
                     atom_index12: Tensor, shift_values: Tensor) -> Tuple[Tensor, Tensor]:
