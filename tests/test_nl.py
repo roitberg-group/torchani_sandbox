@@ -1,12 +1,12 @@
 import unittest
 import pickle
-import numpy as np
 
 import torch
+from tqdm import tqdm
+
 from torchani.aev import AEVComputer, CellList, FullPairwise
 from torchani.geometry import tile_into_cube
 import torchani
-from tqdm import tqdm
 
 with open('nl_data.pkl', 'rb') as f:
     vector_bucket_index_compare = pickle.load(f)
@@ -107,8 +107,8 @@ class TestCellList(unittest.TestCase):
         clist = self.clist
         clist._setup_cell_parameters(self.cell)
         atoms = vector_bucket_index_compare.shape[1]
-        flat = clist.vector_idx_to_flat[(vector_bucket_index_compare +\
-            torch.ones(1, dtype=torch.long)).reshape(-1,
+        flat = clist.vector_idx_to_flat[(vector_bucket_index_compare
+            + torch.ones(1, dtype=torch.long)).reshape(-1,
                 3).unbind(1)].reshape(1, atoms)
         self.assertTrue(clist.total_buckets == 27)
         flat_compare = torch.repeat_interleave(
@@ -309,11 +309,11 @@ class TestCellListEnergies(unittest.TestCase):
 
     def testCellListLargeRandomJIT(self):
         device = torch.device('cuda')
-        #torch._C._jit_set_profiling_executor(False)
-        #torch._C._jit_set_profiling_mode(False) # this also has an effect
-        #torch._C._jit_override_can_fuse_on_cpu(False)
-        #torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
-        #torch._C._jit_set_nvfuser_enabled(False)
+        # torch._C._jit_set_profiling_executor(False)
+        # torch._C._jit_set_profiling_mode(False) # this also has an effect
+        # torch._C._jit_override_can_fuse_on_cpu(False)
+        # torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
+        # torch._C._jit_set_nvfuser_enabled(False)
         aev_cl = torch.jit.script(self.aev_cl).to(device).double()
         aev_fp = torch.jit.script(self.aev_fp).to(device).double()
         species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
@@ -332,9 +332,9 @@ class TestCellListEnergies(unittest.TestCase):
                                 pbc=self.pbc.to(device))
             self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
 
-    # TODO:note that this test fails with single precision!
+    # TODO: Note that this test fails with single precision!
     @unittest.skipIf(True, '')
-    def testAEVComputerNLRandom3float(self):
+    def testCellListRandomFloat(self):
         device = torch.device('cuda')
         aev_cl = self.aev_cl.to(device).to(torch.float)
         aev_fp = self.aev_fp.to(device).to(torch.float)
@@ -348,92 +348,11 @@ class TestCellListEnergies(unittest.TestCase):
 
             _, aevs_cl = aev_cl((species, coordinates),
                                 cell=self.cell.to(device),
-                                pbc=pbc.to(device))
+                                pbc=self.pbc.to(device))
             _, aevs_fp = aev_fp((species, coordinates),
                                 cell=self.cell.to(device),
-                                pbc=pbc.to(device))
+                                pbc=self.pbc.to(device))
             self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
-
-    @unittest.skipIf(True, 'useless test now')
-    def testNeighborlistJit(self):
-        import pickle
-        import time
-        # TODO many JIT optimizations break the code so I turn every
-        # optimization off until pytorch fixes them
-        # torch._C._jit_set_profiling_executor(False)
-        # torch._C._jit_override_can_fuse_on_cpu(False)
-        # torch._C._jit_set_profiling_mode(False) # this also has an effect
-        # torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
-        # torch._C._jit_set_nvfuser_enabled(False)
-        device = torch.device('cuda')
-        aev_compu = AEVComputerJoint.like_1x().to(device).to(torch.double)
-        #aevc = AEVComputerNL.like_ani1x().to(device).to(torch.double)
-        aevj.requires_grad_(False)
-        aevj = torch.jit.script(aevj)
-        #aevc = torch.jit.script(aevc)
-        species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
-        times = []
-        for j in range(1000):
-            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
-                torch.double) * 3 * self.cell_size
-            coordinates = torch.clamp(coordinates,
-                                      min=0.0001,
-                                      max=self.cell_size - 0.0001)
-
-            #pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
-            #coordinates.requires_grad_(True)
-            start = time.time()
-            torch.cuda.synchronize()
-            #_, aev_c = aevc((species, coordinates.double()), cell=self.cell.to(device).double(), pbc=pbc)
-            _, aev_c = aevj((species, coordinates.double()))
-            #_ = -torch.autograd.grad(aev_c.sum(), coordinates)[0]
-            torch.cuda.synchronize()
-            end = time.time()
-            times.append(end - start)
-            print(end - start)
-            #with open("jit_no_overrides102.pkl", 'wb') as f:
-            #    pickle.dump(times, f)
-
-            #coordinates.requires_grad_(True)
-            #_, aev_j = aevj((species, coordinates.double()), cell=self.cell.to(device).double(), pbc=pbc)
-            #_ = -torch.autograd.grad(aev_j.sum(), coordinates)[0]
-            #self.assertTrue(torch.isclose(aev_c, aev_j).all())
-
-    #def testLargeWater(self):
-    #    # TODO many JIT optimizations break the code so I turn every
-    #    # optimization off until pytorch fixes them
-    #    #torch._C._jit_set_profiling_executor(False)
-    #    #torch._C._jit_set_profiling_mode(False) # this also has an effect
-    #    #torch._C._jit_override_can_fuse_on_cpu(False)
-    #    #torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
-    #    #torch._C._jit_set_nvfuser_enabled(False)
-    #    aevj = AEVComputerJoint.like_ani1x().to(self.device, torch.double)
-    #    aevc = AEVComputerNL.like_ani1x().to(self.device, torch.double)
-    #    aevj.requires_grad_(False)
-    #    aevc.requires_grad_(False)
-    #    aevj = torch.jit.script(aevj)
-    #    aevc = torch.jit.script(aevc)
-
-    #    coordinates = np.loadtxt('./large_water.xyz', skiprows=2, usecols=[1, 2, 3])
-    #    species = np.loadtxt('./large_water.xyz', skiprows=2, usecols=[0], dtype=str).tolist()
-    #    species = np.asarray([torchani.utils.PERIODIC_TABLE.index(s) for s in species], dtype=int)
-    #    species = torch.from_numpy(species).to(dtype=torch.long, device=self.device).unsqueeze(0)
-    #    coordinates = torch.from_numpy(coordinates).to(dtype=torch.double, device = self.device).unsqueeze(0)
-    #    converter = torchani.nn.SpeciesConverter(['H', 'C', 'N', 'O'])
-    #    species, _ = converter((species, coordinates))
-    #    coordinates.requires_grad_(True)
-    #    with open('./large_water.xyz', 'r') as f:
-    #        cell_string = f.read().split('\n')[1].split('=')[-1].split()
-    #        cell_string = torch.tensor([float(s) for s in cell_string], device = self.device, dtype = torch.double)
-    #        cell = torch.diag(cell_string)
-    #    pbc = torch.tensor([True, True, True], dtype=torch.bool).to(self.device)
-    #    _, aev_c = aevc((species, coordinates), cell, pbc)
-    #    force_c = -torch.autograd.grad(aev_c.sum(), coordinates)[0]
-    #    coordinates.requires_grad_(True)
-    #    _, aev_j = aevc((species, coordinates), cell, pbc)
-    #    force_j = -torch.autograd.grad(aev_j.sum(), coordinates)[0]
-    #    self.assertTrue(torch.isclose(aev_c, aev_j).all())
-    #    self.assertTrue(torch.isclose(force_c, force_j).all())
 
 
 if __name__ == '__main__':
