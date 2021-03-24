@@ -35,6 +35,12 @@ class SpeciesAEV(NamedTuple):
     species: Tensor
     aevs: Tensor
 
+class SpeciesAEVForRepulsion(NamedTuple):
+    species: Tensor
+    aevs: Tensor
+    atom_index12: Tensor
+    distances: Tensor
+
 
 def jit_unused_if_no_cuaev(condition=cuaev_is_installed):
     def decorator(func):
@@ -407,6 +413,59 @@ class AEVComputer(torch.nn.Module):
         cumsum = torch.zeros_like(input_)
         torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
         return cumsum
+
+class AEVComputerForRepulsion(AEVComputer):
+
+    def forward(self,
+                input_: Tuple[Tensor, Tensor],
+                cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None) -> SpeciesAEV:
+        species, coordinates = input_
+        # check shapes for correctness
+        assert species.dim() == 2
+        assert coordinates.dim() == 3
+        assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
+        assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
+
+        cell = cell if cell is not None else self.default_cell
+        pbc = pbc if pbc is not None else self.default_pbc
+
+        if self.use_cuda_extension:
+            assert not pbc.any(), "cuaev currently does not support PBC"
+            aev = self._compute_cuaev(species, coordinates)
+            return SpeciesAEV(species, aev)
+
+        atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
+        shift_values = shift_indices.to(cell.dtype) @ cell
+        aev, distances = self._compute_aev(species, coordinates, atom_index12, shift_values)
+        return SpeciesAEV(species, aev), atom_index12, distances
+
+    def _compute_aev(self, species: Tensor, coordinates: Tensor,
+                    atom_index12: Tensor, shift_values: Tensor) -> Tuple[Tensor, Tensor]:
+
+        species12 = species.flatten()[atom_index12]
+        vec = self._compute_difference_vector(coordinates, atom_index12,
+                                              shift_values)
+
+        distances = vec.norm(2, -1)
+        radial_aev = self._compute_radial_aev(species12, distances,
+                                              atom_index12, species.shape)
+        # Rca is usually much smaller than Rcr, using neighbor list with
+        # cutoff = Rcr is a waste of resources Now we will get a smaller neighbor
+        # list that only cares about atoms with distances <= Rca
+        even_closer_indices = (distances <= self.angular_terms.cutoff).nonzero().flatten()
+
+        atom_index12 = atom_index12.index_select(1, even_closer_indices)
+        species12 = species12.index_select(1, even_closer_indices)
+        vec = vec.index_select(0, even_closer_indices)
+
+        angular_aev = self._compute_angular_aev(species12, vec, atom_index12,
+                                                species.shape)
+
+        return torch.cat([radial_aev, angular_aev], dim=-1), distances
+
+
+
 
 
 class AEVComputerBare(AEVComputer):
