@@ -278,7 +278,7 @@ class CellList(BaseNeighborlist):
                                                   [1, 1, -1], [-1, 0, -1],
                                                   [0, 0, -1], [1, 0, -1],
                                                   [-1, -1, -1], [0, -1, -1],
-                                                  [1, -1, -1]])
+                                                  [1, -1, -1]], dtype=torch.long)
         self.vector_index_displacement = vector_index_displacement
         # these are the translation displacement indices, used to displace the
         # image atoms
@@ -292,8 +292,8 @@ class CellList(BaseNeighborlist):
             [0, 1, 0],  # 15
             [1, 1, 0],  # 16
             [1, 0, 0],  # 17
-        ])
-        translation_displacement_indices = torch.cat((torch.tensor([[0, 0, 0]]), self.vector_index_displacement, extra_translation_displacements), dim=0)
+        ], dtype=torch.long)
+        translation_displacement_indices = torch.cat((torch.tensor([[0, 0, 0]], dtype=torch.long), self.vector_index_displacement, extra_translation_displacements), dim=0)
         self.translation_displacement_indices = translation_displacement_indices
 
         self.translation_displacements = torch.zeros_like(
