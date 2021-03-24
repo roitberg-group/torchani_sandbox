@@ -33,7 +33,8 @@ import torch
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
 from .nn import SpeciesConverter, SpeciesEnergies
-from .aev import AEVComputer, AEVComputerBare, CellList
+from .aev import AEVComputer, AEVComputerBare, CellList, CutoffSmooth, AEVComputerForRepulsion
+from .repulsion import RepulsionCalculator
 
 
 class SpeciesEnergiesQBC(NamedTuple):
@@ -346,6 +347,7 @@ class BuiltinEnsemble(BuiltinModel):
         """
         return len(self.neural_networks)
 
+
 # unfortunately this is an UGLY workaround to a torchscript bug
 class BuiltinModelCellList(BuiltinModel):
 
@@ -360,6 +362,7 @@ class BuiltinModelCellList(BuiltinModel):
         self.aev_computer.neighborlist.translation_cases = self.aev_computer.neighborlist.translation_cases.to(dtype=torch.long)
         self.aev_computer.neighborlist.vector_index_displacement = self.aev_computer.neighborlist.vector_index_displacement.to(dtype=torch.long)
         self.aev_computer.neighborlist.translation_displacement_indices = self.aev_computer.neighborlist.translation_displacement_indices.to(dtype=torch.long)
+
 
 class BuiltinEnsembleCellList(BuiltinEnsemble):
 
@@ -376,7 +379,66 @@ class BuiltinEnsembleCellList(BuiltinEnsemble):
         self.aev_computer.neighborlist.translation_displacement_indices = self.aev_computer.neighborlist.translation_displacement_indices.to(dtype=torch.long)
 
 
-def _build_neurochem_model(info_file_path, periodic_table_index=False, external_cell_list=False, model_index=None, torch_cell_list=False):
+class BuiltinModelRepulsion(BuiltinModel):
+
+    def __init__(self, **kwargs):
+        repulsion_calculator = kwargs.pop('repulsion_calculator')
+        super().__init__(**kwargs)
+        self.repulsion_calculator = repulsion_calculator
+
+    def forward(self, species_coordinates: Tuple[Tensor, Tensor],
+                cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        """Calculates predicted properties for minibatch of configurations
+
+        Args:
+            species_coordinates: minibatch of configurations
+            cell: the cell used in PBC computation, set to None if PBC is not enabled
+            pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
+
+        Returns:
+            species_energies: energies for the given configurations
+
+        .. note:: The coordinates, and cell are in Angstrom, and the energies
+            will be in Hartree.
+        """
+        if self.periodic_table_index:
+            species_coordinates = self.species_converter(species_coordinates)
+
+        # check if unknown species are included
+        if species_coordinates[0].ge(self.aev_computer.num_species).any():
+            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
+        species, aevs, atom_index12, distances = self.aev_computer(species_coordinates, cell, pbc)
+        species_energies = self.neural_networks((species, aevs))
+        species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
+
+        return self.energy_shifter(species_energies)
+
+
+class BuiltinEnsembleRepulsion(BuiltinEnsemble):
+
+    def __init__(self, **kwargs):
+        repulsion_calculator = kwargs.pop('repulsion_calculator')
+        super().__init__(**kwargs)
+        self.repulsion_calculator = repulsion_calculator
+
+    def forward(self, species_coordinates: Tuple[Tensor, Tensor],
+                cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        if self.periodic_table_index:
+            species_coordinates = self.species_converter(species_coordinates)
+
+        # check if unknown species are included
+        if species_coordinates[0].ge(self.aev_computer.num_species).any():
+            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
+        species, aevs, atom_index12, distances = self.aev_computer(species_coordinates, cell, pbc)
+        species_energies = self.neural_networks((species, aevs))
+        species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
+
+        return self.energy_shifter(species_energies)
+
+
+def _build_neurochem_model(info_file_path, periodic_table_index=False, external_cell_list=False, model_index=None, torch_cell_list=False, repulsion=False):
     from . import neurochem  # noqa
     # builder function that creates a BuiltinModel from a neurochem info path
     assert not (external_cell_list and torch_cell_list)
@@ -386,8 +448,13 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
 
     if external_cell_list:
         aev_computer = AEVComputerBare(**consts)
-    elif torch_cell_list:
+    elif torch_cell_list and not repulsion:
         aev_computer = AEVComputer(**consts, neighborlist=CellList)
+    elif repulsion:
+        if torch_cell_list:
+            aev_computer = AEVComputerForRepulsion(**consts, neighborlist=CellList, cutoff_function=CutoffSmooth)
+        else:
+            aev_computer = AEVComputerForRepulsion(**consts, cutoff_function=CutoffSmooth)
     else:
         aev_computer = AEVComputer(**consts)
 
@@ -410,14 +477,22 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
             'neural_networks': neural_networks,
             'periodic_table_index': periodic_table_index}
 
+    if repulsion:
+        cutoff = aev_computer.radial_terms.cutoff.item()
+        kwargs.update({'repulsion_calculator': RepulsionCalculator(cutoff)})
+
     if model_index is None:
-        if torch_cell_list:
+        if torch_cell_list and not repulsion:
             return BuiltinEnsembleCellList(**kwargs)
+        elif repulsion:
+            return BuiltinEnsembleRepulsion(**kwargs)
         else:
             return BuiltinEnsemble(**kwargs)
     else:
-        if torch_cell_list:
+        if torch_cell_list and not repulsion:
             return BuiltinModelCellList(**kwargs)
+        elif repulsion:
+            return BuiltinModelRepulsion(**kwargs)
         else:
             return BuiltinModel(**kwargs)
 
