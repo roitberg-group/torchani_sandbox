@@ -33,7 +33,7 @@ import torch
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
 from .nn import SpeciesConverter, SpeciesEnergies
-from .aev import AEVComputer, AEVComputerBare
+from .aev import AEVComputer, AEVComputerBare, CellList
 
 
 class SpeciesEnergiesQBC(NamedTuple):
@@ -381,14 +381,18 @@ class BuiltinEnsembleBare(BuiltinEnsemble):
         return self.energy_shifter(species_energies)
 
 
-def _build_neurochem_model(info_file_path, periodic_table_index=False, external_cell_list=False, model_index=None):
+def _build_neurochem_model(info_file_path, periodic_table_index=False, external_cell_list=False, model_index=None, torch_cell_list=False):
     from . import neurochem  # noqa
     # builder function that creates a BuiltinModel from a neurochem info path
+    assert not (external_cell_list and torch_cell_list)
+
     const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
     consts = neurochem.Constants(const_file)
 
     if external_cell_list:
         aev_computer = AEVComputerBare(**consts)
+    elif torch_cell_list:
+        aev_computer = AEVComputer(**consts, neighborlist=CellList)
     else:
         aev_computer = AEVComputer(**consts)
 
