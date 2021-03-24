@@ -1,4 +1,7 @@
-from .aev_computer import AEVComputer, AEVComputerBare, SpeciesAEV, cuaev_is_installed
+from .aev_computer import AEVComputer, AEVComputerBare, AEVComputerForRepulsion, SpeciesAEV, cuaev_is_installed
 from .neighbors import CellList, FullPairwise
+from .cutoffs import CutoffSmooth, CutoffCosine
 
-__all__ = ['AEVComputer', 'AEVComputerBare', 'SpeciesAEV', 'cuaev_is_installed', 'FullPairwise', 'CellList']
+__all__ = ['AEVComputer', 'AEVComputerBare', 'AEVComputerForRepulsion',
+        'SpeciesAEV', 'cuaev_is_installed', 'FullPairwise', 'CellList',
+        'CutoffSmooth', 'CutoffCosine']
