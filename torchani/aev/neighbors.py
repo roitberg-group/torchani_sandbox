@@ -17,7 +17,7 @@ else:
     from torch.jit import Final
 
 
-class Neighborlist(torch.nn.Module):
+class BaseNeighborlist(torch.nn.Module):
 
     cutoff: Final[float]
 
@@ -87,7 +87,7 @@ class Neighborlist(torch.nn.Module):
         return atom_index12, input_shifts.index_select(0, pair_index)
 
 
-class FullPairwise(Neighborlist):
+class FullPairwise(BaseNeighborlist):
     def __init__(self, cutoff: float):
         """Compute pairs of atoms that are neighbors, uses pbc depending on
         weather pbc.any() is True or not
@@ -198,7 +198,7 @@ class FullPairwise(Neighborlist):
         ])
 
 
-class CellList(Neighborlist):
+class CellList(BaseNeighborlist):
 
     old_values_reset: Final[bool]
 

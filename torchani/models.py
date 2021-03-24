@@ -33,7 +33,7 @@ import torch
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
 from .nn import SpeciesConverter, SpeciesEnergies
-from .aev import AEVComputer
+from .aev import AEVComputer, AEVComputerBare
 
 
 class SpeciesEnergiesQBC(NamedTuple):
@@ -45,7 +45,9 @@ class SpeciesEnergiesQBC(NamedTuple):
 class BuiltinModel(torch.nn.Module):
     r"""Private template for the builtin ANI models """
 
-    def __init__(self, species_converter, aev_computer, neural_networks, energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index):
+    def __init__(self, species_converter, aev_computer, neural_networks,
+            energy_shifter, species_to_tensor, consts, sae_dict,
+            periodic_table_index):
         super().__init__()
         self.species_converter = species_converter
         self.aev_computer = aev_computer
@@ -58,27 +60,6 @@ class BuiltinModel(torch.nn.Module):
         # a bit useless maybe
         self.consts = consts
         self.sae_dict = sae_dict
-
-    @classmethod
-    def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False, model_index=0):
-        from . import neurochem  # noqa
-
-        # this is used to load only 1 model (by default model 0)
-        const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
-        if (model_index >= ensemble_size):
-            raise ValueError("The ensemble size is only {}, model {} can't be loaded".format(ensemble_size, model_index))
-
-        consts = neurochem.Constants(const_file)
-        species_converter = SpeciesConverter(consts.species)
-        aev_computer = AEVComputer(**consts)
-        energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
-        species_to_tensor = consts.species_to_tensor
-
-        network_dir = os.path.join('{}{}'.format(ensemble_prefix, model_index), 'networks')
-        neural_networks = neurochem.load_model(consts.species, network_dir)
-
-        return cls(species_converter, aev_computer, neural_networks,
-                   energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index)
 
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -103,7 +84,7 @@ class BuiltinModel(torch.nn.Module):
         if species_coordinates[0].ge(self.aev_computer.num_species).any():
             raise ValueError(f'Unknown species found in {species_coordinates[0]}')
 
-        species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
+        species_aevs = self.aev_computer(species_coordinates, cell, pbc)
         species_energies = self.neural_networks(species_aevs)
         return self.energy_shifter(species_energies)
 
@@ -135,11 +116,11 @@ class BuiltinModel(torch.nn.Module):
         """
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
+        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
         atomic_energies = self.neural_networks._atomic_energies((species, aevs))
         self_energies = self.energy_shifter.self_energies.clone().to(species.device)
         self_energies = self_energies[species]
-        self_energies[species == torch.tensor(-1, device=species.device)] = torch.tensor(0, device=species.device, dtype=torch.double)
+        self_energies[species == torch.tensor(-1, device=species.device)] = 0.0
         # shift all atomic energies individually
         assert self_energies.shape == atomic_energies.shape
         atomic_energies += self_energies
@@ -215,13 +196,6 @@ class BuiltinEnsemble(BuiltinModel):
             to index species. If set to `False`, then indices must be `0, 1, 2, ..., N - 1`
             where `N` is the number of parametrized species.
     """
-
-    def __init__(self, species_converter, aev_computer, neural_networks,
-                 energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index):
-        super().__init__(species_converter, aev_computer, neural_networks,
-                         energy_shifter, species_to_tensor, consts, sae_dict,
-                         periodic_table_index)
-
     @torch.jit.export
     def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                         cell: Optional[Tensor] = None,
@@ -236,7 +210,7 @@ class BuiltinEnsemble(BuiltinModel):
         """
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
+        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
         members_list = []
         for nnp in self.neural_networks:
             members_list.append(nnp._atomic_energies((species, aevs)).unsqueeze(0))
@@ -251,23 +225,6 @@ class BuiltinEnsemble(BuiltinModel):
         if average:
             return SpeciesEnergies(species, member_atomic_energies.mean(dim=0))
         return SpeciesEnergies(species, member_atomic_energies)
-
-    @classmethod
-    def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False):
-        from . import neurochem  # noqa
-        # this is used to load only 1 model (by default model 0)
-        const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
-
-        consts = neurochem.Constants(const_file)
-        species_converter = SpeciesConverter(consts.species)
-        aev_computer = AEVComputer(**consts)
-        energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
-        species_to_tensor = consts.species_to_tensor
-        neural_networks = neurochem.load_model_ensemble(consts.species,
-                                                        ensemble_prefix, ensemble_size)
-
-        return cls(species_converter, aev_computer, neural_networks,
-                   energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index)
 
     def __getitem__(self, index):
         """Get a single 'AEVComputer -> ANIModel -> EnergyShifter' sequential model
@@ -322,7 +279,7 @@ class BuiltinEnsemble(BuiltinModel):
         """
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
+        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
         member_outputs = []
         for nnp in self.neural_networks:
             unshifted_energies = nnp((species, aevs)).energies
@@ -390,7 +347,85 @@ class BuiltinEnsemble(BuiltinModel):
         return len(self.neural_networks)
 
 
-def ANI1x(periodic_table_index=False, model_index=None):
+class BuiltinModelBare(BuiltinModel):
+
+    def forward(self, species_coordinates: Tuple[Tensor, Tensor],
+                neighborlist: Tensor,
+                shifts: Tensor) -> SpeciesEnergies:
+
+        if self.periodic_table_index:
+            species_coordinates = self.species_converter(species_coordinates)
+        # check if unknown species are included
+        if species_coordinates[0].ge(self.aev_computer.num_species).any():
+            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
+
+        species_aevs = self.aev_computer(species_coordinates, atom_index12=neighborlist, shift_values=shifts)
+        species_energies = self.neural_networks(species_aevs)
+        return self.energy_shifter(species_energies)
+
+
+class BuiltinEnsembleBare(BuiltinEnsemble):
+
+    def forward(self, species_coordinates: Tuple[Tensor, Tensor],
+                neighborlist: Tensor,
+                shifts: Tensor) -> SpeciesEnergies:
+
+        if self.periodic_table_index:
+            species_coordinates = self.species_converter(species_coordinates)
+        # check if unknown species are included
+        if species_coordinates[0].ge(self.aev_computer.num_species).any():
+            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
+
+        species_aevs = self.aev_computer(species_coordinates, atom_index12=neighborlist, shift_values=shifts)
+        species_energies = self.neural_networks(species_aevs)
+        return self.energy_shifter(species_energies)
+
+
+def _build_neurochem_model(info_file_path, periodic_table_index=False, external_cell_list=False, model_index=None):
+    from . import neurochem  # noqa
+    # builder function that creates a BuiltinModel from a neurochem info path
+    const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
+    consts = neurochem.Constants(const_file)
+
+    if external_cell_list:
+        aev_computer = AEVComputerBare(**consts)
+    else:
+        aev_computer = AEVComputer(**consts)
+
+    if model_index is None:
+        neural_networks = neurochem.load_model_ensemble(consts.species, ensemble_prefix, ensemble_size)
+    else:
+        if (model_index >= ensemble_size):
+            raise ValueError(f"The ensemble size is only {ensemble_size}, model {model_index} can't be loaded")
+        network_dir = os.path.join('{}{}'.format(ensemble_prefix, model_index), 'networks')
+        neural_networks = neurochem.load_model(consts.species, network_dir)
+
+    energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
+
+    kwargs = {'sae_dict': sae_dict,
+            'consts': consts,
+            'species_converter': SpeciesConverter(consts.species),
+            'aev_computer': aev_computer,
+            'energy_shifter': energy_shifter,
+            'species_to_tensor': consts.species_to_tensor,
+            'neural_networks': neural_networks,
+            'periodic_table_index': periodic_table_index}
+
+    if model_index is None:
+        return BuiltinEnsemble(**kwargs)
+        if external_cell_list:
+            return BuiltinEnsembleBare(**kwargs)
+        else:
+            return BuiltinEnsemble(**kwargs)
+    else:
+        return BuiltinModel(**kwargs)
+        if external_cell_list:
+            return BuiltinModelBare(**kwargs)
+        else:
+            return BuiltinModel(**kwargs)
+
+
+def ANI1x(*args, **kwargs):
     """The ANI-1x model as in `ani-1x_8x on GitHub`_ and `Active Learning Paper`_.
 
     The ANI-1x model is an ensemble of 8 networks that was trained using
@@ -405,12 +440,10 @@ def ANI1x(periodic_table_index=False, model_index=None):
         https://aip.scitation.org/doi/abs/10.1063/1.5023802
     """
     info_file = 'ani-1x_8x.info'
-    if model_index is None:
-        return BuiltinEnsemble._from_neurochem_resources(info_file, periodic_table_index)
-    return BuiltinModel._from_neurochem_resources(info_file, periodic_table_index, model_index)
+    return _build_neurochem_model(*args, **kwargs, info_file_path=info_file)
 
 
-def ANI1ccx(periodic_table_index=False, model_index=None):
+def ANI1ccx(*args, **kwargs):
     """The ANI-1ccx model as in `ani-1ccx_8x on GitHub`_ and `Transfer Learning Paper`_.
 
     The ANI-1ccx model is an ensemble of 8 networks that was trained
@@ -426,12 +459,10 @@ def ANI1ccx(periodic_table_index=False, model_index=None):
         https://doi.org/10.26434/chemrxiv.6744440.v1
     """
     info_file = 'ani-1ccx_8x.info'
-    if model_index is None:
-        return BuiltinEnsemble._from_neurochem_resources(info_file, periodic_table_index)
-    return BuiltinModel._from_neurochem_resources(info_file, periodic_table_index, model_index)
+    return _build_neurochem_model(*args, **kwargs, info_file_path=info_file)
 
 
-def ANI2x(periodic_table_index=False, model_index=None):
+def ANI2x(*args, **kwargs):
     """The ANI-2x model as in `ANI2x Paper`_ and `ANI2x Results on GitHub`_.
 
     The ANI-2x model is an ensemble of 8 networks that was trained on the
@@ -446,6 +477,4 @@ def ANI2x(periodic_table_index=False, model_index=None):
         https://doi.org/10.26434/chemrxiv.11819268.v1
     """
     info_file = 'ani-2x_8x.info'
-    if model_index is None:
-        return BuiltinEnsemble._from_neurochem_resources(info_file, periodic_table_index)
-    return BuiltinModel._from_neurochem_resources(info_file, periodic_table_index, model_index)
+    return _build_neurochem_model(*args, **kwargs, info_file_path=info_file)
