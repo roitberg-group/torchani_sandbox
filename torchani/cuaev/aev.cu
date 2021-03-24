@@ -736,17 +736,86 @@ __global__ void cuRadialAEVs(
   int j = d.j;
 
   SpeciesT type_j = species_t[mol_idx][j];
-  SpeciesT type_i = species_t[mol_idx][i];
 
-  DataT fc = 0.5 * cos(PI * Rij / Rcr) + 0.5;
+  DataT fc = 0.5 * __cosf(PI * Rij / Rcr) + 0.5;
 
   for (int ishfr = laneIdx; ishfr < nShfR; ishfr += THREADS_PER_RIJ) {
     DataT ShfR = __ldg(&ShfR_t[ishfr]);
 
-    DataT GmR = 0.25 * exp(-EtaR * (Rij - ShfR) * (Rij - ShfR)) * fc;
+    DataT GmR = 0.25 * __expf(-EtaR * (Rij - ShfR) * (Rij - ShfR)) * fc;
 
     atomicAdd(&aev_t[mol_idx][i][type_j * radial_sublength + ishfr], GmR);
-    // atomicAdd(&aev_t[mol_idx][j][type_i * radial_sublength + ishfr], GmR);
+  }
+}
+
+template <typename SpeciesT, typename DataT>
+__global__ void cuRadialAEVs_atomCentered(
+    torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
+    torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> ShfR_t,
+    torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> EtaR_t,
+    torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> aev_t,
+    const PairDist* __restrict__ d_Rij,
+    const int* __restrict__ d_nPairsPerCenterAtom,
+    const int* __restrict__ d_centerAtomStartIdx,
+    float Rcr,
+    int radial_length,
+    int radial_sublength,
+    int nRadialRij,
+    int max_numPairsPerAtom) {
+  extern __shared__ DataT smem[];
+
+  DataT* s_radial = &smem[0];
+  DataT* s_fc = &smem[radial_length];
+  // DataT* s_dist = &smem[radial_length + max_numPairsPerAtom];
+  // int* s_type = (int*)&smem[radial_length + 2 * max_numPairsPerAtom];
+
+  int cIdx = blockIdx.x; // central atom id
+  int tIdx = threadIdx.y * blockDim.x + threadIdx.x; // local thread idx
+
+  int nShfR = ShfR_t.size(0);
+  DataT EtaR = EtaR_t[0];
+
+  int start_idx = d_centerAtomStartIdx[cIdx];
+  int jnum = d_nPairsPerCenterAtom[cIdx];
+  PairDist d = d_Rij[start_idx];
+  int mol_idx = d.midx;
+  int i = d.i;
+  int laneIdx = threadIdx.x % blockDim.x;
+
+  for (int iaev = tIdx; iaev < radial_length; iaev += blockDim.x * blockDim.y) {
+    s_radial[iaev] = 0;
+  }
+
+  // TODO move fc outside of radial kernel, so could directly load
+  for (int jj = tIdx; jj < jnum; jj += blockDim.x * blockDim.y) {
+    PairDist dij = d_Rij[start_idx + jj];
+    int j = dij.j;
+    DataT Rij = dij.Rij;
+    s_fc[jj] = 0.5 * __cosf(PI * Rij / Rcr) + 0.5;
+    // s_type[jj] = species_t[mol_idx][j];
+    // s_dist[jj] = Rij;
+  }
+  __syncthreads();
+
+  for (int jj = threadIdx.y; jj < jnum; jj += blockDim.y) {
+    DataT fc = s_fc[jj];
+    PairDist dij = d_Rij[start_idx + jj];
+    DataT Rij = dij.Rij;
+    int j = dij.j;
+    SpeciesT type_j = species_t[mol_idx][j];
+    // SpeciesT type_j = s_type[jj];
+    // DataT Rij = s_dist[jj];
+
+    for (int ishfr = laneIdx; ishfr < nShfR; ishfr += blockDim.x) {
+      DataT ShfR = __ldg(&ShfR_t[ishfr]);
+      DataT GmR = 0.25 * __expf(-EtaR * (Rij - ShfR) * (Rij - ShfR)) * fc;
+      atomicAdd(&s_radial[type_j * radial_sublength + ishfr], GmR);
+    }
+  }
+
+  __syncthreads();
+  for (int iaev = tIdx; iaev < radial_length; iaev += blockDim.x * blockDim.y) {
+    aev_t[mol_idx][i][iaev] = s_radial[iaev];
   }
 }
 
@@ -1121,6 +1190,23 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
           n_molecules * max_natoms_per_mol,
           max_natoms_per_mol);
       ncenter_atoms = n_molecules * max_natoms_per_mol;
+
+      int max_radial_numPairsPerAtom = cubMax(radialNumPairsPerAtom_p, ncenter_atoms, d_count_out, stream);
+      constexpr dim3 block_radial(8, 16, 1);
+      int smem_radial = aev_params.radial_length * sizeof(float) + max_radial_numPairsPerAtom * sizeof(float) * 3;
+      cuRadialAEVs_atomCentered<int, float><<<ncenter_atoms, block_radial, smem_radial, stream>>>(
+          species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+          aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+          aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+          aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+          d_radialRij,
+          radialNumPairsPerAtom_p,
+          radialPairStartIdx_p,
+          aev_params.Rcr,
+          aev_params.radial_length,
+          aev_params.radial_sublength,
+          nRadialRij,
+          max_radial_numPairsPerAtom);
     }
 
   } else {
@@ -1152,23 +1238,22 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
         d_count_out,
         [=] __device__(const PairDist d) { return d.Rij <= Rcr; },
         stream);
+    const int block_size = 64;
+    int nblocks = (nRadialRij * 8 + block_size - 1) / block_size;
+    cuRadialAEVs<int, float, 8><<<nblocks, block_size, 0, stream>>>(
+        species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+        aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+        aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+        aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+        d_radialRij,
+        aev_params.Rcr,
+        aev_params.radial_length,
+        aev_params.radial_sublength,
+        nRadialRij);
   }
 
   // release d_Rij memory
   tensor_Rij = Tensor();
-
-  const int block_size = 64;
-  int nblocks = (nRadialRij * 8 + block_size - 1) / block_size;
-  cuRadialAEVs<int, float, 8><<<nblocks, block_size, 0, stream>>>(
-      species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-      aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-      aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-      aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-      d_radialRij,
-      aev_params.Rcr,
-      aev_params.radial_length,
-      aev_params.radial_sublength,
-      nRadialRij);
 
   if (n_molecules > 1) {
     // reuse buffer allocated for all Rij
