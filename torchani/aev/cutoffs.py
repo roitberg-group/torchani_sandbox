@@ -11,7 +11,7 @@ class CutoffCosine(torch.nn.Module):
 
     def forward(self, distances: Tensor) -> Tensor:
         # assuming all elements in distances are smaller than cutoff
-        return 0.5 * torch.cos((distances / self.cutoff) * math.pi ) + 0.5
+        return 0.5 * torch.cos((distances / self.cutoff) * math.pi) + 0.5
 
 
 class CutoffSmooth(torch.nn.Module):
@@ -23,5 +23,5 @@ class CutoffSmooth(torch.nn.Module):
 
     def forward(self, distances: Tensor) -> Tensor:
         # assuming all elements in distances are smaller than cutoff
-        e = 1 - 1 / (1 - (distances / self.cutoff)**2).clamp(min=self.eps)
+        e = 1 - 1 / (1 - (distances / self.cutoff) ** 2).clamp(min=self.eps)
         return torch.exp(e)

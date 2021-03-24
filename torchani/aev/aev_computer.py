@@ -9,7 +9,7 @@ from torch import Tensor
 
 from .cutoffs import CutoffCosine
 from .aev_terms import AngularTerms, RadialTerms
-from .neighbors import FullPairwise, BaeNeighborlist
+from .neighbors import FullPairwise, BaseNeighborlist
 
 cuaev_is_installed = 'torchani.cuaev' in importlib_metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
@@ -447,18 +447,18 @@ class AEVComputerBare(AEVComputer):
         assert atom_index12.dim() == 2 and atom_index12.shape[0] == 2
         assert shift_values.dim() == 2 and shift_values.shape[1] == 3
         assert atom_index12.shape[1] == shift_values.shape[0]
-        
+
         # first we prescreen the input neighborlist in case some of the values are
         # at distances larger than the cutoff for the radial terms
         # this may happen if the neighborlist uses some sort of skin value to rebuild
-        atom_index12, shift_values = self._screen_with_cutoff(self.radial_terms.cutoff.item(), 
-                                                              coordinates.detach(), 
-                                                              atom_index12, 
+        atom_index12, shift_values = self._screen_with_cutoff(self.radial_terms.cutoff.item(),
+                                                              coordinates.detach(),
+                                                              atom_index12,
                                                               shift_values.detach())
         shift_values = shift_values.index_select(0, atom_index12)
         aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
-        
+
     def _screen_with_cutoff(self, cutoff: float, coordinates: Tensor, atom_index12: Tensor, shift_values: Tensor):
         # screen neighbors that are further away than a given cutoff
         vec = self._compute_difference_vector(coordinates, atom_index12, shift_values)
