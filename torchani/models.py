@@ -346,39 +346,34 @@ class BuiltinEnsemble(BuiltinModel):
         """
         return len(self.neural_networks)
 
+# unfortunately this is an UGLY workaround to a torchscript bug
+class BuiltinModelCellList(BuiltinModel):
 
-class BuiltinModelBare(BuiltinModel):
+    @torch.jit.export
+    def _recast_long_buffers(self):
+        self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
+        self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
+        self.aev_computer.neighborlist.total_buckets = self.aev_computer.neighborlist.total_buckets.to(dtype=torch.long)
+        self.aev_computer.neighborlist.scaling_for_flat_index = self.aev_computer.neighborlist.scaling_for_flat_index.to(dtype=torch.long)
+        self.aev_computer.neighborlist.shape_buckets_grid = self.aev_computer.neighborlist.shape_buckets_grid.to(dtype=torch.long)
+        self.aev_computer.neighborlist.vector_idx_to_flat = self.aev_computer.neighborlist.vector_idx_to_flat.to(dtype=torch.long)
+        self.aev_computer.neighborlist.translation_cases = self.aev_computer.neighborlist.translation_cases.to(dtype=torch.long)
+        self.aev_computer.neighborlist.vector_index_displacement = self.aev_computer.neighborlist.vector_index_displacement.to(dtype=torch.long)
+        self.aev_computer.neighborlist.translation_displacement_indices = self.aev_computer.neighborlist.translation_displacement_indices.to(dtype=torch.long)
 
-    def forward(self, species_coordinates: Tuple[Tensor, Tensor],
-                neighborlist: Tensor,
-                shifts: Tensor) -> SpeciesEnergies:
+class BuiltinEnsembleCellList(BuiltinEnsemble):
 
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-        # check if unknown species are included
-        if species_coordinates[0].ge(self.aev_computer.num_species).any():
-            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
-
-        species_aevs = self.aev_computer(species_coordinates, atom_index12=neighborlist, shift_values=shifts)
-        species_energies = self.neural_networks(species_aevs)
-        return self.energy_shifter(species_energies)
-
-
-class BuiltinEnsembleBare(BuiltinEnsemble):
-
-    def forward(self, species_coordinates: Tuple[Tensor, Tensor],
-                neighborlist: Tensor,
-                shifts: Tensor) -> SpeciesEnergies:
-
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-        # check if unknown species are included
-        if species_coordinates[0].ge(self.aev_computer.num_species).any():
-            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
-
-        species_aevs = self.aev_computer(species_coordinates, atom_index12=neighborlist, shift_values=shifts)
-        species_energies = self.neural_networks(species_aevs)
-        return self.energy_shifter(species_energies)
+    @torch.jit.export
+    def _recast_long_buffers(self):
+        self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
+        self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
+        self.aev_computer.neighborlist.total_buckets = self.aev_computer.neighborlist.total_buckets.to(dtype=torch.long)
+        self.aev_computer.neighborlist.scaling_for_flat_index = self.aev_computer.neighborlist.scaling_for_flat_index.to(dtype=torch.long)
+        self.aev_computer.neighborlist.shape_buckets_grid = self.aev_computer.neighborlist.shape_buckets_grid.to(dtype=torch.long)
+        self.aev_computer.neighborlist.vector_idx_to_flat = self.aev_computer.neighborlist.vector_idx_to_flat.to(dtype=torch.long)
+        self.aev_computer.neighborlist.translation_cases = self.aev_computer.neighborlist.translation_cases.to(dtype=torch.long)
+        self.aev_computer.neighborlist.vector_index_displacement = self.aev_computer.neighborlist.vector_index_displacement.to(dtype=torch.long)
+        self.aev_computer.neighborlist.translation_displacement_indices = self.aev_computer.neighborlist.translation_displacement_indices.to(dtype=torch.long)
 
 
 def _build_neurochem_model(info_file_path, periodic_table_index=False, external_cell_list=False, model_index=None, torch_cell_list=False):
@@ -416,15 +411,13 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
             'periodic_table_index': periodic_table_index}
 
     if model_index is None:
-        return BuiltinEnsemble(**kwargs)
-        if external_cell_list:
-            return BuiltinEnsembleBare(**kwargs)
+        if torch_cell_list:
+            return BuiltinEnsembleCellList(**kwargs)
         else:
             return BuiltinEnsemble(**kwargs)
     else:
-        return BuiltinModel(**kwargs)
-        if external_cell_list:
-            return BuiltinModelBare(**kwargs)
+        if torch_cell_list:
+            return BuiltinModelCellList(**kwargs)
         else:
             return BuiltinModel(**kwargs)
 
