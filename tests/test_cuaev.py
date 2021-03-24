@@ -39,6 +39,10 @@ class TestCUAEVNoGPU(TestCase):
 @skipIfNoCUAEV
 class TestCUAEV(TestCase):
 
+    @classmethod
+    def setUpClass(cls):
+        cls.ani2x = torchani.models.ANI2x(periodic_table_index=True, model_index=None)
+
     def setUp(self):
         self.tolerance = 5e-5
         self.device = 'cuda'
@@ -51,10 +55,16 @@ class TestCUAEV(TestCase):
         EtaA = torch.tensor([8.0000000e+00], device=self.device)
         ShfA = torch.tensor([9.0000000e-01, 1.5500000e+00, 2.2000000e+00, 2.8500000e+00], device=self.device)
         num_species = 4
-        self.aev_computer = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
-        self.cuaev_computer = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, use_cuda_extension=True)
+        self.aev_computer_1x = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
+        self.cuaev_computer_1x = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, use_cuda_extension=True)
+
         self.nn = torch.nn.Sequential(torch.nn.Linear(384, 1, False)).to(self.device)
-        self.radial_length = self.aev_computer.radial_length
+
+        self.ani2x = self.__class__.ani2x
+        self.aev_computer_2x = self.ani2x.aev_computer.to(self.device)
+        self.cuaev_computer_2x = torchani.AEVComputer(self.aev_computer_2x.Rcr, self.aev_computer_2x.Rca, self.aev_computer_2x.EtaR, self.aev_computer_2x.ShfR,
+                                                      self.aev_computer_2x.EtaA, self.aev_computer_2x.Zeta, self.aev_computer_2x.ShfA, self.aev_computer_2x.ShfZ,
+                                                      self.aev_computer_2x.num_species, use_cuda_extension=True)
 
     def _double_backward_1_test(self, species, coordinates):
 
@@ -70,8 +80,8 @@ class TestCUAEV(TestCase):
             param = next(self.nn.parameters())
             return aev, force, param.grad
 
-        aev, force_ref, param_grad_ref = double_backward(self.aev_computer, species, coordinates)
-        cu_aev, force_cuaev, param_grad = double_backward(self.cuaev_computer, species, coordinates)
+        aev, force_ref, param_grad_ref = double_backward(self.aev_computer_1x, species, coordinates)
+        cu_aev, force_cuaev, param_grad = double_backward(self.cuaev_computer_1x, species, coordinates)
 
         self.assertEqual(cu_aev, aev, f'cu_aev: {cu_aev}\n aev: {aev}')
         self.assertEqual(force_cuaev, force_ref, f'\nforce_cuaev: {force_cuaev}\n force_ref: {force_ref}')
@@ -104,8 +114,8 @@ class TestCUAEV(TestCase):
 
             return aev, force, aev_grad_grad
 
-        aev, force_ref, aev_grad_grad = double_backward(self.aev_computer, species, coordinates)
-        cu_aev, force_cuaev, cuaev_grad_grad = double_backward(self.cuaev_computer, species, coordinates)
+        aev, force_ref, aev_grad_grad = double_backward(self.aev_computer_1x, species, coordinates)
+        cu_aev, force_cuaev, cuaev_grad_grad = double_backward(self.cuaev_computer_1x, species, coordinates)
 
         self.assertEqual(cu_aev, aev, f'cu_aev: {cu_aev}\n aev: {aev}', atol=5e-5, rtol=5e-5)
         self.assertEqual(force_cuaev, force_ref, f'\nforce_cuaev: {force_cuaev}\n force_ref: {force_ref}', atol=5e-5, rtol=5e-5)
@@ -126,8 +136,8 @@ class TestCUAEV(TestCase):
         ], device=self.device)
         species = torch.tensor([[1, 0, 0, 0, 0], [2, 0, 0, 0, -1]], device=self.device)
 
-        _, aev = self.aev_computer((species, coordinates))
-        _, cu_aev = self.cuaev_computer((species, coordinates))
+        _, aev = self.aev_computer_1x((species, coordinates))
+        _, cu_aev = self.cuaev_computer_1x((species, coordinates))
         self.assertEqual(cu_aev, aev)
 
     def testSimpleBackward(self):
@@ -145,13 +155,13 @@ class TestCUAEV(TestCase):
         ], requires_grad=True, device=self.device)
         species = torch.tensor([[1, 0, 0, 0, 0], [2, 0, 0, 0, -1]], device=self.device)
 
-        _, aev = self.aev_computer((species, coordinates))
+        _, aev = self.aev_computer_1x((species, coordinates))
         aev.backward(torch.ones_like(aev))
         aev_grad = coordinates.grad
 
         coordinates = coordinates.clone().detach()
         coordinates.requires_grad_()
-        _, cu_aev = self.cuaev_computer((species, coordinates))
+        _, cu_aev = self.cuaev_computer_1x((species, coordinates))
         cu_aev.backward(torch.ones_like(cu_aev))
         cuaev_grad = coordinates.grad
         self.assertEqual(cu_aev, aev, f'cu_aev: {cu_aev}\n aev: {aev}')
@@ -207,8 +217,8 @@ class TestCUAEV(TestCase):
                 coordinates, species, *_ = pickle.load(f)
                 coordinates = torch.from_numpy(coordinates).float().unsqueeze(0).to(self.device)
                 species = torch.from_numpy(species).unsqueeze(0).to(self.device)
-                _, aev = self.aev_computer((species, coordinates))
-                _, cu_aev = self.cuaev_computer((species, coordinates))
+                _, aev = self.aev_computer_1x((species, coordinates))
+                _, cu_aev = self.cuaev_computer_1x((species, coordinates))
                 self.assertEqual(cu_aev, aev)
 
     def testTripeptideMDBackward(self):
@@ -218,13 +228,13 @@ class TestCUAEV(TestCase):
                 coordinates, species, *_ = pickle.load(f)
                 coordinates = torch.from_numpy(coordinates).float().unsqueeze(0).to(self.device).requires_grad_(True)
                 species = torch.from_numpy(species).unsqueeze(0).to(self.device)
-                _, aev = self.aev_computer((species, coordinates))
+                _, aev = self.aev_computer_1x((species, coordinates))
                 aev.backward(torch.ones_like(aev))
                 aev_grad = coordinates.grad
 
                 coordinates = coordinates.clone().detach()
                 coordinates.requires_grad_()
-                _, cu_aev = self.cuaev_computer((species, coordinates))
+                _, cu_aev = self.cuaev_computer_1x((species, coordinates))
                 cu_aev.backward(torch.ones_like(cu_aev))
                 cuaev_grad = coordinates.grad
                 self.assertEqual(cu_aev, aev)
@@ -246,8 +256,8 @@ class TestCUAEV(TestCase):
             for coordinates, species, _, _, _, _ in data:
                 coordinates = torch.from_numpy(coordinates).to(torch.float).to(self.device)
                 species = torch.from_numpy(species).to(self.device)
-                _, aev = self.aev_computer((species, coordinates))
-                _, cu_aev = self.cuaev_computer((species, coordinates))
+                _, aev = self.aev_computer_1x((species, coordinates))
+                _, cu_aev = self.cuaev_computer_1x((species, coordinates))
                 self.assertEqual(cu_aev, aev)
 
     def testNISTBackward(self):
@@ -257,13 +267,13 @@ class TestCUAEV(TestCase):
             for coordinates, species, _, _, _, _ in data[:10]:
                 coordinates = torch.from_numpy(coordinates).to(torch.float).to(self.device).requires_grad_(True)
                 species = torch.from_numpy(species).to(self.device)
-                _, aev = self.aev_computer((species, coordinates))
+                _, aev = self.aev_computer_1x((species, coordinates))
                 aev.backward(torch.ones_like(aev))
                 aev_grad = coordinates.grad
 
                 coordinates = coordinates.clone().detach()
                 coordinates.requires_grad_()
-                _, cu_aev = self.cuaev_computer((species, coordinates))
+                _, cu_aev = self.cuaev_computer_1x((species, coordinates))
                 cu_aev.backward(torch.ones_like(cu_aev))
                 cuaev_grad = coordinates.grad
                 self.assertEqual(cu_aev, aev)
@@ -290,8 +300,8 @@ class TestCUAEV(TestCase):
                 # change angstrom coordinates to 10 times smaller
                 coordinates = 0.1 * torch.from_numpy(coordinates).float().unsqueeze(0).to(self.device)
                 species = torch.from_numpy(species).unsqueeze(0).to(self.device)
-                _, aev = self.aev_computer((species, coordinates))
-                _, cu_aev = self.cuaev_computer((species, coordinates))
+                _, aev = self.aev_computer_1x((species, coordinates))
+                _, cu_aev = self.cuaev_computer_1x((species, coordinates))
                 self.assertEqual(cu_aev, aev, atol=5e-5, rtol=5e-5)
 
     def testVeryDenseMoleculeBackward(self):
@@ -304,34 +314,30 @@ class TestCUAEV(TestCase):
                 coordinates.requires_grad_(True)
                 species = torch.from_numpy(species).unsqueeze(0).to(self.device)
 
-                _, aev = self.aev_computer((species, coordinates))
+                _, aev = self.aev_computer_1x((species, coordinates))
                 aev.backward(torch.ones_like(aev))
                 aev_grad = coordinates.grad
 
                 coordinates = coordinates.clone().detach()
                 coordinates.requires_grad_()
-                _, cu_aev = self.cuaev_computer((species, coordinates))
+                _, cu_aev = self.cuaev_computer_1x((species, coordinates))
                 cu_aev.backward(torch.ones_like(cu_aev))
                 cuaev_grad = coordinates.grad
                 self.assertEqual(cu_aev, aev, atol=5e-5, rtol=5e-5)
                 self.assertEqual(cuaev_grad, aev_grad, atol=5e-4, rtol=5e-4)
 
     def testPDB(self):
-        nnp_ref = torchani.models.ANI2x(periodic_table_index=True, model_index=None).to(self.device)
-        nnp_cuaev = torchani.models.ANI2x(periodic_table_index=True, model_index=None).to(self.device)
-        nnp_cuaev.aev_computer.use_cuda_extension = True
-
         files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
         for file in files:
             filepath = os.path.join(path, f'../dataset/pdb/{file}')
             mol = read(filepath)
             species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
             positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
-            speciesPositions = nnp_ref.species_converter((species, positions))
+            speciesPositions = self.ani2x.species_converter((species, positions))
             species, coordinates = speciesPositions
 
-            _, aev = nnp_ref.aev_computer((species, coordinates))
-            _, cu_aev = nnp_cuaev.aev_computer((species, coordinates))
+            _, aev = self.aev_computer_2x((species, coordinates))
+            _, cu_aev = self.cuaev_computer_2x((species, coordinates))
             self.assertEqual(cu_aev, aev)
 
 
