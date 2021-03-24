@@ -1,15 +1,65 @@
 import unittest
-import pickle
 
 import torch
-from tqdm import tqdm
 
 from torchani.aev import AEVComputer, CellList, FullPairwise
 from torchani.geometry import tile_into_cube
 import torchani
 
-with open('nl_data.pkl', 'rb') as f:
-    vector_bucket_index_compare = pickle.load(f)
+vector_bucket_index_compare = torch.tensor([[[0, 0, 0],
+                                       [0, 0, 0],
+                                       [0, 0, 1],
+                                       [0, 0, 1],
+                                       [0, 0, 2],
+                                       [0, 0, 2],
+                                       [0, 1, 0],
+                                       [0, 1, 0],
+                                       [0, 1, 1],
+                                       [0, 1, 1],
+                                       [0, 1, 2],
+                                       [0, 1, 2],
+                                       [0, 2, 0],
+                                       [0, 2, 0],
+                                       [0, 2, 1],
+                                       [0, 2, 1],
+                                       [0, 2, 2],
+                                       [0, 2, 2],
+                                       [1, 0, 0],
+                                       [1, 0, 0],
+                                       [1, 0, 1],
+                                       [1, 0, 1],
+                                       [1, 0, 2],
+                                       [1, 0, 2],
+                                       [1, 1, 0],
+                                       [1, 1, 0],
+                                       [1, 1, 1],
+                                       [1, 1, 1],
+                                       [1, 1, 2],
+                                       [1, 1, 2],
+                                       [1, 2, 0],
+                                       [1, 2, 0],
+                                       [1, 2, 1],
+                                       [1, 2, 1],
+                                       [1, 2, 2],
+                                       [1, 2, 2],
+                                       [2, 0, 0],
+                                       [2, 0, 0],
+                                       [2, 0, 1],
+                                       [2, 0, 1],
+                                       [2, 0, 2],
+                                       [2, 0, 2],
+                                       [2, 1, 0],
+                                       [2, 1, 0],
+                                       [2, 1, 1],
+                                       [2, 1, 1],
+                                       [2, 1, 2],
+                                       [2, 1, 2],
+                                       [2, 2, 0],
+                                       [2, 2, 0],
+                                       [2, 2, 1],
+                                       [2, 2, 1],
+                                       [2, 2, 2],
+                                       [2, 2, 2]]], dtype=torch.long)
 
 
 class TestCellList(unittest.TestCase):
@@ -216,7 +266,7 @@ class TestCellList(unittest.TestCase):
             self._check_neighborlists_consistency(coordinates, species)
 
     def testCellListIsConsistentRandomV2(self):
-        for j in tqdm(range(100)):
+        for j in range(100):
             coordinates = torch.randn(10, 3).unsqueeze(0) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
                                       min=0.0001,
@@ -253,7 +303,7 @@ class TestCellListEnergies(unittest.TestCase):
         self.model_cl = self.model_cl.to(device).double()
         self.model_fp = self.model_fp.to(device).double()
         species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
-        for j in tqdm(range(100)):
+        for j in range(100):
             coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
                 torch.double) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
@@ -272,7 +322,7 @@ class TestCellListEnergies(unittest.TestCase):
         self.model_cl = self.model_cl.to(device).float()
         self.model_fp = self.model_fp.to(device).float()
         species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
-        for j in tqdm(range(100)):
+        for j in range(100):
             coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
                 torch.float) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
@@ -292,7 +342,7 @@ class TestCellListEnergies(unittest.TestCase):
         aev_cl = self.aev_cl.to(device).double()
         aev_fp = self.aev_fp.to(device).double()
         species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
-        for j in tqdm(range(100)):
+        for j in range(100):
             coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
                 torch.double) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
@@ -317,7 +367,7 @@ class TestCellListEnergies(unittest.TestCase):
         aev_cl = torch.jit.script(self.aev_cl).to(device).double()
         aev_fp = torch.jit.script(self.aev_fp).to(device).double()
         species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
-        for j in tqdm(range(100)):
+        for j in range(100):
             coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
                 torch.double) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
@@ -339,7 +389,7 @@ class TestCellListEnergies(unittest.TestCase):
         aev_cl = self.aev_cl.to(device).to(torch.float)
         aev_fp = self.aev_fp.to(device).to(torch.float)
         species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
-        for j in tqdm(range(100)):
+        for j in range(100):
             coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
                 torch.float) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
