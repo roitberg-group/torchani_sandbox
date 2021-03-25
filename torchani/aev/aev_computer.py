@@ -265,8 +265,8 @@ class AEVComputer(torch.nn.Module):
             assert not pbc.any(), "cuaev currently does not support PBC"
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
-
         atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
+        print(atom_index12.shape)
         shift_values = shift_indices.to(cell.dtype) @ cell
         aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
@@ -412,15 +412,18 @@ class AEVComputer(torch.nn.Module):
 class AEVComputerBare(AEVComputer):
 
     def __init__(self, *args, **kwargs):
-        """Bare version of the AEVComputer, with no internal neighborlist"""
+        """Bare version of the AEVComputer,
+           with no internal neighborlist"""
 
         if 'neighborlist' not in kwargs.keys():
             kwargs.update({'neighborlist': None})
         if 'use_cuda_extension' not in kwargs.keys():
             kwargs.update({'use_cuda_extension': False})
 
-        assert kwargs['neighborlist'] is None, "AEVComputerBare doesn't use a neighborlist"
-        assert not kwargs['use_cuda_extension'], "AEVComputerBare doesn't suport cuaev"
+        assert kwargs['neighborlist'] is None, \
+                "AEVComputerBare doesn't use a neighborlist"
+        assert not kwargs['use_cuda_extension'], \
+                "AEVComputerBare doesn't suport cuaev"
         super().__init__(*args, **kwargs)
 
     def forward(self, input_: Tuple[Tensor, Tensor],
@@ -428,42 +431,58 @@ class AEVComputerBare(AEVComputer):
                 shift_values: Optional[Tensor] = None) -> SpeciesAEV:
         """Compute AEVs
         Returns:
-            NamedTuple: Species and AEVs. species are the species from the input
-            unchanged, and AEVs is a tensor of shape ``(N, A, self.aev_length)``
+            NamedTuple: Species and AEVs.
+            species are the species from the input
+            unchanged, and AEVs is a tensor of shape
+            ``(N, A, self.aev_length)``
         """
-        # NOTE currently inputs to all aev computers have to be IMAGE COORDINATES (mapped to central cell)
+        # NOTE currently inputs to all aev computers have to be IMAGE
+        # COORDINATES (mapped to central cell)
         species, coordinates = input_
 
-        # It is convenient to keep these arguments optional due to JIT, but
+        # It is convenient to keep these arguments
+        # optional due to JIT, but
         # actually they are needed for this class
         assert atom_index12 is not None
         assert shift_values is not None
         # check shapes for correctness
         assert species.dim() == 2
         assert coordinates.dim() == 3
-        assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
+        assert (species.shape == coordinates.shape[:2]) and \
+               (coordinates.shape[2] == 3)
 
         # check shapes of neighborlist
         assert atom_index12.dim() == 2 and atom_index12.shape[0] == 2
         assert shift_values.dim() == 2 and shift_values.shape[1] == 3
         assert atom_index12.shape[1] == shift_values.shape[0]
 
-        # first we prescreen the input neighborlist in case some of the values are
-        # at distances larger than the cutoff for the radial terms
-        # this may happen if the neighborlist uses some sort of skin value to rebuild
-        atom_index12, shift_values = self._screen_with_cutoff(self.radial_terms.cutoff.item(),
-                                                              coordinates.detach(),
-                                                              atom_index12,
-                                                              shift_values.detach())
-        shift_values = shift_values.index_select(0, atom_index12)
-        aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
+        # first we prescreen the input neighborlist in case some of the
+        # values are at distances larger than the cutoff for the
+        # radial terms
+        # this may happen if the neighborlist uses some
+        # sort of skin value to
+        # rebuild
+        atom_index12, shift_values = self._screen_with_cutoff(
+                                self.radial_terms.cutoff.item(),
+                                coordinates.detach(),
+                                atom_index12,
+                                shift_values.detach())
+        aev = self._compute_aev(species, coordinates, atom_index12,
+                shift_values)
         return SpeciesAEV(species, aev)
 
-    def _screen_with_cutoff(self, cutoff: float, coordinates: Tensor, atom_index12: Tensor, shift_values: Tensor):
+    def _screen_with_cutoff(self,
+                            cutoff: float,
+                            coordinates: Tensor,
+                            atom_index12: Tensor,
+                            shift_values: Tensor):
         # screen neighbors that are further away than a given cutoff
-        vec = self._compute_difference_vector(coordinates, atom_index12, shift_values)
+        vec = self._compute_difference_vector(coordinates,
+                                              atom_index12,
+                                              shift_values)
         distances_sq = vec.pow(2).sum(-1)
-        close_indices = (distances_sq <= cutoff**2).nonzero().flatten()
+        close_indices = (distances_sq <= cutoff ** 2)
+        close_indices = close_indices.nonzero().flatten()
         atom_index12 = atom_index12.index_select(1, close_indices)
         shift_values = shift_values.index_select(0, close_indices)
         return atom_index12, shift_values
