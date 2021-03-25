@@ -67,7 +67,7 @@ class Calculator(ase.calculators.calculator.Calculator):
                                  .requires_grad_('forces' in properties)
 
         if pbc_enabled:
-            coordinates = utils.map2central(cell, coordinates, pbc)
+            coordinates = utils.map_to_central(coordinates, cell, pbc)
             if self.overwrite and atoms is not None:
                 atoms.set_positions(coordinates.detach().cpu().reshape(-1, 3).numpy())
 

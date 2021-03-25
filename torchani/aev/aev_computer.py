@@ -10,6 +10,7 @@ from torch import Tensor
 from .cutoffs import CutoffCosine
 from .aev_terms import AngularTerms, RadialTerms
 from .neighbors import FullPairwise, BaseNeighborlist
+from ..utils import map_to_central
 
 cuaev_is_installed = 'torchani.cuaev' in importlib_metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
@@ -266,6 +267,7 @@ class AEVComputer(torch.nn.Module):
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
         atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
+        coordinates = map_to_central(coordinates, cell, pbc)
         shift_values = shift_indices.to(cell.dtype) @ cell
         aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
