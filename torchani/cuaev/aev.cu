@@ -766,8 +766,6 @@ __global__ void cuRadialAEVs_atomCentered(
 
   DataT* s_radial = &smem[0];
   DataT* s_fc = &smem[radial_length];
-  // DataT* s_dist = &smem[radial_length + max_numPairsPerAtom];
-  // int* s_type = (int*)&smem[radial_length + 2 * max_numPairsPerAtom];
 
   int cIdx = blockIdx.x; // central atom id
   int tIdx = threadIdx.y * blockDim.x + threadIdx.x; // local thread idx
@@ -792,8 +790,6 @@ __global__ void cuRadialAEVs_atomCentered(
     int j = dij.j;
     DataT Rij = dij.Rij;
     s_fc[jj] = 0.5 * __cosf(PI * Rij / Rcr) + 0.5;
-    // s_type[jj] = species_t[mol_idx][j];
-    // s_dist[jj] = Rij;
   }
   __syncthreads();
 
@@ -803,8 +799,6 @@ __global__ void cuRadialAEVs_atomCentered(
     DataT Rij = dij.Rij;
     int j = dij.j;
     SpeciesT type_j = species_t[mol_idx][j];
-    // SpeciesT type_j = s_type[jj];
-    // DataT Rij = s_dist[jj];
 
     for (int ishfr = laneIdx; ishfr < nShfR; ishfr += blockDim.x) {
       DataT ShfR = __ldg(&ShfR_t[ishfr]);
@@ -1193,7 +1187,7 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
 
       int max_radial_numPairsPerAtom = cubMax(radialNumPairsPerAtom_p, ncenter_atoms, d_count_out, stream);
       constexpr dim3 block_radial(8, 16, 1);
-      int smem_radial = aev_params.radial_length * sizeof(float) + max_radial_numPairsPerAtom * sizeof(float) * 3;
+      int smem_radial = aev_params.radial_length * sizeof(float) + max_radial_numPairsPerAtom * sizeof(float);
       cuRadialAEVs_atomCentered<int, float><<<ncenter_atoms, block_radial, smem_radial, stream>>>(
           species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
           aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
