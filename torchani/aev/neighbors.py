@@ -197,9 +197,6 @@ class FullPairwise(BaseNeighborlist):
 
 class CellList(BaseNeighborlist):
 
-    has_old_values: Final[bool]
-    variables_are_set: Final[bool]
-
     def __init__(self,
                  cutoff,
                  buckets_per_cutoff=1,
@@ -207,6 +204,9 @@ class CellList(BaseNeighborlist):
                  skin=None,
                  constant_volume=False):
         super().__init__(cutoff)
+        # variables are not set until we have received a cell at least once
+        self.register_buffer('variables_are_set', torch.tensor(False, dtype=torch.bool))
+        self.register_buffer('has_old_values', torch.tensor(False, dtype=torch.bool))
         assert not dynamic_update, "Dynamic update is currently unsupported"
         # right now I will only support this, and the extra neighbors are
         # hardcoded, but full support for arbitrary buckets per cutoff is possible
@@ -240,13 +240,11 @@ class CellList(BaseNeighborlist):
 
         # only used for dynamic update
         self.register_buffer('old_cell_diagonal', torch.zeros(1))
-        self.register_buffer('old_shift_values', torch.zeros(1))
         self.register_buffer('old_shift_indices',
                              torch.zeros(1, dtype=torch.long))
         self.register_buffer('old_atom_pairs', torch.zeros(1,
                                                            dtype=torch.long))
         self.register_buffer('old_coordinates', torch.zeros(1))
-        self.has_old_values = False
 
         # buckets_per_cutoff is also the number of buckets that is scanned in
         # each direction. It determines how fine grained the grid is, with
@@ -333,7 +331,7 @@ class CellList(BaseNeighborlist):
         # if they are updated the internal memory moves to the
         # new step, which is not what we want
         if self.has_old_values and (not self._need_new_list(coordinates)):
-                return self.old_atom_pairs, self.old_shift_indices, self.old_shift_values
+                return self.old_atom_pairs, self.old_shift_indices
 
         # the cell list is calculated with a skin here, since coordinates are
         # fractionalized before cell calculation, it is not needed for them to
@@ -344,16 +342,16 @@ class CellList(BaseNeighborlist):
 
         # The final screening does not use the skin, the skin is only used 
         # internally to prevent neighborlist recalculation. 
-        atom_pairs, shift_indices, shift_values = self._screen_with_cutoff(self.cutoff, 
+        atom_pairs, shift_indices = self._screen_with_cutoff(self.cutoff, 
                                                                            coordinates,
                                                                            atom_pairs, 
                                                                            shift_values,
                                                                            shift_indices)
         # This is done in order to prevent unnecessary rebuilds
         if self.dynamic_update:
-            self._cache_values(atom_pairs, shift_indices, shift_values, coordinates)
+            self._cache_values(atom_pairs, shift_indices, coordinates)
 
-        return atom_pairs, shift_indices, shift_values
+        return atom_pairs, shift_indices
 
     def _calculate_cell_list(self, coordinates: Tensor):
         # 2) Fractionalize coordinates
@@ -509,7 +507,7 @@ class CellList(BaseNeighborlist):
         self.translation_cases[1:-1, -1, 1:-1] = 15
         self.translation_cases[-1, -1, 1:-1] = 16
         self.translation_cases[-1, 1:-1, 1:-1] = 17
-        self.variables_are_set = True
+        self.variables_are_set = torch.tensor(True, dtype=torch.bool, device=current_device)
 
         return self.shape_buckets_grid, self.total_buckets
 
@@ -799,14 +797,13 @@ class CellList(BaseNeighborlist):
 
     def _cache_values(self, atom_pairs: Tensor, 
                             shift_indices: Tensor, 
-                            shift_values: Tensor,
                             coordinates: Tensor):
+
         self.old_atom_pairs = atom_pairs.detach()
         self.old_shift_indices = shift_indices.detach()
-        self.old_shift_values = shift_values.detach()
         self.old_cell_diagonal = self.cell_diagonal.detach()
         self.old_coordinates = coordinates.detach()
-        self.has_old_values = True
+        self.has_old_values = torch.tensor(True, dtype=torch.bool, device=coordinates.device)
 
     def reset_cached_values(self):
         dtype = self.cell_diagonal.dtype
@@ -814,9 +811,8 @@ class CellList(BaseNeighborlist):
         self._cache_values(torch.zeros(1, dtype=torch.long, device=device), 
                            torch.zeros(1, dtype=torch.long, device=device), 
                            torch.zeros(1, dtype=dtype, device=device), 
-                           torch.zeros(1, dtype=dtype, device=device), 
                            torch.zeros(1, dtype=dtype, device=device))
-        self.has_old_values = False
+        self.has_old_values = torch.tensor(False, dtype=torch.bool, device=device)
 
     def _need_new_list(self, coordinates: Tensor):
         # Check if any coordinate exceedes half the skin depth,
