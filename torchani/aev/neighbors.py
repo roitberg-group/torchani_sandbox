@@ -111,7 +111,8 @@ class FullPairwise(BaseNeighborlist):
             atom_index12, shifts, shift_values = self._full_pairwise_pbc(
                 species, cell, pbc)
             # before being screened the coordinates have to be mapped to the
-            # central cell in case they are not inside it
+            # central cell in case they are not inside it, this is not necessary
+            # if there is no pbc
             coordinates = map_to_central(coordinates, cell, pbc)
         else:
             atom_index12, shifts, shift_values = self._full_pairwise(species)
@@ -342,7 +343,8 @@ class CellList(BaseNeighborlist):
         # be imaged to the central cell, they can lie outside the cell
         atom_pairs, shift_indices, shift_values = self._calculate_cell_list(coordinates)
 
-        # Before the screening step we wrap the coordinates to an internal image if they are not inside the cell
+        # Before the screening step we wrap the coordinates to the central cell
+        coordinates = map_to_central(coordinates, cell, pbc)
 
         # The final screening does not use the skin, the skin is only used 
         # internally to prevent neighborlist recalculation. 
