@@ -262,11 +262,10 @@ class AEVComputer(torch.nn.Module):
         pbc = pbc if pbc is not None else self.default_pbc
 
         if self.use_cuda_extension:
-            assert not pbc.any(), "cuaev currently does not support PBC"
+            assert not pbc.any(), "Currently cuaev does not support PBC"
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
         atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
-        print(atom_index12.shape)
         shift_values = shift_indices.to(cell.dtype) @ cell
         aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
