@@ -9,6 +9,7 @@ import torch
 from . import utils
 import ase.calculators.calculator
 import ase.units
+import warnings
 
 
 class Calculator(ase.calculators.calculator.Calculator):
@@ -66,9 +67,9 @@ class Calculator(ase.calculators.calculator.Calculator):
         coordinates = coordinates.to(self.device).to(self.dtype) \
                                  .requires_grad_('forces' in properties)
 
-        if pbc_enabled:
-            coordinates = utils.map_to_central(coordinates, cell, pbc)
-            if self.overwrite and atoms is not None:
+        if pbc_enabled and self.overwrite and atoms is not None:
+                warnings.warn("If overwrite is set for pbc calculations the cell list will be rebuilt every step")
+                coordinates = utils.map_to_central(coordinates, cell, pbc)
                 atoms.set_positions(coordinates.detach().cpu().reshape(-1, 3).numpy())
 
         if 'stress' in properties:

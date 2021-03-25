@@ -5,6 +5,7 @@ from typing import Tuple, Optional
 import torch
 from torch import Tensor
 from torch.nn import functional
+from ..utils import map_to_central
 
 if sys.version_info[:2] < (3, 7):
 
@@ -109,6 +110,9 @@ class FullPairwise(BaseNeighborlist):
         if pbc.any():
             atom_index12, shifts, shift_values = self._full_pairwise_pbc(
                 species, cell, pbc)
+            # before being screened the coordinates have to be mapped to the
+            # central cell in case they are not inside it
+            coordinates = map_to_central(coordinates, cell, pbc)
         else:
             atom_index12, shifts, shift_values = self._full_pairwise(species)
 

@@ -266,9 +266,16 @@ class AEVComputer(torch.nn.Module):
             assert not pbc.any(), "Currently cuaev does not support PBC"
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
+
+        # the coordinates that are input into the neighborlist are not assumed to be 
+        # mapped into the central cell for pbc calculations, and in general are not
         atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
-        coordinates = map_to_central(coordinates, cell, pbc)
+        if pbc.any():
+            coordinates = map_to_central(coordinates, cell, pbc)
         shift_values = shift_indices.to(cell.dtype) @ cell
+
+        # the coordinates that are input into compute_aev, on the other hand,
+        # are always assumed to be mapped to the central cell
         aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
 
