@@ -809,8 +809,10 @@ class CellList(BaseNeighborlist):
 
         self.old_atom_pairs = atom_pairs.detach()
         self.old_shift_indices = shift_indices.detach()
-        self.old_cell_diagonal = self.cell_diagonal.detach()
         self.old_coordinates = coordinates.detach()
+
+        self.old_cell_diagonal = self.cell_diagonal.detach()
+
         self.old_values_are_cached = torch.tensor(True, dtype=torch.bool, device=coordinates.device)
 
     def reset_cached_values(self):
@@ -818,7 +820,6 @@ class CellList(BaseNeighborlist):
         device = self.cell_diagonal.device
         self._cache_values(torch.zeros(1, dtype=torch.long, device=device), 
                            torch.zeros(1, dtype=torch.long, device=device), 
-                           torch.zeros(1, dtype=dtype, device=device), 
                            torch.zeros(1, dtype=dtype, device=device))
         self.old_values_are_cached = torch.tensor(False, dtype=torch.bool, device=device)
 
