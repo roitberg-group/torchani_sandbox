@@ -68,9 +68,9 @@ class Calculator(ase.calculators.calculator.Calculator):
                                  .requires_grad_('forces' in properties)
 
         if pbc_enabled and self.overwrite and atoms is not None:
-                warnings.warn("If overwrite is set for pbc calculations the cell list will be rebuilt every step")
-                coordinates = utils.map_to_central(coordinates, cell, pbc)
-                atoms.set_positions(coordinates.detach().cpu().reshape(-1, 3).numpy())
+            warnings.warn("If overwrite is set for pbc calculations the cell list will be rebuilt every step")
+            coordinates = utils.map_to_central(coordinates, cell, pbc)
+            atoms.set_positions(coordinates.detach().cpu().reshape(-1, 3).numpy())
 
         if 'stress' in properties:
             scaling = torch.eye(3, requires_grad=True, dtype=self.dtype, device=self.device)
@@ -89,10 +89,14 @@ class Calculator(ase.calculators.calculator.Calculator):
         self.results['free_energy'] = energy.item()
 
         if 'forces' in properties:
-            forces = -torch.autograd.grad(energy.squeeze(), coordinates, retain_graph='stress' in properties)[0]
+            forces = self._get_ani_forces(coordinates, energy, properties)
             self.results['forces'] = forces.squeeze(0).to('cpu').numpy()
 
         if 'stress' in properties:
             volume = self.atoms.get_volume()
             stress = torch.autograd.grad(energy.squeeze(), scaling)[0] / volume
             self.results['stress'] = stress.cpu().numpy()
+
+    def _get_ani_forces(self, coordinates, energy, properties):
+        return -torch.autograd.grad(energy.squeeze(), coordinates, retain_graph='stress' in properties)[0]
+
