@@ -376,7 +376,7 @@ class BuiltinEnsembleCellList(BuiltinEnsemble):
         self.aev_computer.neighborlist.translation_displacement_indices = self.aev_computer.neighborlist.translation_displacement_indices.to(dtype=torch.long)
 
 
-def _build_neurochem_model(info_file_path, periodic_table_index=False, external_cell_list=False, model_index=None, torch_cell_list=False):
+def _build_neurochem_model(info_file_path, periodic_table_index=False, external_cell_list=False, model_index=None, torch_cell_list=False, adaptive_torch_cell_list=False):
     from . import neurochem  # noqa
     # builder function that creates a BuiltinModel from a neurochem info path
     assert not (external_cell_list and torch_cell_list)
@@ -388,6 +388,9 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
         aev_computer = AEVComputerBare(**consts)
     elif torch_cell_list:
         aev_computer = AEVComputer(**consts, neighborlist=CellList)
+    elif adaptive_torch_cell_list:
+        aev_computer = AEVComputer(**consts)
+        aev_computer.neighborlist = CellList(aev_computer.radial_terms.cutoff, dynamic_update=True)
     else:
         aev_computer = AEVComputer(**consts)
 
@@ -411,12 +414,12 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
             'periodic_table_index': periodic_table_index}
 
     if model_index is None:
-        if torch_cell_list:
+        if torch_cell_list or adaptive_torch_cell_list:
             return BuiltinEnsembleCellList(**kwargs)
         else:
             return BuiltinEnsemble(**kwargs)
     else:
-        if torch_cell_list:
+        if torch_cell_list or adaptive_torch_cell_list:
             return BuiltinModelCellList(**kwargs)
         else:
             return BuiltinModel(**kwargs)
