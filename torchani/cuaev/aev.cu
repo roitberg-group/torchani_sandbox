@@ -2,6 +2,7 @@
 #include <thrust/equal.h>
 #include <torch/extension.h>
 #include <cub/cub.cuh>
+#include <iostream>
 #include <vector>
 
 #include <ATen/Context.h>
@@ -54,6 +55,28 @@ struct alignas(4 * sizeof(int)) PairDist {
 struct alignas(2 * sizeof(int)) AtomI {
   int midx;
   int i;
+};
+
+struct NeighborList {
+  int num_i;
+  int num_j;
+  // indexing
+  Tensor atom_i_t;
+  Tensor atom_j_t; // now use PairDist
+  // Tensor atom_j_t;  // only j index
+  Tensor num_j_t;
+  Tensor start_j_t;
+  // dist and applied cutoff
+  Tensor dist_j_t;
+  Tensor fc_j_t;
+
+  // pointers
+  AtomI* atom_i_p;
+  PairDist* atom_j_p;
+  int* num_j_p;
+  int* start_j_p;
+  float* dist_j_p;
+  float* fc_j_p;
 };
 
 // used to group Rijs by atom id
@@ -1034,25 +1057,18 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
   Tensor tensor_Rij = torch::empty(sizeof(PairDist) * total_natom_pairs, d_options);
   PairDist* d_Rij = (PairDist*)tensor_Rij.data_ptr();
 
-  Tensor tensor_radialRij;
-  PairDist* d_radialRij;
-  int nRadialRij;
-  Tensor tensor_angularRij;
-  PairDist* d_angularRij;
-  Tensor tensor_tmp_angularRij;
-  PairDist* d_tmp_angularRij;
-  Tensor angularNumPairsPerAtom_t;
-  int* angularNumPairsPerAtom_p;
-  Tensor angularPairStartIdx_t;
-  int* angularPairStartIdx_p;
-  int nAngularRij;
+  NeighborList radialNbr;
+  NeighborList angularNbr;
+
   auto buffer_count = allocator.allocate(sizeof(int));
   int* d_count_out = (int*)buffer_count.get();
-  int ncenter_atoms;
 
   // radial_num_per_atom ranges from 10 - 60
-  Tensor radialNumPairsPerAtom_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
-  int* radialNumPairsPerAtom_p = (int*)radialNumPairsPerAtom_t.data_ptr();
+  radialNbr.num_j_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
+  radialNbr.num_j_p = (int*)radialNbr.num_j_t.data_ptr();
+  radialNbr.start_j_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
+  radialNbr.start_j_p = (int*)radialNbr.start_j_t.data_ptr();
+
   constexpr int ATOM_I_PER_BLOCK = 32;
 
   if (n_molecules == 1) {
@@ -1065,7 +1081,7 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
     pairwiseDistanceSingleMolecule<ATOM_I_PER_BLOCK, ATOM_J_PER_TILE><<<blocks, block>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-        radialNumPairsPerAtom_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+        radialNbr.num_j_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
         d_Rij,
         Rcr,
         max_natoms_per_mol);
@@ -1079,37 +1095,35 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
     pairwiseDistance<<<n_molecules, block, smem_pairdist, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-        radialNumPairsPerAtom_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+        radialNbr.num_j_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
         d_Rij,
         Rcr,
         max_natoms_per_mol);
 
     // TODO remove padding
     // nRadialRij = cubDeviceSelect(
-    //   radialNumPairsPerAtom_p_tmp,
-    //   radialNumPairsPerAtom_p,
+    //   radialNbr.num_j_p_tmp,
+    //   radialNbr.num_j_p,
     //   n_molecules * max_natoms_per_mol,
     //   d_count_out,
     //   [=] __device__(const int count) { return count > 0; },
     //   stream);
   }
 
-  Tensor radialPairStartIdx_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
-  int* radialPairStartIdx_p = (int*)radialPairStartIdx_t.data_ptr();
-  cubScan(radialNumPairsPerAtom_p, radialPairStartIdx_p, n_molecules * max_natoms_per_mol, stream);
+  cubScan(radialNbr.num_j_p, radialNbr.start_j_p, n_molecules * max_natoms_per_mol, stream);
   int totalatoms = n_molecules * max_natoms_per_mol;
-  nRadialRij = radialPairStartIdx_t[totalatoms - 1].item<int>() + radialNumPairsPerAtom_t[totalatoms - 1].item<int>();
+  radialNbr.num_j = radialNbr.start_j_t[totalatoms - 1].item<int>() + radialNbr.num_j_t[totalatoms - 1].item<int>();
   if (DEBUG_TEST)
-    printf("nRadialRij %d\n", nRadialRij);
+    printf("radialNbr.num_j %d\n", radialNbr.num_j);
 
-  tensor_radialRij = torch::empty(sizeof(PairDist) * nRadialRij, d_options);
-  d_radialRij = (PairDist*)tensor_radialRij.data_ptr();
+  radialNbr.atom_j_t = torch::empty(sizeof(PairDist) * radialNbr.num_j, d_options);
+  radialNbr.atom_j_p = (PairDist*)radialNbr.atom_j_t.data_ptr();
 
-  tensor_tmp_angularRij = torch::empty(sizeof(PairDist) * nRadialRij, d_options);
-  d_tmp_angularRij = (PairDist*)tensor_tmp_angularRij.data_ptr();
+  Tensor tensor_tmp_angularRij = torch::empty(sizeof(PairDist) * radialNbr.num_j, d_options);
+  PairDist* d_tmp_angularRij = (PairDist*)tensor_tmp_angularRij.data_ptr();
 
-  angularNumPairsPerAtom_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
-  angularNumPairsPerAtom_p = (int*)angularNumPairsPerAtom_t.data_ptr();
+  angularNbr.num_j_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
+  angularNbr.num_j_p = (int*)angularNbr.num_j_t.data_ptr();
 
   {
     int ATOM_J_PER_TILE = 16;
@@ -1117,60 +1131,59 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
     int blocks = (n_molecules * max_natoms_per_mol + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
     cutoffSelect1<ATOM_I_PER_BLOCK><<<blocks, block>>>(
         d_Rij,
-        d_radialRij,
+        radialNbr.atom_j_p,
         d_tmp_angularRij,
-        radialNumPairsPerAtom_p,
-        radialPairStartIdx_p,
+        radialNbr.num_j_p,
+        radialNbr.start_j_p,
         Rca,
-        angularNumPairsPerAtom_p,
+        angularNbr.num_j_p,
         n_molecules * max_natoms_per_mol,
         max_natoms_per_mol);
 
-    angularPairStartIdx_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
-    angularPairStartIdx_p = (int*)angularPairStartIdx_t.data_ptr();
-    cubScan(angularNumPairsPerAtom_p, angularPairStartIdx_p, n_molecules * max_natoms_per_mol, stream);
-    nAngularRij =
-        angularPairStartIdx_t[totalatoms - 1].item<int>() + angularNumPairsPerAtom_t[totalatoms - 1].item<int>();
+    angularNbr.start_j_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
+    angularNbr.start_j_p = (int*)angularNbr.start_j_t.data_ptr();
+    cubScan(angularNbr.num_j_p, angularNbr.start_j_p, n_molecules * max_natoms_per_mol, stream);
+    angularNbr.num_j =
+        angularNbr.start_j_t[totalatoms - 1].item<int>() + angularNbr.num_j_t[totalatoms - 1].item<int>();
     if (DEBUG_TEST)
-      printf("nAngularRij %d\n", nAngularRij);
+      printf("angularNbr.num_j %d\n", angularNbr.num_j);
 
-    tensor_angularRij = torch::empty(sizeof(PairDist) * nRadialRij, d_options);
-    d_angularRij = (PairDist*)tensor_angularRij.data_ptr();
+    angularNbr.atom_j_t = torch::empty(sizeof(PairDist) * radialNbr.num_j, d_options);
+    angularNbr.atom_j_p = (PairDist*)angularNbr.atom_j_t.data_ptr();
 
     cutoffSelect2<ATOM_I_PER_BLOCK><<<blocks, block>>>(
         d_tmp_angularRij,
-        d_angularRij,
-        angularNumPairsPerAtom_p,
-        angularPairStartIdx_p,
-        radialPairStartIdx_p,
+        angularNbr.atom_j_p,
+        angularNbr.num_j_p,
+        angularNbr.start_j_p,
+        radialNbr.start_j_p,
         n_molecules * max_natoms_per_mol,
         max_natoms_per_mol);
-    ncenter_atoms = n_molecules * max_natoms_per_mol;
-
-    int max_radial_numPairsPerAtom = cubMax(radialNumPairsPerAtom_p, ncenter_atoms, d_count_out, stream);
-    constexpr dim3 block_radial(8, 16, 1);
-    int smem_radial = aev_params.radial_length * sizeof(float) + max_radial_numPairsPerAtom * sizeof(float);
-    cuRadialAEVs<int, float><<<ncenter_atoms, block_radial, smem_radial, stream>>>(
-        species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-        aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-        aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-        aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-        d_radialRij,
-        radialNumPairsPerAtom_p,
-        radialPairStartIdx_p,
-        aev_params.Rcr,
-        aev_params.radial_length,
-        aev_params.radial_sublength,
-        nRadialRij,
-        max_radial_numPairsPerAtom);
+    radialNbr.num_i = n_molecules * max_natoms_per_mol;
   }
 
-  // release d_Rij memory
-  tensor_Rij = Tensor();
+  int max_radial_numPairsPerAtom = cubMax(radialNbr.num_j_p, radialNbr.num_i, d_count_out, stream);
+  constexpr dim3 block_radial(8, 16, 1);
+  int smem_radial = aev_params.radial_length * sizeof(float) + max_radial_numPairsPerAtom * sizeof(float);
+  cuRadialAEVs<int, float><<<radialNbr.num_i, block_radial, smem_radial, stream>>>(
+      species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+      aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+      aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+      aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+      radialNbr.atom_j_p,
+      radialNbr.num_j_p,
+      radialNbr.start_j_p,
+      aev_params.Rcr,
+      aev_params.radial_length,
+      aev_params.radial_sublength,
+      radialNbr.num_j,
+      max_radial_numPairsPerAtom);
 
   // TODO remove this
-  Tensor tensor_centralAtom = torch::empty(sizeof(PairDist) * nAngularRij, d_options);
+  Tensor tensor_centralAtom = torch::empty(sizeof(PairDist) * angularNbr.num_j, d_options);
   PairDist* d_centralAtom = (PairDist*)tensor_centralAtom.data_ptr();
+  // release d_Rij memory
+  tensor_Rij = Tensor();
 
   {
     auto smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
@@ -1186,14 +1199,15 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
       return (sm_aev + sxyz + sRij + sfc + sj) * ncatom_per_tpb;
     };
 
-    int maxNbrsPerCenterAtom = cubMax(angularNumPairsPerAtom_p, ncenter_atoms, d_count_out, stream);
+    angularNbr.num_i = n_molecules * max_natoms_per_mol;
+    int maxNbrsPerCenterAtom = cubMax(angularNbr.num_j_p, angularNbr.num_i, d_count_out, stream);
     int maxnbrs_per_atom_aligned = align<4>(maxNbrsPerCenterAtom);
     int smem_size_aligned = smem_size(maxnbrs_per_atom_aligned, 1);
     int angular_length_aligned = align<4>(aev_params.angular_length);
     if (DEBUG_TEST)
       printf("maxnbrs_per_atom_aligned %d -- angular smem_size %d\n", maxnbrs_per_atom_aligned, smem_size_aligned);
     constexpr dim3 block(C10_WARP_SIZE, 4, 1);
-    cuAngularAEVs<block.x, block.y><<<ncenter_atoms, block, smem_size_aligned, stream>>>(
+    cuAngularAEVs<block.x, block.y><<<angularNbr.num_i, block, smem_size_aligned, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
         aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1201,10 +1215,10 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
         aev_params.EtaA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
         aev_params.Zeta_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
         aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-        d_angularRij,
+        angularNbr.atom_j_p,
         d_centralAtom,
-        angularNumPairsPerAtom_p,
-        angularPairStartIdx_p,
+        angularNbr.num_j_p,
+        angularNbr.start_j_p,
         aev_params.Rca,
         aev_params.angular_length,
         aev_params.angular_sublength,
@@ -1212,21 +1226,21 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
         aev_params.num_species,
         maxnbrs_per_atom_aligned,
         angular_length_aligned,
-        ncenter_atoms);
+        angularNbr.num_i);
 
     return {
         aev_t,
-        tensor_radialRij,
-        tensor_angularRij,
+        radialNbr.atom_j_t,
+        angularNbr.atom_j_t,
         total_natom_pairs,
-        nRadialRij,
-        nAngularRij,
+        radialNbr.num_j,
+        angularNbr.num_j,
         tensor_centralAtom,
-        angularNumPairsPerAtom_t,
-        angularPairStartIdx_t,
+        angularNbr.num_j_t,
+        angularNbr.start_j_t,
         maxnbrs_per_atom_aligned,
         angular_length_aligned,
-        ncenter_atoms,
+        angularNbr.num_i,
         coordinates_t,
         species_t};
   }
