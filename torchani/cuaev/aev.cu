@@ -96,18 +96,19 @@ __host__ __device__ __forceinline__ int align(const int& value) {
 
 template <typename SpeciesT, typename DataT, typename IndexT = int>
 __global__ void pairwiseDistance(
-    torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
-    torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> pos_t,
+    const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
+    const torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> pos_t,
     torch::PackedTensorAccessor32<SpeciesT, 1, torch::RestrictPtrTraits> radialNumPairsPerAtom_t,
-    PairDist* d_Rij,
-    DataT Rcr,
-    IndexT max_natoms_per_mol) {
+    AtomI* __restrict__ atom_i,
+    PairDist* __restrict__ d_Rij,
+    const DataT Rcr,
+    const IndexT max_natoms_per_mol) {
   extern __shared__ float smem[];
   int* s_pcounter_i = reinterpret_cast<int*>(&smem[0]);
   int* s_type = reinterpret_cast<int*>(&smem[max_natoms_per_mol]);
   float3* s_pos = reinterpret_cast<float3*>(&smem[max_natoms_per_mol * 2]);
 
-  float3* pos_t_3 = reinterpret_cast<float3*>(&pos_t[0][0][0]);
+  const float3* pos_t_3 = reinterpret_cast<const float3*>(&pos_t[0][0][0]);
 
   int mol_idx = blockIdx.x;
   int tidx = blockDim.x * threadIdx.y + threadIdx.x;
@@ -148,6 +149,8 @@ __global__ void pairwiseDistance(
         } // if j is not padding atom and i is not j
       }
     } // if i is not padding atom
+    AtomI aI = {mol_idx, i};
+    atom_i[mol_idx * max_natoms_per_mol + i] = aI;
   }
   __syncthreads();
   for (int i = tidx; i < max_natoms_per_mol; i += blockDim.x * blockDim.y) {
@@ -160,15 +163,16 @@ __global__ void pairwiseDistance(
 // ATOM_J_PER_SUBTILE is the tile of atoms J that are really parallel calculating
 template <int ATOM_I_PER_BLOCK, int ATOM_J_PER_TILE, typename SpeciesT, typename DataT, typename IndexT = int>
 __global__ void pairwiseDistanceSingleMolecule(
-    torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
-    torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> pos_t,
+    const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
+    const torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> pos_t,
     torch::PackedTensorAccessor32<SpeciesT, 1, torch::RestrictPtrTraits> radialNumPairsPerAtom_t,
-    PairDist* d_Rij,
-    DataT Rcr,
-    IndexT max_natoms_per_mol) {
+    AtomI* __restrict__ atom_i,
+    PairDist* __restrict__ d_Rij,
+    const DataT Rcr,
+    const IndexT max_natoms_per_mol) {
   __shared__ int s_pcounter_i[ATOM_I_PER_BLOCK];
   __shared__ float3 s_coord_j[ATOM_J_PER_TILE];
-  float3* pos_t_3 = reinterpret_cast<float3*>(&pos_t[0][0][0]);
+  const float3* pos_t_3 = reinterpret_cast<const float3*>(&pos_t[0][0][0]);
 
   constexpr int mol_idx = 0;
   int natom_pairs = max_natoms_per_mol * (max_natoms_per_mol - 1);
@@ -223,9 +227,11 @@ __global__ void pairwiseDistanceSingleMolecule(
     __syncthreads();
   }
 
-  if (threadIdx.x == 0 && i < max_natoms_per_mol) {
-    // printf("i %d, pidx %d\n", i, s_pcounter_i[ii]);
-    radialNumPairsPerAtom_t[i] = s_pcounter_i[ii];
+  i = sidx + blockIdx.x * blockDim.y;
+  if (sidx < ATOM_I_PER_BLOCK && i < max_natoms_per_mol) {
+    radialNumPairsPerAtom_t[i] = s_pcounter_i[sidx];
+    AtomI aI = {mol_idx, i};
+    atom_i[mol_idx * max_natoms_per_mol + i] = aI;
   }
 }
 
@@ -296,7 +302,7 @@ __global__ void cuAngularAEVs(
     const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> Zeta_t,
     torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> aev_t,
     const PairDist* __restrict__ d_Rij,
-    const PairDist* __restrict__ d_centralAtom,
+    const AtomI* __restrict__ atom_i,
     const int* __restrict__ d_nPairsPerCenterAtom,
     const int* __restrict__ d_centerAtomStartIdx,
     float Rca,
@@ -347,11 +353,9 @@ __global__ void cuAngularAEVs(
 
   int start_idx = d_centerAtomStartIdx[cIdx];
   int totalpairs = jnum * (jnum - 1) / 2;
-  PairDist d = d_Rij[start_idx];
-
-  // center atom
-  int i = d.i;
-  int mol_idx = d.midx;
+  AtomI aI = atom_i[cIdx];
+  int mol_idx = aI.midx;
+  int i = aI.i;
 
   for (int iaev = tIdx; iaev < angular_length; iaev += blockDim.x * blockDim.y) {
     saev[iaev] = 0;
@@ -741,6 +745,7 @@ __global__ void cuRadialAEVs(
     torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> EtaR_t,
     torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> aev_t,
     const PairDist* __restrict__ d_Rij,
+    const AtomI* __restrict__ atom_i,
     const int* __restrict__ d_nPairsPerCenterAtom,
     const int* __restrict__ d_centerAtomStartIdx,
     float Rcr,
@@ -765,9 +770,9 @@ __global__ void cuRadialAEVs(
   if (jnum < 1)
     return;
 
-  PairDist d = d_Rij[start_idx];
-  int mol_idx = d.midx;
-  int i = d.i;
+  AtomI aI = atom_i[cIdx];
+  int mol_idx = aI.midx;
+  int i = aI.i;
   int laneIdx = threadIdx.x % blockDim.x;
 
   for (int iaev = tIdx; iaev < radial_length; iaev += blockDim.x * blockDim.y) {
@@ -777,7 +782,6 @@ __global__ void cuRadialAEVs(
   // TODO move fc outside of radial kernel, so could directly load
   for (int jj = tIdx; jj < jnum; jj += blockDim.x * blockDim.y) {
     PairDist dij = d_Rij[start_idx + jj];
-    int j = dij.j;
     DataT Rij = dij.Rij;
     s_fc[jj] = 0.5 * __cosf(PI * Rij / Rcr) + 0.5;
   }
@@ -862,8 +866,9 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
 }
 
 template <int ATOM_I_PER_BLOCK>
-__global__ void cutoffSelect1(
+__global__ void cutoffSelect(
     const PairDist* __restrict__ d_in,
+    const AtomI* __restrict__ atom_i,
     PairDist* __restrict__ d_out,
     PairDist* __restrict__ new_d_out,
     const int* __restrict__ nums_per_row,
@@ -874,16 +879,18 @@ __global__ void cutoffSelect1(
     int max_natoms_per_mol) {
   __shared__ int s_new_pcounter_i[ATOM_I_PER_BLOCK];
   __shared__ int s_num_max;
-  int i = blockIdx.x * blockDim.y + threadIdx.y;
-  int num_i = nums_per_row[i];
-  int start_i = startidx_per_row[i];
+  int gi = blockIdx.x * blockDim.y + threadIdx.y;
+  if (gi >= num_rows)
+    return;
+
+  AtomI aI = atom_i[gi];
+  int i = aI.i;
+  int mol_idx = aI.midx;
+  int jnum = nums_per_row[gi];
+  int start_i = startidx_per_row[gi];
   int ii = threadIdx.y;
   int idx = blockDim.x * threadIdx.y + threadIdx.x;
-  int mol_idx = i / max_natoms_per_mol;
   int natom_pairs = max_natoms_per_mol * (max_natoms_per_mol - 1);
-
-  if (i >= num_rows)
-    return;
 
   if (idx < ATOM_I_PER_BLOCK) {
     s_new_pcounter_i[idx] = 0;
@@ -899,8 +906,8 @@ __global__ void cutoffSelect1(
   }
   __syncthreads();
 
-  for (int jj = threadIdx.x; jj < s_num_max && jj < num_i; jj += blockDim.x) {
-    PairDist d = d_in[natom_pairs * mol_idx + i % max_natoms_per_mol * (max_natoms_per_mol - 1) + jj];
+  for (int jj = threadIdx.x; jj < s_num_max && jj < jnum; jj += blockDim.x) {
+    PairDist d = d_in[natom_pairs * mol_idx + i * (max_natoms_per_mol - 1) + jj];
     // printf("cutoff1, mol: %d, Rij: %f\n", mol_idx, d.Rij);
     d_out[start_i + jj] = d;
     if (d.Rij <= new_cutoff) {
@@ -908,10 +915,11 @@ __global__ void cutoffSelect1(
       new_d_out[start_i + pidx] = d;
     }
   }
+  __syncthreads();
 
-  if (threadIdx.x == 0 && i < num_rows) {
-    // printf("i %d, pidx %d\n", i, s_pcounter_i[ii]);
-    new_nums_per_row[i] = s_new_pcounter_i[ii];
+  gi = idx + blockIdx.x * blockDim.y;
+  if (idx < blockDim.y && gi < num_rows) {
+    new_nums_per_row[gi] = s_new_pcounter_i[idx];
   }
 }
 
@@ -926,12 +934,10 @@ __global__ void cutoffSelect2(
     int max_natoms_per_mol) {
   __shared__ int s_num_max;
   int i = blockIdx.x * blockDim.y + threadIdx.y;
-  int num_i = nums_per_row[i];
+  int jnum = nums_per_row[i];
   int start_i_out = startidx_per_row_out[i];
   int start_i_in = startidx_per_row_in[i];
-  int ii = threadIdx.y;
   int idx = blockDim.x * threadIdx.y + threadIdx.x;
-  int natom_pairs = max_natoms_per_mol * (max_natoms_per_mol - 1);
 
   if (i >= num_rows)
     return;
@@ -949,7 +955,7 @@ __global__ void cutoffSelect2(
   }
   __syncthreads();
 
-  for (int jj = threadIdx.x; jj < s_num_max && jj < num_i; jj += blockDim.x) {
+  for (int jj = threadIdx.x; jj < s_num_max && jj < jnum; jj += blockDim.x) {
     PairDist d = d_in[start_i_in + jj];
     d_out[start_i_out + jj] = d;
   }
@@ -973,19 +979,16 @@ void cubScan(const DataT* d_in, DataT* d_out, int num_items, cudaStream_t stream
 }
 
 template <typename DataT, typename LambdaOpT>
-int cubDeviceSelect(
-    const DataT* d_in,
-    DataT* d_out,
-    int num_items,
-    int* d_num_selected_out,
-    LambdaOpT select_op,
-    cudaStream_t stream) {
+int cubDeviceSelectIf(const DataT* d_in, DataT* d_out, int num_items, LambdaOpT select_op, cudaStream_t stream) {
   auto& allocator = *c10::cuda::CUDACachingAllocator::get();
+  auto buffer_count = allocator.allocate(sizeof(int));
+  int* d_num_selected_out = (int*)buffer_count.get();
 
   // Determine temporary device storage requirements
   void* d_temp_storage = NULL;
   size_t temp_storage_bytes = 0;
-  cub::DeviceSelect::If(d_temp_storage, temp_storage_bytes, d_in, d_out, d_num_selected_out, num_items, select_op);
+  cub::DeviceSelect::If(
+      d_temp_storage, temp_storage_bytes, d_in, d_out, d_num_selected_out, num_items, select_op, stream);
 
   // Allocate temporary storage
   auto buffer_tmp = allocator.allocate(temp_storage_bytes);
@@ -1003,8 +1006,38 @@ int cubDeviceSelect(
 }
 
 template <typename DataT>
-DataT cubMax(const DataT* d_in, int num_items, DataT* d_out, cudaStream_t stream) {
+int cubDeviceSelectFlagged(const DataT* d_in, DataT* d_out, int num_items, char* d_flags, cudaStream_t stream) {
   auto& allocator = *c10::cuda::CUDACachingAllocator::get();
+  auto buffer_count = allocator.allocate(sizeof(int));
+  int* d_num_selected_out = (int*)buffer_count.get();
+
+  // Determine temporary device storage requirements
+  void* d_temp_storage = NULL;
+  size_t temp_storage_bytes = 0;
+  cub::DeviceSelect::Flagged(
+      d_temp_storage, temp_storage_bytes, d_in, d_flags, d_out, d_num_selected_out, num_items, stream);
+
+  // Allocate temporary storage
+  auto buffer_tmp = allocator.allocate(temp_storage_bytes);
+  d_temp_storage = buffer_tmp.get();
+
+  // Run selection
+  cub::DeviceSelect::Flagged(
+      d_temp_storage, temp_storage_bytes, d_in, d_flags, d_out, d_num_selected_out, num_items, stream);
+
+  int num_selected = 0;
+  cudaMemcpyAsync(&num_selected, d_num_selected_out, sizeof(int), cudaMemcpyDefault, stream);
+  cudaStreamSynchronize(stream);
+
+  return num_selected;
+}
+
+template <typename DataT>
+DataT cubMax(const DataT* d_in, int num_items, cudaStream_t stream) {
+  auto& allocator = *c10::cuda::CUDACachingAllocator::get();
+  auto buffer_count = allocator.allocate(sizeof(DataT));
+  DataT* d_out = (DataT*)buffer_count.get();
+
   // Determine temporary device storage requirements
   void* d_temp_storage = NULL;
   size_t temp_storage_bytes = 0;
@@ -1017,11 +1050,36 @@ DataT cubMax(const DataT* d_in, int num_items, DataT* d_out, cudaStream_t stream
   // Run min-reduction
   cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, d_in, d_out, num_items, stream);
 
-  int maxVal = 0;
+  DataT maxVal = 0;
   cudaMemcpyAsync(&maxVal, d_out, sizeof(DataT), cudaMemcpyDefault, stream);
   cudaStreamSynchronize(stream);
 
   return maxVal;
+}
+
+template <typename DataT>
+DataT cubSum(const DataT* d_in, int num_items, cudaStream_t stream) {
+  auto& allocator = *c10::cuda::CUDACachingAllocator::get();
+  auto buffer_count = allocator.allocate(sizeof(DataT));
+  DataT* d_out = (DataT*)buffer_count.get();
+
+  // Determine temporary device storage requirements
+  void* d_temp_storage = NULL;
+  size_t temp_storage_bytes = 0;
+  cub::DeviceReduce::Sum(d_temp_storage, temp_storage_bytes, d_in, d_out, num_items, stream);
+
+  // Allocate temporary storage
+  auto buffer_tmp = allocator.allocate(temp_storage_bytes);
+  d_temp_storage = buffer_tmp.get();
+
+  // Run sum-reduction
+  cub::DeviceReduce::Sum(d_temp_storage, temp_storage_bytes, d_in, d_out, num_items, stream);
+
+  DataT sumVal = 0;
+  cudaMemcpyAsync(&sumVal, d_out, sizeof(DataT), cudaMemcpyDefault, stream);
+  cudaStreamSynchronize(stream);
+
+  return sumVal;
 }
 
 // NOTE: assumes size of EtaA_t = Zeta_t = EtaR_t = 1
@@ -1038,6 +1096,7 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
   const int n_molecules = species_t.size(0);
   const int max_natoms_per_mol = species_t.size(1);
   int aev_length = aev_params.radial_length + aev_params.angular_length;
+  int total_atoms = n_molecules * max_natoms_per_mol;
 
   auto aev_t = torch::zeros({n_molecules, max_natoms_per_mol, aev_length}, coordinates_t.options());
 
@@ -1060,33 +1119,40 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
   NeighborList radialNbr;
   NeighborList angularNbr;
 
-  auto buffer_count = allocator.allocate(sizeof(int));
-  int* d_count_out = (int*)buffer_count.get();
-
   // radial_num_per_atom ranges from 10 - 60
-  radialNbr.num_j_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
+  radialNbr.num_j_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
   radialNbr.num_j_p = (int*)radialNbr.num_j_t.data_ptr();
-  radialNbr.start_j_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
+  radialNbr.start_j_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
   radialNbr.start_j_p = (int*)radialNbr.start_j_t.data_ptr();
+  radialNbr.atom_i_t = torch::zeros(total_atoms * 2, d_options.dtype(torch::kInt32));
+  radialNbr.atom_i_p = (AtomI*)radialNbr.atom_i_t.data_ptr();
 
   constexpr int ATOM_I_PER_BLOCK = 32;
 
   if (n_molecules == 1) {
     if (DEBUG_TEST)
       printf("single molecule, %d atoms\n", max_natoms_per_mol);
+
     constexpr int ATOM_J_PER_SUBTILE = 32;
     constexpr int ATOM_J_PER_TILE = ATOM_I_PER_BLOCK * ATOM_J_PER_SUBTILE;
-    int blocks = (n_molecules * max_natoms_per_mol + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
+    int blocks = (total_atoms + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
     dim3 block(ATOM_J_PER_SUBTILE, ATOM_I_PER_BLOCK, 1);
     pairwiseDistanceSingleMolecule<ATOM_I_PER_BLOCK, ATOM_J_PER_TILE><<<blocks, block>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
         radialNbr.num_j_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+        radialNbr.atom_i_p,
         d_Rij,
         Rcr,
         max_natoms_per_mol);
-
+    radialNbr.num_i = total_atoms;
   } else {
+    // tmp storage
+    Tensor num_j_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
+    int* num_j_p = (int*)num_j_t.data_ptr();
+    Tensor atom_i_t = torch::zeros(total_atoms * 2, d_options.dtype(torch::kInt32));
+    AtomI* atom_i_p = (AtomI*)atom_i_t.data_ptr();
+
     dim3 block(32, 4, 1);
     // Compute pairwise distance (Rij) for all atom pairs in a molecule
     // maximum 4096 atoms, which needs 49152 byte (48 kb) of shared memory
@@ -1095,74 +1161,66 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
     pairwiseDistance<<<n_molecules, block, smem_pairdist, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-        radialNbr.num_j_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+        num_j_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+        atom_i_p,
         d_Rij,
         Rcr,
         max_natoms_per_mol);
 
-    // TODO remove padding
-    // nRadialRij = cubDeviceSelect(
-    //   radialNbr.num_j_p_tmp,
-    //   radialNbr.num_j_p,
-    //   n_molecules * max_natoms_per_mol,
-    //   d_count_out,
-    //   [=] __device__(const int count) { return count > 0; },
-    //   stream);
+    // remove padding
+    radialNbr.num_i = cubDeviceSelectIf(
+        num_j_p, radialNbr.num_j_p, total_atoms, [=] __device__(const int numj) { return (bool)numj; }, stream);
+
+    // cub::DeviceSelect::Flagged Bug: flag current only allow bool or int which is ether 0 or 1
+    // https://github.com/NVIDIA/cub/issues/235
+    auto flags_t = num_j_t.to(torch::kBool);
+    char* flags_p = (char*)flags_t.data_ptr();
+
+    int num_i = cubDeviceSelectFlagged(atom_i_p, radialNbr.atom_i_p, total_atoms, flags_p, stream);
+    // printf("radialNbr.num_i %d\n", radialNbr.num_i);
   }
 
-  cubScan(radialNbr.num_j_p, radialNbr.start_j_p, n_molecules * max_natoms_per_mol, stream);
-  int totalatoms = n_molecules * max_natoms_per_mol;
-  radialNbr.num_j = radialNbr.start_j_t[totalatoms - 1].item<int>() + radialNbr.num_j_t[totalatoms - 1].item<int>();
+  if (DEBUG_TEST)
+    printf("num_i %d\n", radialNbr.num_i);
+
+  cubScan(radialNbr.num_j_p, radialNbr.start_j_p, total_atoms, stream);
+  radialNbr.num_j = radialNbr.start_j_t[total_atoms - 1].item<int>() + radialNbr.num_j_t[total_atoms - 1].item<int>();
   if (DEBUG_TEST)
     printf("radialNbr.num_j %d\n", radialNbr.num_j);
 
   radialNbr.atom_j_t = torch::empty(sizeof(PairDist) * radialNbr.num_j, d_options);
   radialNbr.atom_j_p = (PairDist*)radialNbr.atom_j_t.data_ptr();
 
-  Tensor tensor_tmp_angularRij = torch::empty(sizeof(PairDist) * radialNbr.num_j, d_options);
-  PairDist* d_tmp_angularRij = (PairDist*)tensor_tmp_angularRij.data_ptr();
+  angularNbr.atom_j_t = torch::empty(sizeof(PairDist) * radialNbr.num_j, d_options);
+  angularNbr.atom_j_p = (PairDist*)angularNbr.atom_j_t.data_ptr();
 
-  angularNbr.num_j_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
+  angularNbr.num_j_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
   angularNbr.num_j_p = (int*)angularNbr.num_j_t.data_ptr();
 
   {
     int ATOM_J_PER_TILE = 16;
     dim3 block(ATOM_J_PER_TILE, ATOM_I_PER_BLOCK, 1);
-    int blocks = (n_molecules * max_natoms_per_mol + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
-    cutoffSelect1<ATOM_I_PER_BLOCK><<<blocks, block>>>(
+    int blocks = (radialNbr.num_i + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
+    cutoffSelect<ATOM_I_PER_BLOCK><<<blocks, block>>>(
         d_Rij,
+        radialNbr.atom_i_p,
         radialNbr.atom_j_p,
-        d_tmp_angularRij,
+        angularNbr.atom_j_p,
         radialNbr.num_j_p,
         radialNbr.start_j_p,
         Rca,
         angularNbr.num_j_p,
-        n_molecules * max_natoms_per_mol,
+        radialNbr.num_i,
         max_natoms_per_mol);
 
-    angularNbr.start_j_t = torch::zeros(n_molecules * max_natoms_per_mol, d_options.dtype(torch::kInt32));
-    angularNbr.start_j_p = (int*)angularNbr.start_j_t.data_ptr();
-    cubScan(angularNbr.num_j_p, angularNbr.start_j_p, n_molecules * max_natoms_per_mol, stream);
-    angularNbr.num_j =
-        angularNbr.start_j_t[totalatoms - 1].item<int>() + angularNbr.num_j_t[totalatoms - 1].item<int>();
+    // TODO angular and radial only need one copy of atom_i, start_j and num_i
+    angularNbr.num_j = cubSum(angularNbr.num_j_p, radialNbr.num_i, stream);
+    // angularNbr.num_j = at::sum(angularNbr.num_j_t).item<int>();
     if (DEBUG_TEST)
       printf("angularNbr.num_j %d\n", angularNbr.num_j);
-
-    angularNbr.atom_j_t = torch::empty(sizeof(PairDist) * radialNbr.num_j, d_options);
-    angularNbr.atom_j_p = (PairDist*)angularNbr.atom_j_t.data_ptr();
-
-    cutoffSelect2<ATOM_I_PER_BLOCK><<<blocks, block>>>(
-        d_tmp_angularRij,
-        angularNbr.atom_j_p,
-        angularNbr.num_j_p,
-        angularNbr.start_j_p,
-        radialNbr.start_j_p,
-        n_molecules * max_natoms_per_mol,
-        max_natoms_per_mol);
-    radialNbr.num_i = n_molecules * max_natoms_per_mol;
   }
 
-  int max_radial_numPairsPerAtom = cubMax(radialNbr.num_j_p, radialNbr.num_i, d_count_out, stream);
+  int max_radial_numPairsPerAtom = cubMax(radialNbr.num_j_p, radialNbr.num_i, stream);
   constexpr dim3 block_radial(8, 16, 1);
   int smem_radial = aev_params.radial_length * sizeof(float) + max_radial_numPairsPerAtom * sizeof(float);
   cuRadialAEVs<int, float><<<radialNbr.num_i, block_radial, smem_radial, stream>>>(
@@ -1171,6 +1229,7 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
       aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
       aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
       radialNbr.atom_j_p,
+      radialNbr.atom_i_p,
       radialNbr.num_j_p,
       radialNbr.start_j_p,
       aev_params.Rcr,
@@ -1199,8 +1258,9 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
       return (sm_aev + sxyz + sRij + sfc + sj) * ncatom_per_tpb;
     };
 
-    angularNbr.num_i = n_molecules * max_natoms_per_mol;
-    int maxNbrsPerCenterAtom = cubMax(angularNbr.num_j_p, angularNbr.num_i, d_count_out, stream);
+    // TODO only keep one copy of num_i
+    angularNbr.num_i = radialNbr.num_i;
+    int maxNbrsPerCenterAtom = cubMax(angularNbr.num_j_p, angularNbr.num_i, stream);
     int maxnbrs_per_atom_aligned = align<4>(maxNbrsPerCenterAtom);
     int smem_size_aligned = smem_size(maxnbrs_per_atom_aligned, 1);
     int angular_length_aligned = align<4>(aev_params.angular_length);
@@ -1216,9 +1276,9 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
         aev_params.Zeta_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
         aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
         angularNbr.atom_j_p,
-        d_centralAtom,
+        radialNbr.atom_i_p,
         angularNbr.num_j_p,
-        angularNbr.start_j_p,
+        radialNbr.start_j_p,
         aev_params.Rca,
         aev_params.angular_length,
         aev_params.angular_sublength,
@@ -1237,7 +1297,7 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
         angularNbr.num_j,
         tensor_centralAtom,
         angularNbr.num_j_t,
-        angularNbr.start_j_t,
+        radialNbr.start_j_t,
         maxnbrs_per_atom_aligned,
         angular_length_aligned,
         angularNbr.num_i,

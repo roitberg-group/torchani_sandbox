@@ -140,6 +140,14 @@ class TestCUAEV(TestCase):
         _, cu_aev = self.cuaev_computer_1x((species, coordinates))
         self.assertEqual(cu_aev, aev)
 
+    def testBatch(self):
+        coordinates = torch.rand([100, 50, 3], device=self.device) * 5
+        species = torch.randint(-1, 3, (100, 50), device=self.device)
+
+        _, aev = self.aev_computer_1x((species, coordinates))
+        _, cu_aev = self.cuaev_computer_1x((species, coordinates))
+        self.assertEqual(cu_aev, aev)
+
     def testSimpleBackward(self):
         coordinates = torch.tensor([
             [[0.03192167, 0.00638559, 0.01301679],
