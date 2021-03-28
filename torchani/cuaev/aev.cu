@@ -58,25 +58,20 @@ struct alignas(2 * sizeof(int)) AtomI {
 };
 
 struct NeighborList {
-  int num_i;
-  int num_j;
-  // indexing
-  Tensor atom_i_t;
-  Tensor atom_j_t; // now use PairDist
-  // Tensor atom_j_t;  // only j index
-  Tensor num_j_t;
-  Tensor start_j_t;
-  // dist and applied cutoff
-  Tensor dist_j_t;
-  Tensor fc_j_t;
+  int nJ;
+  int maxNumJPerI_aligned; // aligned to multiple of 4
+
+  Tensor atomJ_t; // now use PairDist
+  // Tensor atomJ_t;  // only j index
+  Tensor numJPerI_t;
+  Tensor distJ_t;
+  Tensor fcJ_t;
 
   // pointers
-  AtomI* atom_i_p;
-  PairDist* atom_j_p;
-  int* num_j_p;
-  int* start_j_p;
-  float* dist_j_p;
-  float* fc_j_p;
+  PairDist* atomJ_p;
+  int* numJPerI_p;
+  float* distJ_p;
+  float* fcJ_p;
 };
 
 // used to group Rijs by atom id
@@ -1081,16 +1076,18 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
   NeighborList radialNbr;
   NeighborList angularNbr;
 
+  // radial and angular share the same data of atomI, startIdxJ and nI
+  int nI;
+  Tensor atomI_t = torch::zeros(total_atoms * 2, d_options.dtype(torch::kInt32));
+  AtomI* atomI_p = (AtomI*)atomI_t.data_ptr();
+  Tensor startIdxJ_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
+  int* startIdxJ_p = (int*)startIdxJ_t.data_ptr();
+
   // radial_num_per_atom ranges from 10 - 60
-  radialNbr.num_j_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
-  radialNbr.num_j_p = (int*)radialNbr.num_j_t.data_ptr();
-  radialNbr.start_j_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
-  radialNbr.start_j_p = (int*)radialNbr.start_j_t.data_ptr();
-  radialNbr.atom_i_t = torch::zeros(total_atoms * 2, d_options.dtype(torch::kInt32));
-  radialNbr.atom_i_p = (AtomI*)radialNbr.atom_i_t.data_ptr();
+  radialNbr.numJPerI_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
+  radialNbr.numJPerI_p = (int*)radialNbr.numJPerI_t.data_ptr();
 
   constexpr int ATOM_I_PER_BLOCK = 32;
-
   if (n_molecules == 1) {
     if (DEBUG_TEST)
       printf("single molecule, %d atoms\n", max_natoms_per_mol);
@@ -1102,16 +1099,16 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
     pairwiseDistanceSingleMolecule<ATOM_I_PER_BLOCK, ATOM_J_PER_TILE><<<blocks, block>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-        radialNbr.num_j_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-        radialNbr.atom_i_p,
+        radialNbr.numJPerI_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+        atomI_p,
         d_Rij,
         Rcr,
         max_natoms_per_mol);
-    radialNbr.num_i = total_atoms;
+    nI = total_atoms;
   } else {
     // tmp storage
-    Tensor num_j_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
-    int* num_j_p = (int*)num_j_t.data_ptr();
+    Tensor numJPerI_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
+    int* numJPerI_p = (int*)numJPerI_t.data_ptr();
     Tensor atom_i_t = torch::zeros(total_atoms * 2, d_options.dtype(torch::kInt32));
     AtomI* atom_i_p = (AtomI*)atom_i_t.data_ptr();
 
@@ -1123,90 +1120,91 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
     pairwiseDistance<<<n_molecules, block, smem_pairdist, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-        num_j_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+        numJPerI_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
         atom_i_p,
         d_Rij,
         Rcr,
         max_natoms_per_mol);
 
-    // remove padding
-    radialNbr.num_i = cubDeviceSelectIf(
-        num_j_p, radialNbr.num_j_p, total_atoms, [=] __device__(const int numj) { return (bool)numj; }, stream);
+    // remove padding atomsI
+    nI = cubDeviceSelectIf(
+        numJPerI_p, radialNbr.numJPerI_p, total_atoms, [=] __device__(const int numj) { return (bool)numj; }, stream);
 
     // cub::DeviceSelect::Flagged Bug: flag current only allow bool or int which is ether 0 or 1
     // https://github.com/NVIDIA/cub/issues/235
-    auto flags_t = num_j_t.to(torch::kBool);
+    auto flags_t = numJPerI_t.to(torch::kBool);
     char* flags_p = (char*)flags_t.data_ptr();
 
-    int num_i = cubDeviceSelectFlagged(atom_i_p, radialNbr.atom_i_p, total_atoms, flags_p, stream);
-    // printf("radialNbr.num_i %d\n", radialNbr.num_i);
+    int num_i = cubDeviceSelectFlagged(atom_i_p, atomI_p, total_atoms, flags_p, stream);
   }
 
   if (DEBUG_TEST)
-    printf("num_i %d\n", radialNbr.num_i);
+    printf("num_i %d\n", nI);
 
-  cubScan(radialNbr.num_j_p, radialNbr.start_j_p, total_atoms, stream);
-  radialNbr.num_j = radialNbr.start_j_t[total_atoms - 1].item<int>() + radialNbr.num_j_t[total_atoms - 1].item<int>();
+  cubScan(radialNbr.numJPerI_p, startIdxJ_p, total_atoms, stream);
+  radialNbr.nJ = startIdxJ_t[total_atoms - 1].item<int>() + radialNbr.numJPerI_t[total_atoms - 1].item<int>();
   if (DEBUG_TEST)
-    printf("radialNbr.num_j %d\n", radialNbr.num_j);
+    printf("radialNbr.nJ %d\n", radialNbr.nJ);
 
-  radialNbr.atom_j_t = torch::empty(sizeof(PairDist) * radialNbr.num_j, d_options);
-  radialNbr.atom_j_p = (PairDist*)radialNbr.atom_j_t.data_ptr();
+  radialNbr.atomJ_t = torch::empty(sizeof(PairDist) * radialNbr.nJ, d_options);
+  radialNbr.atomJ_p = (PairDist*)radialNbr.atomJ_t.data_ptr();
 
-  angularNbr.atom_j_t = torch::empty(sizeof(PairDist) * radialNbr.num_j, d_options);
-  angularNbr.atom_j_p = (PairDist*)angularNbr.atom_j_t.data_ptr();
+  angularNbr.atomJ_t = torch::empty(sizeof(PairDist) * radialNbr.nJ, d_options);
+  angularNbr.atomJ_p = (PairDist*)angularNbr.atomJ_t.data_ptr();
 
-  angularNbr.num_j_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
-  angularNbr.num_j_p = (int*)angularNbr.num_j_t.data_ptr();
+  angularNbr.numJPerI_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
+  angularNbr.numJPerI_p = (int*)angularNbr.numJPerI_t.data_ptr();
 
-  {
+  { // cutoffSelect
     int ATOM_J_PER_TILE = 16;
     dim3 block(ATOM_J_PER_TILE, ATOM_I_PER_BLOCK, 1);
-    int blocks = (radialNbr.num_i + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
+    int blocks = (nI + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
     cutoffSelect<ATOM_I_PER_BLOCK><<<blocks, block>>>(
         d_Rij,
-        radialNbr.atom_i_p,
-        radialNbr.atom_j_p,
-        angularNbr.atom_j_p,
-        radialNbr.num_j_p,
-        radialNbr.start_j_p,
+        atomI_p,
+        radialNbr.atomJ_p,
+        angularNbr.atomJ_p,
+        radialNbr.numJPerI_p,
+        startIdxJ_p,
         Rca,
-        angularNbr.num_j_p,
-        radialNbr.num_i,
+        angularNbr.numJPerI_p,
+        nI,
         max_natoms_per_mol);
 
     // TODO angular and radial only need one copy of atom_i, start_j and num_i
-    angularNbr.num_j = cubSum(angularNbr.num_j_p, radialNbr.num_i, stream);
-    // angularNbr.num_j = at::sum(angularNbr.num_j_t).item<int>();
+    angularNbr.nJ = cubSum(angularNbr.numJPerI_p, nI, stream);
+    // angularNbr.nJ = at::sum(angularNbr.numJPerI_t).item<int>();
     if (DEBUG_TEST)
-      printf("angularNbr.num_j %d\n", angularNbr.num_j);
+      printf("angularNbr.nJ %d\n", angularNbr.nJ);
   }
 
-  int max_radial_numPairsPerAtom = cubMax(radialNbr.num_j_p, radialNbr.num_i, stream);
-  constexpr dim3 block_radial(8, 16, 1);
-  int smem_radial = aev_params.radial_length * sizeof(float) + max_radial_numPairsPerAtom * sizeof(float);
-  cuRadialAEVs<int, float><<<radialNbr.num_i, block_radial, smem_radial, stream>>>(
-      species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-      aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-      aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-      aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-      radialNbr.atom_j_p,
-      radialNbr.atom_i_p,
-      radialNbr.num_j_p,
-      radialNbr.start_j_p,
-      aev_params.Rcr,
-      aev_params.radial_length,
-      aev_params.radial_sublength,
-      radialNbr.num_j,
-      max_radial_numPairsPerAtom);
+  { // RadialAEV
+    radialNbr.maxNumJPerI_aligned = align<4>(cubMax(radialNbr.numJPerI_p, nI, stream));
+    constexpr dim3 block_radial(8, 16, 1);
+    int smem_radial = aev_params.radial_length * sizeof(float) + radialNbr.maxNumJPerI_aligned * sizeof(float);
+    cuRadialAEVs<int, float><<<nI, block_radial, smem_radial, stream>>>(
+        species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+        aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+        aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+        aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+        radialNbr.atomJ_p,
+        atomI_p,
+        radialNbr.numJPerI_p,
+        startIdxJ_p,
+        aev_params.Rcr,
+        aev_params.radial_length,
+        aev_params.radial_sublength,
+        radialNbr.nJ,
+        radialNbr.maxNumJPerI_aligned);
+  }
 
   // TODO remove this
-  Tensor tensor_centralAtom = torch::empty(sizeof(PairDist) * angularNbr.num_j, d_options);
+  Tensor tensor_centralAtom = torch::empty(sizeof(PairDist) * angularNbr.nJ, d_options);
   PairDist* d_centralAtom = (PairDist*)tensor_centralAtom.data_ptr();
   // release d_Rij memory
   tensor_Rij = Tensor();
 
-  {
+  { // Angular
     auto smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
       int sm_aev = sizeof(float) * align<4>(aev_params.angular_length); // (angular_length / 4 + 1) * 4
       int sxyz = sizeof(float) * max_nbrs * 3;
@@ -1220,16 +1218,16 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
       return (sm_aev + sxyz + sRij + sfc + sj) * ncatom_per_tpb;
     };
 
-    // TODO only keep one copy of num_i
-    angularNbr.num_i = radialNbr.num_i;
-    int maxNbrsPerCenterAtom = cubMax(angularNbr.num_j_p, angularNbr.num_i, stream);
-    int maxnbrs_per_atom_aligned = align<4>(maxNbrsPerCenterAtom);
-    int smem_size_aligned = smem_size(maxnbrs_per_atom_aligned, 1);
+    angularNbr.maxNumJPerI_aligned = align<4>(cubMax(angularNbr.numJPerI_p, nI, stream));
+    int smem_size_aligned = smem_size(angularNbr.maxNumJPerI_aligned, 1);
     int angular_length_aligned = align<4>(aev_params.angular_length);
     if (DEBUG_TEST)
-      printf("maxnbrs_per_atom_aligned %d -- angular smem_size %d\n", maxnbrs_per_atom_aligned, smem_size_aligned);
+      printf(
+          "angularNbr.maxNumJPerI_aligned %d -- angular smem_size %d\n",
+          angularNbr.maxNumJPerI_aligned,
+          smem_size_aligned);
     constexpr dim3 block(C10_WARP_SIZE, 4, 1);
-    cuAngularAEVs<block.x, block.y><<<angularNbr.num_i, block, smem_size_aligned, stream>>>(
+    cuAngularAEVs<block.x, block.y><<<nI, block, smem_size_aligned, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
         aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1237,32 +1235,32 @@ Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const
         aev_params.EtaA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
         aev_params.Zeta_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
         aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-        angularNbr.atom_j_p,
-        radialNbr.atom_i_p,
-        angularNbr.num_j_p,
-        radialNbr.start_j_p,
+        angularNbr.atomJ_p,
+        atomI_p,
+        angularNbr.numJPerI_p,
+        startIdxJ_p,
         aev_params.Rca,
         aev_params.angular_length,
         aev_params.angular_sublength,
         aev_params.radial_length,
         aev_params.num_species,
-        maxnbrs_per_atom_aligned,
+        angularNbr.maxNumJPerI_aligned,
         angular_length_aligned,
-        angularNbr.num_i);
+        nI);
 
     return {
         aev_t,
-        radialNbr.atom_j_t,
-        angularNbr.atom_j_t,
+        radialNbr.atomJ_t,
+        angularNbr.atomJ_t,
         total_natom_pairs,
-        radialNbr.num_j,
-        angularNbr.num_j,
+        radialNbr.nJ,
+        angularNbr.nJ,
         tensor_centralAtom,
-        angularNbr.num_j_t,
-        radialNbr.start_j_t,
-        maxnbrs_per_atom_aligned,
+        angularNbr.numJPerI_t,
+        startIdxJ_t,
+        angularNbr.maxNumJPerI_aligned,
         angular_length_aligned,
-        angularNbr.num_i,
+        nI,
         coordinates_t,
         species_t};
   }
