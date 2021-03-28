@@ -923,44 +923,6 @@ __global__ void cutoffSelect(
   }
 }
 
-template <int ATOM_I_PER_BLOCK>
-__global__ void cutoffSelect2(
-    const PairDist* __restrict__ d_in,
-    PairDist* __restrict__ d_out,
-    const int* __restrict__ nums_per_row,
-    const int* __restrict__ startidx_per_row_out,
-    const int* __restrict__ startidx_per_row_in,
-    int num_rows,
-    int max_natoms_per_mol) {
-  __shared__ int s_num_max;
-  int i = blockIdx.x * blockDim.y + threadIdx.y;
-  int jnum = nums_per_row[i];
-  int start_i_out = startidx_per_row_out[i];
-  int start_i_in = startidx_per_row_in[i];
-  int idx = blockDim.x * threadIdx.y + threadIdx.x;
-
-  if (i >= num_rows)
-    return;
-
-  if (idx < ATOM_I_PER_BLOCK) {
-    int ii = blockIdx.x * blockDim.y + idx;
-    int num_max = ii < num_rows ? nums_per_row[ii] : 0;
-
-    for (int offset = 16; offset > 0; offset /= 2) {
-      num_max = max(num_max, __shfl_down_sync(0xFFFFFFFF, num_max, offset));
-    }
-    if (idx == 0) {
-      s_num_max = num_max;
-    }
-  }
-  __syncthreads();
-
-  for (int jj = threadIdx.x; jj < s_num_max && jj < jnum; jj += blockDim.x) {
-    PairDist d = d_in[start_i_in + jj];
-    d_out[start_i_out + jj] = d;
-  }
-}
-
 template <typename DataT>
 void cubScan(const DataT* d_in, DataT* d_out, int num_items, cudaStream_t stream) {
   auto& allocator = *c10::cuda::CUDACachingAllocator::get();
