@@ -58,6 +58,16 @@ Result::Result(tensor_list tensors)
       angularNbr(tensors[12].item<int>(), tensors[13].item<int>(), tensors[14], tensors[15], tensors[16], tensors[17]) {
 }
 
+Result::Result(Tensor coordinates_t_, Tensor species_t_)
+    : aev_t(Tensor()),
+      atomI_t(Tensor()),
+      startIdxJ_t(Tensor()),
+      nI(0),
+      coordinates_t(coordinates_t_),
+      species_t(species_t_),
+      radialNbr(NeighborList()),
+      angularNbr(NeighborList()) {}
+
 CuaevComputer::CuaevComputer(
     double Rcr,
     double Rca,

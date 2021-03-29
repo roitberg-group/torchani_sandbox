@@ -190,6 +190,7 @@ struct Result {
       NeighborList radialNbr_,
       NeighborList angularNbr_);
   Result(tensor_list tensors);
+  Result(Tensor coordinates_t_, Tensor species_t_);
   operator tensor_list() {
     return {
         Tensor(), // aev_t got removed
@@ -215,7 +216,11 @@ struct Result {
 };
 
 // cuda kernels
-Result cuaev_forward(const Tensor& coordinates_t, const Tensor& species_t, const AEVScalarParams& aev_params);
+void cuaev_forward(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const AEVScalarParams& aev_params,
+    Result& result);
 Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_params, const Result& result);
 Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& aev_params, const Result& result);
 
@@ -236,7 +241,9 @@ struct CuaevComputer : torch::CustomClassHolder {
       int64_t num_species);
 
   Result forward(const Tensor& coordinates_t, const Tensor& species_t) {
-    return cuaev_forward(coordinates_t, species_t, aev_params);
+    Result result(coordinates_t, species_t);
+    cuaev_forward(coordinates_t, species_t, aev_params, result);
+    return result;
   }
 
   Tensor backward(const Tensor& grad_e_aev, const Result& result) {
