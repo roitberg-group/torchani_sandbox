@@ -106,6 +106,35 @@ using torch::autograd::tensor_list;
 // ddaev = concatenate(ddradial, ddangular)
 // dparams(ddaev, ...) <-- output
 
+struct alignas(4 * sizeof(int)) PairDist {
+  float Rij;
+  int midx; // TODO remove midx
+  int i; // TODO remove i
+  int j;
+};
+
+struct alignas(2 * sizeof(int)) AtomI {
+  int midx;
+  int i;
+};
+
+struct NeighborList {
+  int nJ;
+  int maxNumJPerI_aligned; // aligned to multiple of 4
+
+  Tensor atomJ_t; // now use PairDist
+  // Tensor atomJ_t;  // only j index
+  Tensor numJPerI_t;
+  Tensor distJ_t;
+  Tensor fcJ_t;
+
+  // pointers
+  PairDist* atomJ_p;
+  int* numJPerI_p;
+  float* distJ_p;
+  float* fcJ_p;
+};
+
 struct AEVScalarParams {
   float Rcr;
   float Rca;
@@ -136,15 +165,13 @@ struct Result {
   Tensor aev_t;
   Tensor tensor_radialRij;
   Tensor tensor_angularRij;
-  int total_natom_pairs;
   int nRadialRij;
   int nAngularRij;
-  Tensor tensor_centralAtom;
+  Tensor atomI_t;
   Tensor tensor_numPairsPerCenterAtom;
-  Tensor tensor_centerAtomStartIdx;
+  Tensor startIdxJ_t;
   int maxnbrs_per_atom_aligned;
-  int angular_length_aligned;
-  int ncenter_atoms;
+  int nI;
   Tensor coordinates_t;
   Tensor species_t;
 
@@ -152,15 +179,13 @@ struct Result {
       Tensor aev_t_,
       Tensor tensor_radialRij_,
       Tensor tensor_angularRij_,
-      int64_t total_natom_pairs_,
       int64_t nRadialRij_,
       int64_t nAngularRij_,
-      Tensor tensor_centralAtom_,
+      Tensor atomI_t_,
       Tensor tensor_numPairsPerCenterAtom_,
-      Tensor tensor_centerAtomStartIdx_,
+      Tensor startIdxJ_t_,
       int64_t maxnbrs_per_atom_aligned_,
-      int64_t angular_length_aligned_,
-      int64_t ncenter_atoms_,
+      int64_t nI_,
       Tensor coordinates_t_,
       Tensor species_t_);
   Result(tensor_list tensors);
@@ -169,15 +194,13 @@ struct Result {
         Tensor(), // aev_t got removed
         tensor_radialRij,
         tensor_angularRij,
-        torch::tensor(total_natom_pairs),
         torch::tensor(nRadialRij),
         torch::tensor(nAngularRij),
-        tensor_centralAtom,
+        atomI_t,
         tensor_numPairsPerCenterAtom,
-        tensor_centerAtomStartIdx,
+        startIdxJ_t,
         torch::tensor(maxnbrs_per_atom_aligned),
-        torch::tensor(angular_length_aligned),
-        torch::tensor(ncenter_atoms),
+        torch::tensor(nI),
         coordinates_t,
         species_t};
   }
