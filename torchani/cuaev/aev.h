@@ -133,6 +133,15 @@ struct NeighborList {
   int* numJPerI_p;
   float* distJ_p;
   float* fcJ_p;
+
+  NeighborList() = default;
+  NeighborList(int nJ_, int maxNumJPerI_aligned_, Tensor atomJ_t_, Tensor numJPerI_t_, Tensor distJ_t_, Tensor fcJ_t_)
+      : nJ(nJ_),
+        maxNumJPerI_aligned(maxNumJPerI_aligned_),
+        atomJ_t(atomJ_t_),
+        numJPerI_t(numJPerI_t_),
+        distJ_t(distJ_t_),
+        fcJ_t(fcJ_t_) {}
 };
 
 struct AEVScalarParams {
@@ -163,46 +172,45 @@ struct AEVScalarParams {
 
 struct Result {
   Tensor aev_t;
-  Tensor tensor_radialRij;
-  Tensor tensor_angularRij;
-  int nRadialRij;
-  int nAngularRij;
   Tensor atomI_t;
-  Tensor tensor_numPairsPerCenterAtom;
   Tensor startIdxJ_t;
-  int maxnbrs_per_atom_aligned;
   int nI;
   Tensor coordinates_t;
   Tensor species_t;
+  NeighborList radialNbr;
+  NeighborList angularNbr;
 
   Result(
       Tensor aev_t_,
-      Tensor tensor_radialRij_,
-      Tensor tensor_angularRij_,
-      int64_t nRadialRij_,
-      int64_t nAngularRij_,
       Tensor atomI_t_,
-      Tensor tensor_numPairsPerCenterAtom_,
       Tensor startIdxJ_t_,
-      int64_t maxnbrs_per_atom_aligned_,
       int64_t nI_,
       Tensor coordinates_t_,
-      Tensor species_t_);
+      Tensor species_t_,
+      NeighborList radialNbr_,
+      NeighborList angularNbr_);
   Result(tensor_list tensors);
   operator tensor_list() {
     return {
         Tensor(), // aev_t got removed
-        tensor_radialRij,
-        tensor_angularRij,
-        torch::tensor(nRadialRij),
-        torch::tensor(nAngularRij),
         atomI_t,
-        tensor_numPairsPerCenterAtom,
         startIdxJ_t,
-        torch::tensor(maxnbrs_per_atom_aligned),
         torch::tensor(nI),
         coordinates_t,
-        species_t};
+        species_t,
+        torch::tensor(radialNbr.nJ),
+        torch::tensor(radialNbr.maxNumJPerI_aligned),
+        radialNbr.atomJ_t,
+        radialNbr.numJPerI_t,
+        radialNbr.distJ_t,
+        radialNbr.fcJ_t,
+        torch::tensor(angularNbr.nJ),
+        torch::tensor(angularNbr.maxNumJPerI_aligned),
+        angularNbr.atomJ_t,
+        angularNbr.numJPerI_t,
+        angularNbr.distJ_t,
+        angularNbr.fcJ_t,
+    };
   }
 };
 
