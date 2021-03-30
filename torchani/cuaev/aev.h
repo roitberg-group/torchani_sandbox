@@ -122,14 +122,13 @@ struct NeighborList {
   int nJ;
   int maxNumJPerI_aligned; // aligned to multiple of 4
 
-  Tensor atomJ_t; // now use PairDist
-  // Tensor atomJ_t;  // only j index
+  Tensor atomJ_t; // only j index
   Tensor numJPerI_t;
   Tensor distJ_t;
   Tensor fcJ_t;
 
   // pointers
-  PairDist* atomJ_p;
+  int* atomJ_p;
   int* numJPerI_p;
   float* distJ_p;
   float* fcJ_p;
