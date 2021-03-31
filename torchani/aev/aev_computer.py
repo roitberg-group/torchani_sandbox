@@ -261,8 +261,7 @@ class AEVComputer(torch.nn.Module):
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
 
-        atom_index12, shift_indices = self.neighborlist(species, coordinates, cell, pbc)
-        shift_values = shift_indices.to(cell.dtype) @ cell
+        atom_index12, shift_values = self.neighborlist(species, coordinates, cell, pbc)
         aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
 
