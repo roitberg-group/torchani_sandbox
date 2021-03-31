@@ -15,7 +15,7 @@ else:
     from torch.jit import Final
 
 
-class Neighborlist(torch.nn.Module):
+class BaseNeighborlist(torch.nn.Module):
 
     cutoff: Final[float]
 
@@ -76,7 +76,7 @@ class Neighborlist(torch.nn.Module):
         return atom_index12, input_shifts.index_select(0, pair_index)
 
 
-class FullPairwise(Neighborlist):
+class FullPairwise(BaseNeighborlist):
 
     def __init__(self, cutoff: float):
         """Compute pairs of atoms that are neighbors, uses pbc depending on
@@ -104,7 +104,9 @@ class FullPairwise(Neighborlist):
             atom_index12, shifts, shift_values = self._full_pairwise(species)
 
         coordinates = coordinates.detach().masked_fill((species == -1).unsqueeze(-1), math.nan)
-        return self._screen_with_cutoff(self.cutoff, coordinates, atom_index12, shifts, shift_values)
+        atom_index12, shift_indices = self._screen_with_cutoff(self.cutoff, coordinates, atom_index12, shifts, shift_values)
+        shift_values = shift_indices.to(cell.dtype) @ cell
+        return atom_index12, shift_values
 
     def _full_pairwise(self, species: Tensor) -> Tuple[Tensor, Tensor, None]:
         num_atoms = species.shape[1]
