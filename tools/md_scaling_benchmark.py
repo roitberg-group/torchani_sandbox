@@ -1,3 +1,4 @@
+
 import torch
 import torchani
 import time
@@ -15,10 +16,10 @@ from ase import units
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from pathlib import Path
-from molecule_utils import make_water, make_methane
+from molecule_utils import make_water, make_methane, tensor_from_xyz
+
 
 def plot_file(file_path, comment, show=False):
-
     with open(Path(file_path).resolve(), 'rb') as f:
         times_sizes = pickle.load(f)
         all_trials = np.asarray(times_sizes['times'])
@@ -32,7 +33,7 @@ def plot_file(file_path, comment, show=False):
     for times in all_trials:
         ax.errorbar(x=sizes, y=mean, yerr=std*2, ecolor='k', capsize =2, fmt='s--', ms=1)
     ax.set_xlabel('System size (atoms)')
-    ax.set_ylabel('Total Walltime per ns (h)')
+    ax.set_ylabel('Total Walltime per ns (days)')
     ax.set_title(comment)
     if show:
         plt.show()
@@ -109,12 +110,11 @@ def get_model(model_arg, torch_cell_list, model_index, adaptive_torch_cell_list)
         args.update({'model_index': model_index})
 
     if model_arg == 'ani1x':
-        model = torchani.models.ANI1x(**args).to(device)
+        model = torchani.models.ANI1x(**args).to(device, dtype=torch.double)
     elif model_arg == 'ani2x':
-        model = torchani.models.ANI2x(**args).to(device)
+        model = torchani.models.ANI2x(**args).to(device, dtype=torch.double)
     elif model_arg == 'ani1ccx':
-        model = torchani.models.ANI1ccx(**args).to(device)
-
+        model = torchani.models.ANI1ccx(**args).to(device, dtype=torch.double)
     return model
 
 def print_info(device, steps, sizes):
@@ -128,6 +128,7 @@ if __name__ == "__main__":
     # parse command line arguments
     parser = argparse.ArgumentParser(description='MD scaling benchmark for torchani')
     # generally good defaults
+    parser.add_argument('-j', '--jit', action='store_true', default=False)
     parser.add_argument('-m', '--model', default='ani1x')
     parser.add_argument('-d', '--device', type=str, default='cuda')
     parser.add_argument('-s', '--steps', type=int, default=100, help="Timesteps to run in dynamics")
@@ -135,6 +136,7 @@ if __name__ == "__main__":
     parser.add_argument('--model-index', default=None, help="Specify a model index")
 
     # may want to change
+    parser.add_argument('-x', '--xyz', default=None, help="path to directory with xyz files")
     parser.add_argument('-t', '--trials', default=1, help="Repetitions to calculate std dev")
     parser.add_argument('-b', '--box-repeats', type=int, default=15, help="Number of replications of molecule in all directions")
     parser.add_argument('--cell-list', action='store_true', default=False, help="Use a cell list")
@@ -148,6 +150,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     show = args.no_show
     assert args.box_repeats > 3
+
+    if args.xyz is not None:
+        path_to_xyz = Path(args.xyz).resolve()
+    else:
+        path_to_xyz = ''
     
     # the output file name is the model name by default
     if args.cell_list:
@@ -173,10 +180,22 @@ if __name__ == "__main__":
         else:
             plot_many(args.path_to_files, comment, show)
     else:
-        num_atoms = 3 # for water
         device = torch.device(args.device)
-        sizes = (num_atoms * torch.arange(4,
-            args.box_repeats + 1)**3).numpy().tolist()
+        if not path_to_xyz:
+            num_atoms = 3 # for water
+            sizes = (num_atoms * torch.arange(4,
+                args.box_repeats + 1)**3).numpy().tolist()
+        else:
+            sizes = []
+            xyz_files = [p for p in path_to_xyz.iterdir() if '.xyz' == p.suffix]
+            for f in xyz_files:
+                species, coordinates, _ = tensor_from_xyz(f)
+                sizes.append(len(species))
+            sizes = np.asarray(sizes)
+            xyz_files = np.asarray(xyz_files)
+            idx = np.argsort(sizes)
+            sizes = sizes[idx]
+            xyz_files = xyz_files[idx]
 
         print_info(device, args.steps, sizes)
         model = get_model(args.model, args.cell_list, args.model_index, args.adaptive_cell_list)
@@ -189,32 +208,54 @@ if __name__ == "__main__":
                 ret = func(*args, **kwargs)
                 torch.cuda.synchronize()
                 end = timeit.default_timer()
-                timers[key] += end - start
+                timers[key] += (end - start)/(3600*24)  * 1e6/100
                 return ret
             return wrapper
-
-        model.aev_computer._compute_aev = time_func('aev_forward', model.aev_computer._compute_aev)
-        model.aev_computer.neighborlist.forward = time_func('neighborlist', model.aev_computer.neighborlist.forward)
-        model.forward = time_func('forward', model.forward)
-        torchani.ase.Calculator._get_ani_forces = time_func('backward', torchani.ase.Calculator._get_ani_forces)
+        if not args.jit:
+            model.aev_computer._compute_aev = time_func('aev_forward', model.aev_computer._compute_aev)
+            model.aev_computer.neighborlist.forward = time_func('neighborlist', model.aev_computer.neighborlist.forward)
+            model.forward = time_func('forward', model.forward)
+            torchani.ase.Calculator._get_ani_forces = time_func('backward', torchani.ase.Calculator._get_ani_forces)
 
         all_trials = [] 
         timers_list = []
+        raw_trials = []
         for j in range(args.trials):
             times = []
-            for r in tqdm(range(3, args.box_repeats)):
+            raw_times = []
+            if path_to_xyz:
+                it = tqdm(xyz_files)
+            else:
+                it = tqdm(range(3, args.box_repeats))
+
+            for r in it:
                 # reset timers
                 timers = {k : 0.0 for k in timers}
-                model.aev_computer.neighborlist.reset_cached_values()
-                species, coordinates = make_water(device)
-                species, coordinates, cell = geometry.tile_into_tight_cell((species, coordinates),
-                                                            density=0.0923, 
-                                                            noise=0.1,
-                                                            repeats=r + 1)
+                try:
+                    model.aev_computer.neighborlist.reset_cached_values()
+                except AttributeError:
+                    pass
+                if not path_to_xyz:
+                    species, coordinates = make_water(device)
+                    species, coordinates, cell = geometry.tile_into_tight_cell((species, coordinates),
+                                                                density=0.0923, 
+                                                                noise=0.1,
+                                                                repeats=r + 1)
+                else:
+                    species, coordinates, cell = tensor_from_xyz(r)
+
                 coordinates.requires_grad_()
+                calc = model.ase()
+                if args.jit:
+                    torch._C._jit_set_profiling_executor(False)
+                    torch._C._jit_set_profiling_mode(False) # this also has an effect
+                    torch._C._jit_override_can_fuse_on_cpu(False)
+                    torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
+                    torch._C._jit_set_nvfuser_enabled(False)
+                    calc.model = torch.jit.script(calc.model)
                 atoms_args = {'symbols': species.squeeze().tolist(), 
                              'positions': coordinates.squeeze().tolist(), 
-                             'calculator': model.ase()}
+                             'calculator': calc}
 
                 if not args.no_pbc:
                     atoms_args.update({'cell': cell.cpu().numpy(), 'pbc': True})
@@ -222,21 +263,23 @@ if __name__ == "__main__":
                 molecule = ase.Atoms(**atoms_args)
                 
                 # run and time Langevin dynamics 
-                dyn = Langevin(molecule, 0.5 * units.fs, 300 * units.kB, 0.2)
+                dyn = Langevin(molecule, 1 * units.fs, 300 * units.kB, 0.2)
                 start = time.time()
                 dyn.run(args.steps)
                 end = time.time()
 
-                times.append(((end - start)/3600)  * 1/(args.steps * 1e-6))
+                times.append((end - start)/(3600*24)  * 1e6/args.steps)
                 timers_list.append(copy.deepcopy(timers))
+                raw_times.append(end - start)
             all_trials.append(times)
+            raw_trials.append(raw_times)
 
         with open(pickle_file, 'wb') as f:
-            pickle.dump({'times': all_trials, 'atoms': sizes, 'timers': timers_list}, f)
+            pickle.dump({'times': all_trials, 'atoms': sizes, 'timers': timers_list, 'raw_times': raw_trials}, f)
 
         with open(csv_file, 'w') as f:
             f.write(f'#{comment}')
-            titles = '#' + ' '.join([f'Trial {j} walltime per ns (h)' for j in range(args.trials)])
+            titles = '#' + ' '.join([f'Trial {j} walltime per ns (days)' for j in range(args.trials)])
             titles += '\n'
             f.write(titles)
             all_trials = np.asarray(all_trials)
