@@ -53,7 +53,7 @@ class BaseNeighborlist(torch.nn.Module):
 
     @staticmethod
     def _screen_with_cutoff(cutoff: float, coordinates: Tensor, input_neighborlist: Tensor,
-            shift_values: Tensor, input_shifts: Optional[Tensor] = None):
+            shift_values: Tensor) -> Tuple[Tensor, Tensor]:
         # screen a given neighborlist using a cutoff and return a neighborlist with
         # atoms that are within that cutoff, for all molecules in a coordinate set
         # if the initial coordinates have more than one molecule in the batch dimension
@@ -68,12 +68,10 @@ class BaseNeighborlist(torch.nn.Module):
         distances_sq = (selected_coordinates[:, 0, ...] - selected_coordinates[:, 1, ...] + shift_values).pow(2).sum(-1)
         in_cutoff = (distances_sq <= cutoff ** 2).nonzero()
         molecule_index, pair_index = in_cutoff.unbind(1)
-        atom_index12 = input_neighborlist.index_select(1, pair_index) + molecule_index * num_atoms
+        screened_neighborlist = input_neighborlist.index_select(1, pair_index) + molecule_index * num_atoms
+        screened_shift_values = shift_values.index_select(0, pair_index)
 
-        if input_shifts is None:
-            return atom_index12, torch.zeros(3, dtype=coordinates.dtype, device=coordinates.device)
-
-        return atom_index12, input_shifts.index_select(0, pair_index)
+        return screened_neighborlist, screened_shift_values
 
 
 class FullPairwise(BaseNeighborlist):
@@ -99,25 +97,21 @@ class FullPairwise(BaseNeighborlist):
             pbc (:class:`torch.Tensor`): boolean tensor of shape (3,) storing wheather pbc is required
         """
         if pbc.any():
-            atom_index12, shifts, shift_values = self._full_pairwise_pbc(species, cell, pbc)
+            atom_index12, shift_indices = self._full_pairwise_pbc(species, cell, pbc)
+            shift_values = shift_indices.to(cell.dtype) @ cell
         else:
-            atom_index12, shifts, shift_values = self._full_pairwise(species)
+            atom_index12 = torch.triu_indices(species.shape[1], species.shape[1], 1, device=species.device)
+            # create dummy shift values that are zero
+            shift_values = self.default_shift_values.repeat(atom_index12.shape[1], 3)
 
         coordinates = coordinates.detach().masked_fill((species == -1).unsqueeze(-1), math.nan)
-        atom_index12, shift_indices = self._screen_with_cutoff(self.cutoff, coordinates, atom_index12, shifts, shift_values)
-        shift_values = shift_indices.to(cell.dtype) @ cell
+
+        atom_index12, shift_values = self._screen_with_cutoff(self.cutoff, coordinates, atom_index12, shift_values)
+
         return atom_index12, shift_values
 
-    def _full_pairwise(self, species: Tensor) -> Tuple[Tensor, Tensor, None]:
-        num_atoms = species.shape[1]
-        all_atom_pairs = torch.triu_indices(num_atoms,
-                                     num_atoms,
-                                     1,
-                                     device=species.device)
-        return all_atom_pairs, self.default_shift_values, None
-
     def _full_pairwise_pbc(self, species: Tensor,
-                           cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+                           cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
         cell = cell.detach()
         shifts = self._compute_shifts(cell, pbc)
         num_atoms = species.shape[1]
@@ -143,8 +137,7 @@ class FullPairwise(BaseNeighborlist):
         # Step 4: combine results for all cells
         shifts_all = torch.cat([shifts_center, shifts_outside])
         all_atom_pairs = torch.cat([p12_center, p12], dim=1)
-        shift_values = shifts_all.to(cell.dtype) @ cell
-        return all_atom_pairs, shift_values, shifts_all
+        return all_atom_pairs, shifts_all
 
     def _compute_shifts(self, cell: Tensor, pbc: Tensor) -> Tensor:
         """Compute the shifts of unit cell along the given cell vectors to make it

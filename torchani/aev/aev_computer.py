@@ -10,6 +10,7 @@ from torch import Tensor
 from .cutoffs import CutoffCosine
 from .aev_terms import AngularTerms, RadialTerms
 from .neighbors import FullPairwise
+from ..utils import cumsum_from_zero
 
 cuaev_is_installed = 'torchani.cuaev' in importlib_metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
@@ -378,7 +379,7 @@ class AEVComputer(torch.nn.Module):
             m, m, -1, device=ai1.device).unsqueeze(1).expand(-1, n, -1)
         mask = (torch.arange(intra_pair_indices.shape[2], device=ai1.device) < pair_sizes.unsqueeze(1)).flatten()
         sorted_local_index12 = intra_pair_indices.flatten(1, 2)[:, mask]
-        sorted_local_index12 += self._cumsum_from_zero(counts).index_select(
+        sorted_local_index12 += cumsum_from_zero(counts).index_select(
             0, pair_indices)
 
         # unsort result from last part
@@ -388,18 +389,6 @@ class AEVComputer(torch.nn.Module):
         n = atom_index12.shape[1]
         sign12 = ((local_index12 < n).to(torch.int8) * 2) - 1
         return central_atom_index, local_index12 % n, sign12
-
-    def _constants(self):
-        return self.radial_terms.cutoff, self.radial_terms.EtaR,\
-            self.radial_terms.ShfR, self.angular_terms.cutoff,\
-            self.angular_terms.ShfZ, self.angular_terms.EtaA,\
-            self.angular_terms.Zeta, self.angular_terms.ShfA, self.num_species
-
-    @staticmethod
-    def _cumsum_from_zero(input_: Tensor) -> Tensor:
-        cumsum = torch.zeros_like(input_)
-        torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
-        return cumsum
 
 
 class AEVComputerBare(AEVComputer):
@@ -451,6 +440,7 @@ class AEVComputerBare(AEVComputer):
         aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
 
+
     def _screen_with_cutoff(self, coordinates: Tensor, atom_index12: Tensor, shift_values: Tensor, cutoff: Tensor):
         # screen neighbors that are further away than a given cutoff
         vec = self._compute_difference_vector(coordinates, atom_index12, shift_values)
@@ -458,7 +448,3 @@ class AEVComputerBare(AEVComputer):
         close_indices = (distances_sq <= cutoff**2).nonzero().flatten()
         atom_index12 = atom_index12.index_select(1, close_indices)
         return atom_index12, shift_values
-        
-
-
-
