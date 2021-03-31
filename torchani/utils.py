@@ -6,7 +6,7 @@ from collections import defaultdict
 from typing import Tuple, NamedTuple, Optional
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
-
+import warnings
 
 def stack_with_padding(properties, padding):
     output = defaultdict(list)
@@ -103,10 +103,18 @@ def strip_redundant_padding(atomic_properties):
     return atomic_properties
 
 
-def map2central(cell, coordinates, pbc):
+def map2central(cell: Tensor, coordinates: Tensor, pbc: Tensor) -> Tensor:
+    warnings.warn("map2central is deprecated, use map_to_central instead")
+    return image_to_central(coordinates, cell, pbc)
+
+def map_to_central(coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
     """Map atoms outside the unit cell into the cell using PBC.
 
     Arguments:
+
+        coordinates (:class:`torch.Tensor`): Tensor of shape
+            ``(molecules, atoms, 3)``.
+
         cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three
             vectors defining unit cell:
 
@@ -115,9 +123,6 @@ def map2central(cell, coordinates, pbc):
                 tensor([[x1, y1, z1],
                         [x2, y2, z2],
                         [x3, y3, z3]])
-
-        coordinates (:class:`torch.Tensor`): Tensor of shape
-            ``(molecules, atoms, 3)``.
 
         pbc (:class:`torch.Tensor`): boolean vector of size 3 storing
             if pbc is enabled for that direction.

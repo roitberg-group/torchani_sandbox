@@ -100,7 +100,7 @@ class TestCellList(unittest.TestCase):
 
     def testSetupCell(self):
         clist = self.clist
-        clist._setup_cell_parameters(self.cell)
+        clist._setup_variables(self.cell)
         # this creates a unit cell with 27 buckets
         # and a grid of 3 x 3 x 3 buckets (3 in each direction, Gx = Gy = Gz = 3)
         self.assertTrue(clist.total_buckets == 27)
@@ -113,7 +113,7 @@ class TestCellList(unittest.TestCase):
 
     def testVectorIndexToFlat(self):
         clist = self.clist
-        clist._setup_cell_parameters(self.cell)
+        clist._setup_variables(self.cell)
         # check some specific values of the tensor, it should be in row major
         # order so for instance the values in the z axis are 0 1 2 in the y
         # axis 0 3 6 and in the x axis 0 9 18
@@ -127,14 +127,14 @@ class TestCellList(unittest.TestCase):
 
     def testFractionalize(self):
         clist = self.clist
-        clist._setup_cell_parameters(self.cell)
+        clist._setup_variables(self.cell)
         # test coordinate fractionalization
         frac = clist._fractionalize_coordinates(self.coordinates)
         self.assertTrue((frac < 1.0).all())
 
     def testVectorBucketIndex(self):
         clist = self.clist
-        clist._setup_cell_parameters(self.cell)
+        clist._setup_variables(self.cell)
 
         frac = clist._fractionalize_coordinates(self.coordinates)
         main_vector_bucket_index = clist._fractional_to_vector_bucket_indices(
@@ -146,7 +146,7 @@ class TestCellList(unittest.TestCase):
 
     def testFlatBucketIndex(self):
         clist = self.clist
-        clist._setup_cell_parameters(self.cell)
+        clist._setup_variables(self.cell)
         flat = clist._to_flat_index(vector_bucket_index_compare)
         # all flat bucket indices are present
         flat_compare = torch.repeat_interleave(
@@ -155,7 +155,7 @@ class TestCellList(unittest.TestCase):
 
     def testFlatBucketIndexAlternative(self):
         clist = self.clist
-        clist._setup_cell_parameters(self.cell)
+        clist._setup_variables(self.cell)
         atoms = vector_bucket_index_compare.shape[1]
         flat = clist.vector_idx_to_flat[(vector_bucket_index_compare
             + torch.ones(1, dtype=torch.long)).reshape(-1,
@@ -168,7 +168,7 @@ class TestCellList(unittest.TestCase):
     def testCounts(self):
         num_flat = 27
         clist = self.clist
-        clist._setup_cell_parameters(self.cell)
+        clist._setup_variables(self.cell)
         flat = clist._to_flat_index(vector_bucket_index_compare)
         self.assertTrue(clist.total_buckets == num_flat)
         count_in_flat, cumcount_in_flat, max_ = clist._get_atoms_in_flat_bucket_counts(
@@ -184,7 +184,7 @@ class TestCellList(unittest.TestCase):
 
     def testWithinBetween(self):
         clist = self.clist
-        clist._setup_cell_parameters(self.cell)
+        clist._setup_variables(self.cell)
         frac = clist._fractionalize_coordinates(self.coordinates)
         _, f_a = clist._get_bucket_indices(frac)
         A_f, Ac_f, A_star = clist._get_atoms_in_flat_bucket_counts(f_a)
@@ -359,11 +359,12 @@ class TestCellListEnergies(unittest.TestCase):
 
     def testCellListLargeRandomJIT(self):
         device = torch.device('cuda')
-        # torch._C._jit_set_profiling_executor(False)
-        # torch._C._jit_set_profiling_mode(False) # this also has an effect
-        # torch._C._jit_override_can_fuse_on_cpu(False)
-        # torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
-        # torch._C._jit_set_nvfuser_enabled(False)
+        # JIT optimizations are avoided to prevent cuda bugs that make first evaluations extremely slow
+        torch._C._jit_set_profiling_executor(False)
+        torch._C._jit_set_profiling_mode(False) # this also has an effect
+        torch._C._jit_override_can_fuse_on_cpu(False)
+        torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
+        torch._C._jit_set_nvfuser_enabled(False)
         aev_cl = torch.jit.script(self.aev_cl).to(device).double()
         aev_fp = torch.jit.script(self.aev_fp).to(device).double()
         species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)

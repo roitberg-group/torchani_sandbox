@@ -438,7 +438,9 @@ class BuiltinEnsembleRepulsion(BuiltinEnsemble):
         return self.energy_shifter(species_energies)
 
 
-def _build_neurochem_model(info_file_path, periodic_table_index=False, external_cell_list=False, model_index=None, torch_cell_list=False, repulsion=False):
+def _build_neurochem_model(info_file_path, periodic_table_index=False,
+        external_cell_list=False, model_index=None, torch_cell_list=False,
+        repulsion=False, adaptive_torch_cell_list=False):
     from . import neurochem  # noqa
     # builder function that creates a BuiltinModel from a neurochem info path
     assert not (external_cell_list and torch_cell_list)
@@ -450,9 +452,15 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
         aev_computer = AEVComputerBare(**consts)
     elif torch_cell_list and not repulsion:
         aev_computer = AEVComputer(**consts, neighborlist=CellList)
+    elif adaptive_torch_cell_list and not repulsion:
+        aev_computer = AEVComputer(**consts)
+        aev_computer.neighborlist = CellList(aev_computer.radial_terms.cutoff, dynamic_update=True)
     elif repulsion:
         if torch_cell_list:
             aev_computer = AEVComputerForRepulsion(**consts, neighborlist=CellList, cutoff_function=CutoffSmooth)
+        elif adaptive_torch_cell_list:
+            aev_computer = AEVComputerForRepulsion(**consts, neighborlist=CellList, cutoff_function=CutoffSmooth)
+            aev_computer.neighborlist = CellList(aev_computer.radial_terms.cutoff, dynamic_update=True)
         else:
             aev_computer = AEVComputerForRepulsion(**consts, cutoff_function=CutoffSmooth)
     else:
@@ -482,14 +490,14 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
         kwargs.update({'repulsion_calculator': RepulsionCalculator(cutoff)})
 
     if model_index is None:
-        if torch_cell_list and not repulsion:
+        if (torch_cell_list or adaptive_torch_cell_list) and not repulsion:
             return BuiltinEnsembleCellList(**kwargs)
         elif repulsion:
             return BuiltinEnsembleRepulsion(**kwargs)
         else:
             return BuiltinEnsemble(**kwargs)
     else:
-        if torch_cell_list and not repulsion:
+        if (torch_cell_list or adaptive_torch_cell_list) and not repulsion:
             return BuiltinModelCellList(**kwargs)
         elif repulsion:
             return BuiltinModelRepulsion(**kwargs)
