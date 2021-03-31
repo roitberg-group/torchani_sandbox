@@ -388,12 +388,6 @@ class AEVComputer(torch.nn.Module):
         sign12 = ((local_index12 < n).to(torch.int8) * 2) - 1
         return central_atom_index, local_index12 % n, sign12
 
-    def _constants(self):
-        return self.radial_terms.cutoff, self.radial_terms.EtaR,\
-            self.radial_terms.ShfR, self.angular_terms.cutoff,\
-            self.angular_terms.ShfZ, self.angular_terms.EtaA,\
-            self.angular_terms.Zeta, self.angular_terms.ShfA, self.num_species
-
     @staticmethod
     def _cumsum_from_zero(input_: Tensor) -> Tensor:
         cumsum = torch.zeros_like(input_)
