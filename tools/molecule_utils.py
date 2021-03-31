@@ -1,5 +1,6 @@
 import torch
 import math
+from torchani.utils import PERIODIC_TABLE
 
 def make_methane(device=None, eq_bond = 1.09):
     if device is None:
@@ -21,3 +22,28 @@ def make_water(device=None, eq_bond = 0.957582, eq_angle=104.485):
                                 [0, 0, 0]], device=device).double()
     species = torch.tensor([[1, 1, 8]], device=device, dtype=torch.long)
     return species, coordinates.double()
+
+def tensor_from_xyz(path):
+    with open(path, 'r') as f:
+        lines = f.readlines()
+        num_atoms = int(lines[0])
+        coordinates = []
+        species = []
+        _, _, a, b, c = lines[1].split()
+        cell = torch.diag(torch.tensor([float(a), float(b), float(c)]))
+        for l in lines[2:]:
+            values = l.split()
+            if values:
+                s = values[0].strip()
+                x = float(values[1])
+                y = float(values[2])
+                z = float(values[3])
+                coordinates.append([x, y, z])
+                species.append(PERIODIC_TABLE.index(s))
+        coordinates = torch.tensor(coordinates)
+        species = torch.tensor(species, dtype=torch.long)
+        assert coordinates.shape[0] == num_atoms
+        assert species.shape[0] == num_atoms
+    return species, coordinates, cell
+
+            
