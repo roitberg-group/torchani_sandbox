@@ -432,10 +432,11 @@ class AEVComputerBare(AEVComputer):
         # first we prescreen the input neighborlist in case some of the values are
         # at distances larger than the cutoff for the radial terms
         # this may happen if the neighborlist uses some sort of skin value to rebuild
-        atom_index12, shift_values = self._screen_with_cutoff(self.radial_terms.cutoff.item(), 
-                                                              coordinates.detach(), 
-                                                              atom_index12, 
-                                                              shift_values)
+        atom_index12, shift_values = self._screen_with_cutoff(
+                                self.radial_terms.cutoff.item(),
+                                coordinates.detach(),
+                                atom_index12,
+                                shift_values.detach())
 
         aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
