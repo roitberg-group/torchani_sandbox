@@ -456,8 +456,8 @@ class AEVComputerForRepulsion(AEVComputer):
         species12 = species.flatten()[atom_index12]
         vec = self._compute_difference_vector(coordinates, atom_index12,
                                               shift_values)
-
         distances = vec.norm(2, -1)
+
         radial_aev = self._compute_radial_aev(species12, distances,
                                               atom_index12, species.shape)
         # Rca is usually much smaller than Rcr, using neighbor list with
@@ -473,9 +473,6 @@ class AEVComputerForRepulsion(AEVComputer):
                                                 species.shape)
 
         return torch.cat([radial_aev, angular_aev], dim=-1), distances
-
-
-
 
 
 class AEVComputerBare(AEVComputer):
