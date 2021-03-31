@@ -432,19 +432,27 @@ class AEVComputerBare(AEVComputer):
         # first we prescreen the input neighborlist in case some of the values are
         # at distances larger than the cutoff for the radial terms
         # this may happen if the neighborlist uses some sort of skin value to rebuild
-        atom_index12, shift_values = self._screen_with_cutoff(coordinates.detach(), 
-                                                              atom_index12.detach(), 
-                                                              shift_values.detach(), 
-                                                              self.radial_terms.cutoff.detach())
+        atom_index12, shift_values = self._screen_with_cutoff(self.radial_terms.cutoff.item(), 
+                                                              coordinates.detach(), 
+                                                              atom_index12, 
+                                                              shift_values)
 
         aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
         return SpeciesAEV(species, aev)
 
 
-    def _screen_with_cutoff(self, coordinates: Tensor, atom_index12: Tensor, shift_values: Tensor, cutoff: Tensor):
+    def _screen_with_cutoff(self,
+                            cutoff: float,
+                            coordinates: Tensor,
+                            atom_index12: Tensor,
+                            shift_values: Tensor):
         # screen neighbors that are further away than a given cutoff
-        vec = self._compute_difference_vector(coordinates, atom_index12, shift_values)
+        vec = self._compute_difference_vector(coordinates,
+                                              atom_index12,
+                                              shift_values)
         distances_sq = vec.pow(2).sum(-1)
-        close_indices = (distances_sq <= cutoff**2).nonzero().flatten()
+        close_indices = (distances_sq <= cutoff ** 2)
+        close_indices = close_indices.nonzero().flatten()
         atom_index12 = atom_index12.index_select(1, close_indices)
+        shift_values = shift_values.index_select(0, close_indices)
         return atom_index12, shift_values
