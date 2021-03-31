@@ -33,10 +33,17 @@ class TestAEVConstructor(TestCase):
                         'angle_sections': 8,
                         'num_species': 4}
         aev_computer_alt = torchani.AEVComputer.cover_linearly(**ani1x_values)
-        constants = aev_computer._constants()
-        constants_alt = aev_computer_alt._constants()
+        constants = self._get_aev_constants(aev_computer)
+        constants_alt = self._get_aev_constants(aev_computer_alt)
         for c, ca in zip(constants, constants_alt):
             self.assertEqual(c, ca)
+
+    @staticmethod
+    def _get_aev_constants(aev_computer):
+        return aev_computer.radial_terms.cutoff, aev_computer.radial_terms.EtaR,\
+            aev_computer.radial_terms.ShfR, aev_computer.angular_terms.cutoff,\
+            aev_computer.angular_terms.ShfZ, aev_computer.angular_terms.EtaA,\
+            aev_computer.angular_terms.Zeta, aev_computer.angular_terms.ShfA, aev_computer.num_species
 
 
 class TestIsolated(TestCase):

@@ -55,11 +55,8 @@ class BaseNeighborlist(torch.nn.Module):
         return coordinates, cell
 
     @staticmethod
-    def _screen_with_cutoff(cutoff: float,
-                            coordinates: Tensor,
-                            input_neighborlist: Tensor,
-                            shift_values: Tensor,
-                            input_shifts: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
+    def _screen_with_cutoff(cutoff: float, coordinates: Tensor, input_neighborlist: Tensor,
+            shift_values: Tensor) -> Tuple[Tensor, Tensor]:
         # screen a given neighborlist using a cutoff and return a neighborlist with
         # atoms that are within that cutoff, for all molecules in a coordinate set
         # if the initial coordinates have more than one molecule in the batch dimension
@@ -76,15 +73,14 @@ class BaseNeighborlist(torch.nn.Module):
                         + shift_values).pow(2).sum(-1)
         in_cutoff = (distances_sq <= cutoff ** 2).nonzero()
         molecule_index, pair_index = in_cutoff.unbind(1)
-        atom_index12 = input_neighborlist.index_select(1, pair_index) + molecule_index * num_atoms
+        screened_neighborlist = input_neighborlist.index_select(1, pair_index) + molecule_index * num_atoms
+        screened_shift_values = shift_values.index_select(0, pair_index)
 
-        if input_shifts is None:
-            return atom_index12, torch.zeros(3, dtype=coordinates.dtype, device=coordinates.device)
-
-        return atom_index12, input_shifts.index_select(0, pair_index)
+        return screened_neighborlist, screened_shift_values
 
 
 class FullPairwise(BaseNeighborlist):
+
     def __init__(self, cutoff: float):
         """Compute pairs of atoms that are neighbors, uses pbc depending on
         weather pbc.any() is True or not
@@ -108,30 +104,25 @@ class FullPairwise(BaseNeighborlist):
             pbc (:class:`torch.Tensor`): boolean tensor of shape (3,) storing wheather pbc is required
         """
         if pbc.any():
-            atom_index12, shifts, shift_values = self._full_pairwise_pbc(
-                species, cell, pbc)
+            atom_index12, shift_indices = self._full_pairwise_pbc(species, cell, pbc)
+            shift_values = shift_indices.to(cell.dtype) @ cell
             # before being screened the coordinates have to be mapped to the
             # central cell in case they are not inside it, this is not necessary
             # if there is no pbc
             coordinates = map_to_central(coordinates, cell, pbc)
         else:
-            atom_index12, shifts, shift_values = self._full_pairwise(species)
+            atom_index12 = torch.triu_indices(species.shape[1], species.shape[1], 1, device=species.device)
+            # create dummy shift values that are zero
+            shift_values = self.default_shift_values.repeat(atom_index12.shape[1], 3)
 
-        coordinates = coordinates.detach().masked_fill(
-            (species == -1).unsqueeze(-1), math.nan)
-        return self._screen_with_cutoff(self.cutoff, coordinates, atom_index12,
-                                        shifts, shift_values)
+        coordinates = coordinates.detach().masked_fill((species == -1).unsqueeze(-1), math.nan)
 
-    def _full_pairwise(self, species: Tensor) -> Tuple[Tensor, Tensor, None]:
-        num_atoms = species.shape[1]
-        all_atom_pairs = torch.triu_indices(num_atoms,
-                                            num_atoms,
-                                            1,
-                                            device=species.device)
-        return all_atom_pairs, self.default_shift_values, None
+        atom_index12, shift_values = self._screen_with_cutoff(self.cutoff, coordinates, atom_index12, shift_values)
 
-    def _full_pairwise_pbc(self, species: Tensor, cell: Tensor,
-                           pbc: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+        return atom_index12, shift_values
+
+    def _full_pairwise_pbc(self, species: Tensor,
+                           cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
         cell = cell.detach()
         shifts = self._compute_shifts(cell, pbc)
         num_atoms = species.shape[1]
@@ -156,8 +147,7 @@ class FullPairwise(BaseNeighborlist):
         # Step 4: combine results for all cells
         shifts_all = torch.cat([shifts_center, shifts_outside])
         all_atom_pairs = torch.cat([p12_center, p12], dim=1)
-        shift_values = shifts_all.to(cell.dtype) @ cell
-        return all_atom_pairs, shift_values, shifts_all
+        return all_atom_pairs, shifts_all
 
     def _compute_shifts(self, cell: Tensor, pbc: Tensor) -> Tensor:
         """Compute the shifts of unit cell along the given cell vectors to make it
@@ -327,41 +317,50 @@ class CellList(BaseNeighborlist):
                     "Currently the cell list doesn't support batch calculations"
 
         coordinates = coordinates.detach()
-        cell = cell.detach()
-        # Cell parameters need to be set only once for constant V simulations,
-        # and every time for variable V, (constant P, NPT) simulations
         if (not self.constant_volume) or (not self.cell_variables_are_set):
-            shape_buckets_grid, total_buckets = self._setup_variables(cell)
+            # Cell parameters need to be set only once for constant V simulations,
+            # and every time for variable V, (constant P, NPT) simulations
+            shape_buckets_grid, total_buckets = self._setup_variables(cell.detach())
 
-        # If a new cell list is not needed just return the old values in the
-        # buffers, otherwise continue
-        # important: here cached values should NOT be updated
-        # if they are updated the internal memory moves to the
-        # new step, which is not what we want
         if self.dynamic_update and self.old_values_are_cached and (not self._need_new_list(coordinates)):
-            return self.old_atom_pairs, self.old_shift_indices
+            # If a new cell list is not needed just use the old values in the
+            # buffers, otherwise calculate the values
+            # important: here cached values should NOT be updated
+            # if they are updated the internal memory moves to the
+            # new step, which is not what we want
+            atom_pairs = self.old_atom_pairs
+            shift_indices = self.old_shift_indices
+        else:
+            # The cell list is calculated with a skin here. Since coordinates are
+            # fractionalized before cell calculation, it is not needed for them to
+            # be imaged to the central cell, they can lie outside the cell, so 
+            # they don't need to be wrapped in this step
+            atom_pairs, shift_indices = self._calculate_cell_list(coordinates)
+            # This is done in order to prevent unnecessary rebuilds of the
+            # neighborlist
+            if self.dynamic_update:
+                self._cache_values(atom_pairs, shift_indices, coordinates)
 
-        # the cell list is calculated with a skin here, since coordinates are
-        # fractionalized before cell calculation, it is not needed for them to
-        # be imaged to the central cell, they can lie outside the cell
-        atom_pairs, shift_indices, shift_values = self._calculate_cell_list(coordinates)
+        shift_values = shift_indices.to(cell.dtype) @ cell
 
-        # Before the screening step we wrap the coordinates to the central cell
-        coordinates = map_to_central(coordinates, cell, pbc)
+        # Before the screening step we wrap the coordinates to the central cell, 
+        # same as with full pairwise calculation
+        coordinates = map_to_central(coordinates, cell.detach(), pbc)
 
-        # The final screening does not use the skin, the skin is only used 
-        # internally to prevent neighborlist recalculation. 
-        atom_pairs, shift_indices = self._screen_with_cutoff(self.cutoff, 
-                                                                           coordinates,
-                                                                           atom_pairs, 
-                                                                           shift_values,
-                                                                           shift_indices)
-        # This is done in order to prevent unnecessary rebuilds
-        if self.dynamic_update:
-            self._cache_values(atom_pairs, shift_indices, coordinates)
-        return atom_pairs, shift_indices
+        # The final screening does not use the skin, the skin is only used
+        # internally to prevent neighborlist recalculation.  note that we must
+        # screen even if the neighborlist is not rebuilt, since two atoms may
+        # have moved a long enough distance that they are not neighbors
+        # anymore, but a short enough distance that the neighborlist is not
+        # rebuilt.  rebuilds happen only if it can't be guaranteed that the
+        # cached neighborlist holds ALL atoms
+        atom_pairs, shift_values = self._screen_with_cutoff(self.cutoff,
+                                                            coordinates, 
+                                                            atom_pairs, 
+                                                            shift_values)
+        return atom_pairs, shift_values
 
-    def _calculate_cell_list(self, coordinates: Tensor):
+    def _calculate_cell_list(self, coordinates: Tensor) -> Tuple[Tensor, Tensor]:
         # 2) Fractionalize coordinates
         fractional_coordinates = self._fractionalize_coordinates(coordinates)
 
@@ -438,7 +437,7 @@ class CellList(BaseNeighborlist):
         shift_indices = (shift_values / self.cell_diagonal).to(torch.long)
         assert shift_values.shape[0] == atom_pairs.shape[1]
 
-        return atom_pairs, shift_indices, shift_values
+        return atom_pairs, shift_indices
 
 
 
