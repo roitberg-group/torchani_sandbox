@@ -510,8 +510,10 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
     stype[jj] = type_j;
     sdist[jj] = Rij;
     // cutoff
-    DataT fc_ij = 0.5 * cos(PI * Rij / Rca) + 0.5;
-    DataT fc_ij_grad = -0.5 * (PI / Rca) * sin(PI * Rij / Rca);
+    DataT fc_ij = 0.5 * __cosf(PI * Rij / Rca) + 0.5;
+    DataT fc_ij_grad = -0.5 * (PI / Rca) * __sinf(PI * Rij / Rca);
+    // DataT fc_ij = 0.5;
+    // DataT fc_ij_grad = -0.5;
     sfc[jj] = fc_ij;
     sfc_grad[jj] = fc_ij_grad;
   }
@@ -591,13 +593,13 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
         for (int itheta = tile.x; itheta < nShfZ; itheta += TILEX) {
           DataT ShfZ = __ldg(&ShfZ_t[itheta]);
 
-          DataT factor1 = pow((1 + cos(theta_ijk - ShfZ)) / 2, Zeta);
-          DataT grad_factor1_theta = 1.0 / 2.0 * Zeta * pow((1 + cos(ShfZ - theta_ijk)) / 2, Zeta - 1) *
-              sin(ShfZ - theta_ijk); // tricky 100ms improved
+          DataT factor1 = __powf((1 + __cosf(theta_ijk - ShfZ)) / 2, Zeta);
+          DataT grad_factor1_theta = 1.0 / 2.0 * Zeta * __powf((1 + __cosf(ShfZ - theta_ijk)) / 2, Zeta - 1) *
+              __sinf(ShfZ - theta_ijk); // tricky 100ms improved
 
           for (int ishfr = tile.y; ishfr < nShfA; ishfr += TILEY) {
             DataT ShfA = __ldg(&ShfA_t[ishfr]);
-            DataT factor2 = exp(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
+            DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
             DataT grad_factor2_dist = -EtaA * (Rijk - ShfA) * factor2;
 
             DataT grad_vij_x = 2 *
