@@ -454,8 +454,8 @@ class BuiltinEnsembleRepulsion(BuiltinEnsemble):
         aevs = aev_output.aevs
         member_outputs = []
         for nnp in self.neural_networks:
-            unshifted_energies = nnp((species, aevs)).energies
-            species_energies = self.energy_shifter((species, unshifted_energies))
+            species_energies = nnp((species, aevs))
+            species_energies = self.energy_shifter(species_energies)
             shifted_energies = self.repulsion_calculator(species_energies).energies
             member_outputs.append(shifted_energies.unsqueeze(0))
         return SpeciesEnergies(species, torch.cat(member_outputs, dim=0))
