@@ -449,14 +449,12 @@ class BuiltinEnsembleRepulsion(BuiltinEnsemble):
                          pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
-        aev_output = self.aev_computer(species_coordinates, cell, pbc)
-        species = aev_output.species
-        aevs = aev_output.aevs
+        species, aevs, atom_index12, distances = self.aev_computer(species_coordinates, cell, pbc)
         member_outputs = []
         for nnp in self.neural_networks:
             species_energies = nnp((species, aevs))
             species_energies = self.energy_shifter(species_energies)
-            shifted_energies = self.repulsion_calculator(species_energies).energies
+            shifted_energies = self.repulsion_calculator(species_energies, atom_index12, distances).energies
             member_outputs.append(shifted_energies.unsqueeze(0))
         return SpeciesEnergies(species, torch.cat(member_outputs, dim=0))
 
