@@ -117,7 +117,9 @@ class BuiltinModel(torch.nn.Module):
         """
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
+        aev_output = self.aev_computer(species_coordinates, cell, pbc)
+        species = aev_output.species
+        aevs = aev_output.aevs
         atomic_energies = self.neural_networks._atomic_energies((species, aevs))
         self_energies = self.energy_shifter.self_energies.clone().to(species.device)
         self_energies = self_energies[species]
@@ -211,7 +213,9 @@ class BuiltinEnsemble(BuiltinModel):
         """
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
+        aev_output = self.aev_computer(species_coordinates, cell, pbc)
+        species = aev_output.species
+        aevs = aev_output.aevs
         members_list = []
         for nnp in self.neural_networks:
             members_list.append(nnp._atomic_energies((species, aevs)).unsqueeze(0))
@@ -280,7 +284,9 @@ class BuiltinEnsemble(BuiltinModel):
         """
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
+        aev_output = self.aev_computer(species_coordinates, cell, pbc)
+        species = aev_output.species
+        aevs = aev_output.aevs
         member_outputs = []
         for nnp in self.neural_networks:
             unshifted_energies = nnp((species, aevs)).energies
@@ -436,6 +442,21 @@ class BuiltinEnsembleRepulsion(BuiltinEnsemble):
         species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
 
         return self.energy_shifter(species_energies)
+
+    @torch.jit.export
+    def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
+                         cell: Optional[Tensor] = None,
+                         pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        if self.periodic_table_index:
+            species_coordinates = self.species_converter(species_coordinates)
+        species, aevs, atom_index12, distances = self.aev_computer(species_coordinates, cell, pbc)
+        member_outputs = []
+        for nnp in self.neural_networks:
+            species_energies = nnp((species, aevs))
+            species_energies = self.energy_shifter(species_energies)
+            shifted_energies = self.repulsion_calculator(species_energies, atom_index12, distances).energies
+            member_outputs.append(shifted_energies.unsqueeze(0))
+        return SpeciesEnergies(species, torch.cat(member_outputs, dim=0))
 
 
 def _build_neurochem_model(info_file_path, periodic_table_index=False,
