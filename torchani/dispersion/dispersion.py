@@ -94,10 +94,11 @@ class DispersionD3(torch.nn.Module):
     def __init__(self,
                  df_constants=None,
                  damp='rational',
-                 modified_damp=False):
+                 modified_damp=False, use_three_body=False):
 
         super().__init__()
         # rational damp is becke-johnson
+        assert not use_three_body, "Not yet implemented"
         assert damp in ['rational', 'zero'], 'Unsupported damp'
 
         self.register_buffer('s6', torch.tensor(df_constants.pop('s6')))
@@ -116,7 +117,7 @@ class DispersionD3(torch.nn.Module):
         # the product of the sqrt of the empirical q's is stored directly
         sqrt_empirical_charge = constants.get_sqrt_empirical_charge()
         charge_ab = torch.outer(sqrt_empirical_charge, sqrt_empirical_charge)
-        self.register_buffer('sqrt_empirical_charge_ab', charge_ab)
+        self.register_buffer('sqrt_charge_ab', charge_ab)
 
     def _get_coordnums(self, num_atoms: int, species12: Tensor,
                        atom_index12: Tensor, distances: Tensor) -> Tensor:
@@ -198,8 +199,7 @@ class DispersionD3(torch.nn.Module):
                                         distances)
         order6_coeffs = self._interpolate_order6_coeffs(species12, coordnums)
         order8_coeffs = 3 * order6_coeffs
-        order8_coeffs *= self.sqrt_empirical_charge_ab[species12[0],
-                                                       species12[1]]
+        order8_coeffs *= self.sqrt_charge_ab[species12[0], species12[1]]
 
         distances_damp6 = self.damp_function(species12, distances, 6)
         distances_damp8 = self.damp_function(species12, distances, 8)
