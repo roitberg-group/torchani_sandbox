@@ -6,15 +6,17 @@ from torch import Tensor
 from . import units
 from .nn import SpeciesEnergies
 from .aev import CutoffSmooth
+from .standalone import StandalonePairwiseWrapper
 
 
 class RepulsionCalculator(torch.nn.Module):
     """Calculates the QMDFF repulsion energy terms for a given molecule
     as seen in work by Grimme: https://pubs.acs.org/doi/10.1021/acs.jctc.8b01176"""
 
-    def __init__(self, Rcr, alpha_buf=None, yeff_buf=None, krep_buf=None, num_species=4, cutoff_function=CutoffSmooth):
+    def __init__(self, cutoff=5.2, alpha_buf=None, yeff_buf=None, krep_buf=None, num_species=4, cutoff_function=CutoffSmooth):
 
         super().__init__()
+        Rcr = cutoff
         # cutoff distance in Bohr radii for consistency with repulsion parameters
         Rcr_bohr = Rcr * units.ANGSTROM_TO_BOHR
         self.register_buffer('Rcr_bohr', torch.tensor(Rcr_bohr))
@@ -34,7 +36,8 @@ class RepulsionCalculator(torch.nn.Module):
 
         self.cutoff_function = cutoff_function(Rcr_bohr) if cutoff_function is not None else None
 
-    def forward(self, species_energies: Tensor, atom_index12: Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
+    def _calculate_repulsion(self, species_energies: Tensor, atom_index12:
+            Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
 
         species, energies = species_energies
         assert len(species) == 1, "Not implemented for batch calculations"
@@ -69,3 +72,15 @@ class RepulsionCalculator(torch.nn.Module):
 
         energies += repulsion_energy
         return SpeciesEnergies(species, energies)
+
+    def forward(self, species_energies: Tensor, atom_index12: Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
+        return self._calculate_repulsion(species_energies, atom_index12, distances)
+
+
+class StandaloneRepulsionCalculator(StandalonePairwiseWrapper, RepulsionCalculator):
+    def _perform_module_actions(self, species_coordinates: Tuple[Tensor, Tensor], atom_index12: Tensor,
+            distances: Tensor) -> Tuple[Tensor, Tensor]:
+        species, coordinates = species_coordinates
+        energies = torch.zeros(species.shape[0], dtype=distances.dtype, device=distances.device)
+        species_energies = (species, energies)
+        return self._calculate_repulsion(species_energies, atom_index12, distances)

@@ -410,7 +410,7 @@ class BuiltinModelWithInteractions(BuiltinModel):
             species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
         if self.dispersion_calculator is not None:
             assert self.periodic_table_index
-            # NOTE: currently dispersion calculator takes in atomic numbers only, 
+            # NOTE: currently dispersion calculator takes in atomic numbers only,
             # so it needs to be wrapped
             species_energies = self.dispersion_calculator((species_coordinates.species, species_energies.energies),
                                                            atom_index12, distances)
@@ -443,7 +443,7 @@ class BuiltinEnsembleWithInteractions(BuiltinEnsemble):
             species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
         if self.dispersion_calculator is not None:
             assert self.periodic_table_index
-            # NOTE: currently dispersion calculator takes in atomic numbers only, 
+            # NOTE: currently dispersion calculator takes in atomic numbers only,
             # so it needs to be wrapped
             species_energies = self.dispersion_calculator((species_coordinates.species, species_energies.energies),
                                                            atom_index12, distances)
@@ -464,9 +464,9 @@ class BuiltinEnsembleWithInteractions(BuiltinEnsemble):
             species_energies = self.energy_shifter(species_energies)
             if self.repulsion_calculator is not None:
                 species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
-            if dispersion_calculator is not None:
+            if self.dispersion_calculator is not None:
                 assert self.periodic_table_index
-                # NOTE: currently dispersion calculator takes in atomic numbers only, 
+                # NOTE: currently dispersion calculator takes in atomic numbers only,
                 # so it needs to be wrapped
                 species_energies = self.dispersion_calculator((species_coordinates.species, species_energies.energies),
                                                                atom_index12, distances)
@@ -485,8 +485,7 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False,
     interactions = repulsion or dispersion
 
     const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
-    consts = neurochem.Constants(const_file
-            )
+    consts = neurochem.Constants(const_file)
     if external_cell_list:
         assert not interactions
         aev_computer = AEVComputerBare(**consts)
