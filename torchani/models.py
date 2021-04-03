@@ -35,6 +35,7 @@ from typing import Tuple, Optional, NamedTuple
 from .nn import SpeciesConverter, SpeciesEnergies
 from .aev import AEVComputer, AEVComputerBare, CellList, CutoffSmooth, AEVComputerForRepulsion
 from .repulsion import RepulsionCalculator
+from .dispersion import DispersionD3
 
 
 class SpeciesEnergiesQBC(NamedTuple):
@@ -385,29 +386,18 @@ class BuiltinEnsembleCellList(BuiltinEnsemble):
         self.aev_computer.neighborlist.translation_displacement_indices = self.aev_computer.neighborlist.translation_displacement_indices.to(dtype=torch.long)
 
 
-class BuiltinModelRepulsion(BuiltinModel):
+class BuiltinModelWithInteractions(BuiltinModel):
 
     def __init__(self, **kwargs):
-        repulsion_calculator = kwargs.pop('repulsion_calculator')
+        repulsion_calculator = kwargs.pop('repulsion_calculator', None)
+        dispersion_calculator = kwargs.pop('dispersion_calculator', None)
         super().__init__(**kwargs)
         self.repulsion_calculator = repulsion_calculator
+        self.dispersion_calculator = dispersion_calculator
 
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        """Calculates predicted properties for minibatch of configurations
-
-        Args:
-            species_coordinates: minibatch of configurations
-            cell: the cell used in PBC computation, set to None if PBC is not enabled
-            pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
-
-        Returns:
-            species_energies: energies for the given configurations
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            will be in Hartree.
-        """
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
 
@@ -416,17 +406,27 @@ class BuiltinModelRepulsion(BuiltinModel):
             raise ValueError(f'Unknown species found in {species_coordinates[0]}')
         species, aevs, atom_index12, distances = self.aev_computer(species_coordinates, cell, pbc)
         species_energies = self.neural_networks((species, aevs))
-        species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
+        if self.repulsion_calculator is not None:
+            species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
+        if self.dispersion_calculator is not None:
+            assert self.periodic_table_index
+            # NOTE: currently dispersion calculator takes in atomic numbers only, 
+            # so it needs to be wrapped
+            species_energies = self.dispersion_calculator((species_coordinates.species, species_energies.energies),
+                                                           atom_index12, distances)
+            species_energies = self.species_converter(species_energies)
 
         return self.energy_shifter(species_energies)
 
 
-class BuiltinEnsembleRepulsion(BuiltinEnsemble):
+class BuiltinEnsembleWithInteractions(BuiltinEnsemble):
 
     def __init__(self, **kwargs):
-        repulsion_calculator = kwargs.pop('repulsion_calculator')
+        repulsion_calculator = kwargs.pop('repulsion_calculator', None)
+        dispersion_calculator = kwargs.pop('dispersion_calculator', None)
         super().__init__(**kwargs)
         self.repulsion_calculator = repulsion_calculator
+        self.dispersion_calculator = dispersion_calculator
 
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -439,7 +439,15 @@ class BuiltinEnsembleRepulsion(BuiltinEnsemble):
             raise ValueError(f'Unknown species found in {species_coordinates[0]}')
         species, aevs, atom_index12, distances = self.aev_computer(species_coordinates, cell, pbc)
         species_energies = self.neural_networks((species, aevs))
-        species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
+        if self.repulsion_calculator is not None:
+            species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
+        if self.dispersion_calculator is not None:
+            assert self.periodic_table_index
+            # NOTE: currently dispersion calculator takes in atomic numbers only, 
+            # so it needs to be wrapped
+            species_energies = self.dispersion_calculator((species_coordinates.species, species_energies.energies),
+                                                           atom_index12, distances)
+            species_energies = self.species_converter(species_energies)
 
         return self.energy_shifter(species_energies)
 
@@ -454,29 +462,43 @@ class BuiltinEnsembleRepulsion(BuiltinEnsemble):
         for nnp in self.neural_networks:
             species_energies = nnp((species, aevs))
             species_energies = self.energy_shifter(species_energies)
-            shifted_energies = self.repulsion_calculator(species_energies, atom_index12, distances).energies
+            if self.repulsion_calculator is not None:
+                species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
+            if dispersion_calculator is not None:
+                assert self.periodic_table_index
+                # NOTE: currently dispersion calculator takes in atomic numbers only, 
+                # so it needs to be wrapped
+                species_energies = self.dispersion_calculator((species_coordinates.species, species_energies.energies),
+                                                               atom_index12, distances)
+                species_energies = self.species_converter(species_energies)
+            shifted_energies = species_energies.energies
             member_outputs.append(shifted_energies.unsqueeze(0))
         return SpeciesEnergies(species, torch.cat(member_outputs, dim=0))
 
 
 def _build_neurochem_model(info_file_path, periodic_table_index=False,
         external_cell_list=False, model_index=None, torch_cell_list=False,
-        repulsion=False, adaptive_torch_cell_list=False):
+        repulsion=False, adaptive_torch_cell_list=False, dispersion=False):
     from . import neurochem  # noqa
     # builder function that creates a BuiltinModel from a neurochem info path
     assert not (external_cell_list and torch_cell_list)
+    interactions = repulsion or dispersion
 
     const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
-    consts = neurochem.Constants(const_file)
-
+    consts = neurochem.Constants(const_file
+            )
     if external_cell_list:
+        assert not interactions
         aev_computer = AEVComputerBare(**consts)
-    elif torch_cell_list and not repulsion:
-        aev_computer = AEVComputer(**consts, neighborlist=CellList)
-    elif adaptive_torch_cell_list and not repulsion:
-        aev_computer = AEVComputer(**consts)
-        aev_computer.neighborlist = CellList(aev_computer.radial_terms.cutoff, dynamic_update=True)
-    elif repulsion:
+    if not interactions:
+        if torch_cell_list:
+            aev_computer = AEVComputer(**consts, neighborlist=CellList)
+        elif adaptive_torch_cell_list:
+            aev_computer = AEVComputer(**consts)
+            aev_computer.neighborlist = CellList(aev_computer.radial_terms.cutoff, dynamic_update=True)
+        else:
+            aev_computer = AEVComputer(**consts)
+    elif interactions:
         if torch_cell_list:
             aev_computer = AEVComputerForRepulsion(**consts, neighborlist=CellList, cutoff_function=CutoffSmooth)
         elif adaptive_torch_cell_list:
@@ -484,8 +506,6 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False,
             aev_computer.neighborlist = CellList(aev_computer.radial_terms.cutoff, dynamic_update=True)
         else:
             aev_computer = AEVComputerForRepulsion(**consts, cutoff_function=CutoffSmooth)
-    else:
-        aev_computer = AEVComputer(**consts)
 
     if model_index is None:
         neural_networks = neurochem.load_model_ensemble(consts.species, ensemble_prefix, ensemble_size)
@@ -510,18 +530,21 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False,
         cutoff = aev_computer.radial_terms.cutoff.item()
         kwargs.update({'repulsion_calculator': RepulsionCalculator(cutoff)})
 
+    if dispersion:
+        kwargs.update({'dispersion_calculator': DispersionD3()})
+
     if model_index is None:
         if (torch_cell_list or adaptive_torch_cell_list) and not repulsion:
             return BuiltinEnsembleCellList(**kwargs)
-        elif repulsion:
-            return BuiltinEnsembleRepulsion(**kwargs)
+        elif interactions:
+            return BuiltinEnsembleWithInteractions(**kwargs)
         else:
             return BuiltinEnsemble(**kwargs)
     else:
         if (torch_cell_list or adaptive_torch_cell_list) and not repulsion:
             return BuiltinModelCellList(**kwargs)
-        elif repulsion:
-            return BuiltinModelRepulsion(**kwargs)
+        elif interactions:
+            return BuiltinModelWithInteractions(**kwargs)
         else:
             return BuiltinModel(**kwargs)
 

@@ -64,6 +64,7 @@ class RationalDamp(DampFunction):
 
 
 class ZeroDamp(DampFunction):
+    # TODO: zero damp is untested
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.beta is None:
