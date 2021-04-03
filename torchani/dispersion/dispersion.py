@@ -9,21 +9,28 @@ from ..aev import CutoffSmooth
 from . import constants
 
 
+def _init_df_constants(df_constants, modified_damp):
+    if df_constants is None:
+        # by default constants are for bj damp, for the B97D density
+        # functional
+        functional = 'wB97X'
+        if modified_damp:
+            functional += '_modified'
+        df_constants = constants.df_constants[functional]
+    return df_constants
+
+
 class DampFunction(torch.nn.Module):
     # D3M modifies parameters AND damp function for zero-damp and only
     # parameters for BJ damp cutoff radii are used for damp functions
     def __init__(self, df_constants=None, modified=False):
+        super().__init__()
         modified = torch.tensor(modified, dtype=torch.bool)
         self.register_buffer("use_modified_damp", modified)
-        if df_constants is None:
-            # by default constants are for bj damp, for the B97D density
-            # functional
-            functional = 'wB97X'
-            if self.use_modified_damp:
-                functional += '_modified'
-            df_constants = constants.bj_damp[functional]
 
+        df_constants = _init_df_constants(df_constants, modified)
         df_constants = {k: torch.tensor(v) for k, v in df_constants.items()}
+
         self.register_buffer('sr6', df_constants.get('sr6', None))
         self.register_buffer('sr8', df_constants.get('sr8', None))
         self.register_buffer('a1', df_constants.get('a1', None))
@@ -32,7 +39,7 @@ class DampFunction(torch.nn.Module):
 
 
 class RationalDamp(DampFunction):
-    def __init__(*args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         assert self.a1 is not None
         assert self.a2 is not None
@@ -43,19 +50,21 @@ class RationalDamp(DampFunction):
         # cutoff radii are in AU (Bohr)
         cutoff_radii = torch.sqrt(3 * torch.outer(sqrt_q, sqrt_q))
         self.register_buffer('cutoff_radii', cutoff_radii)
-        assert cutoff_radii.shape[0] == constants.SUPPORTED_D3_ELEMENTS
-        assert cutoff_radii.shape[1] == constants.SUPPORTED_D3_ELEMENTS
+        assert cutoff_radii.shape[0] == constants.SUPPORTED_D3_ELEMENTS + 1
+        assert cutoff_radii.shape[1] == constants.SUPPORTED_D3_ELEMENTS + 1
         assert cutoff_radii.ndim == 2
 
     def forward(self, species12: Tensor, distances: Tensor,
                 order: int) -> Tensor:
         cutoff_radii = self.cutoff_radii[species12[0], species12[1]]
+        assert cutoff_radii.ndim == 1
+        assert len(cutoff_radii) == species12.shape[1]
         damp_term = (self.a1 * cutoff_radii + self.a2).pow(order)
         return distances.pow(order) + damp_term
 
 
 class ZeroDamp(DampFunction):
-    def __init__(*args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.beta is None:
             assert not modified
@@ -66,13 +75,15 @@ class ZeroDamp(DampFunction):
         # using
         cutoff_radii = units.angstrom2bohr(constants.get_cutoff_radii())
         self.register_buffer('cutoff_radii', cutoff_radii)
-        assert cutoff_radii.shape[0] == constants.SUPPORTED_D3_ELEMENTS
-        assert cutoff_radii.shape[1] == constants.SUPPORTED_D3_ELEMENTS
+        assert cutoff_radii.shape[0] == constants.SUPPORTED_D3_ELEMENTS + 1
+        assert cutoff_radii.shape[1] == constants.SUPPORTED_D3_ELEMENTS + 1
         assert cutoff_radii.ndim == 2
 
     def forward(self, species12: Tensor, distances: Tensor,
                 order: int) -> Tensor:
         cutoff_radii = self.cutoff_radii[species12[0], species12[1]]
+        assert cutoff_radii.ndim == 1
+        assert len(cutoff_radii) == species12.shape[1]
         if order == 6:
             alpha = 14
             s = self.sr6
@@ -100,20 +111,23 @@ class DispersionD3(torch.nn.Module):
         # rational damp is becke-johnson
         assert not use_three_body, "Not yet implemented"
         assert damp in ['rational', 'zero'], 'Unsupported damp'
-
-        self.register_buffer('s6', torch.tensor(df_constants.pop('s6')))
-        self.register_buffer('s8', torch.tensor(df_constants.pop('s8')))
+        df_constants = _init_df_constants(df_constants, modified_damp)
+        
+        self.register_buffer('s6', torch.tensor(df_constants['s6']))
+        self.register_buffer('s8', torch.tensor(df_constants['s8']))
 
         if damp == 'rational':
             self.damp_function = RationalDamp(df_constants, modified_damp)
         else:
             self.damp_function = ZeroDamp(df_constants, modified_damp)
 
-        order6_constants, coordnums_a, coordnums_b = get_c6_constants()
+        order6_constants, coordnums_a, coordnums_b = constants.get_c6_constants()
         self.register_buffer('precalc_order6_coeffs', order6_constants)
         self.register_buffer('precalc_coordnums_a', coordnums_a)
         self.register_buffer('precalc_coordnums_b', coordnums_b)
-        self.register_buffer('covalent_radii', constants.get_covalent_radii())
+        # covalent radii are in angstrom so we first convert to bohr
+        covalent_radii = units.angstrom2bohr(constants.get_covalent_radii())
+        self.register_buffer('covalent_radii', covalent_radii)
         # the product of the sqrt of the empirical q's is stored directly
         sqrt_empirical_charge = constants.get_sqrt_empirical_charge()
         charge_ab = torch.outer(sqrt_empirical_charge, sqrt_empirical_charge)
@@ -121,7 +135,6 @@ class DispersionD3(torch.nn.Module):
 
     def _get_coordnums(self, num_atoms: int, species12: Tensor,
                        atom_index12: Tensor, distances: Tensor) -> Tensor:
-
         covalent_radii_sum = self.covalent_radii[species12[0]]
         covalent_radii_sum += self.covalent_radii[species12[1]]
         # for coordination numbers covalent radii are used, not cutoff radii
@@ -140,37 +153,44 @@ class DispersionD3(torch.nn.Module):
         return coordnums
 
     def _interpolate_order6_coeffs(self, species12: Tensor,
-                                   coordnums: Tensor) -> Tensor:
+            coordnums: Tensor, atom_index12: Tensor) -> Tensor:
         assert coordnums.ndim == 1, 'coordnums must be one dimensional'
         assert species12.ndim == 2, 'species12 must be 2 dimensional'
 
-        num_atoms = len(coordnums)
-        # find pre-computed values for every species pair
+        num_pairs = species12.shape[1]
+        # find pre-computed values for every species pair, and flatten over all references
         precalc_order6 = self.precalc_order6_coeffs[species12[0], species12[1]]
         precalc_cn_a = self.precalc_coordnums_a[species12[0], species12[1]]
         precalc_cn_b = self.precalc_coordnums_b[species12[0], species12[1]]
-        # the precalc order6 coeff
-        # and the precalc cn's have shape (A, A, 5, 5)
-        for t in (precalc_order6, precalc_cn_a, precalc_cn_b):
-            assert t.shape[0] == num_atoms
-            assert t.shape[1] == num_atoms
+        for t in [precalc_order6, precalc_cn_a, precalc_cn_b]:
+            # the precalc order6 coeffs
+            # and the precalc cn's have shape (Nb, 5, 5)
+            # where Nb is the number of neighbors
+            assert t.shape[0] == num_pairs
+            assert t.shape[1] == 5
             assert t.shape[2] == 5
-            assert t.shape[3] == 5
-            assert t.ndim == 4
+            assert t.ndim == 3
+        # flattened shapes are (Nb, 25)
+        precalc_cn_a = precalc_cn_a.flatten(1, 2)
+        precalc_cn_b = precalc_cn_b.flatten(1, 2)
+        precalc_order6 = precalc_order6.flatten(1, 2)
 
         k3 = 4
-        gauss_dist = (coordnums.view(num_atoms, 1, 1, 1) - precalc_cn_a)**2
-        gauss_dist += (coordnums.view(1, num_atoms, 1, 1) - precalc_cn_b)**2
+        gauss_dist = (coordnums[atom_index12[0]].view(-1, 1) - precalc_cn_a)**2
+        gauss_dist += (coordnums[atom_index12[1]].view(-1, 1) - precalc_cn_b)**2
         gauss_dist = torch.exp(-k3 * gauss_dist)
+        # only consider C6 coefficients strictly greater than zero, 
+        # don't include -1 and 0.0 terms in the sums, 
+        # all missing parameters (with -1.0 values) are guaranteed to be the
+        # same for precalc_cn_a/b and precalc_order6
+        gauss_dist = gauss_dist.masked_fill(precalc_order6 <= 0.0, 0.0)
         # sum over references for w factor and z factor
-        w_factor = gauss_dist.view(num_atoms, num_atoms, -1).sum(-1)
-        z_factor = precalc_order6 * gauss_dist
-        z_factor = z_factor.view(num_atoms, num_atoms, -1).sum(-1)
+        w_factor = gauss_dist.sum(-1)
+        z_factor = (precalc_order6 * gauss_dist).sum(-1)
         order6_coeffs = z_factor / w_factor
 
-        assert order6_coeffs.shape[0] == num_atoms
-        assert order6_coeffs.shape[1] == num_atoms
-        assert order6_coeffs.ndim == 2
+        assert order6_coeffs.shape[0] == num_pairs
+        assert order6_coeffs.ndim == 1
 
         return order6_coeffs
 
@@ -188,24 +208,34 @@ class DispersionD3(torch.nn.Module):
 
         # distances has all interaction pairs within a given cutoff, for a
         # molecule or set of molecules and atom_index12 holds all pairs of
-        # indices species is of shape (C x Atoms)
-        num_atoms = species.shape[1]
+        # indices. species is of shape (C x Atoms)
         species12 = species.flatten()[atom_index12]
+        num_atoms = species.shape[1]
+        num_pairs = species12.shape[1]
 
         # use the coordination numbers and the internal precalc C6's and
         # CNa's/CNb's to get interpolated C6 coeffs, C8 coeffs are obtained
-        # from C6 directly
+        # from C6 coeffs directly
         coordnums = self._get_coordnums(num_atoms, species12, atom_index12,
                                         distances)
-        order6_coeffs = self._interpolate_order6_coeffs(species12, coordnums)
+        order6_coeffs = self._interpolate_order6_coeffs(species12, coordnums, atom_index12)
         order8_coeffs = 3 * order6_coeffs
         order8_coeffs *= self.sqrt_charge_ab[species12[0], species12[1]]
+        assert order6_coeffs.shape[0] == num_pairs
+        assert order6_coeffs.ndim == 1
+        assert order8_coeffs.shape[0] == num_pairs
+        assert order8_coeffs.ndim == 1
 
         distances_damp6 = self.damp_function(species12, distances, 6)
         distances_damp8 = self.damp_function(species12, distances, 8)
+        assert distances_damp6.shape[0] == num_pairs
+        assert distances_damp6.ndim == 1
+        assert distances_damp8.shape[0] == num_pairs
+        assert distances_damp8.ndim == 1
 
-        two_body_dispersion = self.s6 * order6_coeffs / distances_damp6
-        two_body_dispersion += self.s8 * order8_coeffs / distances_damp8
+        order6_energy = self.s6 * order6_coeffs / distances_damp6
+        order8_energy = self.s8 * order8_coeffs / distances_damp8
+        two_body_dispersion = order6_energy + order8_energy
         three_body_dispersion = 0.0
 
         # factor of 1/2 is not needed for two body since we only add the
