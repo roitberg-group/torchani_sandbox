@@ -12,8 +12,10 @@ from .aev_terms import AngularTerms, RadialTerms
 from .neighbors import FullPairwise, BaseNeighborlist
 from ..utils import map_to_central, cumsum_from_zero
 
+
 cuaev_is_installed = 'torchani.cuaev' in importlib_metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
+
 
 if cuaev_is_installed:
     # We need to import torchani.cuaev to tell PyTorch to initialize torch.ops.cuaev
@@ -35,6 +37,7 @@ else:
 class SpeciesAEV(NamedTuple):
     species: Tensor
     aevs: Tensor
+
 
 class SpeciesAEVForRepulsion(NamedTuple):
     species: Tensor
@@ -273,8 +276,8 @@ class AEVComputer(torch.nn.Module):
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
 
-        # the coordinates that are input into the neighborlist are **not** assumed to be 
-        # mapped into the central cell for pbc calculations, 
+        # the coordinates that are input into the neighborlist are **not** assumed to be
+        # mapped into the central cell for pbc calculations,
         # and **in general are not**
         atom_index12, shift_values = self.neighborlist(species, coordinates, cell, pbc)
 
@@ -295,11 +298,11 @@ class AEVComputer(torch.nn.Module):
     def _compute_aev(self, species: Tensor, coordinates: Tensor,
                     atom_index12: Tensor, shift_values: Tensor) -> Tensor:
 
-        species12 = species.flatten()[atom_index12]
         vec = self._compute_difference_vector(coordinates, atom_index12,
                                               shift_values)
-
         distances = vec.norm(2, -1)
+
+        species12 = species.flatten()[atom_index12]
         radial_aev = self._compute_radial_aev(species12, distances,
                                               atom_index12, species.shape)
 
@@ -433,8 +436,8 @@ class AEVComputerForRepulsion(AEVComputer):
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
 
-        # the coordinates that are input into the neighborlist are **not** assumed to be 
-        # mapped into the central cell for pbc calculations, 
+        # the coordinates that are input into the neighborlist are **not** assumed to be
+        # mapped into the central cell for pbc calculations,
         # and **in general are not**
         atom_index12, shift_values = self.neighborlist(species, coordinates, cell, pbc)
 
@@ -469,6 +472,7 @@ class AEVComputerForRepulsion(AEVComputer):
                                                 species.shape)
 
         return torch.cat([radial_aev, angular_aev], dim=-1), distances
+
 
 class AEVComputerBare(AEVComputer):
 
@@ -519,11 +523,10 @@ class AEVComputerBare(AEVComputer):
         # first we prescreen the input neighborlist in case some of the values
         # are at distances larger than the cutoff for the radial terms this may
         # happen if the neighborlist uses some sort of skin value to rebuild
-        atom_index12, shift_values = self._screen_with_cutoff(
-                                self.radial_terms.cutoff.item(),
-                                coordinates.detach(),
-                                atom_index12,
-                                shift_values.detach())
+        atom_index12, shift_values = self._screen_with_cutoff(self.radial_terms.cutoff.item(),
+                                                              coordinates.detach(),
+                                                              atom_index12,
+                                                              shift_values.detach())
 
         aev = self._compute_aev(species, coordinates, atom_index12,
                 shift_values)
