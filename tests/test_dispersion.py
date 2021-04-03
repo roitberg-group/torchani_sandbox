@@ -1,9 +1,11 @@
 import torch
+import time
 import torchani
 import math
 import unittest
 from torchani.testing import TestCase
 from torchani.dispersion import DispersionD3, constants
+from torchani.aev import AEVComputerForRepulsion
 from torchani import units
 
 
@@ -11,10 +13,17 @@ class TestALAtomic(TestCase):
 
     def setUp(self):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        dummy_model = torchani.models.ANI1x(periodic_table_index=True, repulsion=True, model_index=0).to(
-            self.device).double()
-        self.aev_computer = dummy_model.aev_computer
-        self.converter = dummy_model.species_converter
+        ani1x_values = {'radial_cutoff': 5.2,
+                        'angular_cutoff': 3.5,
+                        'radial_eta': 16.0,
+                        'angular_eta': 8.0,
+                        'radial_dist_divisions': 16,
+                        'angular_dist_divisions': 4,
+                        'zeta': 32.0,
+                        'angle_sections': 8,
+                        'num_species': 4}
+        self.aev_computer = AEVComputerForRepulsion.cover_linearly(**ani1x_values).double().to(self.device)
+        self.converter = torchani.SpeciesConverter(['H', 'C', 'N', 'O']).double().to(self.device)
         # fully symmetric methane
         self.coordinates = torch.tensor(
             [[0, 0, 0], [0, 1, 1], [1, 0, 1], [1, 1, 0], [0.5, 0.5, 0.5]],
@@ -29,6 +38,7 @@ class TestALAtomic(TestCase):
         self.old_hartree_to_kcalmol = units.HARTREE_TO_KCALMOL
         units.ANGSTROM_TO_BOHR = 1 / 0.52917726
         units.HARTREE_TO_KCALMOL = 627.509541
+        end = time.time()
 
     def tearDown(self):
         # reset conversion factors

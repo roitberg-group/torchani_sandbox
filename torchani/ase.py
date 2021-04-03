@@ -99,4 +99,3 @@ class Calculator(ase.calculators.calculator.Calculator):
 
     def _get_ani_forces(self, coordinates, energy, properties):
         return -torch.autograd.grad(energy.squeeze(), coordinates, retain_graph='stress' in properties)[0]
-
