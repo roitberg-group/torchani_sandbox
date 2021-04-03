@@ -7,7 +7,7 @@ from torchani.aev import AEVComputerForRepulsion
 from torchani import units
 
 
-class TestALAtomic(TestCase):
+class TestDispersion(TestCase):
     def setUp(self):
         self.device = torch.device(
             'cuda' if torch.cuda.is_available() else 'cpu')
