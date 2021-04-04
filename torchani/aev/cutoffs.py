@@ -25,3 +25,16 @@ class CutoffSmooth(torch.nn.Module):
         # assuming all elements in distances are smaller than cutoff
         e = 1 - 1 / (1 - (distances / self.cutoff) ** 2).clamp(min=self.eps)
         return torch.exp(e)
+
+
+class CutoffSmooth4(torch.nn.Module):
+
+    def __init__(self, cutoff: float, eps: float = 1e-10):
+        super().__init__()
+        self.register_buffer('cutoff', torch.tensor(cutoff))
+        self.register_buffer('eps', torch.tensor(eps))
+
+    def forward(self, distances: Tensor) -> Tensor:
+        # assuming all elements in distances are smaller than cutoff
+        e = 1 - 1 / (1 - (distances / self.cutoff) ** 4).clamp(min=self.eps)
+        return torch.exp(e)

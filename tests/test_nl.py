@@ -361,9 +361,9 @@ class TestCellListEnergies(unittest.TestCase):
         device = torch.device('cuda')
         # JIT optimizations are avoided to prevent cuda bugs that make first evaluations extremely slow
         torch._C._jit_set_profiling_executor(False)
-        torch._C._jit_set_profiling_mode(False) # this also has an effect
+        torch._C._jit_set_profiling_mode(False)  # this also has an effect
         torch._C._jit_override_can_fuse_on_cpu(False)
-        torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
+        torch._C._jit_set_texpr_fuser_enabled(False)  # this has an effect
         torch._C._jit_set_nvfuser_enabled(False)
         aev_cl = torch.jit.script(self.aev_cl).to(device).double()
         aev_fp = torch.jit.script(self.aev_fp).to(device).double()
