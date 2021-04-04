@@ -2,6 +2,63 @@ import torch
 """ Utilities to generate some specific geometries"""
 
 
+def _rotate(vector, axis, angle):
+    # rotate a vector using an axis and an angle, a batch of vectors can be
+    # passed (shape (N, 3)) and all will be rotated
+    axis_x_vector = torch.cross(axis, vector, dim=-1)
+    term1 = axis * (axis * angle).sum(-1)
+    term2 = torch.cos(angle) * torch.cross(axis_x_vector, axis, dim=-1)
+    term3 = torch.sin(angle) * axis_x_vector
+    return term1 + term2 + term3
+
+
+def align_geometry_to_bond(coordinates, atom1, atom2):
+    # atom1 and atom2 are two atoms that define a bond
+    assert coordinates.shape[0] == 1
+    coordinates = coordinates.view(-1, 3)
+    # first atom1 is translated to  the origin
+    coordinates -= coordinates[atom1]
+    # now the bond vector goes from the origin to atom2
+    bond_vector = coordinates[atom2]
+    # second, coordinate vectors should be rotated so that the Z axis lies in
+    # the direction of atom1 to rotate we need an axis and an angle, we will
+    # rotate using an axis perpendicular to the plane made by the bond and the
+    # z axis
+    z_axis = torch.tensor([0.0, 0.0, 1.0], dtype=bond_vector.dtype, device=bond_vector.device)
+    rot_axis = torch.cross(bond_vector, z_axis)
+    rot_axis = rot_axis / rot_axis.norm()
+    # the angle to rotate will be the angle between the bond vector and the z axis
+    cosine = torch.nn.CosineSimilarity()
+    angle = torch.acos(cosine(rot_axis, z_axis))
+    rotated_coordinates = _rotate(coordinates, rot_axis, angle)
+    rotated_coordinates.unsqueeze(0)
+    return rotated_coordinates
+
+
+def displace_dimer_along_bond(coordinates, atom1, atom2, distance, start_overlapped=True):
+    # the dimer is assumed to be composed of an even number of atoms, the first
+    # and second A/2 atoms correspond to both molecules in the dimer
+    # respectively.
+    assert coordinates.shape[0] == 1
+    assert coordinates.shape[1] % 2 == 0
+    molecule_size = coordinates.shape[1] / 2
+    assert molecule_size.is_integer()
+    molecule_size = int(molecule_size)
+    coordinates = coordinates.view(-1, 3)
+    coordinates_a = coordinates[:molecule_size]
+    assert len(coordinates_a) == molecule_size
+    coordinates_b = coordinates[molecule_size:]
+    assert len(coordinates_b) == molecule_size
+    diff_vector = coordinates_a[atom1] - coordinates_b[atom2]
+
+    if start_overlapped:
+        assert diff_vector.norm() < distance, f"The distance is less than the bond distance {diff_vector.norm()} > {distance}"
+
+    coordinates_a += (diff_vector / diff_vector.norm()) * distance
+    coordinates = torch.cat((coordinates_a, coordinates_b), dim=0)
+    return coordinates.unsqueeze(0)
+
+
 def tile_into_cube(species_coordinates, box_length=3.5, repeats=3, noise=None):
     # convenience function that takes a molecule and tiles it
     # into a periodic square crystal cell

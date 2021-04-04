@@ -432,6 +432,7 @@ class BuiltinEnsembleWithInteractions(BuiltinEnsemble):
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         if self.periodic_table_index:
+            atomic_numbers, _ = species_coordinates
             species_coordinates = self.species_converter(species_coordinates)
 
         # check if unknown species are included
@@ -445,7 +446,7 @@ class BuiltinEnsembleWithInteractions(BuiltinEnsemble):
             assert self.periodic_table_index
             # NOTE: currently dispersion calculator takes in atomic numbers only,
             # so it needs to be wrapped
-            species_energies = self.dispersion_calculator((species_coordinates.species, species_energies.energies),
+            species_energies = self.dispersion_calculator((atomic_numbers, species_energies.energies),
                                                            atom_index12, distances)
             species_energies = self.species_converter(species_energies)
 
@@ -456,6 +457,7 @@ class BuiltinEnsembleWithInteractions(BuiltinEnsemble):
                          cell: Optional[Tensor] = None,
                          pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         if self.periodic_table_index:
+            atomic_numbers, _ = species_coordinates
             species_coordinates = self.species_converter(species_coordinates)
         species, aevs, atom_index12, distances = self.aev_computer(species_coordinates, cell, pbc)
         member_outputs = []
@@ -468,7 +470,7 @@ class BuiltinEnsembleWithInteractions(BuiltinEnsemble):
                 assert self.periodic_table_index
                 # NOTE: currently dispersion calculator takes in atomic numbers only,
                 # so it needs to be wrapped
-                species_energies = self.dispersion_calculator((species_coordinates.species, species_energies.energies),
+                species_energies = self.dispersion_calculator((atomic_numbers, species_energies.energies),
                                                                atom_index12, distances)
                 species_energies = self.species_converter(species_energies)
             shifted_energies = species_energies.energies

@@ -1,6 +1,17 @@
 import torch
 import math
+import sys
 from torch import Tensor
+
+if sys.version_info[:2] < (3, 7):
+
+    class FakeFinal:
+        def __getitem__(self, x):
+            return x
+
+    Final = FakeFinal()
+else:
+    from torch.jit import Final
 
 
 class CutoffCosine(torch.nn.Module):
@@ -16,25 +27,15 @@ class CutoffCosine(torch.nn.Module):
 
 class CutoffSmooth(torch.nn.Module):
 
-    def __init__(self, cutoff: float, eps: float = 1e-10):
+    order: Final[int]
+
+    def __init__(self, cutoff: float, eps: float = 1e-10, order: int = 2):
         super().__init__()
         self.register_buffer('cutoff', torch.tensor(cutoff))
         self.register_buffer('eps', torch.tensor(eps))
+        self.order = order
 
     def forward(self, distances: Tensor) -> Tensor:
         # assuming all elements in distances are smaller than cutoff
-        e = 1 - 1 / (1 - (distances / self.cutoff) ** 2).clamp(min=self.eps)
-        return torch.exp(e)
-
-
-class CutoffSmooth4(torch.nn.Module):
-
-    def __init__(self, cutoff: float, eps: float = 1e-10):
-        super().__init__()
-        self.register_buffer('cutoff', torch.tensor(cutoff))
-        self.register_buffer('eps', torch.tensor(eps))
-
-    def forward(self, distances: Tensor) -> Tensor:
-        # assuming all elements in distances are smaller than cutoff
-        e = 1 - 1 / (1 - (distances / self.cutoff) ** 4).clamp(min=self.eps)
+        e = 1 - 1 / (1 - (distances / self.cutoff).pow(self.order)).clamp(min=self.eps)
         return torch.exp(e)

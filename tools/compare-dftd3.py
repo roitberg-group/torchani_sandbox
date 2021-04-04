@@ -9,7 +9,7 @@ import re
 import subprocess
 import argparse
 from molecule_utils import tensor_to_xyz
-from torchani.aev.cutoffs import CutoffSmooth4, CutoffSmooth
+from torchani.aev.cutoffs import CutoffSmooth
 
 # this comparison test assumes dftd3 is installed and in PATH, so that it can
 # be called directly with subprocess
@@ -99,7 +99,7 @@ if __name__ == '__main__':
         cutoff_function = CutoffSmooth(8.0)
     elif args.cutoff_smooth4:
         pickle_name += '_cut4'
-        cutoff_function = CutoffSmooth4(8.0)
+        cutoff_function = CutoffSmooth(8.0, order=4)
     else:
         cutoff_function = None
     pickle_name += '.pkl'
