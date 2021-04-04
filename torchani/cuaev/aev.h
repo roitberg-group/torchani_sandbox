@@ -190,6 +190,7 @@ struct Result {
       NeighborList angularNbr_);
   Result(tensor_list tensors);
   Result(Tensor coordinates_t_, Tensor species_t_);
+  Result();
   operator tensor_list() {
     return {
         Tensor(), // aev_t got removed
@@ -222,6 +223,7 @@ void cuaev_forward(
     Result& result);
 Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_params, const Result& result);
 Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& aev_params, const Result& result);
+void initAEVConsts(AEVScalarParams& aev_params, cudaStream_t stream);
 
 // CuaevComputer
 // Only keep one copy of aev parameters
@@ -239,6 +241,7 @@ struct CuaevComputer : torch::CustomClassHolder {
       const Tensor& ShfZ_t,
       int64_t num_species);
 
+  // TODO add option for simulation only forward, which will initilize result space, and no need to allocate any more.
   Result forward(const Tensor& coordinates_t, const Tensor& species_t) {
     Result result(coordinates_t, species_t);
     cuaev_forward(coordinates_t, species_t, aev_params, result);

@@ -58,6 +58,17 @@ Result::Result(tensor_list tensors)
       angularNbr(tensors[12].item<int>(), tensors[13].item<int>(), tensors[14], tensors[15], tensors[16], tensors[17]) {
 }
 
+
+Result::Result()
+    : aev_t(Tensor()),
+      atomI_t(Tensor()),
+      startIdxJ_t(Tensor()),
+      nI(0),
+      coordinates_t(Tensor()),
+      species_t(Tensor()),
+      radialNbr(NeighborList()),
+      angularNbr(NeighborList()) {}
+
 Result::Result(Tensor coordinates_t_, Tensor species_t_)
     : aev_t(Tensor()),
       atomI_t(Tensor()),
