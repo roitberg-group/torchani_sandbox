@@ -61,7 +61,6 @@ class RepulsionCalculator(torch.nn.Module):
         k_rep_ab = self.k_rep_ab[species12[0], species12[1]]
 
         # calculates repulsion energies using distances and constants
-        # NOTE: for batch implementation we should add in only one dimension
         prefactor = (y_ab / distances_bohr)
         repulsion_energy = prefactor * torch.exp(-sqrt_alpha_ab * (distances_bohr ** k_rep_ab))
 
