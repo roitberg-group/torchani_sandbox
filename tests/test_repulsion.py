@@ -2,7 +2,7 @@ import unittest
 import torch
 import torchani
 from torchani.testing import TestCase
-from torchani.repulsion import RepulsionCalculator
+from torchani.repulsion import RepulsionCalculator, StandaloneRepulsionCalculator
 import pickle
 
 
@@ -58,6 +58,39 @@ class TestRepulsion(TestCase):
         energies = torch.tensor([0.0])
         energies = rep((species, energies), atom_index12, distances).energies
         self.assertTrue(torch.isclose(torch.tensor(3.5325e-08), energies))
+
+    def testRepulsionStandalone(self):
+        rep = StandaloneRepulsionCalculator(cutoff=5.2, neighborlist_cutoff=5.2)
+        coordinates = torch.tensor([[0.0, 0.0, 0.0],
+                                    [3.5, 0.0, 0.0]]).unsqueeze(0)
+        species = torch.tensor([[0, 0]])
+        energies = rep((species, coordinates)).energies
+        self.assertTrue(torch.isclose(torch.tensor(3.5325e-08), energies))
+
+    def testRepulsionBatches(self):
+        rep = StandaloneRepulsionCalculator(cutoff=5.2, neighborlist_cutoff=5.2)
+        coordinates1 = torch.tensor([[0.0, 0.0, 0.0],
+                                    [1.5, 0.0, 0.0],
+                                    [3.0, 0.0, 0.0]]).unsqueeze(0)
+        coordinates2 = torch.tensor([[0.0, 0.0, 0.0],
+                                    [0.0, 0.0, 0.0],
+                                    [2.5, 0.0, 0.0]]).unsqueeze(0)
+        coordinates3 = torch.tensor([[0.0, 0.0, 0.0],
+                                     [0.0, 0.0, 0.0],
+                                     [3.5, 0.0, 0.0]]).unsqueeze(0)
+        species1 = torch.tensor([[0, 1, 2]])
+        species2 = torch.tensor([[-1, 0, 1]])
+        species3 = torch.tensor([[-1, 0, 0]])
+        coordinates_cat = torch.cat((coordinates1, coordinates2, coordinates3), dim=0)
+        species_cat = torch.cat((species1, species2, species3), dim=0)
+
+        energy1 = rep((species1, coordinates1)).energies
+        # avoid first atom since it isdummy
+        energy2 = rep((species2[:, 1:], coordinates2[:, 1:, :])).energies
+        energy3 = rep((species3[:, 1:], coordinates3[:, 1:, :])).energies
+        energies_cat = torch.cat((energy1, energy2, energy3))
+        energies = rep((species_cat, coordinates_cat)).energies
+        self.assertTrue(torch.isclose(energies, energies_cat).all())
 
     def testRepulsionLongDistances(self):
         rep = RepulsionCalculator(5.2)

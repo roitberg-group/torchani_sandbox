@@ -49,7 +49,7 @@ class RepulsionCalculator(torch.nn.Module):
         # for a molecule or set of molecules
         # and atom_index12 holds all pairs of indices
         # species is of shape (C x Atoms)
-        num_molecules = species.shape[0]
+        num_atoms = species.shape[1]
         species12 = species.flatten()[atom_index12]
 
         # distances need to be in Bohr radii units (cutoff distance too for coherence)
@@ -68,9 +68,9 @@ class RepulsionCalculator(torch.nn.Module):
         if self.cutoff_function is not None:
             repulsion_energy *= self.cutoff_function(distances_bohr)
 
-        repulsion_energy = repulsion_energy.view(num_molecules, -1).sum(-1)
+        molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
+        energies.index_add_(0, molecule_indices, repulsion_energy)
 
-        energies += repulsion_energy
         return SpeciesEnergies(species, energies)
 
     def forward(self, species_energies: Tensor, atom_index12: Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
@@ -81,6 +81,6 @@ class StandaloneRepulsionCalculator(StandalonePairwiseWrapper, RepulsionCalculat
     def _perform_module_actions(self, species_coordinates: Tuple[Tensor, Tensor], atom_index12: Tensor,
             distances: Tensor) -> Tuple[Tensor, Tensor]:
         species, coordinates = species_coordinates
-        energies = torch.zeros(species.shape[0], dtype=distances.dtype, device=distances.device)
+        energies = torch.zeros(species.shape[0], dtype=coordinates.dtype, device=coordinates.device)
         species_energies = (species, energies)
         return self._calculate_repulsion(species_energies, atom_index12, distances)
