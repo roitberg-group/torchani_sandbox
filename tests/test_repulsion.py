@@ -5,6 +5,7 @@ from torchani.testing import TestCase
 from torchani.repulsion import RepulsionCalculator
 import pickle
 
+
 def load_model(path, aev_dim):
     H_network = torch.nn.Sequential(
         torch.nn.Linear(aev_dim, 160, bias=False),
@@ -49,7 +50,6 @@ def load_model(path, aev_dim):
 
 class TestRepulsion(TestCase):
 
-
     def testRepulsionCalculator(self):
         rep = RepulsionCalculator(5.2)
         atom_index12 = torch.tensor([[0], [1]])
@@ -71,12 +71,12 @@ class TestRepulsion(TestCase):
     def testRepulsionEnergy(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         model = torchani.models.ANI1x(repulsion=True, model_index=0)
-        model.neural_networks = load_model('repulsion_model_1x.pt', model.aev_computer.aev_length )
+        model.neural_networks = load_model('repulsion_model_1x.pt', model.aev_computer.aev_length)
         model.energy_shifter = torchani.EnergyShifter([-0.506930115400, -37.814410115700, -54.55653828400, -75.02918133970])
         model = model.to(device=device, dtype=torch.double)
-        
+
         species = torch.tensor([[3, 0, 0]], device=device)
-        energies=[]
+        energies = []
         distances = torch.linspace(0.1, 6.0, 100)
         for d in distances:
             coordinates = torch.tensor([[[0.0, 0.0, 0.0],
@@ -84,7 +84,7 @@ class TestRepulsion(TestCase):
                                         [-0.250380004 * d, 0.96814764 * d, 0.0]]],
                                        requires_grad=True, device=device, dtype=torch.double)
             energies.append(model((species, coordinates)).energies.item())
-        
+
         energies = torch.tensor(energies)
         with open('energies.pkl', 'rb') as f:
             energies_salva = torch.tensor(pickle.load(f))
