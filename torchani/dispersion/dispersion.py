@@ -11,7 +11,7 @@ from . import constants
 
 def _init_df_constants(df_constants, modified_damp):
     if df_constants is None:
-        # by default constants are for bj damp, for the B97D density
+        # by default constants are for BJ damp, for the wB97X density
         # functional
         functional = 'wB97X'
         if modified_damp:
@@ -190,10 +190,6 @@ class DispersionD3(torch.nn.Module):
         w_factor = gauss_dist.sum(-1)
         z_factor = (precalc_order6 * gauss_dist).sum(-1)
         order6_coeffs = z_factor / w_factor
-
-        assert order6_coeffs.shape[0] == num_pairs
-        assert order6_coeffs.ndim == 1
-
         return order6_coeffs
 
     def _calculate_dispersion_correction(self, species_energies: Tuple[Tensor, Tensor], atom_index12: Tensor,
@@ -201,7 +197,6 @@ class DispersionD3(torch.nn.Module):
 
         # internally this module works in AU, so first we convert distances
         distances = units.angstrom2bohr(distances)
-
         species, energies = species_energies
         assert len(species) == 1, "Not implemented for batch calcs"
         assert distances.ndim == 1, "distances should be 1 dim"
@@ -224,17 +219,11 @@ class DispersionD3(torch.nn.Module):
         order6_coeffs = self._interpolate_order6_coeffs(species12, coordnums, atom_index12)
         order8_coeffs = 3 * order6_coeffs
         order8_coeffs *= self.sqrt_charge_ab[species12[0], species12[1]]
-        assert order6_coeffs.shape[0] == num_pairs
-        assert order6_coeffs.ndim == 1
-        assert order8_coeffs.shape[0] == num_pairs
-        assert order8_coeffs.ndim == 1
-
         distances_damp6 = self.damp_function(species12, distances, 6)
         distances_damp8 = self.damp_function(species12, distances, 8)
-        assert distances_damp6.shape[0] == num_pairs
-        assert distances_damp6.ndim == 1
-        assert distances_damp8.shape[0] == num_pairs
-        assert distances_damp8.ndim == 1
+        for t in [distances_damp6, distances_damp8, order6_coeffs, order8_coeffs]:
+            assert t.ndim == 1
+            assert t.shape[0] == num_pairs
 
         order6_energy = self.s6 * order6_coeffs / distances_damp6
         order8_energy = self.s8 * order8_coeffs / distances_damp8
@@ -242,15 +231,9 @@ class DispersionD3(torch.nn.Module):
 
         # factor of 1/2 is not needed for two body since we only add the
         # interacting pairs once
-        dispersion_correction = two_body_dispersion
         if self.cutoff_function is not None:
-            dispersion_correction *= self.cutoff_function(distances)
-        dispersion_correction = dispersion_correction.sum()
-
-        three_body_dispersion = 0.0
-        dispersion_correction += -(1 / 6) * three_body_dispersion
-
-        energies += dispersion_correction
+            two_body_dispersion *= self.cutoff_function(distances)
+        energies += two_body_dispersion.sum()
         return SpeciesEnergies(species, energies)
 
     def forward(self, species_energies: Tuple[Tensor, Tensor], atom_index12: Tensor,

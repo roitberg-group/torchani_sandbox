@@ -1,4 +1,3 @@
-
 import torch
 import torchani
 import time
@@ -16,7 +15,7 @@ from ase import units
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from pathlib import Path
-from molecule_utils import make_water, make_methane, tensor_from_xyz
+from molecule_utils import make_water, tensor_from_xyz
 
 
 def plot_file(file_path, comment, show=False):
@@ -31,12 +30,13 @@ def plot_file(file_path, comment, show=False):
     assert len(std) == len(mean)
     assert len(std) == len(sizes)
     for times in all_trials:
-        ax.errorbar(x=sizes, y=mean, yerr=std*2, ecolor='k', capsize =2, fmt='s--', ms=1)
+        ax.errorbar(x=sizes, y=mean, yerr=std * 2, ecolor='k', capsize=2, fmt='s--', ms=1)
     ax.set_xlabel('System size (atoms)')
     ax.set_ylabel('Total Walltime per ns (days)')
     ax.set_title(comment)
     if show:
         plt.show()
+
 
 def plot_many(path_to_files, comment, show=False):
     mpl.rc('font', size=16)
@@ -77,7 +77,6 @@ def plot_many(path_to_files, comment, show=False):
             all_trials = np.asarray(times_sizes['times'])
             sizes = times_sizes['atoms']
             timers = times_sizes['timers']
-    
 
         std = all_trials.std(axis=0)
         mean = all_trials.mean(axis=0)
@@ -91,9 +90,9 @@ def plot_many(path_to_files, comment, show=False):
             l = "TorchANI + cell list (Not Updating every step)"
         else:
             c = 'g'
-            l = 'TorchANI' 
+            l = 'TorchANI'
         fmt = 's-'
-        ax.errorbar(x=sizes, y=mean, color=c, yerr=std*2, ecolor='k', capsize =2, fmt=fmt, ms=4, label=l)
+        ax.errorbar(x=sizes, y=mean, color=c, yerr=std * 2, ecolor='k', capsize=2, fmt=fmt, ms=4, label=l)
     ax.set_xlabel('System size (atoms)')
     ax.set_ylabel('Walltime per ns (h)')
     ax.set_title('Benchmarks for ANI-1x model, water boxes')
@@ -101,9 +100,10 @@ def plot_many(path_to_files, comment, show=False):
     if show:
         plt.show()
 
+
 def get_model(model_arg, torch_cell_list, model_index, adaptive_torch_cell_list):
-    args = {'periodic_table_index' : True, 
-            'torch_cell_list': torch_cell_list, 
+    args = {'periodic_table_index': True,
+            'torch_cell_list': torch_cell_list,
             'adaptive_torch_cell_list': adaptive_torch_cell_list}
 
     if model_index:
@@ -117,11 +117,13 @@ def get_model(model_arg, torch_cell_list, model_index, adaptive_torch_cell_list)
         model = torchani.models.ANI1ccx(**args).to(device, dtype=torch.double)
     return model
 
+
 def print_info(device, steps, sizes):
     print(f'Running on {device} {torch.cuda.get_device_name()}')
     print(f'CUDA is avaliable: {torch.cuda.is_available()}')
     print(f'Running benchmark for {steps} steps')
     print(f'Running on the following sizes: {sizes}')
+
 
 if __name__ == "__main__":
     import argparse
@@ -155,10 +157,9 @@ if __name__ == "__main__":
         path_to_xyz = Path(args.xyz).resolve()
     else:
         path_to_xyz = ''
-    
     # the output file name is the model name by default
     if args.cell_list:
-        clist_str = '_clist_update_all_steps' 
+        clist_str = '_clist_update_all_steps'
     elif args.adaptive_cell_list:
         clist_str = '_clist_reuse'
     else:
@@ -182,7 +183,7 @@ if __name__ == "__main__":
     else:
         device = torch.device(args.device)
         if not path_to_xyz:
-            num_atoms = 3 # for water
+            num_atoms = 3  # for water
             sizes = (num_atoms * torch.arange(4,
                 args.box_repeats + 1)**3).numpy().tolist()
         else:
@@ -200,7 +201,8 @@ if __name__ == "__main__":
         print_info(device, args.steps, sizes)
         model = get_model(args.model, args.cell_list, args.model_index, args.adaptive_cell_list)
 
-        timers = {'forward': 0.0, 'backward': 0.0, 'neighborlist': 0.0, 'aev_forward': 0.0} 
+        timers = {'forward': 0.0, 'backward': 0.0, 'neighborlist': 0.0, 'aev_forward': 0.0}
+
         def time_func(key, func):
             def wrapper(*args, **kwargs):
                 torch.cuda.synchronize()
@@ -208,7 +210,7 @@ if __name__ == "__main__":
                 ret = func(*args, **kwargs)
                 torch.cuda.synchronize()
                 end = timeit.default_timer()
-                timers[key] += (end - start)/(3600*24)  * 1e6/100
+                timers[key] += (end - start) / (3600 * 24) * 1e6 / 100
                 return ret
             return wrapper
         if not args.jit:
@@ -217,7 +219,7 @@ if __name__ == "__main__":
             model.forward = time_func('forward', model.forward)
             torchani.ase.Calculator._get_ani_forces = time_func('backward', torchani.ase.Calculator._get_ani_forces)
 
-        all_trials = [] 
+        all_trials = []
         timers_list = []
         raw_trials = []
         for j in range(args.trials):
@@ -230,7 +232,7 @@ if __name__ == "__main__":
 
             for r in it:
                 # reset timers
-                timers = {k : 0.0 for k in timers}
+                timers = {k: 0.0 for k in timers}
                 try:
                     model.aev_computer.neighborlist.reset_cached_values()
                 except AttributeError:
@@ -238,7 +240,7 @@ if __name__ == "__main__":
                 if not path_to_xyz:
                     species, coordinates = make_water(device)
                     species, coordinates, cell = geometry.tile_into_tight_cell((species, coordinates),
-                                                                density=0.0923, 
+                                                                density=0.0923,
                                                                 noise=0.1,
                                                                 repeats=r + 1)
                 else:
@@ -248,27 +250,26 @@ if __name__ == "__main__":
                 calc = model.ase()
                 if args.jit:
                     torch._C._jit_set_profiling_executor(False)
-                    torch._C._jit_set_profiling_mode(False) # this also has an effect
+                    torch._C._jit_set_profiling_mode(False)  # this also has an effect
                     torch._C._jit_override_can_fuse_on_cpu(False)
-                    torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
+                    torch._C._jit_set_texpr_fuser_enabled(False)  # this has an effect
                     torch._C._jit_set_nvfuser_enabled(False)
                     calc.model = torch.jit.script(calc.model)
-                atoms_args = {'symbols': species.squeeze().tolist(), 
-                             'positions': coordinates.squeeze().tolist(), 
+                atoms_args = {'symbols': species.squeeze().tolist(),
+                             'positions': coordinates.squeeze().tolist(),
                              'calculator': calc}
 
                 if not args.no_pbc:
                     atoms_args.update({'cell': cell.cpu().numpy(), 'pbc': True})
 
                 molecule = ase.Atoms(**atoms_args)
-                
-                # run and time Langevin dynamics 
+                # run and time Langevin dynamics
                 dyn = Langevin(molecule, 1 * units.fs, 300 * units.kB, 0.2)
                 start = time.time()
                 dyn.run(args.steps)
                 end = time.time()
 
-                times.append((end - start)/(3600*24)  * 1e6/args.steps)
+                times.append((end - start) / (3600 * 24) * 1e6 / args.steps)
                 timers_list.append(copy.deepcopy(timers))
                 raw_times.append(end - start)
             all_trials.append(times)
@@ -284,5 +285,5 @@ if __name__ == "__main__":
             f.write(titles)
             all_trials = np.asarray(all_trials)
             for times, s in zip(all_trials, sizes):
-                    string = ' '.join(times.astype(str)) + f' {s}\n'
-                    f.write(string)
+                string = ' '.join(times.astype(str)) + f' {s}\n'
+                f.write(string)

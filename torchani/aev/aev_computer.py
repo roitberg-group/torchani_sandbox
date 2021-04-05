@@ -414,6 +414,23 @@ class AEVComputer(torch.nn.Module):
         sign12 = ((local_index12 < n).to(torch.int8) * 2) - 1
         return central_atom_index, local_index12 % n, sign12
 
+    def _screen_with_cutoff(self,
+                            cutoff: float,
+                            coordinates: Tensor,
+                            atom_index12: Tensor,
+                            shift_values: Tensor):
+        # used by subclasses
+        # screen neighbors that are further away than a given cutoff
+        vec = self._compute_difference_vector(coordinates,
+                                              atom_index12,
+                                              shift_values)
+        distances_sq = vec.pow(2).sum(-1)
+        close_indices = (distances_sq <= cutoff ** 2)
+        close_indices = close_indices.nonzero().flatten()
+        atom_index12 = atom_index12.index_select(1, close_indices)
+        shift_values = shift_values.index_select(0, close_indices)
+        return atom_index12, shift_values
+
 
 class AEVComputerForRepulsion(AEVComputer):
 
@@ -446,7 +463,21 @@ class AEVComputerForRepulsion(AEVComputer):
         if pbc.any():
             coordinates = map_to_central(coordinates, cell, pbc)
 
-        aev, distances = self._compute_aev(species, coordinates, atom_index12, shift_values)
+        # if the neighborlist uses a larger cutoff than the one needed for the
+        # AEVComputer then we must screen the values
+        if self.neighborlist.cutoff > self.radial_terms.cutoff:
+            # TODO: this is a hack to pass the correct neighborlist and
+            # distances to dispersion / repulsion interactions
+            distances = self._compute_difference_vector(coordinates, atom_index12,
+                                                  shift_values).norm(2, -1)
+            atom_index12_screen, shift_values_screen = self._screen_with_cutoff(self.radial_terms.cutoff.item(),
+                                                                  coordinates.detach(),
+                                                                  atom_index12,
+                                                                  shift_values.detach())
+
+            aev, _ = self._compute_aev(species, coordinates, atom_index12_screen, shift_values_screen)
+        else:
+            aev, distances = self._compute_aev(species, coordinates, atom_index12_screen, shift_values_screen)
         return SpeciesAEVForRepulsion(species, aev, atom_index12, distances)
 
     def _compute_aev(self, species: Tensor, coordinates: Tensor,
@@ -531,19 +562,3 @@ class AEVComputerBare(AEVComputer):
         aev = self._compute_aev(species, coordinates, atom_index12,
                 shift_values)
         return SpeciesAEV(species, aev)
-
-    def _screen_with_cutoff(self,
-                            cutoff: float,
-                            coordinates: Tensor,
-                            atom_index12: Tensor,
-                            shift_values: Tensor):
-        # screen neighbors that are further away than a given cutoff
-        vec = self._compute_difference_vector(coordinates,
-                                              atom_index12,
-                                              shift_values)
-        distances_sq = vec.pow(2).sum(-1)
-        close_indices = (distances_sq <= cutoff ** 2)
-        close_indices = close_indices.nonzero().flatten()
-        atom_index12 = atom_index12.index_select(1, close_indices)
-        shift_values = shift_values.index_select(0, close_indices)
-        return atom_index12, shift_values

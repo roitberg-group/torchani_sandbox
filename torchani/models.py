@@ -33,8 +33,9 @@ import torch
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
 from .nn import SpeciesConverter, SpeciesEnergies
-from .aev import AEVComputer, AEVComputerBare, CellList, CutoffSmooth, AEVComputerForRepulsion
+from .aev import AEVComputer, AEVComputerBare, CellList, CutoffSmooth, AEVComputerForRepulsion, CutoffCosine
 from .repulsion import RepulsionCalculator
+import warnings
 from .dispersion import DispersionD3
 
 
@@ -399,6 +400,7 @@ class BuiltinModelWithInteractions(BuiltinModel):
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         if self.periodic_table_index:
+            atomic_numbers, _ = species_coordinates
             species_coordinates = self.species_converter(species_coordinates)
 
         # check if unknown species are included
@@ -412,11 +414,11 @@ class BuiltinModelWithInteractions(BuiltinModel):
             assert self.periodic_table_index
             # NOTE: currently dispersion calculator takes in atomic numbers only,
             # so it needs to be wrapped
-            species_energies = self.dispersion_calculator((species_coordinates.species, species_energies.energies),
-                                                           atom_index12, distances)
-            species_energies = self.species_converter(species_energies)
-
-        return self.energy_shifter(species_energies)
+            species, energies = species_energies
+            _, energies = self.dispersion_calculator((atomic_numbers, energies),
+                                                               atom_index12, distances)
+        out = self.energy_shifter((species, energies))
+        return out
 
 
 class BuiltinEnsembleWithInteractions(BuiltinEnsemble):
@@ -446,11 +448,11 @@ class BuiltinEnsembleWithInteractions(BuiltinEnsemble):
             assert self.periodic_table_index
             # NOTE: currently dispersion calculator takes in atomic numbers only,
             # so it needs to be wrapped
-            species_energies = self.dispersion_calculator((atomic_numbers, species_energies.energies),
+            species, energies = species_energies
+            _, energies = self.dispersion_calculator((atomic_numbers, energies),
                                                            atom_index12, distances)
-            species_energies = self.species_converter(species_energies)
-
-        return self.energy_shifter(species_energies)
+        out = self.energy_shifter((species, energies))
+        return out
 
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -470,17 +472,17 @@ class BuiltinEnsembleWithInteractions(BuiltinEnsemble):
                 assert self.periodic_table_index
                 # NOTE: currently dispersion calculator takes in atomic numbers only,
                 # so it needs to be wrapped
-                species_energies = self.dispersion_calculator((atomic_numbers, species_energies.energies),
+                species, energies = species_energies
+                _, energies = self.dispersion_calculator((atomic_numbers, energies),
                                                                atom_index12, distances)
-                species_energies = self.species_converter(species_energies)
-            shifted_energies = species_energies.energies
+            shifted_energies = self.energy_shifter((species, energies)).energies
             member_outputs.append(shifted_energies.unsqueeze(0))
         return SpeciesEnergies(species, torch.cat(member_outputs, dim=0))
 
 
 def _build_neurochem_model(info_file_path, periodic_table_index=False,
         external_cell_list=False, model_index=None, torch_cell_list=False,
-        repulsion=False, adaptive_torch_cell_list=False, dispersion=False):
+        repulsion=False, adaptive_torch_cell_list=False, dispersion=False, dispersion_cutoff_function=None):
     from . import neurochem  # noqa
     # builder function that creates a BuiltinModel from a neurochem info path
     assert not (external_cell_list and torch_cell_list)
@@ -506,7 +508,11 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False,
             aev_computer = AEVComputerForRepulsion(**consts, neighborlist=CellList, cutoff_function=CutoffSmooth)
             aev_computer.neighborlist = CellList(aev_computer.radial_terms.cutoff, dynamic_update=True)
         else:
-            aev_computer = AEVComputerForRepulsion(**consts, cutoff_function=CutoffSmooth)
+            if repulsion:
+                warnings.warn("Make sure your model has been trained with a smooth cutoff!")
+                aev_computer = AEVComputerForRepulsion(**consts, cutoff_function=CutoffSmooth)
+            else:
+                aev_computer = AEVComputerForRepulsion(**consts, cutoff_function=CutoffCosine)
 
     if model_index is None:
         neural_networks = neurochem.load_model_ensemble(consts.species, ensemble_prefix, ensemble_size)
@@ -532,7 +538,7 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False,
         kwargs.update({'repulsion_calculator': RepulsionCalculator(cutoff)})
 
     if dispersion:
-        kwargs.update({'dispersion_calculator': DispersionD3()})
+        kwargs.update({'dispersion_calculator': DispersionD3(cutoff_function=dispersion_cutoff_function)})
 
     if model_index is None:
         if (torch_cell_list or adaptive_torch_cell_list) and not repulsion:
