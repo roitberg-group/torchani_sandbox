@@ -37,7 +37,6 @@ class RepulsionCalculator(torch.nn.Module):
     def forward(self, species_energies: Tensor, atom_index12: Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
 
         species, energies = species_energies
-        assert len(species) == 1, "Not implemented for batch calculations"
         assert distances.ndim == 1, "distances should be 1 dimensional"
         assert species.ndim == 2, "species_energies should be 2 dimensional"
         assert atom_index12.ndim == 2, "atom_index12 should be 2 dimensional"
@@ -47,6 +46,7 @@ class RepulsionCalculator(torch.nn.Module):
         # for a molecule or set of molecules
         # and atom_index12 holds all pairs of indices
         # species is of shape (C x Atoms)
+        num_molecules = species.shape[0]
         species12 = species.flatten()[atom_index12]
 
         # distances need to be in Bohr radii units (cutoff distance too for coherence)
@@ -65,7 +65,8 @@ class RepulsionCalculator(torch.nn.Module):
         if self.cutoff_function is not None:
             repulsion_energy *= self.cutoff_function(distances_bohr)
 
-        repulsion_energy = repulsion_energy.sum()
+        # reshape before
+        repulsion_energy = repulsion_energy.view(num_molecules, -1).sum(-1)
 
         energies += repulsion_energy
         return SpeciesEnergies(species, energies)
