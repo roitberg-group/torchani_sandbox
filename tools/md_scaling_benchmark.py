@@ -83,16 +83,16 @@ def plot_many(path_to_files, comment, show=False):
         assert len(std) == len(mean)
         assert len(std) == len(sizes)
         if '_clist_update_all_steps' in p.stem:
-            c = 'b'
-            l = "TorchANI + cell list (Updating every step)"
+            color = 'b'
+            label = "TorchANI + cell list (Updating every step)"
         elif 'clist_reuse' in p.stem:
-            c = 'r'
-            l = "TorchANI + cell list (Not Updating every step)"
+            color = 'r'
+            label = "TorchANI + cell list (Not Updating every step)"
         else:
-            c = 'g'
-            l = 'TorchANI'
+            color = 'g'
+            label = 'TorchANI'
         fmt = 's-'
-        ax.errorbar(x=sizes, y=mean, color=c, yerr=std * 2, ecolor='k', capsize=2, fmt=fmt, ms=4, label=l)
+        ax.errorbar(x=sizes, y=mean, color=color, yerr=std * 2, ecolor='k', capsize=2, fmt=fmt, ms=4, label=label)
     ax.set_xlabel('System size (atoms)')
     ax.set_ylabel('Walltime per ns (h)')
     ax.set_title('Benchmarks for ANI-1x model, water boxes')
@@ -247,14 +247,17 @@ if __name__ == "__main__":
                     species, coordinates, cell = tensor_from_xyz(r)
 
                 coordinates.requires_grad_()
-                calc = model.ase()
                 if args.jit:
+                    model = get_model(args.model, args.cell_list, args.model_index, args.adaptive_cell_list)
+                    calc = model.ase()
                     torch._C._jit_set_profiling_executor(False)
                     torch._C._jit_set_profiling_mode(False)  # this also has an effect
                     torch._C._jit_override_can_fuse_on_cpu(False)
                     torch._C._jit_set_texpr_fuser_enabled(False)  # this has an effect
                     torch._C._jit_set_nvfuser_enabled(False)
                     calc.model = torch.jit.script(calc.model)
+                else:
+                    calc = model.ase()
                 atoms_args = {'symbols': species.squeeze().tolist(),
                              'positions': coordinates.squeeze().tolist(),
                              'calculator': calc}
