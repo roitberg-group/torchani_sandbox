@@ -46,11 +46,6 @@ class RepulsionCalculator(torch.nn.Module):
         assert len(y_eff) == len(elements)
         assert len(alpha) == len(elements)
 
-        # krep for each pair is k=1.5-kA*kB*0.5 (1.5 or 1)
-        # y_eff = torch.tensor([1.105388, 4.231078, 5.242592, 5.784415])
-        # alpha = torch.tensor([2.213717, 1.247655, 1.682689, 2.165712])
-        # Vkrep = torch.tensor([1., 0., 0., 0.])
-
         # pre-calculate pairwise parameters
         y_ab = torch.outer(y_eff, y_eff)
         sqrt_alpha_ab = torch.sqrt(torch.outer(alpha, alpha))
