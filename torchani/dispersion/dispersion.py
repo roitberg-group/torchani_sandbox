@@ -71,6 +71,7 @@ class ZeroDamp(DampFunction):
             assert not kwargs['modified']
         assert self.sr6 is not None
         assert self.sr8 is not None
+        assert self.sr8 == 1.0  # this is fixed for all functionals
         # cutoff radii is a matrix of T x T where T are the possible atom types
         # and these cutoff radii are in Angstrom, so we convert to Bohr before
         # using
@@ -98,7 +99,7 @@ class ZeroDamp(DampFunction):
             # this is only added for the D3M(BJ) modified damp
             inner_term += cutoff_radii * self.beta
 
-        return distances.pow(order) * (1 + 6 * inner_term).pow(-alpha)
+        return distances.pow(order) * (1 + (6 * inner_term).pow(-alpha))
 
 
 class DispersionD3(torch.nn.Module):
