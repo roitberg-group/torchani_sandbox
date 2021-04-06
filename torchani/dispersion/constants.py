@@ -1,6 +1,7 @@
 import math
 import pickle
 from pathlib import Path
+from collections import defaultdict
 
 import torch
 
@@ -50,9 +51,9 @@ def get_c6_constants():
 
     # element 0 is actually a dummy element
     el = SUPPORTED_D3_ELEMENTS
-    # nonexistent values are filled with -1, in order to mask them, 
+    # nonexistent values are filled with -1, in order to mask them,
     # same as in Grimme et. al. code
-    c6_constants =      torch.full((el + 1, el + 1, max_refs, max_refs), -1.0)
+    c6_constants = torch.full((el + 1, el + 1, max_refs, max_refs), -1.0)
     c6_coordination_a = torch.full((el + 1, el + 1, max_refs, max_refs), -1.0)
     c6_coordination_b = torch.full((el + 1, el + 1, max_refs, max_refs), -1.0)
     assert ((c6_constants == -1.0) == (c6_coordination_a == -1.0)).all(), "All missing parameters are not equal"
@@ -120,7 +121,107 @@ def get_sqrt_empirical_charge():
     return sqrt_empirical_charge
 
 
-# constants for the density functional from psi4 source code, citations:
-#    A. Najib, L. Goerigk, J. Comput. Theory Chem., 14 5725, 2018)
-#    N. Mardirossian, M. Head-Gordon, Phys. Chem. Chem. Phys, 16, 9904, 2014
-df_constants = {'wB97X': {'s6': 1.000, 'a1': 0.0000, 's8': 0.2641, 'a2': 5.4959}}
+def get_df_constants():
+    # constants for the density functional from psi4 source code, citations:
+    #    A. Najib, L. Goerigk, J. Comput. Theory Chem., 14 5725, 2018)
+    #    N. Mardirossian, M. Head-Gordon, Phys. Chem. Chem. Phys, 16, 9904, 2014
+    df_constants = defaultdict(dict)
+    df_constants['wB97X'] = {'s6_bj': 1.000, 'a1': 0.0000, 's8_bj': 0.2641, 'a2': 5.4959}
+    # from Grimme's et al website directly:
+    # first D3Zero constants
+    # functional, s6_zero, sr6, s8_zero,
+    _zero_constants = """B1B95 1.0	1.613	1.868
+    B2GPPLYP 0.56	1.586	0.760
+    B3LYP	 1.0	1.261	1.703
+    B97-D	 1.0	0.892	0.909
+    BHLYP	 1.0	1.370	1.442
+    BLYP	 1.0	1.094	1.682
+    BP86	 1.0	1.139	1.683
+    BPBE	 1.0	1.087	2.033
+    mPWLYP	 1.0	1.239	1.098
+    PBE	 1.0	1.217	0.722
+    PBE0	 1.0	1.287	0.928
+    PW6B95	 1.0	1.532	0.862
+    PWB6K	 1.0	1.660	0.550
+    revPBE	 1.0	0.923	1.010
+    TPSS	 1.0	1.166	1.105
+    TPSS0	 1.0	1.252	1.242
+    TPSSh	 1.0	1.223	1.219
+    BOP	 1.0	0.929	1.975
+    MPW1B95	 1.0	1.605	1.118
+    MPWB1K	 1.0	1.671	1.061
+    OLYP	 1.0	0.806	1.764
+    OPBE	 1.0	0.837	2.055
+    oTPSS	 1.0	1.128	1.494
+    PBE38	 1.0	1.333	0.998
+    PBEsol	 1.0	1.345	0.612
+    REVSSB	 1.0	1.221	0.560
+    SSB	 1.0	1.215	0.663
+    B3PW91	 1.0	1.176	1.775
+    BMK	 1.0	1.931	2.168
+    CAMB3LYP 1.0	1.378	1.217
+    LCωPBE	 1.0	1.355	1.279
+    M052X	 1.0	1.417	0.00
+    M05	 1.0	1.373	0.595
+    M062X	 1.0	1.619	0.00
+    M06HF	 1.0	1.446	0.00
+    M06L	 1.0	1.581	0.00
+    M06	 1.0	1.325	0.00
+    HCTH120	 1.0	1.221	1.206
+    B2PLYP	 0.64	1.427	1.022
+    DSDBLYP	 0.50	1.569	0.705
+    PTPSS	 0.75	1.541	0.879
+    PWPB95	 0.82	1.557	0.705
+    revPBE0	 1.0	0.949	0.792
+    revPBE38 1.0	1.021	0.862
+    rPW86PBE 1.0	1.224	0.901"""
+    _zero_constants = _zero_constants.split('\n')
+    for line in _zero_constants:
+        df, s6_zero, sr6, s8_zero = line.split()
+        df_constants[df] = {'s6_zero': s6_zero, 'sr6': sr6, 's8_zero': s8_zero}
+    # now D3BJ constants
+    # functional, s6_bj, a1, s8_bj, a0
+    _bj_constants = """B1B95 1.000	0.2092	1.4507	5.5545
+    B2GPPLYP 0.560	0.0000	0.2597	6.3332
+    B3PW91	 1.000	0.4312	2.8524	4.4693
+    BHLYP	 1.000	0.2793	1.0354	4.9615
+    BMK	 1.000	0.1940	2.0860	5.9197
+    BOP	 1.000	0.4870	3.295	3.5043
+    BPBE	 1.000	0.4567	4.0728	4.3908
+    CAMB3LYP 1.000	0.3708	2.0674	5.4743
+    LCωPBE	 1.000	0.3919	1.8541	5.0897
+    MPW1B95	 1.000	0.1955	1.0508	6.4177
+    MPWB1K	 1.000	0.1474	0.9499	6.6223
+    mPWLYP	 1.000	0.4831	2.0077	4.5323
+    OLYP	 1.000	0.5299	2.6205	2.8065
+    OPBE	 1.000	0.5512	3.3816	2.9444
+    oTPSS	 1.000	0.4634	2.7495	4.3153
+    PBE38	 1.000	0.3995	1.4623	5.1405
+    PBEsol	 1.000	0.4466	2.9491	6.1742
+    PTPSS	 0.750	0.000	0.2804	6.5745
+    PWB6K	 1.000	0.1805	0.9383	7.7627
+    revSSB	 1.000	0.4720	0.4389	4.0986
+    SSB	 1.000	-0.0952	-0.1744	5.2170
+    TPSSh	 1.000	0.4529	2.2382	4.6550
+    HCTH120	 1.000	0.3563	1.0821	4.3359
+    B2PLYP	 0.640	0.3065	0.9147	5.0570
+    B3LYP	 1.000	0.3981	1.9889	4.4211
+    B97D	 1.000	0.5545	2.2609	3.2297
+    BLYP	 1.000	0.4298	2.6996	4.2359
+    BP86	 1.000	0.3946	3.2822	4.8516
+    DSDBLYP	 0.500	0.000	0.2130	6.0519
+    PBE0	 1.000	0.4145	1.2177	4.8593
+    PBE	 1.000	0.4289	0.7875	4.4407
+    PW6B95	 1.000	0.2076	0.7257	6.3750
+    PWPB95	 0.820	0.0000	0.2904	7.3141
+    revPBE0	 1.000	0.4679	1.7588	3.7619
+    revPBE38 1.000	0.4309	1.4760	3.9446
+    revPBE	 1.000	0.5238	2.3550	3.5016
+    rPW86PBE 1.000	0.4613	1.3845	4.5062
+    TPSS0	 1.000	0.3768	1.2576	4.5865
+    TPSS	 1.000	0.4535	1.9435	4.4752"""
+    _bj_constants = _bj_constants.split('\n')
+    for line in _bj_constants:
+        df, s6_bj, a1, s8_bj, a0 = line.split()
+        df_constants[df] = {'s6_bj': s6_bj, 'a1': a1, 's8_bj': s8_bj, 'a0': a0}
+    return df_constants

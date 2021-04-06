@@ -10,26 +10,28 @@ from ..nn import SpeciesEnergies
 from . import constants
 
 
-def _init_df_constants(df_constants, modified_damp):
-    if df_constants is None:
+def _init_df_constants(df_constants, functional):
+    assert not (df_constants and functional)
+
+    if (df_constants is None) and (functional is None):
         # by default constants are for BJ damp, for the wB97X density
         # functional
-        functional = 'wB97X'
-        if modified_damp:
-            functional += '_modified'
-        df_constants = constants.df_constants[functional]
-    return df_constants
+        return constants.get_df_constants()['wB97X']
+    elif functional is not None:
+        return constants.get_df_constants()[functional]
+    else:
+        return df_constants
 
 
 class DampFunction(torch.nn.Module):
     # D3M modifies parameters AND damp function for zero-damp and only
     # parameters for BJ damp cutoff radii are used for damp functions
-    def __init__(self, df_constants=None, modified=False):
+    def __init__(self, functional=None, df_constants=None, modified=False):
         super().__init__()
         modified = torch.tensor(modified, dtype=torch.bool)
         self.register_buffer("use_modified_damp", modified)
 
-        df_constants = _init_df_constants(df_constants, modified)
+        df_constants = _init_df_constants(df_constants, functional)
         df_constants = {k: torch.tensor(v) for k, v in df_constants.items()}
 
         self.register_buffer('sr6', df_constants.get('sr6', None))
@@ -107,6 +109,7 @@ class DispersionD3(torch.nn.Module):
     r"""Calculates the DFT-D3 dispersion corrections"""
     def __init__(self,
                  df_constants=None,
+                 functional=None,
                  damp='rational',
                  modified_damp=False, use_three_body=False, cutoff_function=None):
 
@@ -114,19 +117,21 @@ class DispersionD3(torch.nn.Module):
         # rational damp is becke-johnson
         assert not use_three_body, "Not yet implemented"
         assert damp in ['rational', 'zero'], 'Unsupported damp'
-        df_constants = _init_df_constants(df_constants, modified_damp)
+        df_constants = _init_df_constants(df_constants, functional)
 
-        self.register_buffer('s6', torch.tensor(df_constants['s6']))
-        self.register_buffer('s8', torch.tensor(df_constants['s8']))
+        if damp == 'rational':
+            self.register_buffer('s6', torch.tensor(df_constants['s6_bj']))
+            self.register_buffer('s8', torch.tensor(df_constants['s8_bj']))
+            self.damp_function = RationalDamp(df_constants=df_constants, modified=modified_damp)
+        else:
+            self.register_buffer('s6', torch.tensor(df_constants['s6_zero']))
+            self.register_buffer('s8', torch.tensor(df_constants['s8_zero']))
+            self.damp_function = ZeroDamp(df_constants=df_constants, modified=modified_damp)
+
         if self.s6 != 1.0:
             warnings.warn("The s6 parameter is not set to 1 in\
             D3, Are you sure this is what you want?  usually s6 should be set to\
             1.0 except for B2PLYP, where it is set to 0.5")
-
-        if damp == 'rational':
-            self.damp_function = RationalDamp(df_constants, modified_damp)
-        else:
-            self.damp_function = ZeroDamp(df_constants, modified_damp)
 
         self.cutoff_function = cutoff_function
         order6_constants, coordnums_a, coordnums_b = constants.get_c6_constants()
