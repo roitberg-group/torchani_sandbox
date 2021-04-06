@@ -1,4 +1,5 @@
 from typing import Tuple
+import warnings
 
 import torch
 from torch import Tensor
@@ -117,6 +118,10 @@ class DispersionD3(torch.nn.Module):
 
         self.register_buffer('s6', torch.tensor(df_constants['s6']))
         self.register_buffer('s8', torch.tensor(df_constants['s8']))
+        if self.s6 != 1.0:
+            warnings.warn("The s6 parameter is not set to 1 in\
+            D3, Are you sure this is what you want?  usually s6 should be set to\
+            1.0 except for B2PLYP, where it is set to 0.5")
 
         if damp == 'rational':
             self.damp_function = RationalDamp(df_constants, modified_damp)
