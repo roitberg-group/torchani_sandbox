@@ -26,6 +26,7 @@ class SpeciesAEV(NamedTuple):
     species: Tensor
     aevs: Tensor
 
+
 class SpeciesAEVForRepulsion(NamedTuple):
     species: Tensor
     aevs: Tensor
@@ -263,8 +264,8 @@ class AEVComputer(torch.nn.Module):
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
 
-        # the coordinates that are input into the neighborlist are **not** assumed to be 
-        # mapped into the central cell for pbc calculations, 
+        # the coordinates that are input into the neighborlist are **not** assumed to be
+        # mapped into the central cell for pbc calculations,
         # and **in general are not**
         atom_index12, shift_values = self.neighborlist(species, coordinates, cell, pbc)
 
@@ -423,8 +424,8 @@ class AEVComputerForRepulsion(AEVComputer):
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
 
-        # the coordinates that are input into the neighborlist are **not** assumed to be 
-        # mapped into the central cell for pbc calculations, 
+        # the coordinates that are input into the neighborlist are **not** assumed to be
+        # mapped into the central cell for pbc calculations,
         # and **in general are not**
         atom_index12, shift_values = self.neighborlist(species, coordinates, cell, pbc)
 
@@ -460,6 +461,7 @@ class AEVComputerForRepulsion(AEVComputer):
 
         return torch.cat([radial_aev, angular_aev], dim=-1), distances
 
+
 class AEVComputerBare(AEVComputer):
 
     def __init__(self, *args, **kwargs):
@@ -474,7 +476,7 @@ class AEVComputerBare(AEVComputer):
         assert kwargs['neighborlist'] is None, \
                 "AEVComputerBare doesn't use a neighborlist"
         assert not kwargs['use_cuda_extension'], \
-                "AEVComputerBare doesn't suport cuaev"
+                "AEVComputerBare doesn't support cuaev"
         super().__init__(*args, **kwargs)
 
     def forward(self, input_: Tuple[Tensor, Tensor],
@@ -509,11 +511,10 @@ class AEVComputerBare(AEVComputer):
         # first we prescreen the input neighborlist in case some of the values
         # are at distances larger than the cutoff for the radial terms this may
         # happen if the neighborlist uses some sort of skin value to rebuild
-        atom_index12, shift_values = self._screen_with_cutoff(
-                                self.radial_terms.cutoff.item(),
-                                coordinates.detach(),
-                                atom_index12,
-                                shift_values.detach())
+        atom_index12, shift_values = self._screen_with_cutoff(self.radial_terms.cutoff.item(),
+                                                              coordinates.detach(),
+                                                              atom_index12,
+                                                              shift_values.detach())
 
         aev = self._compute_aev(species, coordinates, atom_index12,
                 shift_values)
