@@ -1,5 +1,4 @@
 import math
-import sys
 from typing import Tuple, Optional, NamedTuple, List
 import warnings
 import importlib_metadata
@@ -11,6 +10,7 @@ from .cutoffs import CutoffCosine
 from .aev_terms import AngularTerms, RadialTerms
 from .neighbors import FullPairwise, BaseNeighborlist
 from ..utils import map_to_central, cumsum_from_zero
+from ..compat import Final
 
 cuaev_is_installed = 'torchani.cuaev' in importlib_metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
@@ -20,16 +20,6 @@ if cuaev_is_installed:
     from .. import cuaev  # type: ignore # noqa: F401
 else:
     warnings.warn("cuaev not installed")
-
-if sys.version_info[:2] < (3, 7):
-
-    class FakeFinal:
-        def __getitem__(self, x):
-            return x
-
-    Final = FakeFinal()
-else:
-    from torch.jit import Final
 
 
 class SpeciesAEV(NamedTuple):

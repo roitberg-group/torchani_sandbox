@@ -1,21 +1,11 @@
 import math
-import sys
-from typing import Tuple, Optional
+from typing import Tuple
 
 import torch
 from torch import Tensor
 from torch.nn import functional
 from ..utils import map_to_central
-
-if sys.version_info[:2] < (3, 7):
-
-    class FakeFinal:
-        def __getitem__(self, x):
-            return x
-
-    Final = FakeFinal()
-else:
-    from torch.jit import Final
+from ..compat import Final
 
 
 class BaseNeighborlist(torch.nn.Module):
@@ -91,8 +81,8 @@ class FullPairwise(BaseNeighborlist):
         super().__init__(cutoff)
         self.register_buffer('default_shift_values', torch.tensor(0.0))
 
-    def forward(self, species: Tensor, 
-                      coordinates: Tensor, 
+    def forward(self, species: Tensor,
+                      coordinates: Tensor,
                       cell: Tensor,
                       pbc: Tensor) -> Tuple[Tensor, Tensor]:
         """Arguments:
@@ -203,7 +193,6 @@ class CellList(BaseNeighborlist):
                  constant_volume=False):
         super().__init__(cutoff)
 
-
         # right now I will only support this, and the extra neighbors are
         # hardcoded, but full support for arbitrary buckets per cutoff is possible
         assert buckets_per_cutoff == 1, "Cell list currently only supports one bucket per cutoff"
@@ -230,10 +219,10 @@ class CellList(BaseNeighborlist):
         if skin is None:
             if dynamic_update:
                 # default value for dynamically updated neighborlist
-                skin = 1.0  
+                skin = 1.0
             else:
                 # default value for non dynamically updated neighborlist
-                skin = 0.0  
+                skin = 0.0
         self.register_buffer('skin', torch.tensor(skin))
 
         # only used for dynamic update
@@ -285,8 +274,8 @@ class CellList(BaseNeighborlist):
             [1, 1, 0],  # 16
             [1, 0, 0],  # 17
         ], dtype=torch.long)
-        translation_displacement_indices = torch.cat((torch.tensor([[0, 0, 0]], dtype=torch.long), 
-                                                     self.vector_index_displacement, 
+        translation_displacement_indices = torch.cat((torch.tensor([[0, 0, 0]], dtype=torch.long),
+                                                     self.vector_index_displacement,
                                                      extra_translation_displacements), dim=0)
         self.translation_displacement_indices = translation_displacement_indices
 
@@ -306,8 +295,8 @@ class CellList(BaseNeighborlist):
         self.register_buffer('cell_variables_are_set', torch.tensor(False, dtype=torch.bool))
         self.register_buffer('old_values_are_cached', torch.tensor(False, dtype=torch.bool))
 
-    def forward(self, species: Tensor, 
-                coordinates: Tensor, 
+    def forward(self, species: Tensor,
+                coordinates: Tensor,
                 cell: Tensor,
                 pbc: Tensor) -> Tuple[Tensor, Tensor]:
 
@@ -333,7 +322,7 @@ class CellList(BaseNeighborlist):
         else:
             # The cell list is calculated with a skin here. Since coordinates are
             # fractionalized before cell calculation, it is not needed for them to
-            # be imaged to the central cell, they can lie outside the cell, so 
+            # be imaged to the central cell, they can lie outside the cell, so
             # they don't need to be wrapped in this step
             atom_pairs, shift_indices = self._calculate_cell_list(coordinates)
             # This is done in order to prevent unnecessary rebuilds of the
@@ -343,7 +332,7 @@ class CellList(BaseNeighborlist):
 
         shift_values = shift_indices.to(cell.dtype) @ cell
 
-        # Before the screening step we wrap the coordinates to the central cell, 
+        # Before the screening step we wrap the coordinates to the central cell,
         # same as with full pairwise calculation
         coordinates = map_to_central(coordinates, cell.detach(), pbc)
 
@@ -355,8 +344,8 @@ class CellList(BaseNeighborlist):
         # rebuilt.  rebuilds happen only if it can't be guaranteed that the
         # cached neighborlist holds ALL atoms
         atom_pairs, shift_values = self._screen_with_cutoff(self.cutoff,
-                                                            coordinates, 
-                                                            atom_pairs, 
+                                                            coordinates,
+                                                            atom_pairs,
                                                             shift_values)
         return atom_pairs, shift_values
 
@@ -419,7 +408,7 @@ class CellList(BaseNeighborlist):
         upper = torch.repeat_interleave(imidx_from_atidx.squeeze(),
                                         neighborhood_count)
         lower, between_pairs_translations = self._get_lower_between_image_pairs(neighbor_count,
-                                                                               neighbor_cumcount, 
+                                                                               neighbor_cumcount,
                                                                                max_in_bucket,
                                                                                neighbor_translation_types)
         assert lower.shape == upper.shape
@@ -438,8 +427,6 @@ class CellList(BaseNeighborlist):
         assert shift_values.shape[0] == atom_pairs.shape[1]
 
         return atom_pairs, shift_indices
-
-
 
     def _setup_variables(self, cell: Tensor) -> Tuple[Tensor, Tensor]:
         current_device = cell.device
@@ -802,8 +789,8 @@ class CellList(BaseNeighborlist):
             1, atoms, neighbors)
         return neighbor_flat_indices, neighbor_translation_types
 
-    def _cache_values(self, atom_pairs: Tensor, 
-                            shift_indices: Tensor, 
+    def _cache_values(self, atom_pairs: Tensor,
+                            shift_indices: Tensor,
                             coordinates: Tensor):
 
         self.old_atom_pairs = atom_pairs.detach()
@@ -817,8 +804,8 @@ class CellList(BaseNeighborlist):
     def reset_cached_values(self):
         dtype = self.cell_diagonal.dtype
         device = self.cell_diagonal.device
-        self._cache_values(torch.zeros(1, dtype=torch.long, device=device), 
-                           torch.zeros(1, dtype=torch.long, device=device), 
+        self._cache_values(torch.zeros(1, dtype=torch.long, device=device),
+                           torch.zeros(1, dtype=torch.long, device=device),
                            torch.zeros(1, dtype=dtype, device=device))
         self.old_values_are_cached = torch.tensor(False, dtype=torch.bool, device=device)
 
