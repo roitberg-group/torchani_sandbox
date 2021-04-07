@@ -838,30 +838,30 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
 
 template <int ATOM_I_PER_BLOCK>
 __global__ void cutoffSelect(
-    int* __restrict__ atomJ,
-    float* __restrict__ distJ,
+    const int* __restrict__ atomJ,
+    const float* __restrict__ distJ,
     const AtomI* __restrict__ atom_i,
     int* __restrict__ radial_atomJ,
     float* __restrict__ radial_distJ,
     int* __restrict__ angular_atomJ,
     float* __restrict__ angular_distJ,
-    const int* __restrict__ nums_per_row,
-    const int* __restrict__ startidx_per_row,
-    float new_cutoff,
-    int* __restrict__ new_nums_per_row,
-    int num_rows,
+    const int* __restrict__ radial_numJPerI,
+    const int* __restrict__ startIdxPerI,
+    float Rca,
+    int* __restrict__ angular_numJPerI,
+    int num_atomI,
     int max_natoms_per_mol) {
   __shared__ int s_new_pcounter_i[ATOM_I_PER_BLOCK];
   __shared__ int s_num_max;
   int gi = blockIdx.x * blockDim.y + threadIdx.y;
-  if (gi >= num_rows)
+  if (gi >= num_atomI)
     return;
 
   AtomI aI = atom_i[gi];
   int i = aI.i;
   int mol_idx = aI.midx;
-  int jnum = nums_per_row[gi];
-  int start_i = startidx_per_row[gi];
+  int jnum = radial_numJPerI[gi];
+  int start_i = startIdxPerI[gi];
   int ii = threadIdx.y;
   int idx = blockDim.x * threadIdx.y + threadIdx.x;
   int natom_pairs = max_natoms_per_mol * (max_natoms_per_mol - 1);
@@ -869,7 +869,7 @@ __global__ void cutoffSelect(
   if (idx < ATOM_I_PER_BLOCK) {
     s_new_pcounter_i[idx] = 0;
     int ii = blockIdx.x * blockDim.y + idx;
-    int num_max = ii < num_rows ? nums_per_row[ii] : 0;
+    int num_max = ii < num_atomI ? radial_numJPerI[ii] : 0;
 
     for (int offset = 16; offset > 0; offset /= 2) {
       num_max = max(num_max, __shfl_down_sync(0xFFFFFFFF, num_max, offset));
@@ -881,12 +881,11 @@ __global__ void cutoffSelect(
   __syncthreads();
 
   for (int jj = threadIdx.x; jj < s_num_max && jj < jnum; jj += blockDim.x) {
-    // printf("cutoff1, mol: %d, Rij: %f\n", mol_idx, d.Rij);
     int j = atomJ[natom_pairs * mol_idx + i * (max_natoms_per_mol - 1) + jj];
     float dist = distJ[natom_pairs * mol_idx + i * (max_natoms_per_mol - 1) + jj];
     radial_atomJ[start_i + jj] = j;
     radial_distJ[start_i + jj] = dist;
-    if (dist <= new_cutoff) {
+    if (dist <= Rca) {
       int pidx = atomicAdd(&s_new_pcounter_i[ii], 1);
       angular_atomJ[start_i + pidx] = j;
       angular_distJ[start_i + pidx] = dist;
@@ -895,8 +894,8 @@ __global__ void cutoffSelect(
   __syncthreads();
 
   gi = idx + blockIdx.x * blockDim.y;
-  if (idx < blockDim.y && gi < num_rows) {
-    new_nums_per_row[gi] = s_new_pcounter_i[idx];
+  if (idx < blockDim.y && gi < num_atomI) {
+    angular_numJPerI[gi] = s_new_pcounter_i[idx];
   }
 }
 
@@ -938,6 +937,7 @@ int cubDeviceSelectIf(const DataT* d_in, DataT* d_out, int num_items, LambdaOpT 
       d_temp_storage, temp_storage_bytes, d_in, d_out, d_num_selected_out, num_items, select_op, stream);
 
   int num_selected = 0;
+  // TODO cudaStreamSynchronize is slow
   cudaMemcpyAsync(&num_selected, d_num_selected_out, sizeof(int), cudaMemcpyDefault, stream);
   cudaStreamSynchronize(stream);
 
@@ -965,6 +965,7 @@ int cubDeviceSelectFlagged(const DataT* d_in, DataT* d_out, int num_items, char*
       d_temp_storage, temp_storage_bytes, d_in, d_flags, d_out, d_num_selected_out, num_items, stream);
 
   int num_selected = 0;
+  // TODO cudaStreamSynchronize is slow
   cudaMemcpyAsync(&num_selected, d_num_selected_out, sizeof(int), cudaMemcpyDefault, stream);
   cudaStreamSynchronize(stream);
 
@@ -990,6 +991,7 @@ DataT cubMax(const DataT* d_in, int num_items, cudaStream_t stream) {
   cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, d_in, d_out, num_items, stream);
 
   DataT maxVal = 0;
+  // TODO cudaStreamSynchronize is slow
   cudaMemcpyAsync(&maxVal, d_out, sizeof(DataT), cudaMemcpyDefault, stream);
   cudaStreamSynchronize(stream);
 
@@ -1015,6 +1017,7 @@ DataT cubSum(const DataT* d_in, int num_items, cudaStream_t stream) {
   cub::DeviceReduce::Sum(d_temp_storage, temp_storage_bytes, d_in, d_out, num_items, stream);
 
   DataT sumVal = 0;
+  // TODO cudaStreamSynchronize is slow
   cudaMemcpyAsync(&sumVal, d_out, sizeof(DataT), cudaMemcpyDefault, stream);
   cudaStreamSynchronize(stream);
 
