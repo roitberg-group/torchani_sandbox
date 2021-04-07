@@ -220,7 +220,6 @@ __global__ void pairwiseDistanceSingleMolecule(
   }
 }
 
-// TODO: TILEX is 8 for ANI1x, 4 for ANI2x
 template <
     int BLOCK_X,
     int BLOCK_Y,
@@ -317,13 +316,12 @@ __global__ void cuAngularAEVs(
   }
   __syncthreads();
 
-  // short2 tile = make_short2(laneIdx % TILEX, laneIdx / TILEX);
-  short2 tile = make_short2(laneIdx % TILEY, laneIdx / TILEY);
+  short2 tile = make_short2(laneIdx % TILEX, laneIdx / TILEX);
 
-  for (int n = threadIdx.y * TILEX + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
-       n += blockDim.y * TILEX) {
+  for (int n = threadIdx.y * TILEY + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
+       n += blockDim.y * TILEY) {
     // store 1 blocksize of theta to share mem
-    if (n % BLOCK_SIZE < BLOCK_Y * TILEX) { // only run once for every block_x iterations
+    if (n % BLOCK_SIZE < BLOCK_Y * TILEY) { // only run once for every block_x iterations
       __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
@@ -359,7 +357,7 @@ __global__ void cuAngularAEVs(
 
       IndexT subaev_offset = angular_sublength * csubaev_offsets(type_j, type_k, num_species);
 
-      for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILEY) {
+      for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILEX) {
         DataT ShfA = __ldg(&ShfA_t[ishfr]);
         DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
 
@@ -505,13 +503,12 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
   }
   __syncthreads();
 
-  // short2 tile = make_short2(laneIdx % TILEX, laneIdx / TILEX);
-  short2 tile = make_short2(laneIdx % TILEY, laneIdx / TILEY);
+  short2 tile = make_short2(laneIdx % TILEX, laneIdx / TILEX);
   const DataT tc = 0.95f; // theta constant factor
 
-  for (int n = threadIdx.y * TILEX + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
-       n += blockDim.y * TILEX) {
-    if (n % BLOCK_SIZE < BLOCK_Y * TILEX) { // only run once for every block_x iterations
+  for (int n = threadIdx.y * TILEY + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
+       n += blockDim.y * TILEY) {
+    if (n % BLOCK_SIZE < BLOCK_Y * TILEY) { // only run once for every block_x iterations
       __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
@@ -557,7 +554,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
       float3 grad_vij = make_float3(0.f, 0.f, 0.f);
       float3 grad_vik = make_float3(0.f, 0.f, 0.f);
 
-      for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILEY) {
+      for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILEX) {
         DataT ShfA = __ldg(&ShfA_t[ishfr]);
         DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
         DataT grad_factor2_dist = -EtaA * (Rijk - ShfA) * factor2;
@@ -572,21 +569,21 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
           DataT grad_factor1_theta = -0.5f * Zeta * __powf((1 + cos_theta_ShfZ) / 2, Zeta - 1) * sin_theta_ShfZ;
 
           DataT a = grad_factor1_theta * factor2 * fc_ijk;
-          DataT b = factor1 / Rij * (grad_factor2_dist * fc_ijk + factor2 * fc_ik * grad_fc_ij);
-          DataT c = factor1 / Rik * (grad_factor2_dist * fc_ijk + factor2 * fc_ij * grad_fc_ik);
+          DataT bj = factor1 / Rij * (grad_factor2_dist * fc_ijk + factor2 * fc_ik * grad_fc_ij);
+          DataT bk = factor1 / Rik * (grad_factor2_dist * fc_ijk + factor2 * fc_ij * grad_fc_ik);
 
           DataT grad_vij_x =
-              2.0f * (a * vij_factor * (svec[jj].x * vij_vik_dot - svec[kk].x * Rij * Rij) + svec[jj].x * b);
+              2.0f * (a * vij_factor * (svec[jj].x * vij_vik_dot - svec[kk].x * Rij * Rij) + svec[jj].x * bj);
           DataT grad_vij_y =
-              2.0f * (a * vij_factor * (svec[jj].y * vij_vik_dot - svec[kk].y * Rij * Rij) + svec[jj].y * b);
+              2.0f * (a * vij_factor * (svec[jj].y * vij_vik_dot - svec[kk].y * Rij * Rij) + svec[jj].y * bj);
           DataT grad_vij_z =
-              2.0f * (a * vij_factor * (svec[jj].z * vij_vik_dot - svec[kk].z * Rij * Rij) + svec[jj].z * b);
+              2.0f * (a * vij_factor * (svec[jj].z * vij_vik_dot - svec[kk].z * Rij * Rij) + svec[jj].z * bj);
           DataT grad_vik_x =
-              2.0f * (a * vik_factor * (svec[kk].x * vij_vik_dot - svec[jj].x * Rik * Rik) + svec[kk].x * c);
+              2.0f * (a * vik_factor * (svec[kk].x * vij_vik_dot - svec[jj].x * Rik * Rik) + svec[kk].x * bk);
           DataT grad_vik_y =
-              2.0f * (a * vik_factor * (svec[kk].y * vij_vik_dot - svec[jj].y * Rik * Rik) + svec[kk].y * c);
+              2.0f * (a * vik_factor * (svec[kk].y * vij_vik_dot - svec[jj].y * Rik * Rik) + svec[kk].y * bk);
           DataT grad_vik_z =
-              2.0f * (a * vik_factor * (svec[kk].z * vij_vik_dot - svec[jj].z * Rik * Rik) + svec[kk].z * c);
+              2.0f * (a * vik_factor * (svec[kk].z * vij_vik_dot - svec[jj].z * Rik * Rik) + svec[kk].z * bk);
 
           if (is_double_backward) {
             int atomj_idx = atomJ[start_idx + jj];
@@ -625,7 +622,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
       spos_i_grad.y += (-grad_vij.y - grad_vik.y);
       spos_i_grad.z += (-grad_vij.z - grad_vik.z);
 
-      for (int offset = 4; offset > 0; offset /= 2) {
+      for (int offset = TILEX / 2; offset > 0; offset /= 2) {
         grad_vij.x += __shfl_down_sync(0xFFFFFFFF, grad_vij.x, offset);
         grad_vij.y += __shfl_down_sync(0xFFFFFFFF, grad_vij.y, offset);
         grad_vij.z += __shfl_down_sync(0xFFFFFFFF, grad_vij.z, offset);
@@ -636,7 +633,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
 
       // TODO Bottleneck
       // bank confilct or atomicAdd?
-      if (laneIdx % TILEY == 0) {
+      if (laneIdx % TILEX == 0) {
         atomicAdd(&spos_j_grad[jj].x, grad_vij.x);
         atomicAdd(&spos_j_grad[jj].y, grad_vij.y);
         atomicAdd(&spos_j_grad[jj].z, grad_vij.z);
