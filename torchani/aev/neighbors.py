@@ -1,18 +1,8 @@
 import torch
 import math
 from torch import Tensor
-import sys
-from typing import Tuple, Optional
-
-if sys.version_info[:2] < (3, 7):
-
-    class FakeFinal:
-        def __getitem__(self, x):
-            return x
-
-    Final = FakeFinal()
-else:
-    from torch.jit import Final
+from typing import Tuple
+from ..compat import Final
 
 
 class BaseNeighborlist(torch.nn.Module):
