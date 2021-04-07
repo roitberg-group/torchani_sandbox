@@ -226,8 +226,8 @@ template <
     typename SpeciesT,
     typename DataT,
     typename IndexT = int,
-    int TILEX = 4,
-    int TILEY = 8>
+    int TILE_SIZE = 4,
+    int TILE_PER_WARP = 8>
 __global__ void cuAngularAEVs(
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
     const torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> pos_t,
@@ -316,12 +316,12 @@ __global__ void cuAngularAEVs(
   }
   __syncthreads();
 
-  short2 tile = make_short2(laneIdx % TILEX, laneIdx / TILEX);
+  short2 tile = make_short2(laneIdx % TILE_SIZE, laneIdx / TILE_SIZE);
 
-  for (int n = threadIdx.y * TILEY + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
-       n += blockDim.y * TILEY) {
+  for (int n = threadIdx.y * TILE_PER_WARP + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
+       n += blockDim.y * TILE_PER_WARP) {
     // store 1 blocksize of theta to share mem
-    if (n % BLOCK_SIZE < BLOCK_Y * TILEY) { // only run once for every block_x iterations
+    if (n % BLOCK_SIZE < BLOCK_Y * TILE_PER_WARP) { // only run once for every block_x iterations
       __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
@@ -357,7 +357,7 @@ __global__ void cuAngularAEVs(
 
       IndexT subaev_offset = angular_sublength * csubaev_offsets(type_j, type_k, num_species);
 
-      for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILEX) {
+      for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILE_SIZE) {
         DataT ShfA = __ldg(&ShfA_t[ishfr]);
         DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
 
@@ -389,8 +389,8 @@ template <
     typename SpeciesT,
     typename DataT,
     typename IndexT = int,
-    int TILEX = 4,
-    int TILEY = 8>
+    int TILE_SIZE = 4,
+    int TILE_PER_WARP = 8>
 __global__ void cuAngularAEVs_backward_or_doublebackward(
     torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
     torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> pos_t,
@@ -503,12 +503,12 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
   }
   __syncthreads();
 
-  short2 tile = make_short2(laneIdx % TILEX, laneIdx / TILEX);
+  short2 tile = make_short2(laneIdx % TILE_SIZE, laneIdx / TILE_SIZE);
   const DataT tc = 0.95f; // theta constant factor
 
-  for (int n = threadIdx.y * TILEY + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
-       n += blockDim.y * TILEY) {
-    if (n % BLOCK_SIZE < BLOCK_Y * TILEY) { // only run once for every block_x iterations
+  for (int n = threadIdx.y * TILE_PER_WARP + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
+       n += blockDim.y * TILE_PER_WARP) {
+    if (n % BLOCK_SIZE < BLOCK_Y * TILE_PER_WARP) { // only run once for every block_x iterations
       __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
@@ -554,7 +554,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
       float3 grad_vij = make_float3(0.f, 0.f, 0.f);
       float3 grad_vik = make_float3(0.f, 0.f, 0.f);
 
-      for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILEX) {
+      for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILE_SIZE) {
         DataT ShfA = __ldg(&ShfA_t[ishfr]);
         DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
         DataT grad_factor2_dist = -EtaA * (Rijk - ShfA) * factor2;
@@ -622,7 +622,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
       spos_i_grad.y += (-grad_vij.y - grad_vik.y);
       spos_i_grad.z += (-grad_vij.z - grad_vik.z);
 
-      for (int offset = TILEX / 2; offset > 0; offset /= 2) {
+      for (int offset = TILE_SIZE / 2; offset > 0; offset /= 2) {
         grad_vij.x += __shfl_down_sync(0xFFFFFFFF, grad_vij.x, offset);
         grad_vij.y += __shfl_down_sync(0xFFFFFFFF, grad_vij.y, offset);
         grad_vij.z += __shfl_down_sync(0xFFFFFFFF, grad_vij.z, offset);
@@ -633,7 +633,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
 
       // TODO Bottleneck
       // bank confilct or atomicAdd?
-      if (laneIdx % TILEX == 0) {
+      if (laneIdx % TILE_SIZE == 0) {
         atomicAdd(&spos_j_grad[jj].x, grad_vij.x);
         atomicAdd(&spos_j_grad[jj].y, grad_vij.y);
         atomicAdd(&spos_j_grad[jj].z, grad_vij.z);
