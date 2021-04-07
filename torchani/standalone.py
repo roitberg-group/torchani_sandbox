@@ -3,6 +3,8 @@ from .utils import map_to_central
 import torch
 from torch import Tensor
 from typing import Tuple, Optional
+from .compat import Final
+from .nn import SpeciesConverter
 
 
 class StandalonePairwiseWrapper(torch.nn.Module):
@@ -12,10 +14,15 @@ class StandalonePairwiseWrapper(torch.nn.Module):
     # "repulsion" and "dispersion" computers
     # IMPORTANT NOTE: This should be inherited from FIRST (leftmost in inheritance list)
     # for the scheme to work properly
+    periodic_table_index: Final[bool]
+
     def __init__(self, *args, **kwargs):
+        supported_species = kwargs.get('elements', ('H', 'C', 'N', 'O'))
+        self.periodic_table_index = kwargs.pop('periodic_table_index', False)
         neighborlist = kwargs.pop('neighborlist', FullPairwise)
         cutoff = kwargs.pop('neighborlist_cutoff', 5.2)
         super().__init__(*args, **kwargs)
+        self.species_converter = SpeciesConverter(supported_species)
         # neighborlist uses radial cutoff only
         self.neighborlist = neighborlist(cutoff) if neighborlist is not None else BaseNeighborlist(cutoff)
         self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
@@ -41,6 +48,8 @@ class StandalonePairwiseWrapper(torch.nn.Module):
     def forward(self, species_coordinates: Tuple[Tensor, Tensor], cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
         species_coordinates, cell, pbc = self._validate_inputs(species_coordinates, cell, pbc)
+        if self.periodic_table_index:
+            species_coordinates = self.species_converter(species_coordinates)
         species, coordinates = species_coordinates
 
         # the coordinates that are input into the neighborlist are **not** assumed to be

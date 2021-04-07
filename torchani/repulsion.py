@@ -64,7 +64,7 @@ class RepulsionCalculator(torch.nn.Module):
 
         species, energies = species_energies
         assert distances.ndim == 1, "distances should be 1 dimensional"
-        assert species.ndim == 2, "species_energies should be 2 dimensional"
+        assert species.ndim == 2, "species should be 2 dimensional"
         assert atom_index12.ndim == 2, "atom_index12 should be 2 dimensional"
         assert len(distances) == atom_index12.shape[1]
 
