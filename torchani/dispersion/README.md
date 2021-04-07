@@ -339,47 +339,54 @@ Orca includes this functionals with the keywords:
 ## Summary
 
 As a summary the following functionals are available in orca and gaussian, and
-they have the following "nonlocal" corrections (I will put D3 and VV10 in the
-same bag here):
+they have the following "nonlocal" corrections (I will put D3 D2"modified"and
+VV10 in the same bag here):
 
-Functional name , paper authors, year, density functional part, Orca keyword, Gaussian16 keyword, Nonlocal correction, Fitted with NL term?, Relevant DOI
+Functional name , paper authors, year,  DF part, Orca 4.2 keyword, Gaussian16 keyword, Nonlocal correction, Fitted with NL term?, Relevant DOI
 
-wB97              Chai+HGor_1  2008             wB97           wB97         wB97                  None                  No                       10.1039/b810189b
-wB97X             Chai+HGor_1  2008             wB97X          wB97X        wB97X                 None                  No                       10.1039/b810189b
-wB97X-D           Chai+HGor_2  2008             wB97X'         -            wB97XD                D2mod                 yes, with D2mod          10.1039/b810189b
-wB97X-D3          Sheng+Chai   2013             wB97X''        wB97X-D3       -                   D3Zero                yes, with D3Zero         10.1021/ct300715s
-wB97X-V           Mard+HGor_1  2014             wB97X_evo      wB97X-V        -                   VV10                  yes, with VV10           10.1039/C3CP54374A
-B97M-V            Mard+HGor_2  2015             B97X_com       B97M-V         -                   VV10                  yes, with VV10           10.1063/1.4907719
-wB97M-V           Mard+HGor_3  2016             wB97X_com      wB97M-V        -                   VV10                  yes, with VV10           10.1063/1.4952647
-wB97M(2)          Mard+HGor_4  2018             wB97X_com2      -             -                   VV10                  yes, with VV10           10.1063/1.5025226 
-wB97X-D3(BJ)      Naj+Goer     2018             wB97X_evo      wB97X-D3BJ     -                   D3BJ                  yes, with VV10           10.1021/acs.jctc.8b00842
-wB97M-D3(BJ)      Naj+Goer     2018             wB97X_com      wB97M-D3BJ     -                   D3BJ                  yes, with VV10           10.1021/acs.jctc.8b00842
-B97M-D3(BJ)       Naj+Goer     2018             B97X_com       B97M-D3BJ      -                   D3BJ                  yes, with VV10           10.1021/acs.jctc.8b00842
-wB97M-D3(0)       Naj+Goer     2018             wB97X_com       -             -                   D3Zero                yes, with VV10           10.1021/acs.jctc.8b00842
-B97M-D3(0)        Naj+Goer     2018             B97X_com        -             -                   D3Zero                yes, with VV10           10.1021/acs.jctc.8b00842
+wB97              Chai+HGor_1  2008      wB97           wB97         wB97                  None                  No                       10.1039/b810189b
+wB97X             Chai+HGor_1  2008      wB97X          wB97X        wB97X                 None                  No                       10.1039/b810189b
+wB97X-D           Chai+HGor_2  2008      wB97X'         -            wB97XD                D2mod                 yes, with D2mod          10.1039/b810189b
 
+wB97X-D3          Sheng+Chai   2013      wB97X''        wB97X-D3       -                   D3Zero                yes, with D3Zero         10.1021/ct300715s
+
+wB97X-V           Mard+HGor_1  2014      wB97X_evo      wB97X-V        -                   VV10                  yes, with VV10           10.1039/C3CP54374A
+B97M-V            Mard+HGor_2  2015      B97X_com       B97M-V         -                   VV10                  yes, with VV10           10.1063/1.4907719
+wB97M-V           Mard+HGor_3  2016      wB97X_com      wB97M-V        -                   VV10                  yes, with VV10           10.1063/1.4952647
+wB97M(2)          Mard+HGor_4  2018      wB97X_com'       -            -                   VV10                  yes, with VV10           10.1063/1.5025226 
+
+wB97X-D3(BJ)      Naj+Goer     2018      wB97X_evo      wB97X-D3BJ     -                   D3BJ                  yes, with VV10           10.1021/acs.jctc.8b00842
+B97M-D3(BJ)       Naj+Goer     2018      B97X_com       B97M-D3BJ      -                   D3BJ                  yes, with VV10           10.1021/acs.jctc.8b00842
+wB97M-D3(BJ)      Naj+Goer     2018      wB97X_com      wB97M-D3BJ     -                   D3BJ                  yes, with VV10           10.1021/acs.jctc.8b00842
+B97M-D3(0)        Naj+Goer     2018      B97X_com        -             -                   D3Zero                yes, with VV10           10.1021/acs.jctc.8b00842
+wB97M-D3(0)       Naj+Goer     2018      wB97X_com       -             -                   D3Zero                yes, with VV10           10.1021/acs.jctc.8b00842
 
 Note that orca actually spits out some energy + some dispersion if you use the
-keywords "wB97X D2", but it also outputs a warnings "non-parametrized
-functional used for VDW correction" which basically means it uses some made up
-D2 parameters.
+keywords "wB97X D2", it actually outputs some energy with D2 and any of these
+functionals, but it also outputs a warning "non-parametrized functional used
+for VDW correction" which basically means it uses some made up D2 parameters
+that will not necessarily work with your functional. 
 
-In this table primes denote refittings of the same functional form.
+In this table, in the "DF part" column, primes denote refitings of the same
+functional form, or reruns / slight modifications of the fitting procedure, so
+functionals with primes actually all have different parameters. "\_com" means
+the functional has been obtained using a combinatorial fitting procedure, and
+"\_evo" means it has been obtained with an evolutionary fitting algorithm.
 
 Note that all functionals except for wB97X and wB97 were fitted in such a way
 as to simultaneously optimmize the functional parameters and some nonlocal
-correlation parameters. In the case of wB97X_evo+D3BJ and wB97X_com+D3BJ the
-nonlocal correlation **was then replaced with a different one** (the comments
-on the last column are correct, the functional form is the same, and the
-parameters of the functional form were originally optimized with VV10), but the
-point still is that using the functional without any nonlocal correlation is
-**not justified under any means** for all functionals except wB97 and wB97X.
-On the other hand, there are no fitted nonlocal correlation parameters for the
-original wB97 and wB97X, so if a nonlocal correlation is needed the parameters
-should be fitted from scratch, however, it is very possible that the results
-would be suboptimal, since from the paper's conclusions it seems that the
-functional has to be reoptimized together with the D3 parameters in order for
-the parameters to make sense.
+correlation parameters. In the case of wB97X-D3(BJ), wB97M-D3(0), wB97M-D3(BJ),
+B97M-D3(BJ) and B97M-D3(0) the nonlocal correlation **was then replaced with a
+different one** (the comments on the last column are correct, the functional
+form is the same, and the parameters of the functional form were originally
+optimized with VV10), but the point still is that using the functional without
+any nonlocal correlation is **not justified under any means** for all
+functionals except wB97 and wB97X.  On the other hand, there are no fitted
+nonlocal correlation parameters for the original wB97 and wB97X, so if a
+nonlocal correlation is needed the parameters should be fitted from scratch,
+however, it is very possible that the results would be suboptimal, since from
+the paper's conclusions it seems that the functional has to be reoptimized
+together with the D3 parameters in order for the parameters to make sense.
 
 
 ## TODO
