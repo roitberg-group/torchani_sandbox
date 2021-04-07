@@ -34,16 +34,19 @@ constexpr int csubaev_offsets(int i, int j, int n) {
 }
 
 // convert pair index to reversed j, k indices
+//
 // e.g. jnum is 6, convert following indices n
 // [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14]
 // to j:
 // [ 1,  2,  2,  3,  3,  3,  4,  4,  4,  4,  5,  5,  5,  5,  5]
 // then k will be:
 // [ 0,  0,  1,  0,  1,  2,  0,  1,  2,  3,  0,  1,  2,  3,  4]
+//
 // final j:
 // [ 4,  3,  3,  2,  2,  2,  1,  1,  1,  1,  0,  0,  0,  0,  0]
 // final k:
 // [ 5,  4,  5,  3,  4,  5,  2,  3,  4,  5,  1,  2,  3,  4,  5]
+//
 __host__ __device__ __forceinline__ void pairidx_to_jk(const int& n, const int& jnum, int* j, int* k) {
   int jj = ceil((sqrt(8 * (n + 1) + 1.f) - 1) / 2.f); // x (x + 1) / 2 = n --> x = (-b + sqrt(1 + 8n)) / 2
   int kk = n - jj * (jj - 1) / 2; // 0-indexed
@@ -218,15 +221,15 @@ __global__ void cuAngularAEVs(
     const int* __restrict__ atomJ,
     const float* __restrict__ distJ,
     const AtomI* __restrict__ atom_i,
-    const int* __restrict__ d_nPairsPerCenterAtom,
-    const int* __restrict__ d_centerAtomStartIdx,
+    const int* __restrict__ numJPerI,
+    const int* __restrict__ startIdxJ,
     float Rca,
     int angular_length,
     int angular_sublength,
     int radial_length,
     int num_species,
     int maxnbrs_per_atom_aligned,
-    int angular_length_aligned, // TODO Remove this
+    int angular_length_aligned,
     int ncentral_atoms) {
   constexpr int BLOCK_SIZE = BLOCK_X * BLOCK_Y;
 
@@ -237,7 +240,7 @@ __global__ void cuAngularAEVs(
   int tIdx = threadIdx.y * blockDim.x + threadIdx.x; // local thread idx
   const float3* pos_t_3 = reinterpret_cast<const float3*>(&pos_t[0][0][0]);
   const int max_natoms_per_mol = pos_t.size(1);
-  int jnum = d_nPairsPerCenterAtom[cIdx];
+  int jnum = numJPerI[cIdx];
 
   if (cIdx >= ncentral_atoms)
     return;
@@ -266,7 +269,7 @@ __global__ void cuAngularAEVs(
   IndexT nShfA = ShfA_t.size(0);
   IndexT nShfZ = ShfZ_t.size(0);
 
-  int start_idx = d_centerAtomStartIdx[cIdx];
+  int start_idx = startIdxJ[cIdx];
   int totalpairs = jnum * (jnum - 1) / 2;
   AtomI aI = atom_i[cIdx];
   int mol_idx = aI.midx;
@@ -282,15 +285,11 @@ __global__ void cuAngularAEVs(
     DataT Rij = distJ[start_idx + jj];
     int j = atomJ[start_idx + jj];
     SpeciesT type_j = species_t[mol_idx][j];
-    float3 coord_j = pos_t_3[mol_idx * max_natoms_per_mol + j]; // memory coalessing is not a big deal here, but need 7
-                                                                // more registers
-    // SpeciesT type_j = 1;
-    // float3 coord_j = make_float3(1.0, 1.0, 1.0);
+    float3 coord_j = pos_t_3[mol_idx * max_natoms_per_mol + j];
     svec[jj] = make_float3(coord_j.x - coord_i.x, coord_j.y - coord_i.y, coord_j.z - coord_i.z);
     stype[jj] = type_j;
     sdist[jj] = Rij;
-    DataT fc_ij = 0.5f * __cosf(PI * Rij / Rca) + 0.5f; // cos() increase registers from 32 to 45, __cosf() to 38
-    // DataT fc_ij = 0.5;
+    DataT fc_ij = 0.5f * __cosf(PI * Rij / Rca) + 0.5f;
     sfc[jj] = fc_ij;
   }
   __syncthreads();
@@ -300,7 +299,7 @@ __global__ void cuAngularAEVs(
   for (int n = threadIdx.y * TILE_PER_WARP + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
        n += blockDim.y * TILE_PER_WARP) {
     // store 1 blocksize of theta to share mem
-    if (n % BLOCK_SIZE < BLOCK_Y * TILE_PER_WARP) { // only run once for every block_x iterations
+    if (n % BLOCK_SIZE < BLOCK_Y * TILE_PER_WARP) { // only run once for every BLOCK_SIZE of n
       __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
@@ -317,7 +316,6 @@ __global__ void cuAngularAEVs(
     if (n < totalpairs) {
       int jj, kk;
       pairidx_to_jk(n, jnum, &jj, &kk);
-      // printf("n %d, jnum %d, jj %d, kk %d\n", n, jnum, jj, kk);
       const DataT Rij = sdist[jj];
       SpeciesT type_j = stype[jj];
       DataT fc_ij = sfc[jj];
@@ -326,7 +324,6 @@ __global__ void cuAngularAEVs(
       DataT fc_ik = sfc[kk];
 
       DataT theta = s_theta[n % BLOCK_SIZE];
-      // DataT theta = 1.0;
       DataT Rijk = (Rij + Rik) / 2;
       DataT fc_ijk = fc_ij * fc_ik;
 
@@ -338,14 +335,11 @@ __global__ void cuAngularAEVs(
 
         for (int itheta = 0; itheta < nShfZ; itheta++) {
           DataT ShfZ = __ldg(&ShfZ_t[itheta]);
-
           DataT factor1 = __powf((1 + __cosf(theta - ShfZ)) / 2, Zeta);
 
           DataT res = 2 * factor1 * factor2 * fc_ijk;
 
           atomicAdd(&saev[subaev_offset + ishfr * nShfZ + itheta], res);
-          // saev[subaev_offset + ishfr * nShfZ + itheta] += res;
-          // saev[0] = res;
         }
       }
     }
@@ -380,8 +374,8 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
     const torch::PackedTensorAccessor32<SpeciesT, 1, torch::RestrictPtrTraits> atomJ,
     const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> distJ,
     const AtomI* __restrict__ atom_i,
-    int* d_nPairsPerCenterAtom,
-    int* d_centerAtomStartIdx,
+    int* numJPerI,
+    int* startIdxJ,
     float Rca,
     int angular_length,
     int angular_sublength,
@@ -403,7 +397,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
   const float3* pos_t_3 = reinterpret_cast<const float3*>(&pos_t[0][0][0]);
   const float3* grad_force_3 = reinterpret_cast<const float3*>(&grad_output[0][0][0]); // only for double backward
   const int max_natoms_per_mol = pos_t.size(1);
-  int jnum = d_nPairsPerCenterAtom[cIdx];
+  int jnum = numJPerI[cIdx];
 
   if (cIdx >= ncentral_atoms)
     return;
@@ -438,7 +432,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
   IndexT nShfA = ShfA_t.size(0);
   IndexT nShfZ = ShfZ_t.size(0);
 
-  int start_idx = d_centerAtomStartIdx[cIdx];
+  int start_idx = startIdxJ[cIdx];
   int totalpairs = jnum * (jnum - 1) / 2;
   AtomI aI = atom_i[cIdx];
   int mol_idx = aI.midx;
@@ -470,8 +464,6 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
     sdist[jj] = Rij;
     DataT fc_ij = 0.5f * __cosf(PI * Rij / Rca) + 0.5f;
     DataT fc_ij_grad = -0.5f * (PI / Rca) * __sinf(PI * Rij / Rca);
-    // DataT fc_ij = 0.5;
-    // DataT fc_ij_grad = -0.5;
     sfc[jj] = fc_ij;
     sfc_grad[jj] = fc_ij_grad;
     spos_j_grad[jj] = make_float3(0.f, 0.f, 0.f);
@@ -483,7 +475,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
 
   for (int n = threadIdx.y * TILE_PER_WARP + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
        n += blockDim.y * TILE_PER_WARP) {
-    if (n % BLOCK_SIZE < BLOCK_Y * TILE_PER_WARP) { // only run once for every block_x iterations
+    if (n % BLOCK_SIZE < BLOCK_Y * TILE_PER_WARP) { // only run once for every BLOCK_SIZE of n
       __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
@@ -601,7 +593,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
         grad_vik.z += __shfl_down_sync(0xFFFFFFFF, grad_vik.z, offset);
       }
 
-      // TODO Bottleneck
+      // TODO this is bottleneck
       // bank confilct or atomicAdd?
       if (laneIdx % TILE_SIZE == 0) {
         atomicAdd(&spos_j_grad[jj].x, grad_vij.x);
@@ -637,7 +629,6 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
 
     for (int jj = tIdx; jj < jnum; jj += blockDim.x * blockDim.y) {
       int atomj_idx = atomJ[start_idx + jj];
-
       atomicAdd(&grad_coord[mol_idx][atomj_idx][0], spos_j_grad[jj].x);
       atomicAdd(&grad_coord[mol_idx][atomj_idx][1], spos_j_grad[jj].y);
       atomicAdd(&grad_coord[mol_idx][atomj_idx][2], spos_j_grad[jj].z);
@@ -654,8 +645,8 @@ __global__ void cuRadialAEVs(
     const int* __restrict__ atomJ,
     const float* __restrict__ distJ,
     const AtomI* __restrict__ atom_i,
-    const int* __restrict__ d_nPairsPerCenterAtom,
-    const int* __restrict__ d_centerAtomStartIdx,
+    const int* __restrict__ numJPerI,
+    const int* __restrict__ startIdxJ,
     float Rcr,
     int radial_length,
     int radial_sublength,
@@ -672,8 +663,8 @@ __global__ void cuRadialAEVs(
   int nShfR = ShfR_t.size(0);
   DataT EtaR = EtaR_t[0];
 
-  int start_idx = d_centerAtomStartIdx[cIdx];
-  int jnum = d_nPairsPerCenterAtom[cIdx];
+  int start_idx = startIdxJ[cIdx];
+  int jnum = numJPerI[cIdx];
 
   if (jnum < 1)
     return;
@@ -687,7 +678,6 @@ __global__ void cuRadialAEVs(
     s_radial[iaev] = 0;
   }
 
-  // TODO move fc outside of radial kernel, so could directly load
   for (int jj = tIdx; jj < jnum; jj += blockDim.x * blockDim.y) {
     DataT Rij = distJ[start_idx + jj];
     s_fc[jj] = 0.5f * __cosf(PI * Rij / Rcr) + 0.5f;
@@ -713,8 +703,8 @@ __global__ void cuRadialAEVs(
   }
 }
 
-// every <THREADS_PER_RIJ> threads take care of 1 RIJ, and iterate <nShfR / THREADS_PER_RIJ> times
-template <bool is_double_backward, typename SpeciesT, typename DataT, int THREADS_PER_RIJ>
+// every <TILE_SIZE> threads take care of 1 RIJ, and iterate for <nShfR / TILE_SIZE> times
+template <bool is_double_backward, typename SpeciesT, typename DataT, int TILE_SIZE>
 __global__ void cuRadialAEVs_backward_or_doublebackward(
     const torch::PackedTensorAccessor32<DataT, 3, torch::RestrictPtrTraits> pos_t,
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
@@ -729,8 +719,8 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
     const torch::PackedTensorAccessor32<SpeciesT, 1, torch::RestrictPtrTraits> atomJ,
     const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> distJ,
     const AtomI* __restrict__ atom_i,
-    const int* __restrict__ d_nPairsPerCenterAtom,
-    const int* __restrict__ d_centerAtomStartIdx,
+    const int* __restrict__ numJPerI,
+    const int* __restrict__ startIdxJ,
     float Rcr,
     int radial_length,
     int radial_sublength,
@@ -748,8 +738,8 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
   int nShfR = ShfR_t.size(0);
   DataT EtaR = EtaR_t[0];
 
-  int start_idx = d_centerAtomStartIdx[cIdx];
-  int jnum = d_nPairsPerCenterAtom[cIdx];
+  int start_idx = startIdxJ[cIdx];
+  int jnum = numJPerI[cIdx];
 
   if (jnum < 1)
     return;
@@ -792,8 +782,6 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
   for (int jj = threadIdx.y; jj < jnum; jj += blockDim.y) {
     DataT Rij = distJ[start_idx + jj];
     int j = atomJ[start_idx + jj];
-    // DataT fc = 0.5;
-    // DataT fc_grad = -0.5;
     DataT fc = 0.5f * __cosf(PI * Rij / Rcr) + 0.5f;
     DataT fc_grad = -0.5f * (PI / Rcr) * __sinf(PI * Rij / Rcr);
     SpeciesT type_j = species_t[mol_idx][j];
