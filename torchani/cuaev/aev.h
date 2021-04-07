@@ -106,13 +106,6 @@ using torch::autograd::tensor_list;
 // ddaev = concatenate(ddradial, ddangular)
 // dparams(ddaev, ...) <-- output
 
-struct alignas(4 * sizeof(int)) PairDist {
-  float Rij;
-  int midx; // TODO remove midx
-  int i; // TODO remove i
-  int j;
-};
-
 struct alignas(2 * sizeof(int)) AtomI {
   int midx;
   int i;
@@ -125,7 +118,6 @@ struct NeighborList {
   Tensor atomJ_t; // only j index
   Tensor numJPerI_t;
   Tensor distJ_t;
-  Tensor fcJ_t;
 
   // pointers
   int* atomJ_p;
@@ -134,13 +126,12 @@ struct NeighborList {
   float* fcJ_p;
 
   NeighborList() = default;
-  NeighborList(int nJ_, int maxNumJPerI_aligned_, Tensor atomJ_t_, Tensor numJPerI_t_, Tensor distJ_t_, Tensor fcJ_t_)
+  NeighborList(int nJ_, int maxNumJPerI_aligned_, Tensor atomJ_t_, Tensor numJPerI_t_, Tensor distJ_t_)
       : nJ(nJ_),
         maxNumJPerI_aligned(maxNumJPerI_aligned_),
         atomJ_t(atomJ_t_),
         numJPerI_t(numJPerI_t_),
-        distJ_t(distJ_t_),
-        fcJ_t(fcJ_t_) {}
+        distJ_t(distJ_t_) {}
 };
 
 struct AEVScalarParams {
@@ -204,14 +195,11 @@ struct Result {
         radialNbr.atomJ_t,
         radialNbr.numJPerI_t,
         radialNbr.distJ_t,
-        radialNbr.fcJ_t,
         torch::tensor(angularNbr.nJ),
         torch::tensor(angularNbr.maxNumJPerI_aligned),
         angularNbr.atomJ_t,
         angularNbr.numJPerI_t,
-        angularNbr.distJ_t,
-        angularNbr.fcJ_t,
-    };
+        angularNbr.distJ_t};
   }
 };
 

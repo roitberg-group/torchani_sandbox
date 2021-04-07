@@ -19,31 +19,6 @@ using torch::Tensor;
 #define DEBUG_TEST 0
 #endif
 
-#define MAX_NSPECIES 10
-__constant__ int AEV_CONSTANTS[MAX_NSPECIES * MAX_NSPECIES];
-
-void initAEVConsts(AEVScalarParams& aev_params, cudaStream_t stream) {
-  // int num_species = aev_params.num_species;
-  int num_species = 10;
-  assert(num_species <= MAX_NSPECIES);
-  int aev_constants_size = num_species * num_species;
-  int* aev_constants = new int[aev_constants_size];
-  // precompute the aev offsets and load to constand memory
-  for (int t = 0; t < num_species; ++t) {
-    int offset = 0;
-    for (int s = 0; s < num_species; s++) {
-      if (t < num_species - s) {
-        aev_constants[s * num_species + s + t] = aev_params.angular_sublength * (offset + t);
-        aev_constants[(s + t) * num_species + s] = aev_params.angular_sublength * (offset + t);
-      }
-      offset += num_species - s;
-    }
-  }
-  cudaMemcpyToSymbolAsync(
-      AEV_CONSTANTS, aev_constants, sizeof(float) * aev_constants_size, 0, cudaMemcpyDefault, stream);
-  delete[] aev_constants;
-}
-
 // fetch from the following matrix
 // [[ 0,  1,  2,  3,  4],
 //  [ 1,  5,  6,  7,  8],
@@ -68,11 +43,6 @@ constexpr int csubaev_offsets(int i, int j, int n) {
 constexpr int pairidx_to_j(int n) {
   int j = ceil((sqrt(8 * (n + 1) + 1.f) - 1) / 2.f); // x (x + 1) / 2 = n --> x = (-b + sqrt(1 + 8n)) / 2
   return j;
-}
-
-// used to group Rijs by atom id
-__host__ __device__ bool operator==(const PairDist& lhs, const PairDist& rhs) {
-  return lhs.midx == rhs.midx && lhs.i == rhs.i;
 }
 
 /// Alignment of memory. Must be a power of two
@@ -1146,7 +1116,6 @@ void cuaev_forward(
     dim3 block(32, 4, 1);
     // Compute pairwise distance (Rij) for all atom pairs in a molecule
     // maximum 4096 atoms, which needs 49152 byte (48 kb) of shared memory
-    // TODO: the kernel is not optimized for batched huge molecule (max_natoms_per_mol > 1000)
     int smem_pairdist = sizeof(float) * max_natoms_per_mol * 5; // x, y, z, spe, counter
     pairwiseDistance<<<n_molecules, block, smem_pairdist, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
