@@ -320,7 +320,8 @@ __global__ void cuAngularAEVs(
   // short2 tile = make_short2(laneIdx % TILEX, laneIdx / TILEX);
   short2 tile = make_short2(laneIdx % TILEY, laneIdx / TILEY);
 
-  for (int n = threadIdx.y * TILEX + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE; n += blockDim.y * TILEX) {
+  for (int n = threadIdx.y * TILEX + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
+       n += blockDim.y * TILEX) {
     // store 1 blocksize of theta to share mem
     if (n % BLOCK_SIZE < BLOCK_Y * TILEX) { // only run once for every block_x iterations
       __syncthreads();
@@ -362,7 +363,7 @@ __global__ void cuAngularAEVs(
         DataT ShfA = __ldg(&ShfA_t[ishfr]);
         DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
 
-        for (int itheta = 0; itheta < nShfZ; itheta ++) {
+        for (int itheta = 0; itheta < nShfZ; itheta++) {
           DataT ShfZ = __ldg(&ShfZ_t[itheta]);
 
           DataT factor1 = __powf((1 + __cosf(theta - ShfZ)) / 2, Zeta);
@@ -508,7 +509,8 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
   short2 tile = make_short2(laneIdx % TILEY, laneIdx / TILEY);
   const DataT tc = 0.95f; // theta constant factor
 
-  for (int n = threadIdx.y * TILEX + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE; n += blockDim.y * TILEX) {
+  for (int n = threadIdx.y * TILEX + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
+       n += blockDim.y * TILEX) {
     if (n % BLOCK_SIZE < BLOCK_Y * TILEX) { // only run once for every block_x iterations
       __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
@@ -560,7 +562,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
         DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
         DataT grad_factor2_dist = -EtaA * (Rijk - ShfA) * factor2;
 
-        for (int itheta = 0; itheta < nShfZ; itheta ++) {
+        for (int itheta = 0; itheta < nShfZ; itheta++) {
           DataT ShfZ = __ldg(&ShfZ_t[itheta]);
 
           DataT sin_theta_ShfZ;
