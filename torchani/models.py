@@ -407,14 +407,13 @@ class BuiltinModelWithInteractions(BuiltinModel):
         if species_coordinates[0].ge(self.aev_computer.num_species).any():
             raise ValueError(f'Unknown species found in {species_coordinates[0]}')
         species, aevs, atom_index12, distances = self.aev_computer(species_coordinates, cell, pbc)
-        species_energies = self.neural_networks((species, aevs))
+        species, energies = self.neural_networks((species, aevs))
         if self.repulsion_calculator is not None:
-            species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
+            species, energies = self.repulsion_calculator((species, energies), atom_index12, distances)
         if self.dispersion_calculator is not None:
             assert self.periodic_table_index
             # NOTE: currently dispersion calculator takes in atomic numbers only,
             # so it needs to be wrapped
-            species, energies = species_energies
             _, energies = self.dispersion_calculator((atomic_numbers, energies),
                                                                atom_index12, distances)
         out = self.energy_shifter((species, energies))
@@ -441,14 +440,13 @@ class BuiltinEnsembleWithInteractions(BuiltinEnsemble):
         if species_coordinates[0].ge(self.aev_computer.num_species).any():
             raise ValueError(f'Unknown species found in {species_coordinates[0]}')
         species, aevs, atom_index12, distances = self.aev_computer(species_coordinates, cell, pbc)
-        species_energies = self.neural_networks((species, aevs))
+        species, energies = self.neural_networks((species, aevs))
         if self.repulsion_calculator is not None:
-            species_energies = self.repulsion_calculator(species_energies, atom_index12, distances)
+            species, energies = self.repulsion_calculator((species, energies), atom_index12, distances)
         if self.dispersion_calculator is not None:
             assert self.periodic_table_index
             # NOTE: currently dispersion calculator takes in atomic numbers only,
             # so it needs to be wrapped
-            species, energies = species_energies
             _, energies = self.dispersion_calculator((atomic_numbers, energies),
                                                            atom_index12, distances)
         out = self.energy_shifter((species, energies))
