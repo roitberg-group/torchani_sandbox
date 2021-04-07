@@ -81,9 +81,9 @@ __global__ void pairwiseDistance(
   const float3* pos_t_3 = reinterpret_cast<const float3*>(&pos_t[0][0][0]);
 
   int mol_idx = blockIdx.x;
-  int tidx = blockDim.x * threadIdx.y + threadIdx.x;
+  int tIdx = blockDim.x * threadIdx.y + threadIdx.x;
 
-  for (int i = tidx; i < max_natoms_per_mol; i += blockDim.x * blockDim.y) {
+  for (int i = tIdx; i < max_natoms_per_mol; i += blockDim.x * blockDim.y) {
     SpeciesT type_i = species_t[mol_idx][i];
     s_type[i] = type_i;
     s_pcounter_i[i] = 0;
@@ -102,6 +102,7 @@ __global__ void pairwiseDistance(
 
       for (int j = threadIdx.x; j < max_natoms_per_mol; j += blockDim.x) {
         SpeciesT type_j = s_type[j];
+
         if (type_j != -1 && i != j) {
           float3 delta = make_float3(s_pos[j].x - pos_i.x, s_pos[j].y - pos_i.y, s_pos[j].z - pos_i.z);
           DataT Rsq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
@@ -110,23 +111,22 @@ __global__ void pairwiseDistance(
             int pidx = atomicAdd(&s_pcounter_i[i], 1);
             atomJ_p[mol_idx * pairs_per_mol + i * (max_natoms_per_mol - 1) + pidx] = j;
             distJ_p[mol_idx * pairs_per_mol + i * (max_natoms_per_mol - 1) + pidx] = Rij;
-            // printf("i %d, j %d, pidx %d, Rij %f\n", i, j, pidx, Rij);
           } // if Rij is within Rcr
         } // if j is not padding atom and i is not j
       }
+
     } // if i is not padding atom
     AtomI aI = {mol_idx, i};
     atom_i[mol_idx * max_natoms_per_mol + i] = aI;
   }
   __syncthreads();
-  for (int i = tidx; i < max_natoms_per_mol; i += blockDim.x * blockDim.y) {
-    // printf("i %d, pidx %d\n", i, s_pcounter_i[i]);
+
+  for (int i = tIdx; i < max_natoms_per_mol; i += blockDim.x * blockDim.y) {
     radialNumPairsPerAtom_t[mol_idx * max_natoms_per_mol + i] = s_pcounter_i[i];
   }
 }
 
-// ATOM_J_PER_TILE stands for a tile of atoms J that are loaded into share memory
-// ATOM_J_PER_SUBTILE is the tile of atoms J that are really parallel calculating
+// Every row in the block compute all neighbors J for 1 atomI.
 template <int ATOM_I_PER_BLOCK, int ATOM_J_PER_TILE, typename SpeciesT, typename DataT, typename IndexT = int>
 __global__ void pairwiseDistanceSingleMolecule(
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
@@ -138,15 +138,16 @@ __global__ void pairwiseDistanceSingleMolecule(
     const DataT Rcr,
     const IndexT max_natoms_per_mol) {
   __shared__ int s_pcounter_i[ATOM_I_PER_BLOCK];
-  __shared__ float3 s_coord_j[ATOM_J_PER_TILE];
+  constexpr int BLOCK_SIZE = ATOM_I_PER_BLOCK * ATOM_J_PER_TILE;
+  __shared__ float3 s_coord_j[BLOCK_SIZE];
   const float3* pos_t_3 = reinterpret_cast<const float3*>(&pos_t[0][0][0]);
 
   constexpr int mol_idx = 0;
   int natom_pairs = max_natoms_per_mol * (max_natoms_per_mol - 1);
   int i = blockIdx.x * blockDim.y + threadIdx.y;
   int ii = threadIdx.y;
-  int sidx = blockDim.x * threadIdx.y + threadIdx.x;
-  int num_tiles = (max_natoms_per_mol + ATOM_J_PER_TILE - 1) / ATOM_J_PER_TILE;
+  int tIdx = blockDim.x * threadIdx.y + threadIdx.x;
+  int num_tiles = (max_natoms_per_mol + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   // i >= max_natoms_per_mol is still needed to load share memory for j
   SpeciesT type_i;
@@ -156,21 +157,21 @@ __global__ void pairwiseDistanceSingleMolecule(
     coord_i = pos_t_3[mol_idx * max_natoms_per_mol + i];
   }
 
-  if (sidx < ATOM_I_PER_BLOCK)
-    s_pcounter_i[sidx] = 0;
+  if (tIdx < ATOM_I_PER_BLOCK)
+    s_pcounter_i[tIdx] = 0;
   __syncthreads();
 
   for (int tileidx = 0; tileidx < num_tiles; tileidx++) {
     // load 1024 atoms j into share memory
-    int jidx = ATOM_J_PER_TILE * tileidx + sidx;
+    int jidx = BLOCK_SIZE * tileidx + tIdx;
     if (jidx < max_natoms_per_mol) {
       // TODO Test this is coalescing
-      s_coord_j[sidx] = pos_t_3[max_natoms_per_mol * mol_idx + jidx];
+      s_coord_j[tIdx] = pos_t_3[max_natoms_per_mol * mol_idx + jidx];
     }
 
     __syncthreads();
-    for (int jj = threadIdx.x; jj < ATOM_J_PER_TILE && i < max_natoms_per_mol; jj += blockDim.x) {
-      int j = jj + ATOM_J_PER_TILE * tileidx;
+    for (int jj = threadIdx.x; jj < BLOCK_SIZE && i < max_natoms_per_mol; jj += blockDim.x) {
+      int j = jj + BLOCK_SIZE * tileidx;
       if (j < max_natoms_per_mol) {
         float3 delta =
             make_float3(s_coord_j[jj].x - coord_i.x, s_coord_j[jj].y - coord_i.y, s_coord_j[jj].z - coord_i.z);
@@ -190,9 +191,9 @@ __global__ void pairwiseDistanceSingleMolecule(
     __syncthreads();
   }
 
-  i = sidx + blockIdx.x * blockDim.y;
-  if (sidx < ATOM_I_PER_BLOCK && i < max_natoms_per_mol) {
-    radialNumPairsPerAtom_t[i] = s_pcounter_i[sidx];
+  i = tIdx + blockIdx.x * blockDim.y;
+  if (tIdx < ATOM_I_PER_BLOCK && i < max_natoms_per_mol) {
+    radialNumPairsPerAtom_t[i] = s_pcounter_i[tIdx];
     AtomI aI = {mol_idx, i};
     atom_i[mol_idx * max_natoms_per_mol + i] = aI;
   }
@@ -1091,10 +1092,9 @@ void cuaev_forward(
     if (DEBUG_TEST)
       printf("single molecule, %d atoms\n", max_natoms_per_mol);
 
-    constexpr int ATOM_J_PER_SUBTILE = 32;
-    constexpr int ATOM_J_PER_TILE = ATOM_I_PER_BLOCK * ATOM_J_PER_SUBTILE;
+    constexpr int ATOM_J_PER_TILE = 32;
     int blocks = (total_atoms + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
-    dim3 block(ATOM_J_PER_SUBTILE, ATOM_I_PER_BLOCK, 1);
+    dim3 block(ATOM_J_PER_TILE, ATOM_I_PER_BLOCK, 1);
     pairwiseDistanceSingleMolecule<ATOM_I_PER_BLOCK, ATOM_J_PER_TILE><<<blocks, block, 0, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
