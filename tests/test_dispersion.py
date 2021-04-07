@@ -171,6 +171,31 @@ class TestDispersion(TestCase):
             torch.isclose(energy.cpu(),
                           torch.tensor([-1.251336, -1.251336]).double()).all())
 
+    def testDispersionBatches(self):
+        rep = StandaloneDispersionD3(neighborlist_cutoff=8.0)
+        coordinates1 = torch.tensor([[0.0, 0.0, 0.0],
+                                    [1.5, 0.0, 0.0],
+                                    [3.0, 0.0, 0.0]]).unsqueeze(0)
+        coordinates2 = torch.tensor([[0.0, 0.0, 0.0],
+                                    [0.0, 0.0, 0.0],
+                                    [2.5, 0.0, 0.0]]).unsqueeze(0)
+        coordinates3 = torch.tensor([[0.0, 0.0, 0.0],
+                                     [0.0, 0.0, 0.0],
+                                     [3.5, 0.0, 0.0]]).unsqueeze(0)
+        species1 = torch.tensor([[1, 6, 7]])
+        species2 = torch.tensor([[-1, 1, 6]])
+        species3 = torch.tensor([[-1, 1, 1]])
+        coordinates_cat = torch.cat((coordinates1, coordinates2, coordinates3), dim=0)
+        species_cat = torch.cat((species1, species2, species3), dim=0)
+
+        energy1 = rep((species1, coordinates1)).energies
+        # avoid first atom since it isdummy
+        energy2 = rep((species2[:, 1:], coordinates2[:, 1:, :])).energies
+        energy3 = rep((species3[:, 1:], coordinates3[:, 1:, :])).energies
+        energies_cat = torch.cat((energy1, energy2, energy3))
+        energies = rep((species_cat, coordinates_cat)).energies
+        self.assertTrue(torch.isclose(energies, energies_cat).all())
+
     def testForce(self):
         species_idx = self.converter((self.species, self.coordinates)).species
         self.coordinates.requires_grad_(True)
