@@ -330,6 +330,10 @@ notation for D3Zero
 
 They also fit the functional B97M-V (B97X_com+VV10) to both D3BJ and D3Zero, and they fit the
 functional wB97X_com to D3Zero also. I'm not sure why they don't fit wB97_evo to D3Zero.
+
+Their results are very interesting, it seems that VV10 is not necessary to
+fully account for nonlocal interactions and just an additive correction with
+D3BJ is more efficient and has the same results
  
 Orca includes this functionals with the keywords:
 - wB97X-D3BJ (wB97X_evo+D3BJ)
@@ -387,6 +391,7 @@ nonlocal correlation is needed the parameters should be fitted from scratch,
 however, it is very possible that the results would be suboptimal, since from
 the paper's conclusions it seems that the functional has to be reoptimized
 together with the D3 parameters in order for the parameters to make sense.
+
 
 
 ## TODO
