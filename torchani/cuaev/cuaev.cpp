@@ -55,9 +55,7 @@ Result::Result(tensor_list tensors)
       coordinates_t(tensors[4]),
       species_t(tensors[5]),
       radialNbr(tensors[6].item<int>(), tensors[7].item<int>(), tensors[8], tensors[9], tensors[10]),
-      angularNbr(tensors[11].item<int>(), tensors[12].item<int>(), tensors[13], tensors[14], tensors[15]) {
-}
-
+      angularNbr(tensors[11].item<int>(), tensors[12].item<int>(), tensors[13], tensors[14], tensors[15]) {}
 
 Result::Result()
     : aev_t(Tensor()),
