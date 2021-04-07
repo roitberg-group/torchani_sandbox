@@ -1,14 +1,22 @@
-from torchani.utils import get_atomic_masses
+from torchani.utils import get_atomic_masses, tensor_to_xyz
 import math
 import torch
+from pathlib import Path
 from torch import Tensor
 from ase import units
 
 
 class TorchLangevin:
 
-    def __init__(self, model, species: Tensor, coordinates: Tensor, temperature: float, gamma: float, timestep: float):
-        # need to recheck this to be sure that  units are correct
+    def __init__(self, model, species: Tensor, coordinates: Tensor, temperature: float, gamma: float, timestep: float, path: str = './trajectory.xyz'):
+        # this class allows also for batchwise dynamics, where all dynamics are
+        # run in parallel but with different random langevin, so they
+        # are independent
+        assert coordinates.dim() == 3
+        assert coordinates.shape[-1] == 3
+        assert species.dim() == 2
+        assert species.shape == coordinates.shape[:2]
+
         temperature *= units.kB
         gamma *= 1 / units.fs
         timestep *= units.fs
@@ -19,15 +27,16 @@ class TorchLangevin:
         assert model.periodic_table_index, "Only periodic_table_index models are allowed"
 
         self.species = species  # must be atomic numbers
-        self.coordinates = coordinates.squeeze().detach()
+        self.coordinates = coordinates.detach()
         self.gamma = gamma
         self.dt = timestep
 
         self.forces = None
         self.velocities = None
-        self.sigma = torch.sqrt(2 * temperature * self.gamma / get_atomic_masses(species).squeeze()).unsqueeze(-1)
+        self.sigma = torch.sqrt(2 * temperature * self.gamma / get_atomic_masses(species)).unsqueeze(-1)
+        self.path = Path(path).resolve()
 
-    def run(self, num_steps: int):
+    def run(self, num_steps: int, print_every: int = 1):
         if self.velocities is None:
             # setting velocities is only needed on step 0
             self.velocities = torch.zeros_like(self.coordinates)
@@ -36,7 +45,12 @@ class TorchLangevin:
             # calculation of forces for x_n is only needed on step 0
             self.forces = self.calc_forces(self.coordinates)
 
-        for _ in range(num_steps):
+        for s in range(num_steps):
+            if s % print_every == 0:
+                for j, (s, c) in enumerate(zip(self.species, self.coordinates)):
+                    filename = self.path.stem
+                    path = self.path.parent.joinpath(f'{filename}_{j}.xyz')
+                    tensor_to_xyz(path, (s.unsqueeze(0), c.unsqueeze(0)), append=True)
             self.step()
 
     def step(self):
@@ -75,13 +89,11 @@ class TorchLangevin:
         return term1 + term2
 
     def calc_forces(self, coordinates: Tensor) -> Tensor:
-        coordinates = coordinates.unsqueeze(0)
         coordinates = coordinates.detach()
         coordinates.requires_grad_(True)
         energy = self.model((self.species, coordinates)).energies
         energy = energy * units.Hartree
-        forces = -torch.autograd.grad(energy.squeeze(), coordinates)[0].squeeze()
+        forces = -torch.autograd.grad(energy.sum(), coordinates)[0]
         coordinates = coordinates.detach()
         coordinates.requires_grad_(False)
-        coordinates = coordinates.squeeze()
         return forces

@@ -15,9 +15,10 @@ coordinates = torch.tensor([[[0.03192167, 0.00638559, 0.01301679],
                              [0.66091919, -0.16799635, -0.91037834]]],
                            requires_grad=True, device=device).double()
 species = torch.tensor([[6, 1, 1, 1, 1]], device=device)
-
+coordinates = coordinates.repeat(2, 1, 1)
+species = species.repeat(2, 1)
 
 # T in K, gamma in 1/fs, timestep in fs
 dyn = TorchLangevin(model, species, coordinates, 300, 0.02, 0.1)
 
-dyn.run(100)
+dyn.run(10000, print_every=10)
