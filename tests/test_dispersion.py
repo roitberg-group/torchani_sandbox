@@ -59,7 +59,7 @@ class TestDispersion(TestCase):
                 self.aev_computer((species_idx, self.coordinates))
         disp = DispersionD3().to(self.device)
         distances = units.angstrom2bohr(distances)
-        coordnums = disp._get_coordnums(self.coordinates.shape[1],
+        coordnums = disp._get_coordnums(self.coordinates.shape[0], self.coordinates.shape[1],
                                         self.species.flatten()[atom_index12],
                                         atom_index12, distances)
         # coordination numbers taken directly from DFTD3 Grimme et. al. code
@@ -126,7 +126,7 @@ class TestDispersion(TestCase):
         disp = DispersionD3().to(self.device)
         distances = units.angstrom2bohr(distances)
         species12 = self.species.flatten()[atom_index12]
-        coordnums = disp._get_coordnums(self.coordinates.shape[1], species12,
+        coordnums = disp._get_coordnums(self.coordinates.shape[0], self.coordinates.shape[1], species12,
                                         atom_index12, distances)
         order6_coeffs = disp._interpolate_order6_coeffs(
             species12, coordnums, atom_index12)
@@ -159,6 +159,17 @@ class TestDispersion(TestCase):
         self.assertTrue(
             torch.isclose(energy.cpu(),
                           torch.tensor([-1.251336]).double()))
+
+    def testMethaneStandaloneBatch(self):
+        disp = StandaloneDispersionD3(neighborlist_cutoff=8.0).to(self.device)
+        r = 2
+        coordinates = self.coordinates.repeat(r, 1, 1)
+        species = self.species.repeat(r, 1)
+        energy = disp((species, coordinates)).energies
+        energy = units.hartree2kcalmol(energy)
+        self.assertTrue(
+            torch.isclose(energy.cpu(),
+                          torch.tensor([-1.251336, -1.251336]).double()).all())
 
     def testForce(self):
         species_idx = self.converter((self.species, self.coordinates)).species

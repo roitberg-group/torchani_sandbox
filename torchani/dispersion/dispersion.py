@@ -146,18 +146,20 @@ class DispersionD3(torch.nn.Module):
         charge_ab = torch.outer(sqrt_empirical_charge, sqrt_empirical_charge)
         self.register_buffer('sqrt_charge_ab', charge_ab)
 
-    def _get_coordnums(self, num_atoms: int, species12: Tensor,
+    def _get_coordnums(self, num_molecules: int, num_atoms: int, species12: Tensor,
                        atom_index12: Tensor, distances: Tensor) -> Tensor:
+        # fine for batches
         covalent_radii_sum = self.covalent_radii[species12[0]]
         covalent_radii_sum += self.covalent_radii[species12[1]]
         # for coordination numbers covalent radii are used, not cutoff radii
         k1 = 16
         k2 = 4 / 3
+        # fine for batches
         denom = 1 + torch.exp(-k1 * (k2 * covalent_radii_sum / distances - 1))
         counting_function = 1 / denom
 
         # add terms corresponding to all neighbors
-        coordnums = torch.zeros(num_atoms,
+        coordnums = torch.zeros((num_molecules * num_atoms),
                                 device=distances.device,
                                 dtype=distances.dtype)
         coordnums.index_add_(0, atom_index12[0], counting_function)
@@ -209,7 +211,7 @@ class DispersionD3(torch.nn.Module):
         # internally this module works in AU, so first we convert distances
         distances = units.angstrom2bohr(distances)
         species, energies = species_energies
-        assert len(species) == 1, "Not implemented for batch calcs"
+        # assert len(species) == 1, "Not implemented for batch calcs"
         assert distances.ndim == 1, "distances should be 1 dim"
         assert species.ndim == 2, "species_energies should be 2 dim"
         assert atom_index12.ndim == 2, "atom_index12 should be 2 dim"
@@ -220,13 +222,15 @@ class DispersionD3(torch.nn.Module):
         # indices. species is of shape (C x Atoms)
         species12 = species.flatten()[atom_index12]
         num_atoms = species.shape[1]
+        num_molecules = species.shape[0]
         num_pairs = species12.shape[1]
 
         # use the coordination numbers and the internal precalc C6's and
         # CNa's/CNb's to get interpolated C6 coeffs, C8 coeffs are obtained
         # from C6 coeffs directly
-        coordnums = self._get_coordnums(num_atoms, species12, atom_index12,
+        coordnums = self._get_coordnums(num_molecules, num_atoms, species12, atom_index12,
                                         distances)
+        # coordnums is shape num_molecules * num_atoms
         order6_coeffs = self._interpolate_order6_coeffs(species12, coordnums, atom_index12)
         order8_coeffs = 3 * order6_coeffs
         order8_coeffs *= self.sqrt_charge_ab[species12[0], species12[1]]
@@ -244,7 +248,10 @@ class DispersionD3(torch.nn.Module):
         # interacting pairs once
         if self.cutoff_function is not None:
             two_body_dispersion *= self.cutoff_function(distances)
-        energies += two_body_dispersion.sum()
+
+        molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
+        energies.index_add_(0, molecule_indices, two_body_dispersion)
+
         return SpeciesEnergies(species, energies)
 
     def forward(self, species_energies: Tuple[Tensor, Tensor], atom_index12: Tensor,
