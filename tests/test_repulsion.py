@@ -121,6 +121,7 @@ class TestRepulsion(TestCase):
         energies = torch.tensor(energies)
         with open('energies.pkl', 'rb') as f:
             energies_salva = torch.tensor(pickle.load(f))
+        print(energies_salva)
         self.assertTrue(torch.isclose(energies_salva, energies).all())
 
 

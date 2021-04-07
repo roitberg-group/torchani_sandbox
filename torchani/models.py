@@ -30,6 +30,7 @@ directly calculate energies or get an ASE calculator. For example:
 """
 import os
 import torch
+import warnings
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
 from .nn import SpeciesConverter, SpeciesEnergies
@@ -477,6 +478,9 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False,
         aev_computer = AEVComputer(**consts)
         aev_computer.neighborlist = CellList(aev_computer.radial_terms.cutoff, dynamic_update=True)
     elif repulsion:
+        warnings.warn("Repulsion models use by default a smooth cutoff function. Currently the built in models in\
+                torchani were not trained this way, so make sure you are actually using a model you trained yourself,\
+                and not any builtin ANI parameters")
         if torch_cell_list:
             aev_computer = AEVComputerForRepulsion(**consts, neighborlist=CellList, cutoff_function=CutoffSmooth)
         elif adaptive_torch_cell_list:
