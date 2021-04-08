@@ -1133,7 +1133,7 @@ void cuaev_forward(
 
 #ifdef TORCHANI_DEBUG
   printf("%-35s %'d\n", "nI", result.nI);
-  printf("%-35s %'d\n", "radialNbr.nJ", result.radialNbr.nJ);
+  printf("%-35s %'d\n", "radialNbr  nJ", result.radialNbr.nJ);
 #endif
 
   result.radialNbr.atomJ_t = torch::empty(result.radialNbr.nJ, d_options.dtype(torch::kInt32));
@@ -1166,7 +1166,7 @@ void cuaev_forward(
         max_natoms_per_mol);
 #ifdef TORCHANI_DEBUG
     result.angularNbr.nJ = cubSum(angularNbr_numJPerI_p, result.nI, stream);
-    printf("%-35s %'d\n", "angularNbr.nJ", result.angularNbr.nJ);
+    printf("%-35s %'d\n", "angularNbr nJ", result.angularNbr.nJ);
 #endif
   }
 
