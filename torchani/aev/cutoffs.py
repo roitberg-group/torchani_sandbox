@@ -4,6 +4,17 @@ from torch import Tensor
 from ..compat import Final
 
 
+def _parse_cutoff_fn(cutoff_fn):
+    # currently only cosine, smooth and custom cutoffs are supported
+    if cutoff_fn == 'cosine':
+        cutoff_fn = CutoffCosine
+    elif cutoff_fn == 'smooth':
+        cutoff_fn = CutoffSmooth
+    else:
+        assert issubclass(cutoff_fn, torch.nn.Module)
+    return cutoff_fn
+
+
 class CutoffCosine(torch.nn.Module):
 
     def __init__(self, cutoff: float):

@@ -40,8 +40,8 @@ class TestAEVConstructor(TestCase):
 
     @staticmethod
     def _get_aev_constants(aev_computer):
-        return aev_computer.radial_terms.cutoff, aev_computer.radial_terms.EtaR,\
-            aev_computer.radial_terms.ShfR, aev_computer.angular_terms.cutoff,\
+        return aev_computer.radial_terms.get_cutoff(), aev_computer.radial_terms.EtaR,\
+            aev_computer.radial_terms.ShfR, aev_computer.angular_terms.get_cutoff(),\
             aev_computer.angular_terms.ShfZ, aev_computer.angular_terms.EtaA,\
             aev_computer.angular_terms.Zeta, aev_computer.angular_terms.ShfA, aev_computer.num_species
 
@@ -55,8 +55,8 @@ class TestIsolated(TestCase):
         consts = torchani.neurochem.Constants(const_file)
         self.aev_computer = torchani.AEVComputer(**consts).to(self.device)
         self.species_to_tensor = consts.species_to_tensor
-        self.rcr = self.aev_computer.radial_terms.cutoff
-        self.rca = self.aev_computer.angular_terms.cutoff
+        self.rcr = self.aev_computer.radial_terms.get_cutoff()
+        self.rca = self.aev_computer.angular_terms.get_cutoff()
 
     def testCO2(self):
         species = self.species_to_tensor(['O', 'C', 'O']).to(self.device).unsqueeze(0)

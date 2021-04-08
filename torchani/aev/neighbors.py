@@ -5,6 +5,14 @@ from typing import Tuple
 from ..compat import Final
 
 
+def _parse_neighborlist(neighborlist):
+    if neighborlist == 'full_pairwise':
+        neighborlist = FullPairwise
+    else:
+        assert issubclass(neighborlist, torch.nn.Module)
+    return neighborlist
+
+
 class BaseNeighborlist(torch.nn.Module):
 
     cutoff: Final[float]
