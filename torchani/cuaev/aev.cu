@@ -830,6 +830,8 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
   }
 }
 
+// while copying radial's neighbor from tmp buffer, check whether it is within Rca,
+// if so then also copy it into angular's neighbor list
 template <int ATOM_I_PER_BLOCK>
 __global__ void cutoffSelect(
     const int* __restrict__ atomJ,
