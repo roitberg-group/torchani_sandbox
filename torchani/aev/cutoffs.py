@@ -9,6 +9,7 @@ class CutoffCosine(torch.nn.Module):
     def __init__(self, cutoff: float):
         super().__init__()
         self.register_buffer('cutoff', torch.tensor(cutoff))
+        self.cutoff: Tensor
 
     def forward(self, distances: Tensor) -> Tensor:
         # assuming all elements in distances are smaller than cutoff
@@ -29,6 +30,8 @@ class CutoffSmooth(torch.nn.Module):
         self.order = order
         self.register_buffer('cutoff', torch.tensor(cutoff))
         self.register_buffer('eps', torch.tensor(eps))
+        self.cutoff: Tensor
+        self.eps: Tensor
 
     def forward(self, distances: Tensor) -> Tensor:
         # assuming all elements in distances are smaller than cutoff

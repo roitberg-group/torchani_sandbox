@@ -21,6 +21,7 @@ class BaseNeighborlist(torch.nn.Module):
         super().__init__()
         self.cutoff = cutoff
         self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
+        self.default_cell: Tensor
 
     @torch.jit.export
     def _compute_bounding_cell(self, coordinates: Tensor,
@@ -75,6 +76,7 @@ class FullPairwise(BaseNeighborlist):
         """
         super().__init__(cutoff)
         self.register_buffer('default_shift_values', torch.tensor(0.0))
+        self.default_shift_values: Tensor
 
     def forward(self, species: Tensor, coordinates: Tensor, cell: Tensor,
                 pbc: Tensor) -> Tuple[Tensor, Tensor]:

@@ -29,6 +29,9 @@ class RadialTerms(torch.nn.Module):
         self.register_buffer('ShfR', ShfR.view(1, -1))
         self.register_buffer('cutoff', torch.tensor(cutoff))
         self.cutoff_function = cutoff_function(cutoff)
+        self.EtaR: Tensor
+        self.ShfR: Tensor
+        self.cutoff: Tensor
 
     def sublength(self) -> int:
         return self.EtaR.numel() * self.ShfR.numel()
@@ -76,6 +79,12 @@ class AngularTerms(torch.nn.Module):
         self.register_buffer('ShfA', ShfA.view(1, 1, -1, 1))
         self.register_buffer('ShfZ', ShfZ.view(1, 1, 1, -1))
         self.register_buffer('cutoff', torch.tensor(cutoff))
+        self.EtaA: Tensor
+        self.Zeta: Tensor
+        self.ShfA: Tensor
+        self.ShfZ: Tensor
+        self.cutoff: Tensor
+
         self.cutoff_function = cutoff_function(cutoff)
 
     def sublength(self) -> int:
