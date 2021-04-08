@@ -155,6 +155,7 @@ class AEVComputer(torch.nn.Module):
         # We defer true cuaev initialization to forward so that we ensure that
         # all tensors are in GPU once it is initialized.
         self.register_buffer('cuaev_is_initialized', torch.tensor(False))
+        self.cuaev_is_initialized: Tensor
 
     def _validate_cutoffs_init(self):
         # validate cutoffs and emit warnings for strange configurations
