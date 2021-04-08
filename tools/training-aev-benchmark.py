@@ -126,7 +126,7 @@ def benchmark(args, dataset, use_cuda_extension, force_train=False):
 
     # enable timers
     timers: Dict[str, int] = dict()
-    fn_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
+    fn_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev',
                              '_compute_aev', '_triple_by_molecule', 'forward']
     fn_to_time_neighborlist = ['forward']
     fn_to_time_nn = ['forward']

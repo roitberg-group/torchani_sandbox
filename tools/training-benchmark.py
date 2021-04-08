@@ -90,7 +90,7 @@ if __name__ == "__main__":
 
     # time these functions
 
-    fn_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
+    fn_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev',
                              '_compute_aev', '_triple_by_molecule', 'forward']
     fn_to_time_neighborlist = ['forward']
     fn_to_time_nn = ['forward']
