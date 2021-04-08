@@ -589,7 +589,8 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
         grad_vik.z += __shfl_down_sync(0xFFFFFFFF, grad_vik.z, offset);
       }
 
-      // TODO this is bottleneck
+      // TODO this is a bottleneck
+      // 0.6ms/2.9ms = 20.1% (2.9ms is the total backward timing)
       // bank confilct or atomicAdd?
       if (laneIdx % TILE_SIZE == 0) {
         atomicAdd(&spos_j_grad[jj].x, grad_vij.x);
