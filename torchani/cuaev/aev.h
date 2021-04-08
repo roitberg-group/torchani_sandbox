@@ -119,12 +119,6 @@ struct NeighborList {
   Tensor numJPerI_t;
   Tensor distJ_t;
 
-  // pointers
-  int* atomJ_p;
-  int* numJPerI_p;
-  float* distJ_p;
-  float* fcJ_p;
-
   NeighborList() = default;
   NeighborList(int nJ_, int maxNumJPerI_aligned_, Tensor atomJ_t_, Tensor numJPerI_t_, Tensor distJ_t_)
       : nJ(nJ_),
