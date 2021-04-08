@@ -231,7 +231,10 @@ class AEVComputer(torch.nn.Module):
         # in the eight element of ShfR this element is 2.6812 using this method
         # and 2.6813 for the actual network, but this is not significant for
         # retraining purposes
-        return cls.cover_linearly(**kwargs)
+        # In any way we change this for consistency
+        out = cls.cover_linearly(**kwargs)
+        out.radial_terms.ShfR[0, 7] = 2.6813
+        return out
 
     @classmethod
     def like_1ccx(cls):
