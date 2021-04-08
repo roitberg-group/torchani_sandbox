@@ -164,10 +164,9 @@ __global__ void pairwiseDistanceSingleMolecule(
   __syncthreads();
 
   for (int tileidx = 0; tileidx < num_tiles; tileidx++) {
-    // load 1024 atoms j into share memory
+    // load 1 block size of atoms j into share memory
     int jidx = BLOCK_SIZE * tileidx + tIdx;
     if (jidx < max_natoms_per_mol) {
-      // TODO Test this is coalescing
       s_coord_j[tIdx] = pos_t_3[max_natoms_per_mol * mol_idx + jidx];
     }
 
@@ -522,8 +521,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
         for (int itheta = 0; itheta < nShfZ; itheta++) {
           DataT ShfZ = __ldg(&ShfZ_t[itheta]);
 
-          DataT sin_theta_ShfZ;
-          DataT cos_theta_ShfZ;
+          DataT sin_theta_ShfZ, cos_theta_ShfZ;
           __sincosf(theta - ShfZ, &sin_theta_ShfZ, &cos_theta_ShfZ);
           DataT factor1 = __powf((1 + cos_theta_ShfZ) / 2, Zeta);
           DataT grad_factor1_theta = -0.5f * Zeta * __powf((1 + cos_theta_ShfZ) / 2, Zeta - 1) * sin_theta_ShfZ;
