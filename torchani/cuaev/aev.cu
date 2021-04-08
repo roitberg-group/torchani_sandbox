@@ -12,12 +12,6 @@
 #define PI 3.141592653589793
 using torch::Tensor;
 
-#ifdef DEBUG
-#define DEBUG_TEST 1
-#else
-#define DEBUG_TEST 0
-#endif
-
 // fetch from the following matrix
 // [[ 0,  1,  2,  3,  4],
 //  [ 1,  5,  6,  7,  8],
@@ -1078,8 +1072,10 @@ void cuaev_forward(
   constexpr int ATOM_I_PER_BLOCK = 32;
   // single molecule mode
   if (n_molecules == 1) {
-    if (DEBUG_TEST)
-      printf("single molecule, %d atoms\n", max_natoms_per_mol);
+#ifdef TORCHANI_DEBUG
+    setlocale(LC_ALL, "");
+    printf("\n%-35s %'d atoms\n", "single molecule", max_natoms_per_mol);
+#endif
     constexpr int ATOM_J_PER_TILE = 32;
     int blocks = (total_atoms + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
     dim3 block(ATOM_J_PER_TILE, ATOM_I_PER_BLOCK, 1);
@@ -1095,6 +1091,10 @@ void cuaev_forward(
     result.nI = total_atoms;
   } else { // batch mode
     // tmp storage because of padding
+#ifdef TORCHANI_DEBUG
+    setlocale(LC_ALL, "");
+    printf("\n%-35s %d molecules, total %'d atoms\n", "batch molecules", n_molecules, total_atoms);
+#endif
     Tensor numJPerI_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
     int* numJPerI_p = (int*)numJPerI_t.data_ptr();
     Tensor atom_i_t = torch::empty(total_atoms * 2, d_options.dtype(torch::kInt32));
@@ -1131,10 +1131,10 @@ void cuaev_forward(
   // cubSum only need one cudaMemcpyAsync, althought it need a kernel run, it is negligible
   result.radialNbr.nJ = cubSum(radialNbr_numJPerI_p, total_atoms, stream);
 
-  if (DEBUG_TEST) {
-    printf("num_i %d\n", result.nI);
-    printf("radialNbr.nJ %d\n", result.radialNbr.nJ);
-  }
+#ifdef TORCHANI_DEBUG
+  printf("%-35s %'d\n", "nI", result.nI);
+  printf("%-35s %'d\n", "radialNbr.nJ", result.radialNbr.nJ);
+#endif
 
   result.radialNbr.atomJ_t = torch::empty(result.radialNbr.nJ, d_options.dtype(torch::kInt32));
   int* radialNbr_atomJ_p = (int*)result.radialNbr.atomJ_t.data_ptr();
@@ -1164,11 +1164,10 @@ void cuaev_forward(
         angularNbr_numJPerI_p,
         result.nI,
         max_natoms_per_mol);
-
-    if (DEBUG_TEST) {
-      result.angularNbr.nJ = cubSum(angularNbr_numJPerI_p, result.nI, stream);
-      printf("result.angularNbr.nJ %d\n", result.angularNbr.nJ);
-    }
+#ifdef TORCHANI_DEBUG
+    result.angularNbr.nJ = cubSum(angularNbr_numJPerI_p, result.nI, stream);
+    printf("%-35s %'d\n", "angularNbr.nJ", result.angularNbr.nJ);
+#endif
   }
 
   { // RadialAEV
@@ -1190,6 +1189,9 @@ void cuaev_forward(
         aev_params.radial_sublength,
         result.radialNbr.nJ,
         result.radialNbr.maxNumJPerI_aligned);
+#ifdef TORCHANI_DEBUG
+    printf("%-35s %d\n", "radialNbr  maxNumJPerI_aligned", result.radialNbr.maxNumJPerI_aligned);
+#endif
   }
 
   { // AngularAEV
@@ -1205,11 +1207,6 @@ void cuaev_forward(
     result.angularNbr.maxNumJPerI_aligned = align<4>(cubMax(angularNbr_numJPerI_p, result.nI, stream));
     int smem_size_aligned = smem_size(result.angularNbr.maxNumJPerI_aligned, 1);
     int angular_length_aligned = align<4>(aev_params.angular_length);
-    if (DEBUG_TEST)
-      printf(
-          "angularNbr.maxNumJPerI_aligned %d -- angular smem_size %d\n",
-          result.angularNbr.maxNumJPerI_aligned,
-          smem_size_aligned);
     constexpr dim3 block(C10_WARP_SIZE, 4, 1);
     cuAngularAEVs<block.x, block.y><<<result.nI, block, smem_size_aligned, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
@@ -1232,6 +1229,10 @@ void cuaev_forward(
         result.angularNbr.maxNumJPerI_aligned,
         angular_length_aligned,
         result.nI);
+#ifdef TORCHANI_DEBUG
+    printf("%-35s %d\n", "angularNbr maxNumJPerI_aligned", result.angularNbr.maxNumJPerI_aligned);
+    printf("%-35s %'d bytes\n", "forward  angular smem_size", smem_size_aligned);
+#endif
   }
 }
 
@@ -1286,8 +1287,9 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
   };
   int smem_size_aligned = smem_size(result.angularNbr.maxNumJPerI_aligned, 1);
 
-  if (DEBUG_TEST)
-    printf("backward angular smem_size %d\n", smem_size_aligned);
+#ifdef TORCHANI_DEBUG
+  printf("%-35s %'d bytes\n", "backward angular smem_size", smem_size_aligned);
+#endif
 
   constexpr dim3 block(C10_WARP_SIZE, 4, 1);
   cuAngularAEVs_backward_or_doublebackward<false, block.x, block.y><<<result.nI, block, smem_size_aligned, stream>>>(

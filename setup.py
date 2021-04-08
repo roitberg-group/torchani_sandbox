@@ -94,7 +94,7 @@ def cuda_extension(build_all=False):
         if cuda_version >= 11.1:
             nvcc_args.append("-gencode=arch=compute_86,code=sm_86")
     if DEBUG_CUAEV:
-        nvcc_args.append('-D DEBUG')
+        nvcc_args.append('-DTORCHANI_DEBUG')
     print("nvcc_args: ", nvcc_args)
     print('-' * 75)
     include_dirs = [*maybe_download_cub(), os.path.abspath("torchani/cuaev/")]
