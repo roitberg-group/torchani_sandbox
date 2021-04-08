@@ -1,11 +1,12 @@
 import torch
 import torchani
 import time
-import timeit
 import argparse
 import pkbar
 from typing import Dict
 from torchani.units import hartree2kcalmol
+from tool_utils import time_functions_in_model
+
 H_network = torch.nn.Sequential(
     torch.nn.Linear(384, 160),
     torch.nn.CELU(0.1),
@@ -45,30 +46,6 @@ O_network = torch.nn.Sequential(
     torch.nn.CELU(0.1),
     torch.nn.Linear(96, 1)
 )
-
-
-def time_func(key, func):
-    timers[key] = 0.0
-
-    def wrapper(*args, **kwargs):
-        if synchronize:
-            torch.cuda.synchronize()
-        start = timeit.default_timer()
-        ret = func(*args, **kwargs)
-        if synchronize:
-            torch.cuda.synchronize()
-        end = timeit.default_timer()
-        timers[key] += end - start
-        return ret
-
-    return wrapper
-
-
-def time_functions_in_model(model, function_names_list):
-    # Wrap all the functions from "function_names_list" from the model
-    # "model" with a timer
-    for n in function_names_list:
-        setattr(model, n, time_func(model.__class__.__name__ + '.' + n, getattr(model, n)))
 
 
 if __name__ == "__main__":
@@ -118,15 +95,18 @@ if __name__ == "__main__":
     mse = torch.nn.MSELoss(reduction='none')
 
     # enable timers
-    functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
-                             '_compute_aev', '_triple_by_molecule']
-    functions_to_time_neighborlist = ['forward']
     timers: Dict[str, int] = dict()
-    time_functions_in_model(aev_computer, functions_to_time_aev)
-    time_functions_in_model(aev_computer.neighborlist, functions_to_time_neighborlist)
 
-    model[0].forward = time_func('total', model[0].forward)
-    model[1].forward = time_func('forward', model[1].forward)
+    # time these functions
+
+    fn_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
+                             '_compute_aev', '_triple_by_molecule', 'forward']
+    fn_to_time_neighborlist = ['forward']
+    fn_to_time_nn = ['forward']
+
+    time_functions_in_model(aev_computer, fn_to_time_aev, timers, synchronize)
+    time_functions_in_model(aev_computer.neighborlist, fn_to_time_neighborlist, timers, synchronize)
+    time_functions_in_model(nn, fn_to_time_nn, timers, synchronize)
 
     print('=> loading dataset...')
     shifter = torchani.EnergyShifter(None)
@@ -158,8 +138,8 @@ if __name__ == "__main__":
 
     print('=> more detail about benchmark')
     for k in timers:
-        if k not in ['forward', 'total']:
+        if k not in ['AEVComputer.forward', 'ANIModel.forward']:
             print('{} - {:.2f}s'.format(k, timers[k]))
-    print('Total AEV - {:.2f}s'.format(timers['total']))
-    print('NN - {:.2f}s'.format(timers['forward']))
+    print('Total AEV - {:.2f}s'.format(timers['AEVComputer.forward']))
+    print('NN - {:.2f}s'.format(timers['ANIModel.forward']))
     print('Epoch time - {:.2f}s'.format(stop - start))
