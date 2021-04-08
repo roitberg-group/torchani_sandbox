@@ -52,7 +52,7 @@ class BaseNeighborlist(torch.nn.Module):
 
     @staticmethod
     def _screen_with_cutoff(cutoff: float, coordinates: Tensor, input_neighborlist: Tensor,
-            shift_values: Tensor) -> Tuple[Tensor, Tensor]:
+            shift_values: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         # screen a given neighborlist using a cutoff and return a neighborlist with
         # atoms that are within that cutoff, for all molecules in a coordinate set
         # if the initial coordinates have more than one molecule in the batch dimension
@@ -64,13 +64,20 @@ class BaseNeighborlist(torch.nn.Module):
         num_atoms = coordinates.shape[1]
         selected_coordinates = coordinates.index_select(1, input_neighborlist.view(-1))
         selected_coordinates = selected_coordinates.view(num_mols, 2, -1, 3)
-        distances_sq = (selected_coordinates[:, 0, ...] - selected_coordinates[:, 1, ...] + shift_values).pow(2).sum(-1)
+        vec = (selected_coordinates[:, 0, ...] - selected_coordinates[:, 1, ...] + shift_values)
+        distances_sq = vec.pow(2).sum(-1)
+
         in_cutoff = (distances_sq <= cutoff ** 2).nonzero()
-        molecule_index, pair_index = in_cutoff.unbind(1)
+        # JIT bug prevents using unbind if we index with these
+        molecule_index = in_cutoff[:, 0]
+        pair_index = in_cutoff[:, 1]
         screened_neighborlist = input_neighborlist.index_select(1, pair_index) + molecule_index * num_atoms
         screened_shift_values = shift_values.index_select(0, pair_index)
 
-        return screened_neighborlist, screened_shift_values
+        screened_diff_vector = vec[molecule_index, pair_index, :]
+        screened_distances = distances_sq[molecule_index, pair_index].sqrt()
+
+        return screened_neighborlist, screened_shift_values, screened_diff_vector, screened_distances
 
 
 class FullPairwise(BaseNeighborlist):
@@ -87,7 +94,7 @@ class FullPairwise(BaseNeighborlist):
         self.default_shift_values: Tensor
 
     def forward(self, species: Tensor, coordinates: Tensor, cell: Tensor,
-                pbc: Tensor) -> Tuple[Tensor, Tensor]:
+                pbc: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """Arguments:
             coordinates (:class:`torch.Tensor`): tensor of shape
                 (molecules, atoms, 3) for atom coordinates.
@@ -104,11 +111,14 @@ class FullPairwise(BaseNeighborlist):
             # create dummy shift values that are zero
             shift_values = self.default_shift_values.repeat(atom_index12.shape[1], 3)
 
-        coordinates = coordinates.detach().masked_fill((species == -1).unsqueeze(-1), math.nan)
+        coordinates = coordinates.masked_fill((species == -1).unsqueeze(-1), math.nan)
+        # Difference vector and distances can be obtained for free when
+        # screening, this prevents distance and difference vector recalculation
+        # in other modules. We have to keep coordinates in the graph for this
+        # to work
+        atom_index12, shift_values, vec, dists = self._screen_with_cutoff(self.cutoff, coordinates, atom_index12, shift_values)
 
-        atom_index12, shift_values = self._screen_with_cutoff(self.cutoff, coordinates, atom_index12, shift_values)
-
-        return atom_index12, shift_values
+        return atom_index12, shift_values, vec, dists
 
     def _full_pairwise_pbc(self, species: Tensor,
                            cell: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:

@@ -349,8 +349,8 @@ class AEVComputer(torch.nn.Module):
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
 
-        atom_index12, shift_values = self.neighborlist(species, coordinates, cell, pbc)
-        aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
+        atom_index12, shift_values, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
+        aev = self._compute_aev(species, atom_index12, shift_values, diff_vector, distances)
         return SpeciesAEV(species, aev)
 
     @jit_unused_if_no_cuaev()
@@ -360,37 +360,25 @@ class AEVComputer(torch.nn.Module):
         aev = torch.ops.cuaev.run(coordinates, species_int, self.cuaev_computer)
         return aev
 
-    def _compute_aev(self, species: Tensor, coordinates: Tensor,
-                    atom_index12: Tensor, shift_values: Tensor) -> Tensor:
+    def _compute_aev(self, species: Tensor,
+            atom_index12: Tensor, shift_values: Tensor, diff_vector: Tensor, distances: Tensor) -> Tensor:
 
         species12 = species.flatten()[atom_index12]
-        vec = self._compute_difference_vector(coordinates, atom_index12,
-                                              shift_values)
-
-        distances = vec.norm(2, -1)
-        radial_aev = self._compute_radial_aev(species.shape[0], species.shape[1], species12, distances,
-                                              atom_index12)
+        radial_aev = self._compute_radial_aev(species.shape[0], species.shape[1], species12,
+                                              distances, atom_index12)
 
         # Rca is usually much smaller than Rcr, using neighbor list with
-        # cutoff = Rcr is a waste of resources Now we will get a smaller neighbor
+        # cutoff = Rcr is a waste of resources. Now we will get a smaller neighbor
         # list that only cares about atoms with distances <= Rca
         even_closer_indices = (distances <= self.angular_terms.get_cutoff()).nonzero().flatten()
-
         atom_index12 = atom_index12.index_select(1, even_closer_indices)
         species12 = species12.index_select(1, even_closer_indices)
-        vec = vec.index_select(0, even_closer_indices)
+        diff_vector = diff_vector.index_select(0, even_closer_indices)
 
-        angular_aev = self._compute_angular_aev(species.shape[0], species.shape[1], species12, vec, atom_index12)
+        angular_aev = self._compute_angular_aev(species.shape[0], species.shape[1], species12,
+                                                diff_vector, atom_index12)
 
         return torch.cat([radial_aev, angular_aev], dim=-1)
-
-    @staticmethod
-    def _compute_difference_vector(coordinates: Tensor, atom_index12: Tensor,
-                                   shift_values: Tensor) -> Tensor:
-        selected_coordinates = coordinates.view(-1, 3).index_select(
-            0, atom_index12.view(-1)).view(2, -1, 3)
-        vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
-        return vec
 
     def _compute_angular_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, vec: Tensor,
                              atom_index12: Tensor) -> Tensor:
