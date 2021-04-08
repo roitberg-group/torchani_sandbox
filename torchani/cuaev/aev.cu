@@ -2,7 +2,6 @@
 #include <thrust/equal.h>
 #include <torch/extension.h>
 #include <cub/cub.cuh>
-#include <iostream>
 #include <vector>
 
 #include <ATen/Context.h>
@@ -186,7 +185,6 @@ __global__ void pairwiseDistanceSingleMolecule(
             int pidx = atomicAdd(&s_pcounter_i[ii], 1);
             atomJ_p[mol_idx * natom_pairs + i * (max_natoms_per_mol - 1) + pidx] = j;
             distJ_p[mol_idx * natom_pairs + i * (max_natoms_per_mol - 1) + pidx] = Rij;
-            // printf("i %d, j %d, pidx %d, Rij %f\n", i, j, pidx, Rij);
           }
         }
       }
