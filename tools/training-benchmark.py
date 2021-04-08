@@ -1,10 +1,12 @@
 import torch
 import torchani
 import time
-import timeit
 import argparse
 import pkbar
+from typing import Dict
 from torchani.units import hartree2kcalmol
+from tool_utils import time_functions_in_model
+
 H_network = torch.nn.Sequential(
     torch.nn.Linear(384, 160),
     torch.nn.CELU(0.1),
@@ -46,30 +48,6 @@ O_network = torch.nn.Sequential(
 )
 
 
-def time_func(key, func):
-    timers[key] = 0
-
-    def wrapper(*args, **kwargs):
-        if synchronize:
-            torch.cuda.synchronize()
-        start = timeit.default_timer()
-        ret = func(*args, **kwargs)
-        if synchronize:
-            torch.cuda.synchronize()
-        end = timeit.default_timer()
-        timers[key] += end - start
-        return ret
-
-    return wrapper
-
-
-def time_functions_in_module(module, function_names_list):
-    # Wrap all the functions from "function_names_list" from the module
-    # "module" with a timer
-    for n in function_names_list:
-        setattr(module, n, time_func(f'{module.__name__}.{n}', getattr(module, n)))
-
-
 if __name__ == "__main__":
     # parse command line arguments
     parser = argparse.ArgumentParser()
@@ -88,9 +66,9 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--num_epochs',
                         help='epochs',
                         default=1, type=int)
-    parser = parser.parse_args()
+    args = parser.parse_args()
 
-    if parser.synchronize:
+    if args.synchronize:
         synchronize = True
     else:
         synchronize = False
@@ -102,48 +80,50 @@ if __name__ == "__main__":
 
     Rcr = 5.2000e+00
     Rca = 3.5000e+00
-    EtaR = torch.tensor([1.6000000e+01], device=parser.device)
-    ShfR = torch.tensor([9.0000000e-01, 1.1687500e+00, 1.4375000e+00, 1.7062500e+00, 1.9750000e+00, 2.2437500e+00, 2.5125000e+00, 2.7812500e+00, 3.0500000e+00, 3.3187500e+00, 3.5875000e+00, 3.8562500e+00, 4.1250000e+00, 4.3937500e+00, 4.6625000e+00, 4.9312500e+00], device=parser.device)
-    Zeta = torch.tensor([3.2000000e+01], device=parser.device)
-    ShfZ = torch.tensor([1.9634954e-01, 5.8904862e-01, 9.8174770e-01, 1.3744468e+00, 1.7671459e+00, 2.1598449e+00, 2.5525440e+00, 2.9452431e+00], device=parser.device)
-    EtaA = torch.tensor([8.0000000e+00], device=parser.device)
-    ShfA = torch.tensor([9.0000000e-01, 1.5500000e+00, 2.2000000e+00, 2.8500000e+00], device=parser.device)
+    EtaR = torch.tensor([1.6000000e+01], device=args.device)
+    ShfR = torch.tensor([9.0000000e-01, 1.1687500e+00, 1.4375000e+00, 1.7062500e+00, 1.9750000e+00, 2.2437500e+00, 2.5125000e+00, 2.7812500e+00, 3.0500000e+00, 3.3187500e+00, 3.5875000e+00, 3.8562500e+00, 4.1250000e+00, 4.3937500e+00, 4.6625000e+00, 4.9312500e+00], device=args.device)
+    Zeta = torch.tensor([3.2000000e+01], device=args.device)
+    ShfZ = torch.tensor([1.9634954e-01, 5.8904862e-01, 9.8174770e-01, 1.3744468e+00, 1.7671459e+00, 2.1598449e+00, 2.5525440e+00, 2.9452431e+00], device=args.device)
+    EtaA = torch.tensor([8.0000000e+00], device=args.device)
+    ShfA = torch.tensor([9.0000000e-01, 1.5500000e+00, 2.2000000e+00, 2.8500000e+00], device=args.device)
     num_species = 4
     aev_computer = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
 
     nn = torchani.ANIModel([H_network, C_network, N_network, O_network])
-    model = torch.nn.Sequential(aev_computer, nn).to(parser.device)
+    model = torch.nn.Sequential(aev_computer, nn).to(args.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.000001)
     mse = torch.nn.MSELoss(reduction='none')
-    timers = {}
 
     # enable timers
-    functions_to_time = ['cutoff_cosine', 'radial_terms', 'angular_terms',
-                         'compute_shifts', 'neighbor_pairs',
-                         'neighbor_pairs_nopbc', 'cumsum_from_zero',
-                         'triple_by_molecule', 'compute_aev']
+    timers: Dict[str, int] = dict()
 
-    time_functions_in_module(torchani.aev, functions_to_time)
+    # time these functions
 
-    model[0].forward = time_func('total', model[0].forward)
-    model[1].forward = time_func('forward', model[1].forward)
+    fn_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
+                             '_compute_aev', '_triple_by_molecule', 'forward']
+    fn_to_time_neighborlist = ['forward']
+    fn_to_time_nn = ['forward']
+
+    time_functions_in_model(aev_computer, fn_to_time_aev, timers, synchronize)
+    time_functions_in_model(aev_computer.neighborlist, fn_to_time_neighborlist, timers, synchronize)
+    time_functions_in_model(nn, fn_to_time_nn, timers, synchronize)
 
     print('=> loading dataset...')
     shifter = torchani.EnergyShifter(None)
-    dataset = torchani.data.load(parser.dataset_path).subtract_self_energies(shifter).species_to_indices().shuffle().collate(parser.batch_size).cache()
+    dataset = torchani.data.load(args.dataset_path).subtract_self_energies(shifter).species_to_indices().shuffle().collate(args.batch_size).cache()
 
     print('=> start training')
     start = time.time()
 
-    for epoch in range(0, parser.num_epochs):
+    for epoch in range(0, args.num_epochs):
 
-        print('Epoch: %d/%d' % (epoch + 1, parser.num_epochs))
+        print('Epoch: %d/%d' % (epoch + 1, args.num_epochs))
         progbar = pkbar.Kbar(target=len(dataset) - 1, width=8)
 
         for i, properties in enumerate(dataset):
-            species = properties['species'].to(parser.device)
-            coordinates = properties['coordinates'].to(parser.device).float()
-            true_energies = properties['energies'].to(parser.device).float()
+            species = properties['species'].to(args.device)
+            coordinates = properties['coordinates'].to(args.device).float()
+            true_energies = properties['energies'].to(args.device).float()
             num_atoms = (species >= 0).sum(dim=1, dtype=true_energies.dtype)
             _, predicted_energies = model((species, coordinates))
             loss = (mse(predicted_energies, true_energies) / num_atoms.sqrt()).mean()
@@ -158,8 +138,8 @@ if __name__ == "__main__":
 
     print('=> more detail about benchmark')
     for k in timers:
-        if k.startswith('torchani.'):
+        if k not in ['AEVComputer.forward', 'ANIModel.forward']:
             print('{} - {:.2f}s'.format(k, timers[k]))
-    print('Total AEV - {:.2f}s'.format(timers['total']))
-    print('NN - {:.2f}s'.format(timers['forward']))
+    print('Total AEV - {:.2f}s'.format(timers['AEVComputer.forward']))
+    print('NN - {:.2f}s'.format(timers['ANIModel.forward']))
     print('Epoch time - {:.2f}s'.format(stop - start))

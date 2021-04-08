@@ -9,6 +9,7 @@ import ase.io
 import math
 import traceback
 from common_aev_test import _TestAEVBase
+from torchani.testing import TestCase
 
 
 path = os.path.dirname(os.path.realpath(__file__))
@@ -16,7 +17,7 @@ const_file = os.path.join(path, '../torchani/resources/ani-1x_8x/rHCNO-5.2R_16-3
 N = 97
 
 
-class TestAEVConstructor(torchani.testing.TestCase):
+class TestAEVConstructor(TestCase):
     # Test that checks that the friendly constructor
     # reproduces the values from ANI1x with the correct parameters
     def testCoverLinearly(self):
@@ -32,13 +33,20 @@ class TestAEVConstructor(torchani.testing.TestCase):
                         'angle_sections': 8,
                         'num_species': 4}
         aev_computer_alt = torchani.AEVComputer.cover_linearly(**ani1x_values)
-        constants = aev_computer._constants()
-        constants_alt = aev_computer_alt._constants()
+        constants = self._get_aev_constants(aev_computer)
+        constants_alt = self._get_aev_constants(aev_computer_alt)
         for c, ca in zip(constants, constants_alt):
             self.assertEqual(c, ca)
 
+    @staticmethod
+    def _get_aev_constants(aev_computer):
+        return aev_computer.radial_terms.cutoff, aev_computer.radial_terms.EtaR,\
+            aev_computer.radial_terms.ShfR, aev_computer.angular_terms.cutoff,\
+            aev_computer.angular_terms.ShfZ, aev_computer.angular_terms.EtaA,\
+            aev_computer.angular_terms.Zeta, aev_computer.angular_terms.ShfA, aev_computer.num_species
 
-class TestIsolated(torchani.testing.TestCase):
+
+class TestIsolated(TestCase):
     # Tests that there is no error when atoms are separated
     # a distance greater than the cutoff radius from all other atoms
     # this can throw an IndexError for large distances or lone atoms
@@ -127,12 +135,12 @@ class TestAEV(_TestAEVBase):
 
     def testBoundingCell(self):
         # AEV should not output NaN even when coordinates are superimposed
-        datafile = os.path.join(path, f'test_data/ANI1_subset/10')
+        datafile = os.path.join(path, 'test_data/ANI1_subset/10')
         with open(datafile, 'rb') as f:
             coordinates, species, _, _, _, _ = pickle.load(f)
             coordinates = torch.from_numpy(coordinates)
             species = torch.from_numpy(species)
-        
+
         coordinates, cell = self.aev_computer.neighborlist._compute_bounding_cell(coordinates, 1e-5)
         self.assertTrue((coordinates > 0.0).all())
         self.assertTrue((coordinates < torch.norm(cell, dim=1)).all())
@@ -169,12 +177,11 @@ class TestAEVJIT(TestAEV):
         self.aev_computer = torch.jit.script(self.aev_computer)
 
 
-class TestPBCSeeEachOther(torchani.testing.TestCase):
+class TestPBCSeeEachOther(TestCase):
     def setUp(self):
         consts = torchani.neurochem.Constants(const_file)
         self.aev_computer = torchani.AEVComputer(**consts).to(torch.double)
-        neighborlist_calculator = torchani.aev.neighborlist_calculators.FullPairwise(1.0)
-        self.neighborlist_pbc = neighborlist_calculator._full_pairwise_pbc
+        self.neighborlist = torchani.aev.neighbors.FullPairwise(1.0)
 
     def testTranslationalInvariancePBC(self):
         coordinates = torch.tensor(
@@ -213,7 +220,7 @@ class TestPBCSeeEachOther(torchani.testing.TestCase):
 
         for xyz2 in xyz2s:
             coordinates = torch.stack([xyz1, xyz2]).to(torch.double).unsqueeze(0)
-            atom_index12, _ = self.neighborlist_pbc(species, coordinates, cell, pbc)
+            atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -230,7 +237,7 @@ class TestPBCSeeEachOther(torchani.testing.TestCase):
             xyz2[i] = 9.9
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _ = self.neighborlist_pbc(species, coordinates, cell, pbc)
+            atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -250,7 +257,7 @@ class TestPBCSeeEachOther(torchani.testing.TestCase):
                 xyz2[j] = new_j
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _ = self.neighborlist_pbc(species, coordinates, cell, pbc)
+            atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -265,13 +272,13 @@ class TestPBCSeeEachOther(torchani.testing.TestCase):
         xyz2 = torch.tensor([10.0, 0.1, 0.1], dtype=torch.double)
 
         coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-        atom_index12, _ = self.neighborlist_pbc(species, coordinates, cell, pbc)
+        atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
         atom_index1, atom_index2 = atom_index12.unbind(0)
         self.assertEqual(atom_index1.tolist(), [0])
         self.assertEqual(atom_index2.tolist(), [1])
 
 
-class TestAEVOnBoundary(torchani.testing.TestCase):
+class TestAEVOnBoundary(TestCase):
 
     def setUp(self):
         self.eps = 1e-9
@@ -317,7 +324,7 @@ class TestAEVOnBoundary(torchani.testing.TestCase):
             self.assertEqual(aev, self.aev)
 
 
-class TestAEVOnBenzenePBC(torchani.testing.TestCase):
+class TestAEVOnBenzenePBC(TestCase):
 
     def setUp(self):
         consts = torchani.neurochem.Constants(const_file)
