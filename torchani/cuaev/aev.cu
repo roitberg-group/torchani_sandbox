@@ -1127,7 +1127,7 @@ void cuaev_forward(
   cubScan(radialNbr_numJPerI_p, startIdxJ_p, total_atoms, stream);
   // radialNbr.nJ could also be calculated by startIdxJ_t[-1] + numJPerI_t[-1], but this need
   // 2 times cudaMemcpyAsync.
-  // cubSum only need one cudaMemcpyAsync, althought need a kernel run, but negligible
+  // cubSum only need one cudaMemcpyAsync, althought it need a kernel run, it is negligible
   result.radialNbr.nJ = cubSum(radialNbr_numJPerI_p, total_atoms, stream);
 
   if (DEBUG_TEST) {
