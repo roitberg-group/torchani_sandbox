@@ -3,6 +3,7 @@ import torchani
 import argparse
 import pkbar
 from torchani.units import hartree2kcalmol
+from tool_utils import time_functions_in_model
 
 
 WARM_UP_BATCHES = 50
@@ -22,36 +23,19 @@ def atomic():
     return model
 
 
-def time_func(key, func):
-
-    def wrapper(*args, **kwargs):
-        torch.cuda.nvtx.range_push(key)
-        ret = func(*args, **kwargs)
-        torch.cuda.nvtx.range_pop()
-        return ret
-
-    return wrapper
-
-
-def time_functions_in_model(model, function_names_list):
-    # Wrap all the functions from "function_names_list" from the model
-    # "model" with a timer
-    for n in function_names_list:
-        setattr(model, n, time_func(n, getattr(model, n)))
-
-
 def enable_timers(model):
     # enable timers
     aev_computer = model[0]
-    functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
+    nn = model[1]
+    nl = aev_computer.neighborlist
+    fn_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
                              '_compute_aev', '_triple_by_molecule']
 
-    time_functions_in_model(aev_computer, functions_to_time_aev)
-
-    functions_to_time_neighborlist = ['_full_pairwise', '_full_pairwise_pbc']
-    time_functions_in_model(aev_computer.neighborlist, functions_to_time_neighborlist)
-
-    model[1].forward = time_func('nn forward', model[1].forward)
+    fn_to_time_neighborlist = ['forward']
+    fn_to_time_nn = ['forward']
+    time_functions_in_model(nl, fn_to_time_neighborlist, nvtx=True)
+    time_functions_in_model(nn, fn_to_time_nn, nvtx=True)
+    time_functions_in_model(aev_computer, fn_to_time_aev, nvtx=True)
 
 
 if __name__ == "__main__":
