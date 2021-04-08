@@ -1116,11 +1116,7 @@ void cuaev_forward(
 
     // remove padding numJPerI if numj == 0
     result.nI = cubDeviceSelectIf(
-        numJPerI_p,
-        radialNbr_numJPerI_p,
-        total_atoms,
-        [=] __device__(const int numj) { return (bool)numj; },
-        stream);
+        numJPerI_p, radialNbr_numJPerI_p, total_atoms, [=] __device__(const int numj) { return (bool)numj; }, stream);
 
     // also remove padding atomI
     // Note: cub::DeviceSelect::Flagged Bug: flag current only allow bool or int which is ether 0 or 1
