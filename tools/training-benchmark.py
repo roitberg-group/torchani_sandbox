@@ -4,6 +4,7 @@ import time
 import timeit
 import argparse
 import pkbar
+from typing import Dict
 from torchani.units import hartree2kcalmol
 H_network = torch.nn.Sequential(
     torch.nn.Linear(384, 160),
@@ -67,7 +68,7 @@ def time_functions_in_model(model, function_names_list):
     # Wrap all the functions from "function_names_list" from the model
     # "model" with a timer
     for n in function_names_list:
-        setattr(model, n, time_func(n, getattr(model, n)))
+        setattr(model, n, time_func(model.__class__.__name__ + '.' + n, getattr(model, n)))
 
 
 if __name__ == "__main__":
@@ -119,10 +120,8 @@ if __name__ == "__main__":
     # enable timers
     functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
                              '_compute_aev', '_triple_by_molecule']
-    functions_to_time_neighborlist = ['_full_pairwise', '_full_pairwise_pbc']
-
-    timers = {k: 0.0 for k in functions_to_time_aev + functions_to_time_neighborlist}
-
+    functions_to_time_neighborlist = ['forward']
+    timers: Dict[str, int] = dict()
     time_functions_in_model(aev_computer, functions_to_time_aev)
     time_functions_in_model(aev_computer.neighborlist, functions_to_time_neighborlist)
 
