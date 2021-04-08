@@ -143,13 +143,18 @@ class AEVComputer(torch.nn.Module):
 
         # cuda aev
         if self.use_cuda_extension:
-            self.cuda()
             assert cuaev_is_installed, "AEV cuda extension is not installed"
         # cuaev_computer is created only when use_cuda_extension is True.
         # However jit needs to know cuaev_computer's Type even when
-        # use_cuda_extension is False
+        # use_cuda_extension is False. **NOTE: this is only a kind of "dummy"
+        # initialization, it is always necessary to reinitialize in forward at
+        # least once, since some tensors may be on CPU at this point**
         if cuaev_is_installed:
             self._init_cuaev_computer()
+
+        # We defer true cuaev initialization to forward so that we ensure that
+        # all tensors are in GPU once it is initialized.
+        self.register_buffer('cuaev_is_initialized', torch.tensor(False))
 
     def _validate_cutoffs_init(self):
         # validate cutoffs and emit warnings for strange configurations
@@ -336,6 +341,9 @@ class AEVComputer(torch.nn.Module):
         pbc = pbc if pbc is not None else self.default_pbc
 
         if self.use_cuda_extension:
+            if not self.cuaev_is_initialized:
+                self._init_cuaev_computer()
+                self.cuaev_is_initialized = torch.tensor(True)
             assert not pbc.any(), "cuaev currently does not support PBC"
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
