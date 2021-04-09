@@ -96,7 +96,7 @@ __global__ void pairwiseDistance(
     if (specie_i != -1) {
       float3 pos_i = s_pos[i];
 
-      for (int j = threadIdx.x; j < max_natoms_per_mol; j += blockDim.x) {
+      for (int j = threadIdx.x + i + 1; j < max_natoms_per_mol; j += blockDim.x) {
         SpeciesT specie_j = s_species[j];
 
         if (specie_j != -1 && i != j) {
@@ -104,9 +104,14 @@ __global__ void pairwiseDistance(
           DataT Rsq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
           DataT Rij = sqrt(Rsq);
           if (Rij <= Rcr) {
-            int pidx = atomicAdd(&s_pcounter_i[i], 1);
-            atomJ_p[mol_idx * pairs_per_mol + i * (max_natoms_per_mol - 1) + pidx] = j;
-            distJ_p[mol_idx * pairs_per_mol + i * (max_natoms_per_mol - 1) + pidx] = Rij;
+            // for atom i
+            int pidx_i = atomicAdd(&s_pcounter_i[i], 1);
+            atomJ_p[mol_idx * pairs_per_mol + i * (max_natoms_per_mol - 1) + pidx_i] = j;
+            distJ_p[mol_idx * pairs_per_mol + i * (max_natoms_per_mol - 1) + pidx_i] = Rij;
+            // for atom j
+            int pidx_j = atomicAdd(&s_pcounter_i[j], 1);
+            atomJ_p[mol_idx * pairs_per_mol + j * (max_natoms_per_mol - 1) + pidx_j] = i;
+            distJ_p[mol_idx * pairs_per_mol + j * (max_natoms_per_mol - 1) + pidx_j] = Rij;
           } // if Rij is within Rcr
         } // if j is not padding atom and i is not j
       }
@@ -825,10 +830,11 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
   }
 }
 
-// while copying radial's neighbor from tmp buffer, check whether it is within Rca,
-// if so then also copy it into angular's neighbor list
+// There are 2 tasks in the post process
+// 1. copy radial's neighbor from tmp buffer
+// 2. and check whether it is within Rca, if so then also copy it into angular's neighbor list
 template <int ATOM_I_PER_BLOCK>
-__global__ void cutoffSelect(
+__global__ void postProcessNbrList(
     const int* __restrict__ atomJ,
     const float* __restrict__ distJ,
     const AtomI* __restrict__ atom_i,
@@ -1102,7 +1108,7 @@ void cuaev_forward(
     Tensor atom_i_t = torch::empty(total_atoms * 2, d_options.dtype(torch::kInt32));
     AtomI* atom_i_p = (AtomI*)atom_i_t.data_ptr();
 
-    dim3 block(32, 4, 1);
+    dim3 block(8, 16, 1);
     // maximum 4096 atoms, which needs 49152 byte (48 kb) of shared memory
     int smem_pairdist = sizeof(float) * max_natoms_per_mol * 5; // x, y, z, spe, counter
     pairwiseDistance<<<n_molecules, block, smem_pairdist, stream>>>(
@@ -1148,11 +1154,11 @@ void cuaev_forward(
   result.angularNbr.distJ_t = torch::empty(result.radialNbr.nJ, d_options.dtype(torch::kFloat32));
   float* angularNbr_distJ_p = (float*)result.angularNbr.distJ_t.data_ptr();
 
-  { // cutoffSelect
+  { // postProcessNbrList
     int ATOM_J_PER_TILE = 16;
     dim3 block(ATOM_J_PER_TILE, ATOM_I_PER_BLOCK, 1);
     int blocks = (result.nI + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
-    cutoffSelect<ATOM_I_PER_BLOCK><<<blocks, block, 0, stream>>>(
+    postProcessNbrList<ATOM_I_PER_BLOCK><<<blocks, block, 0, stream>>>(
         atomJ_p,
         distJ_p,
         atomI_p,
