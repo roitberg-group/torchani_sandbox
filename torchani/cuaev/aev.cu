@@ -40,7 +40,7 @@ constexpr int csubaev_offsets(int i, int j, int n) {
 // final k:
 // [ 5,  4,  5,  3,  4,  5,  2,  3,  4,  5,  1,  2,  3,  4,  5]
 //
-__host__ __device__ __forceinline__ void pairidx_to_jk(const int& n, const int& jnum, int* j, int* k) {
+__host__ __device__ __forceinline__ void pairidx_to_jk(int n, int jnum, int* j, int* k) {
   int jj = ceil((sqrt(8 * (n + 1) + 1.f) - 1) / 2.f); // x (x + 1) / 2 = n --> x = (-b + sqrt(1 + 8n)) / 2
   int kk = n - jj * (jj - 1) / 2; // 0-indexed
   jj = jnum - jj - 1;
