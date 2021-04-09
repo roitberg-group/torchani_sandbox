@@ -5,47 +5,47 @@ using torch::autograd::AutogradContext;
 using torch::autograd::tensor_list;
 
 AEVScalarParams::AEVScalarParams(
-    float Rcr_,
-    float Rca_,
-    Tensor EtaR_t_,
-    Tensor ShfR_t_,
-    Tensor EtaA_t_,
-    Tensor Zeta_t_,
-    Tensor ShfA_t_,
-    Tensor ShfZ_t_,
-    int num_species_)
-    : Rcr(Rcr_),
-      Rca(Rca_),
-      radial_sublength(EtaR_t_.size(0) * ShfR_t_.size(0)),
-      angular_sublength(EtaA_t_.size(0) * Zeta_t_.size(0) * ShfA_t_.size(0) * ShfZ_t_.size(0)),
-      num_species(num_species_),
-      EtaR_t(EtaR_t_),
-      ShfR_t(ShfR_t_),
-      EtaA_t(EtaA_t_),
-      Zeta_t(Zeta_t_),
-      ShfA_t(ShfA_t_),
-      ShfZ_t(ShfZ_t_) {
+    float Rcr,
+    float Rca,
+    Tensor EtaR_t,
+    Tensor ShfR_t,
+    Tensor EtaA_t,
+    Tensor Zeta_t,
+    Tensor ShfA_t,
+    Tensor ShfZ_t,
+    int num_species)
+    : Rcr(Rcr),
+      Rca(Rca),
+      radial_sublength(EtaR_t.size(0) * ShfR_t.size(0)),
+      angular_sublength(EtaA_t.size(0) * Zeta_t.size(0) * ShfA_t.size(0) * ShfZ_t.size(0)),
+      num_species(num_species),
+      EtaR_t(EtaR_t),
+      ShfR_t(ShfR_t),
+      EtaA_t(EtaA_t),
+      Zeta_t(Zeta_t),
+      ShfA_t(ShfA_t),
+      ShfZ_t(ShfZ_t) {
   radial_length = radial_sublength * num_species;
   angular_length = angular_sublength * (num_species * (num_species + 1) / 2);
 }
 
 Result::Result(
-    Tensor aev_t_,
-    Tensor atomI_t_,
-    Tensor startIdxJ_t_,
-    int64_t nI_,
-    Tensor coordinates_t_,
-    Tensor species_t_,
-    NeighborList radialNbr_,
-    NeighborList angularNbr_)
-    : aev_t(aev_t_),
-      atomI_t(atomI_t_),
-      startIdxJ_t(startIdxJ_t_),
-      nI(nI_),
-      coordinates_t(coordinates_t_),
-      species_t(species_t_),
-      radialNbr(radialNbr_),
-      angularNbr(angularNbr_) {}
+    Tensor aev_t,
+    Tensor atomI_t,
+    Tensor startIdxJ_t,
+    int64_t nI,
+    Tensor coordinates_t,
+    Tensor species_t,
+    NeighborList radialNbr,
+    NeighborList angularNbr)
+    : aev_t(aev_t),
+      atomI_t(atomI_t),
+      startIdxJ_t(startIdxJ_t),
+      nI(nI),
+      coordinates_t(coordinates_t),
+      species_t(species_t),
+      radialNbr(radialNbr),
+      angularNbr(angularNbr) {}
 
 Result::Result(tensor_list tensors)
     : aev_t(tensors[0]), // aev_t will be a undefined tensor
@@ -67,13 +67,13 @@ Result::Result()
       radialNbr(NeighborList()),
       angularNbr(NeighborList()) {}
 
-Result::Result(Tensor coordinates_t_, Tensor species_t_)
+Result::Result(Tensor coordinates_t, Tensor species_t)
     : aev_t(Tensor()),
       atomI_t(Tensor()),
       startIdxJ_t(Tensor()),
       nI(0),
-      coordinates_t(coordinates_t_),
-      species_t(species_t_),
+      coordinates_t(coordinates_t),
+      species_t(species_t),
       radialNbr(NeighborList()),
       angularNbr(NeighborList()) {}
 

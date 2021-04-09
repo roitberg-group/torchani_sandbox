@@ -120,12 +120,8 @@ struct NeighborList {
   Tensor distJ_t;
 
   NeighborList() = default;
-  NeighborList(int nJ_, int maxNumJPerI_aligned_, Tensor atomJ_t_, Tensor numJPerI_t_, Tensor distJ_t_)
-      : nJ(nJ_),
-        maxNumJPerI_aligned(maxNumJPerI_aligned_),
-        atomJ_t(atomJ_t_),
-        numJPerI_t(numJPerI_t_),
-        distJ_t(distJ_t_) {}
+  NeighborList(int nJ, int maxNumJPerI_aligned, Tensor atomJ_t, Tensor numJPerI_t, Tensor distJ_t)
+      : nJ(nJ), maxNumJPerI_aligned(maxNumJPerI_aligned), atomJ_t(atomJ_t), numJPerI_t(numJPerI_t), distJ_t(distJ_t) {}
 };
 
 struct AEVScalarParams {
@@ -143,15 +139,15 @@ struct AEVScalarParams {
   Tensor ShfA_t;
   Tensor ShfZ_t;
   AEVScalarParams(
-      float Rcr_,
-      float Rca_,
-      Tensor EtaR_t_,
-      Tensor ShfR_t_,
-      Tensor EtaA_t_,
-      Tensor Zeta_t_,
-      Tensor ShfA_t_,
-      Tensor ShfZ_t_,
-      int num_species_);
+      float Rcr,
+      float Rca,
+      Tensor EtaR_t,
+      Tensor ShfR_t,
+      Tensor EtaA_t,
+      Tensor Zeta_t,
+      Tensor ShfA_t,
+      Tensor ShfZ_t,
+      int num_species);
 };
 
 struct Result {
@@ -165,16 +161,16 @@ struct Result {
   NeighborList angularNbr;
 
   Result(
-      Tensor aev_t_,
-      Tensor atomI_t_,
-      Tensor startIdxJ_t_,
-      int64_t nI_,
-      Tensor coordinates_t_,
-      Tensor species_t_,
-      NeighborList radialNbr_,
-      NeighborList angularNbr_);
+      Tensor aev_t,
+      Tensor atomI_t,
+      Tensor startIdxJ_t,
+      int64_t nI,
+      Tensor coordinates_t,
+      Tensor species_t,
+      NeighborList radialNbr,
+      NeighborList angularNbr);
   Result(tensor_list tensors);
-  Result(Tensor coordinates_t_, Tensor species_t_);
+  Result(Tensor coordinates_t, Tensor species_t);
   Result();
   operator tensor_list() {
     return {
