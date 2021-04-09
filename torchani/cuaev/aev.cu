@@ -62,7 +62,7 @@ __host__ __device__ __forceinline__ int align(const int& value) {
 template <typename SpeciesT, typename DataT, typename IndexT = int>
 __global__ void pairwiseDistance(
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
-    DataT* pos_p,
+    const DataT* pos_p,
     torch::PackedTensorAccessor32<SpeciesT, 1, torch::RestrictPtrTraits> radialNumPairsPerAtom_t,
     AtomI* __restrict__ atom_i,
     int* __restrict__ atomJ_p,
@@ -126,7 +126,7 @@ __global__ void pairwiseDistance(
 template <int ATOM_I_PER_BLOCK, int ATOM_J_PER_TILE, typename SpeciesT, typename DataT, typename IndexT = int>
 __global__ void pairwiseDistanceSingleMolecule(
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
-    DataT* pos_p,
+    const DataT* pos_p,
     torch::PackedTensorAccessor32<SpeciesT, 1, torch::RestrictPtrTraits> radialNumPairsPerAtom_t,
     AtomI* __restrict__ atom_i,
     int* __restrict__ atomJ_p,
@@ -203,7 +203,7 @@ template <
     int TILE_PER_WARP = 8>
 __global__ void cuAngularAEVs(
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
-    DataT* pos_p,
+    const DataT* pos_p,
     const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> ShfA_t,
     const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> ShfZ_t,
     const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> EtaA_t,
@@ -353,7 +353,7 @@ template <
     int TILE_PER_WARP = 8>
 __global__ void cuAngularAEVs_backward_or_doublebackward(
     torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
-    DataT* pos_p,
+    const DataT* pos_p,
     torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> ShfA_t,
     torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> ShfZ_t,
     torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> EtaA_t,
@@ -697,7 +697,7 @@ __global__ void cuRadialAEVs(
 // every <TILE_SIZE> threads take care of 1 RIJ, and iterate for <nShfR / TILE_SIZE> times
 template <bool is_double_backward, typename SpeciesT, typename DataT, int TILE_SIZE>
 __global__ void cuRadialAEVs_backward_or_doublebackward(
-    DataT* pos_p,
+    const DataT* pos_p,
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
     const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> ShfR_t,
     const torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> EtaR_t,
