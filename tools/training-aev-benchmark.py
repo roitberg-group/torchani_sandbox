@@ -117,7 +117,7 @@ def benchmark(args, dataset, use_cuda_extension, force_train=False):
     synchronize = True
     timers = {}
 
-    aev_computer = torchani.AEVComputer.like_1x(use_cuda_extension)
+    aev_computer = torchani.AEVComputer.like_1x(use_cuda_extension=use_cuda_extension)
 
     nn = torchani.ANIModel(build_network())
     model = torch.nn.Sequential(aev_computer, nn).to(args.device)
