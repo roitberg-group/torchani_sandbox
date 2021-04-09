@@ -111,7 +111,7 @@ if __name__ == "__main__":
     num_species = 4
     aev_computer = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
 
-    nn = torchani.ANIModel([H_network, C_network, N_network, O_network])
+    nn = torchani.ANIModel([H_network, C_network, N_network, O_network], parallel=False)
     model = torch.nn.Sequential(aev_computer, nn).to(args.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.000001)
     mse = torch.nn.MSELoss(reduction='none')
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     # enable timers
     functions_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev', '_compute_difference_vector',
                              '_compute_aev', '_triple_by_molecule']
-    functions_to_time_neighborlist = ['_full_pairwise', '_full_pairwise_pbc']
+    functions_to_time_neighborlist = ['forward']
 
     timers = {k: 0.0 for k in functions_to_time_aev + functions_to_time_neighborlist}
 

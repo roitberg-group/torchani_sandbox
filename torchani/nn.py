@@ -48,18 +48,48 @@ class ANIModel(torch.nn.ModuleDict):
             od[str(i)] = m
         return od
 
-    def __init__(self, modules):
+    def __init__(self, modules, parallel=False):
         super().__init__(self.ensureOrderedDict(modules))
+        self.parallel = parallel
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
-
-        atomic_energies = self._atomic_energies((species, aev))
+        if self.parallel:
+            atomic_energies = self._atomic_energies_streams((species, aev))
+        else:
+            atomic_energies = self._atomic_energies((species, aev))
         # shape of atomic energies is (C, A)
         return SpeciesEnergies(species, torch.sum(atomic_energies, dim=1))
+
+    @torch.jit.export
+    def _atomic_energies_streams(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
+        # Obtain the atomic energies associated with a given tensor of AEV's
+        species, aev = species_aev
+        assert species.shape == aev.shape[:-1]
+        species_ = species.flatten()
+        aev = aev.flatten(0, 1)
+
+        output = aev.new_zeros(species_.shape)
+        streams = {k: torch.cuda.Stream() for k in self.keys()}
+        outputs = []
+        masks = []
+        for i, k in enumerate(self.keys()):
+            with torch.cuda.stream(streams[k]):
+                mask = (species_ == i)
+                midx = mask.nonzero().flatten()
+                if midx.shape[0] > 0:
+                    input_ = aev.index_select(0, midx)
+                    outputs.append(self[k](input_).flatten())
+                    masks.append(mask)
+
+        for out, mask in zip(outputs, masks):
+            output.masked_scatter_(mask, out)
+
+        output = output.view_as(species)
+        return output
 
     @torch.jit.export
     def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
@@ -68,9 +98,7 @@ class ANIModel(torch.nn.ModuleDict):
         assert species.shape == aev.shape[:-1]
         species_ = species.flatten()
         aev = aev.flatten(0, 1)
-
         output = aev.new_zeros(species_.shape)
-
         for i, m in enumerate(self.values()):
             mask = (species_ == i)
             midx = mask.nonzero().flatten()
@@ -84,16 +112,26 @@ class ANIModel(torch.nn.ModuleDict):
 class Ensemble(torch.nn.ModuleList):
     """Compute the average output of an ensemble of modules."""
 
-    def __init__(self, modules):
+    def __init__(self, modules, parallel=False):
         super().__init__(modules)
         self.size = len(modules)
+        self.parallel = parallel
 
     def forward(self, species_input: Tuple[Tensor, Tensor],  # type: ignore
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+
         sum_ = 0
-        for x in self:
-            sum_ += x(species_input)[1]
+        if self.parallel:
+            streams = [torch.cuda.Stream() for _ in self]
+            outs = []
+            for j, x in enumerate(self):
+                with torch.cuda.stream(streams[j]):
+                    outs.append(x(species_input)[1])
+            sum_ = sum(outs)
+        else:
+            for x in self:
+                sum_ += x(species_input)[1]
         species, _ = species_input
         return SpeciesEnergies(species, sum_ / self.size)
 
