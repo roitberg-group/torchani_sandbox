@@ -71,7 +71,7 @@ __global__ void pairwiseDistance(
     const IndexT max_natoms_per_mol) {
   extern __shared__ float smem[];
   int* s_pcounter_i = reinterpret_cast<int*>(&smem[0]);
-  int* s_type = reinterpret_cast<int*>(&smem[max_natoms_per_mol]);
+  int* s_species = reinterpret_cast<int*>(&smem[max_natoms_per_mol]);
   float3* s_pos = reinterpret_cast<float3*>(&smem[max_natoms_per_mol * 2]);
 
   const float3* pos_t_3 = reinterpret_cast<const float3*>(&pos_t[0][0][0]);
@@ -80,10 +80,10 @@ __global__ void pairwiseDistance(
   int tIdx = blockDim.x * threadIdx.y + threadIdx.x;
 
   for (int i = tIdx; i < max_natoms_per_mol; i += blockDim.x * blockDim.y) {
-    SpeciesT type_i = species_t[mol_idx][i];
-    s_type[i] = type_i;
+    SpeciesT specie_i = species_t[mol_idx][i];
+    s_species[i] = specie_i;
     s_pcounter_i[i] = 0;
-    if (type_i != -1) {
+    if (specie_i != -1) {
       s_pos[i] = pos_t_3[max_natoms_per_mol * mol_idx + i];
     }
   }
@@ -92,14 +92,14 @@ __global__ void pairwiseDistance(
   int pairs_per_mol = max_natoms_per_mol * (max_natoms_per_mol - 1);
 
   for (int i = threadIdx.y; i < max_natoms_per_mol; i += blockDim.y) {
-    SpeciesT type_i = s_type[i];
-    if (type_i != -1) {
+    SpeciesT specie_i = s_species[i];
+    if (specie_i != -1) {
       float3 pos_i = s_pos[i];
 
       for (int j = threadIdx.x; j < max_natoms_per_mol; j += blockDim.x) {
-        SpeciesT type_j = s_type[j];
+        SpeciesT specie_j = s_species[j];
 
-        if (type_j != -1 && i != j) {
+        if (specie_j != -1 && i != j) {
           float3 delta = make_float3(s_pos[j].x - pos_i.x, s_pos[j].y - pos_i.y, s_pos[j].z - pos_i.z);
           DataT Rsq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
           DataT Rij = sqrt(Rsq);
@@ -146,10 +146,10 @@ __global__ void pairwiseDistanceSingleMolecule(
   int num_tiles = (max_natoms_per_mol + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   // i >= max_natoms_per_mol is still needed to load share memory for j
-  SpeciesT type_i;
+  SpeciesT specie_i;
   float3 coord_i;
   if (i < max_natoms_per_mol) {
-    type_i = species_t[mol_idx][i];
+    specie_i = species_t[mol_idx][i];
     coord_i = pos_t_3[mol_idx * max_natoms_per_mol + i];
   }
 
@@ -170,9 +170,9 @@ __global__ void pairwiseDistanceSingleMolecule(
       if (j < max_natoms_per_mol) {
         float3 delta =
             make_float3(s_coord_j[jj].x - coord_i.x, s_coord_j[jj].y - coord_i.y, s_coord_j[jj].z - coord_i.z);
-        SpeciesT type_j = species_t[mol_idx][j];
+        SpeciesT specie_j = species_t[mol_idx][j];
         DataT Rsq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
-        if (type_i != -1 && type_j != -1 && i != j) {
+        if (specie_i != -1 && specie_j != -1 && i != j) {
           DataT Rij = sqrt(Rsq);
           if (Rij <= Rcr) {
             int pidx = atomicAdd(&s_pcounter_i[ii], 1);
@@ -252,7 +252,7 @@ __global__ void cuAngularAEVs(
   DataT* sfc = &smem[offset];
 
   offset += maxnbrs_per_atom_aligned;
-  int* stype = (int*)&smem[offset];
+  int* s_species = (int*)&smem[offset];
 
   DataT EtaA = EtaA_t[0];
   DataT Zeta = Zeta_t[0];
@@ -275,10 +275,10 @@ __global__ void cuAngularAEVs(
   for (int jj = tIdx; jj < jnum; jj += blockDim.x * blockDim.y) {
     DataT Rij = distJ[start_idx + jj];
     int j = atomJ[start_idx + jj];
-    SpeciesT type_j = species_t[mol_idx][j];
+    SpeciesT specie_j = species_t[mol_idx][j];
     float3 coord_j = pos_t_3[mol_idx * max_natoms_per_mol + j];
     svec[jj] = make_float3(coord_j.x - coord_i.x, coord_j.y - coord_i.y, coord_j.z - coord_i.z);
-    stype[jj] = type_j;
+    s_species[jj] = specie_j;
     sdist[jj] = Rij;
     DataT fc_ij = 0.5f * __cosf(PI * Rij / Rca) + 0.5f;
     sfc[jj] = fc_ij;
@@ -308,17 +308,17 @@ __global__ void cuAngularAEVs(
       int jj, kk;
       pairidx_to_jk(n, jnum, &jj, &kk);
       const DataT Rij = sdist[jj];
-      SpeciesT type_j = stype[jj];
+      SpeciesT specie_j = s_species[jj];
       DataT fc_ij = sfc[jj];
       const DataT Rik = sdist[kk];
-      SpeciesT type_k = stype[kk];
+      SpeciesT specie_k = s_species[kk];
       DataT fc_ik = sfc[kk];
 
       DataT theta = s_theta[n % BLOCK_SIZE];
       DataT Rijk = (Rij + Rik) / 2;
       DataT fc_ijk = fc_ij * fc_ik;
 
-      IndexT subaev_offset = angular_sublength * csubaev_offsets(type_j, type_k, num_species);
+      IndexT subaev_offset = angular_sublength * csubaev_offsets(specie_j, specie_k, num_species);
 
       for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILE_SIZE) {
         DataT ShfA = __ldg(&ShfA_t[ishfr]);
@@ -415,7 +415,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
   DataT* sfc_grad = &smem[offset];
 
   offset += maxnbrs_per_atom_aligned;
-  int* stype = (int*)&smem[offset];
+  int* s_species = (int*)&smem[offset];
 
   DataT EtaA = EtaA_t[0];
   DataT Zeta = Zeta_t[0];
@@ -448,10 +448,10 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
   for (int jj = tIdx; jj < jnum; jj += blockDim.x * blockDim.y) {
     DataT Rij = distJ[start_idx + jj];
     int j = atomJ[start_idx + jj];
-    SpeciesT type_j = species_t[mol_idx][j];
+    SpeciesT specie_j = species_t[mol_idx][j];
     float3 coord_j = pos_t_3[mol_idx * max_natoms_per_mol + j];
     svec[jj] = make_float3(coord_j.x - coord_i.x, coord_j.y - coord_i.y, coord_j.z - coord_i.z);
-    stype[jj] = type_j;
+    s_species[jj] = specie_j;
     sdist[jj] = Rij;
     DataT fc_ij = 0.5f * __cosf(PI * Rij / Rca) + 0.5f;
     DataT fc_ij_grad = -0.5f * (PI / Rca) * __sinf(PI * Rij / Rca);
@@ -503,7 +503,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
       DataT Rijk = (Rij + Rik) / 2.0f;
       DataT fc_ijk = fc_ij * fc_ik;
 
-      IndexT subaev_offset = angular_sublength * csubaev_offsets(stype[jj], stype[kk], num_species);
+      IndexT subaev_offset = angular_sublength * csubaev_offsets(s_species[jj], s_species[kk], num_species);
       float3 grad_vij = make_float3(0.f, 0.f, 0.f);
       float3 grad_vik = make_float3(0.f, 0.f, 0.f);
 
@@ -679,12 +679,12 @@ __global__ void cuRadialAEVs(
     DataT fc = s_fc[jj];
     DataT Rij = distJ[start_idx + jj];
     int j = atomJ[start_idx + jj];
-    SpeciesT type_j = species_t[mol_idx][j];
+    SpeciesT specie_j = species_t[mol_idx][j];
 
     for (int ishfr = laneIdx; ishfr < nShfR; ishfr += blockDim.x) {
       DataT ShfR = __ldg(&ShfR_t[ishfr]);
       DataT GmR = 0.25f * __expf(-EtaR * (Rij - ShfR) * (Rij - ShfR)) * fc;
-      atomicAdd(&s_radial[type_j * radial_sublength + ishfr], GmR);
+      atomicAdd(&s_radial[specie_j * radial_sublength + ishfr], GmR);
     }
   }
 
@@ -773,7 +773,7 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
     int j = atomJ[start_idx + jj];
     DataT fc = 0.5f * __cosf(PI * Rij / Rcr) + 0.5f;
     DataT fc_grad = -0.5f * (PI / Rcr) * __sinf(PI * Rij / Rcr);
-    SpeciesT type_j = species_t[mol_idx][j];
+    SpeciesT specie_j = species_t[mol_idx][j];
 
     if (is_double_backward) {
       upstream_grad = s_grad_dist[jj];
@@ -787,9 +787,9 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
       DataT jacobian = GmR_grad * fc + GmR * fc_grad;
 
       if (is_double_backward) {
-        atomicAdd(&saev[type_j * radial_sublength + ishfr], upstream_grad * jacobian);
+        atomicAdd(&saev[specie_j * radial_sublength + ishfr], upstream_grad * jacobian);
       } else {
-        upstream_grad = saev[type_j * radial_sublength + ishfr];
+        upstream_grad = saev[specie_j * radial_sublength + ishfr];
         atomicAdd(&s_grad_dist[jj], upstream_grad * jacobian);
       }
     }
