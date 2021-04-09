@@ -33,10 +33,17 @@ class TestAEVConstructor(TestCase):
                         'angle_sections': 8,
                         'num_species': 4}
         aev_computer_alt = torchani.AEVComputer.cover_linearly(**ani1x_values)
-        constants = aev_computer.constants()
-        constants_alt = aev_computer_alt.constants()
+        constants = self._get_aev_constants(aev_computer)
+        constants_alt = self._get_aev_constants(aev_computer_alt)
         for c, ca in zip(constants, constants_alt):
             self.assertEqual(c, ca)
+
+    @staticmethod
+    def _get_aev_constants(aev_computer):
+        return aev_computer.radial_terms.get_cutoff(), aev_computer.radial_terms.EtaR,\
+            aev_computer.radial_terms.ShfR, aev_computer.angular_terms.get_cutoff(),\
+            aev_computer.angular_terms.ShfZ, aev_computer.angular_terms.EtaA,\
+            aev_computer.angular_terms.Zeta, aev_computer.angular_terms.ShfA, aev_computer.num_species
 
 
 class TestIsolated(TestCase):
@@ -48,8 +55,8 @@ class TestIsolated(TestCase):
         consts = torchani.neurochem.Constants(const_file)
         self.aev_computer = torchani.AEVComputer(**consts).to(self.device)
         self.species_to_tensor = consts.species_to_tensor
-        self.rcr = self.aev_computer.Rcr
-        self.rca = self.aev_computer.Rca
+        self.rcr = self.aev_computer.radial_terms.get_cutoff()
+        self.rca = self.aev_computer.angular_terms.get_cutoff()
 
     def testCO2(self):
         species = self.species_to_tensor(['O', 'C', 'O']).to(self.device).unsqueeze(0)
@@ -126,6 +133,18 @@ class TestAEV(_TestAEVBase):
         _, aev = self.aev_computer((species, coordinates))
         self.assertFalse(torch.isnan(aev).any())
 
+    def testBoundingCell(self):
+        # AEV should not output NaN even when coordinates are superimposed
+        datafile = os.path.join(path, 'test_data/ANI1_subset/10')
+        with open(datafile, 'rb') as f:
+            coordinates, species, _, _, _, _ = pickle.load(f)
+            coordinates = torch.from_numpy(coordinates)
+            species = torch.from_numpy(species)
+
+        coordinates, cell = self.aev_computer.neighborlist._compute_bounding_cell(coordinates, 1e-5)
+        self.assertTrue((coordinates > 0.0).all())
+        self.assertTrue((coordinates < torch.norm(cell, dim=1)).all())
+
     def testPadding(self):
         species_coordinates = []
         radial_angular = []
@@ -162,6 +181,7 @@ class TestPBCSeeEachOther(TestCase):
     def setUp(self):
         consts = torchani.neurochem.Constants(const_file)
         self.aev_computer = torchani.AEVComputer(**consts).to(torch.double)
+        self.neighborlist = torchani.aev.neighbors.FullPairwise(1.0)
 
     def testTranslationalInvariancePBC(self):
         coordinates = torch.tensor(
@@ -186,7 +206,6 @@ class TestPBCSeeEachOther(TestCase):
         species = torch.tensor([[0, 0]])
         cell = torch.eye(3, dtype=torch.double) * 10
         pbc = torch.ones(3, dtype=torch.bool)
-        allshifts = torchani.aev.compute_shifts(cell, pbc, 1)
 
         xyz1 = torch.tensor([0.1, 0.1, 0.1])
         xyz2s = [
@@ -201,7 +220,7 @@ class TestPBCSeeEachOther(TestCase):
 
         for xyz2 in xyz2s:
             coordinates = torch.stack([xyz1, xyz2]).to(torch.double).unsqueeze(0)
-            atom_index12, _ = torchani.aev.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -209,7 +228,6 @@ class TestPBCSeeEachOther(TestCase):
     def testPBCSurfaceSeeEachOther(self):
         cell = torch.eye(3, dtype=torch.double) * 10
         pbc = torch.ones(3, dtype=torch.bool)
-        allshifts = torchani.aev.compute_shifts(cell, pbc, 1)
         species = torch.tensor([[0, 0]])
 
         for i in range(3):
@@ -219,7 +237,7 @@ class TestPBCSeeEachOther(TestCase):
             xyz2[i] = 9.9
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _ = torchani.aev.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -227,7 +245,6 @@ class TestPBCSeeEachOther(TestCase):
     def testPBCEdgesSeeEachOther(self):
         cell = torch.eye(3, dtype=torch.double) * 10
         pbc = torch.ones(3, dtype=torch.bool)
-        allshifts = torchani.aev.compute_shifts(cell, pbc, 1)
         species = torch.tensor([[0, 0]])
 
         for i, j in itertools.combinations(range(3), 2):
@@ -240,7 +257,7 @@ class TestPBCSeeEachOther(TestCase):
                 xyz2[j] = new_j
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _ = torchani.aev.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -250,13 +267,12 @@ class TestPBCSeeEachOther(TestCase):
         cell = ase.geometry.cellpar_to_cell([10, 10, 10 * math.sqrt(2), 90, 45, 90])
         cell = torch.tensor(ase.geometry.complete_cell(cell), dtype=torch.double)
         pbc = torch.ones(3, dtype=torch.bool)
-        allshifts = torchani.aev.compute_shifts(cell, pbc, 1)
 
         xyz1 = torch.tensor([0.1, 0.1, 0.05], dtype=torch.double)
         xyz2 = torch.tensor([10.0, 0.1, 0.1], dtype=torch.double)
 
         coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-        atom_index12, _ = torchani.aev.neighbor_pairs(species == -1, coordinates, cell, allshifts, 1)
+        atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
         atom_index1, atom_index2 = atom_index12.unbind(0)
         self.assertEqual(atom_index1.tolist(), [0])
         self.assertEqual(atom_index2.tolist(), [1])
