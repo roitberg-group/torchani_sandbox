@@ -26,8 +26,8 @@ constexpr int csubaev_offsets(int i, int j, int n) {
   return starting + offset;
 }
 
-// convert pair index to atom j, k indices
-// the orders of j and k does not matter
+// Convert pair index to atom j and k indices,
+// the orders of j and k indices do not matter
 //
 // e.g. jnum is 4, there are totally (4 * 3 / 2) = 6 three-body pairs,
 // so this function convert following indices n
