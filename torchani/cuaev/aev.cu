@@ -26,27 +26,23 @@ constexpr int csubaev_offsets(int i, int j, int n) {
   return starting + offset;
 }
 
-// convert pair index to reversed j, k indices
+// convert pair index to atom j, k indices
+// the orders of j and k does not matter
 //
-// e.g. jnum is 6, convert following indices n
-// [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14]
-// to j:
-// [ 1,  2,  2,  3,  3,  3,  4,  4,  4,  4,  5,  5,  5,  5,  5]
-// then k will be:
-// [ 0,  0,  1,  0,  1,  2,  0,  1,  2,  3,  0,  1,  2,  3,  4]
-//
-// final j:
-// [ 4,  3,  3,  2,  2,  2,  1,  1,  1,  1,  0,  0,  0,  0,  0]
-// final k:
-// [ 5,  4,  5,  3,  4,  5,  2,  3,  4,  5,  1,  2,  3,  4,  5]
-//
-__host__ __device__ __forceinline__ void pairidx_to_jk(int n, int jnum, int* j, int* k) {
-  int jj = ceil((sqrt(8 * (n + 1) + 1.f) - 1) / 2.f); // x (x + 1) / 2 = n --> x = (-b + sqrt(1 + 8n)) / 2
-  int kk = n - jj * (jj - 1) / 2; // 0-indexed
-  jj = jnum - jj - 1;
-  kk += jj + 1;
-  *j = jj;
-  *k = kk;
+// e.g. jnum is 4, there are totally (4 * 3 / 2) = 6 three-body pairs,
+// so this function convert following indices n
+// [ 0,  1,  2,  3,  4,  5]
+// to k:
+// [ 1,  2,  2,  3,  3,  3]
+// then j will be:
+// [ 0,  0,  1,  0,  1,  2]
+__device__ __forceinline__ int2 pairidx_to_jk(int n, int jnum) {
+  int kk = ceil((sqrt(8 * (n + 1) + 1.f) - 1) / 2.f); // x (x + 1) / 2 = n --> x = (-1 + sqrt(1 + 8n)) / 2
+  int jj = n - kk * (kk - 1) / 2;
+  int2 jk;
+  jk.x = jj;
+  jk.y = kk;
+  return jk;
 }
 
 /// Alignment of memory. Must be a power of two
@@ -299,8 +295,8 @@ __global__ void cuAngularAEVs(
       __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
-        int jj, kk;
-        pairidx_to_jk(m, jnum, &jj, &kk);
+        int2 jk = pairidx_to_jk(m, jnum);
+        int jj = jk.x, kk = jk.y;
         const DataT Rij = sdist[jj];
         const DataT Rik = sdist[kk];
         s_theta[tIdx] =
@@ -310,8 +306,8 @@ __global__ void cuAngularAEVs(
     }
     // run angular calculation
     if (n < totalpairs) {
-      int jj, kk;
-      pairidx_to_jk(n, jnum, &jj, &kk);
+      int2 jk = pairidx_to_jk(n, jnum);
+      int jj = jk.x, kk = jk.y;
       const DataT Rij = sdist[jj];
       SpeciesT specie_j = s_species[jj];
       DataT fc_ij = sfc[jj];
@@ -475,8 +471,8 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
       __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
-        int jj, kk;
-        pairidx_to_jk(m, jnum, &jj, &kk);
+        int2 jk = pairidx_to_jk(m, jnum);
+        int jj = jk.x, kk = jk.y;
         const DataT Rij = sdist[jj];
         const DataT Rik = sdist[kk];
         DataT vij_vik_dot = svec[jj].x * svec[kk].x + svec[jj].y * svec[kk].y + svec[jj].z * svec[kk].z;
@@ -490,8 +486,8 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
       __syncthreads();
     }
     if (n < totalpairs) {
-      int jj, kk;
-      pairidx_to_jk(n, jnum, &jj, &kk);
+      int2 jk = pairidx_to_jk(n, jnum);
+      int jj = jk.x, kk = jk.y;
       const DataT Rij = sdist[jj];
       DataT fc_ij = sfc[jj];
       DataT grad_fc_ij = sfc_grad[jj];
