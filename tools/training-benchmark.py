@@ -94,7 +94,11 @@ if __name__ == "__main__":
                              '_compute_aev', '_triple_by_molecule', 'forward']
     fn_to_time_neighborlist = ['forward']
     fn_to_time_nn = ['forward']
+    fn_to_time_angular = ['forward']
+    fn_to_time_radial = ['forward']
 
+    time_functions_in_model(aev_computer.angular_terms, fn_to_time_angular, timers, synchronize)
+    time_functions_in_model(aev_computer.radial_terms, fn_to_time_radial, timers, synchronize)
     time_functions_in_model(aev_computer, fn_to_time_aev, timers, synchronize)
     time_functions_in_model(aev_computer.neighborlist, fn_to_time_neighborlist, timers, synchronize)
     time_functions_in_model(nn, fn_to_time_nn, timers, synchronize)
@@ -127,10 +131,13 @@ if __name__ == "__main__":
         torch.cuda.synchronize()
     stop = time.time()
 
+    for k in timers.keys():
+        timers[k] = timers[k] / args.num_epochs
+
     print('=> more detail about benchmark')
     for k in timers:
         if k not in ['AEVComputer.forward', 'ANIModel.forward']:
-            print('{} - {:.2f}s'.format(k, timers[k]))
-    print('Total AEV - {:.2f}s'.format(timers['AEVComputer.forward']))
-    print('NN - {:.2f}s'.format(timers['ANIModel.forward']))
-    print('Epoch time - {:.2f}s'.format(stop - start))
+            print('{} - {:.3f}s'.format(k, timers[k]))
+    print('Total AEV forward - {:.3f}s'.format(timers['AEVComputer.forward']))
+    print('Total NN forward - {:.3f}s'.format(timers['ANIModel.forward']))
+    print('Total epoch time - {:.3f}s'.format((stop - start) / args.num_epochs))
