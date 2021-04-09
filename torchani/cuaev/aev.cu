@@ -39,8 +39,7 @@ constexpr int csubaev_offsets(int i, int j, int n) {
 __device__ __forceinline__ int2 pairidx_to_jk(int n, int jnum) {
   int kk = ceil((sqrt(8 * (n + 1) + 1.f) - 1) / 2.f); // x (x + 1) / 2 = n --> x = (-1 + sqrt(1 + 8n)) / 2
   int jj = n - kk * (kk - 1) / 2;
-  int2 jk = make_int2(jj, kk);
-  return jk;
+  return make_int2(jj, kk);
 }
 
 /// Alignment of memory. Must be a power of two
@@ -1128,10 +1127,7 @@ void cuaev_forward(
   }
 
   cubScan(radialNbr_numJPerI_p, startIdxJ_p, total_atoms, stream);
-  // radialNbr.nJ could also be calculated by startIdxJ_t[-1] + numJPerI_t[-1], but this need
-  // 2 times cudaMemcpyAsync.
-  // cubSum only need one cudaMemcpyAsync, althought it need a kernel run, it is negligible
-  result.radialNbr.nJ = cubSum(radialNbr_numJPerI_p, total_atoms, stream);
+  result.radialNbr.nJ = (result.startIdxJ_t[-1] + result.radialNbr.numJPerI_t[-1]).item<int>();
 
 #ifdef TORCHANI_DEBUG
   printf("%-35s %'d\n", "nI", result.nI);
