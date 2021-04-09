@@ -39,9 +39,7 @@ constexpr int csubaev_offsets(int i, int j, int n) {
 __device__ __forceinline__ int2 pairidx_to_jk(int n, int jnum) {
   int kk = ceil((sqrt(8 * (n + 1) + 1.f) - 1) / 2.f); // x (x + 1) / 2 = n --> x = (-1 + sqrt(1 + 8n)) / 2
   int jj = n - kk * (kk - 1) / 2;
-  int2 jk;
-  jk.x = jj;
-  jk.y = kk;
+  int2 jk = make_int2(jj, kk);
   return jk;
 }
 
