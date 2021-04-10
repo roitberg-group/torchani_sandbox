@@ -42,16 +42,6 @@ __device__ __forceinline__ int2 pairidx_to_jk(int n) {
   return make_int2(jj, kk);
 }
 
-/// Alignment of memory. Must be a power of two
-/// \tparam boundary Boundary to align to (NOTE: must be power of 2)
-/// \param value Input value that is to be aligned
-/// \return Value aligned to boundary
-template <int32_t boundary>
-__host__ __device__ __forceinline__ int align(const int& value) {
-  static_assert((boundary & (boundary - 1)) == 0, "Boundary for align must be power of 2");
-  return (value + boundary) & ~(boundary - 1);
-}
-
 template <typename SpeciesT, typename DataT, typename IndexT = int>
 __global__ void pairwiseDistance(
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
@@ -1248,8 +1238,8 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
 
   // radial
   constexpr dim3 block_radial(8, 16, 1);
-  int smem_radial = result.radialNbr.maxNumJPerI * sizeof(float) +
-      aev_params.radial_length * sizeof(float); // grad_dist, grad_aev
+  int smem_radial =
+      result.radialNbr.maxNumJPerI * sizeof(float) + aev_params.radial_length * sizeof(float); // grad_dist, grad_aev
   cuRadialAEVs_backward_or_doublebackward<false, int, float, 8><<<result.nI, block_radial, smem_radial, stream>>>(
       coordinates_p,
       species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
