@@ -89,56 +89,6 @@ class BuiltinModel(torch.nn.Module):
         return self.energy_shifter(species_energies)
 
     @torch.jit.export
-    def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
-                        cell: Optional[Tensor] = None,
-                        pbc: Optional[Tensor] = None, average: bool = True) -> SpeciesEnergies:
-        """Calculates predicted atomic energies of all atoms in a molecule
-
-        ..warning::
-            Since this function does not call ``__call__`` directly,
-            hooks are not registered and profiling is not done correctly by
-            pytorch on it. It is meant as a convenience function for analysis
-             and active learning.
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            will be in Hartree.
-
-        Args:
-            species_coordinates: minibatch of configurations
-            cell: the cell used in PBC computation, set to None if PBC is not enabled
-            pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
-
-        Returns:
-            species_atomic_energies: species and energies for the given configurations
-                note that the shape of species is (C, A), where C is
-                the number of configurations and A the number of atoms, and
-                the shape of energies is (C, A) for a BuiltinModel.
-
-        If average is True (the default) it returns the average over all models
-        in the ensemble, should there be more than one (shape (C, A)),
-        otherwise it returns one atomic energy per model (shape (M, C, A)).
-        """
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-
-        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
-
-        atomic_energies = self.neural_networks._atomic_energies((species, aevs))
-
-        atomic_saes = self.energy_shifter._calc_atomic_saes(species)
-
-        # shift all atomic energies individually
-        if atomic_energies.dim() == 2:
-            atomic_energies = atomic_energies.unsqueeze(0)
-
-        assert atomic_saes.shape == atomic_energies[0].shape
-
-        atomic_energies += atomic_saes
-        if average:
-            return SpeciesEnergies(species, atomic_energies.mean(dim=0))
-        return SpeciesEnergies(species, atomic_energies)
-
-    @torch.jit.export
     def _recast_long_buffers(self):
         self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
         self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
@@ -199,6 +149,56 @@ class BuiltinModel(torch.nn.Module):
                            self._species_to_tensor, self.consts, self.sae_dict,
                            self.periodic_table_index)
         return ret
+
+    @torch.jit.export
+    def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
+                        cell: Optional[Tensor] = None,
+                        pbc: Optional[Tensor] = None, average: bool = True) -> SpeciesEnergies:
+        """Calculates predicted atomic energies of all atoms in a molecule
+
+        ..warning::
+            Since this function does not call ``__call__`` directly,
+            hooks are not registered and profiling is not done correctly by
+            pytorch on it. It is meant as a convenience function for analysis
+             and active learning.
+
+        .. note:: The coordinates, and cell are in Angstrom, and the energies
+            will be in Hartree.
+
+        Args:
+            species_coordinates: minibatch of configurations
+            cell: the cell used in PBC computation, set to None if PBC is not enabled
+            pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
+
+        Returns:
+            species_atomic_energies: species and energies for the given configurations
+                note that the shape of species is (C, A), where C is
+                the number of configurations and A the number of atoms, and
+                the shape of energies is (C, A) for a BuiltinModel.
+
+        If average is True (the default) it returns the average over all models
+        in the ensemble, should there be more than one (shape (C, A)),
+        otherwise it returns one atomic energy per model (shape (M, C, A)).
+        """
+        if self.periodic_table_index:
+            species_coordinates = self.species_converter(species_coordinates)
+
+        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
+
+        atomic_energies = self.neural_networks._atomic_energies((species, aevs))
+
+        atomic_saes = self.energy_shifter._calc_atomic_saes(species)
+
+        # shift all atomic energies individually
+        if atomic_energies.dim() == 2:
+            atomic_energies = atomic_energies.unsqueeze(0)
+
+        assert atomic_saes.shape == atomic_energies[0].shape
+
+        atomic_energies += atomic_saes
+        if average:
+            return SpeciesEnergies(species, atomic_energies.mean(dim=0))
+        return SpeciesEnergies(species, atomic_energies)
 
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -275,7 +275,7 @@ class BuiltinModel(torch.nn.Module):
 
         Returns:
             species_energies_qbcs: species, energies and qbc factors for the
-                given configurations note that the shape of species is (C, A),
+                given configurations. Note that the shape of species is (C, A),
                 where C is the number of configurations and A the number of
                 atoms, the shape of energies is (C,) and the shape of qbc
                 factors is also (C,).
@@ -297,9 +297,9 @@ class BuiltinModel(torch.nn.Module):
 
 class BuiltinModelExternalInterface(BuiltinModel):
 
-    # TODO: Most BuiltinModel functions fail here, only forward works
-    # this should be fixed once BuiltinModel uses AEVComputerInternal
-
+    # TODO: Most BuiltinModel functions fail here, only forward works this
+    # It will be necessary to rewrite that code for this use case if we
+    # want those functions in amber, I'm looking for a different solution though
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
                 neighborlist: Optional[Tensor] = None,
                 shift_values: Optional[Tensor] = None) -> SpeciesEnergies:
