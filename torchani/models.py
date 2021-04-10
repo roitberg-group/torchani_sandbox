@@ -331,7 +331,8 @@ class BuiltinModelExternalInterface(BuiltinModel):
             # the values are masked with dummy atoms. The first may happen if
             # the neighborlist uses some sort of skin value to rebuild itself
             # (as in Loup Verlet lists), which is common in MD programs.
-            nl_out = self.aev_computer.neighborlist._screen_with_cutoff(self.radial_terms.get_cutoff(),
+            cutoff = self.aev_computer.radial_terms.get_cutoff()
+            nl_out = self.aev_computer.neighborlist._screen_with_cutoff(cutoff,
                                                            coordinates,
                                                            neighborlist,
                                                            shift_values,

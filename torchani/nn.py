@@ -101,7 +101,7 @@ class Ensemble(torch.nn.ModuleList):
         for x in self:
             sum_ += x(species_input)[1]
         species, _ = species_input
-        return SpeciesEnergies(species, sum_ / self.size)
+        return SpeciesEnergies(species, sum_ / self.size)  # type: ignore
 
     @torch.jit.export
     def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:

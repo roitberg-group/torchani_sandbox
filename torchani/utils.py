@@ -157,10 +157,10 @@ class EnergyShifter(torch.nn.Module):
         fit_intercept (bool): Whether to calculate the intercept during the LSTSQ
             fit. The intercept will also be taken into account to shift energies.
     """
+    self_energies: Tensor
 
     def __init__(self, self_energies, fit_intercept=False):
         super().__init__()
-
         self.fit_intercept = fit_intercept
         if self_energies is not None:
             self_energies = torch.tensor(self_energies, dtype=torch.double)

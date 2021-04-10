@@ -465,10 +465,9 @@ class AEVComputerInternal(AEVComputer):
         assert 'neighborlist' not in kwargs.keys(), "InternalAEVComputer doesn't use a neighborlist"
         kwargs.update({'neighborlist': BaseNeighborlist(0.0)})
 
-    def forward(self, species: Tensor,
-                neighborlist: Tensor,
-                diff_vectors: Tensor,
-                distances: Tensor) -> SpeciesAEV:
+    def forward(self, species: Tensor,  # type: ignore
+                neighborlist: Tensor,  # type: ignore
+                diff_vectors: Tensor, distances: Tensor) -> SpeciesAEV:  # type: ignore
         r"""Arguments:
                 species: internal indices of the atomic species used by ani models
                 neighborlist: A tensor with atom indexes, with shape (2, P)
