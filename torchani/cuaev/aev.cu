@@ -92,7 +92,7 @@ __global__ void pairwiseDistance(
       for (int j = threadIdx.x + i + 1; j < max_natoms_per_mol; j += blockDim.x) {
         SpeciesT specie_j = s_species[j];
 
-        if (specie_j != -1 && i != j) {
+        if (specie_j != -1) {
           float3 delta = make_float3(s_pos[j].x - pos_i.x, s_pos[j].y - pos_i.y, s_pos[j].z - pos_i.z);
           DataT Rsq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
           DataT Rij = sqrt(Rsq);
@@ -107,7 +107,7 @@ __global__ void pairwiseDistance(
             distJ_p[mol_idx * pairs_per_mol + j * (max_natoms_per_mol - 1) + pidx_j] = Rij;
           } // if Rij is within Rcr
         } // if j is not padding atom and i is not j
-      }
+      } // loop over atom j
 
     } // if i is not padding atom
     atom_i[mol_idx * max_natoms_per_mol + i] = {mol_idx, i};
