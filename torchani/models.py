@@ -34,6 +34,7 @@ from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
 from .nn import SpeciesConverter, SpeciesEnergies
 from .aev import AEVComputer, AEVComputerInternal
+from .compat import Final
 
 
 class SpeciesEnergiesQBC(NamedTuple):
@@ -296,22 +297,29 @@ class BuiltinModel(torch.nn.Module):
 
 
 class BuiltinModelExternalInterface(BuiltinModel):
-
     # TODO: Most BuiltinModel functions fail here, only forward works this
     # It will be necessary to rewrite that code for this use case if we
     # want those functions in amber, I'm looking for a different solution though
+
+    assume_screened_input: Final[bool]
+
+    def __init__(self, *args, **kwargs):
+        assume_screened_input = kwargs.pop('assume_screened_input', False)
+        super().__init__(*args, **kwargs)
+        self.assume_screened_input = assume_screened_input
+
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
-                neighborlist: Optional[Tensor] = None,
+                neighbors: Optional[Tensor] = None,
                 shift_values: Optional[Tensor] = None) -> SpeciesEnergies:
         # It is convenient to keep these arguments optional due to JIT, but
         # actually they are needed for this class
-        assert neighborlist is not None
+        assert neighbors is not None
         assert shift_values is not None
 
         # check consistency of shapes of neighborlist
-        assert neighborlist.dim() == 2 and neighborlist.shape[0] == 2
+        assert neighbors.dim() == 2 and neighbors.shape[0] == 2
         assert shift_values.dim() == 2 and shift_values.shape[1] == 3
-        assert neighborlist.shape[1] == shift_values.shape[0]
+        assert neighbors.shape[1] == shift_values.shape[0]
 
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
@@ -326,7 +334,7 @@ class BuiltinModelExternalInterface(BuiltinModel):
         assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
 
         if not self.assume_screened_input:
-            # first we screen the input neighborlist in case some of the
+            # first we screen the input neighbors in case some of the
             # values are at distances larger than the radial cutoff, or some of
             # the values are masked with dummy atoms. The first may happen if
             # the neighborlist uses some sort of skin value to rebuild itself
@@ -334,20 +342,20 @@ class BuiltinModelExternalInterface(BuiltinModel):
             cutoff = self.aev_computer.radial_terms.get_cutoff()
             nl_out = self.aev_computer.neighborlist._screen_with_cutoff(cutoff,
                                                            coordinates,
-                                                           neighborlist,
+                                                           neighbors,
                                                            shift_values,
                                                            (species == -1))
-            neighborlist, _, diff_vec, distances = nl_out
+            neighbors, _, diff_vectors, distances = nl_out
         else:
-            # if the input neighborlist is assumed to be pre screened then we
+            # if the input neighbors is assumed to be pre screened then we
             # just calculate the distances and diff_vector here
             coordinates = coordinates.view(-1, 3)
-            coords0 = coordinates.index_select(0, neighborlist[0])
-            coords1 = coordinates.index_select(0, neighborlist[1])
+            coords0 = coordinates.index_select(0, neighbors[0])
+            coords1 = coordinates.index_select(0, neighbors[1])
             diff_vectors = coords0 - coords1 + shift_values
-            distances = diff_vec.norm(2, -1)
+            distances = diff_vectors.norm(2, -1)
 
-        species_aevs = self.aev_computer(species, neighborlist, diff_vectors, distances)
+        species_aevs = self.aev_computer(species, neighbors, diff_vectors, distances)
         species_energies = self.neural_networks(species_aevs)
         return self.energy_shifter(species_energies)
 

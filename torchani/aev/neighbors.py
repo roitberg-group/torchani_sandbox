@@ -7,6 +7,8 @@ from ..compat import Final
 def _parse_neighborlist(neighborlist):
     if neighborlist == 'full_pairwise':
         neighborlist = FullPairwise
+    elif neighborlist is None:
+        neighborlist = BaseNeighborlist
     else:
         assert issubclass(neighborlist, torch.nn.Module)
     return neighborlist

@@ -11,7 +11,7 @@ from ..compat import Final
 # modular parts of AEVComputer
 from .cutoffs import _parse_cutoff_fn
 from .aev_terms import _parse_angular_terms, _parse_radial_terms
-from .neighbors import _parse_neighborlist, BaseNeighborlist
+from .neighbors import _parse_neighborlist
 
 
 cuaev_is_installed = 'torchani.cuaev' in importlib_metadata.metadata(
@@ -463,14 +463,15 @@ class AEVComputerInternal(AEVComputer):
     def __init__(self, *args, **kwargs):
         r"""AEVComputer for internal use of ANI Models"""
         assert 'neighborlist' not in kwargs.keys(), "InternalAEVComputer doesn't use a neighborlist"
-        kwargs.update({'neighborlist': BaseNeighborlist(0.0)})
+        kwargs.update({'neighborlist': None})
+        super().__init__(*args, **kwargs)
 
     def forward(self, species: Tensor,  # type: ignore
-                neighborlist: Tensor,  # type: ignore
+                neighbors: Tensor,  # type: ignore
                 diff_vectors: Tensor, distances: Tensor) -> SpeciesAEV:  # type: ignore
         r"""Arguments:
                 species: internal indices of the atomic species used by ani models
-                neighborlist: A tensor with atom indexes, with shape (2, P)
+                neighbors: A tensor with atom indexes, with shape (2, P)
                     where P is the number unique atom pairs. The first dimension
                     has atom (a) in index 0 and atom (b) in index 1
                 difference_vectors:
@@ -479,5 +480,5 @@ class AEVComputerInternal(AEVComputer):
                 distances:
                     The magnitudes of the displacement 3-vectors, shape (2, P)"""
 
-        aev = self._compute_aev(species, neighborlist, diff_vectors, distances)
+        aev = self._compute_aev(species, neighbors, diff_vectors, distances)
         return SpeciesAEV(species, aev)
