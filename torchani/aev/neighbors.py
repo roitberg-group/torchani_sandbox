@@ -1,6 +1,6 @@
 import torch
 from torch import Tensor
-from typing import Tuple
+from typing import Tuple, Optional
 from ..compat import Final
 
 
@@ -28,7 +28,9 @@ class BaseNeighborlist(torch.nn.Module):
         super().__init__()
         self.cutoff = cutoff
         self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
+        self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool))
         self.default_cell: Tensor
+        self.default_pbc: Tensor
 
     @torch.jit.export
     def _compute_bounding_cell(self, coordinates: Tensor,
@@ -103,8 +105,8 @@ class FullPairwise(BaseNeighborlist):
         self.register_buffer('default_shift_values', torch.tensor(0.0))
         self.default_shift_values: Tensor
 
-    def forward(self, species: Tensor, coordinates: Tensor, cell: Tensor,
-                pbc: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    def forward(self, species: Tensor, coordinates: Tensor, cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """Arguments:
             coordinates (:class:`torch.Tensor`): tensor of shape
                 (molecules, atoms, 3) for atom coordinates.
@@ -113,6 +115,10 @@ class FullPairwise(BaseNeighborlist):
             cutoff (float): the cutoff inside which atoms are considered pairs
             pbc (:class:`torch.Tensor`): boolean tensor of shape (3,) storing wheather pbc is required
         """
+        assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
+        cell = cell if cell is not None else self.default_cell
+        pbc = pbc if pbc is not None else self.default_pbc
+
         mask = (species == -1)
         if pbc.any():
             atom_index12, shift_indices = self._full_pairwise_pbc(species, cell, pbc)

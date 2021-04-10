@@ -332,20 +332,16 @@ class AEVComputer(torch.nn.Module):
         assert species.dim() == 2
         assert coordinates.dim() == 3
         assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
-        assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
 
         # validate cutoffs
         assert self.neighborlist.cutoff >= self.radial_terms.get_cutoff()
         assert self.angular_terms.get_cutoff() < self.radial_terms.get_cutoff()
 
-        cell = cell if cell is not None else self.default_cell
-        pbc = pbc if pbc is not None else self.default_pbc
-
         if self.use_cuda_extension:
             if not self.cuaev_is_initialized:
                 self._init_cuaev_computer()
                 self.cuaev_is_initialized = torch.tensor(True)
-            assert not pbc.any(), "cuaev currently does not support PBC"
+            assert pbc is None or (not pbc.any()), "cuaev currently does not support PBC"
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
 
