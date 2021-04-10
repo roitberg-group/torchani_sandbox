@@ -345,8 +345,8 @@ class AEVComputer(torch.nn.Module):
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
 
-        atom_index12, shift_values, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
-        aev = self._compute_aev(species, atom_index12, shift_values, diff_vector, distances)
+        atom_index12, _, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
+        aev = self._compute_aev(species, atom_index12, diff_vector, distances)
         return SpeciesAEV(species, aev)
 
     @jit_unused_if_no_cuaev()
@@ -357,7 +357,7 @@ class AEVComputer(torch.nn.Module):
         return aev
 
     def _compute_aev(self, species: Tensor,
-            atom_index12: Tensor, shift_values: Tensor, diff_vector: Tensor, distances: Tensor) -> Tensor:
+            atom_index12: Tensor, diff_vector: Tensor, distances: Tensor) -> Tensor:
 
         species12 = species.flatten()[atom_index12]
         radial_aev = self._compute_radial_aev(species.shape[0], species.shape[1], species12,
