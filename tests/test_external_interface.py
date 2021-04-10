@@ -19,15 +19,36 @@ class TestExternalInterface(TestCase):
         self.neighborlist = torchani.aev.neighbors.FullPairwise(cutoff).to(device=self.device, dtype=torch.float)
         self.unscreened_neighborlist = torchani.aev.neighbors.FullPairwise(cutoff + 1.0)
 
-    def testEnergisEqualWithExternal(self):
-        N = 25
+    def testForcesEqualWithExternal(self):
+        N = 10
 
         for j in range(N):
             c = torch.randn((3, 10, 3), dtype=torch.float, device=self.device)
             s = torch.randint(low=0, high=4, size=(3, 10), dtype=torch.long, device=self.device)
+
+            c.requires_grad_(True)
             e_expect = self.model((s, c)).energies
+            f_expect = -torch.autograd.grad(e_expect.sum(), c)[0]
+
+            c = c.detach().requires_grad_(True)
             neighborlist, shift_values, _, _ = self.neighborlist(s, c)
             e = self.model_interface((s, c), neighborlist, shift_values).energies
+            f = -torch.autograd.grad(e.sum(), c)[0]
+
+            self.assertEqual(f_expect, f)
+
+    def testEnergiesEqualWithExternal(self):
+        N = 10
+
+        for j in range(N):
+            c = torch.randn((3, 10, 3), dtype=torch.float, device=self.device)
+            s = torch.randint(low=0, high=4, size=(3, 10), dtype=torch.long, device=self.device)
+
+            e_expect = self.model((s, c)).energies
+
+            neighborlist, shift_values, _, _ = self.neighborlist(s, c)
+            e = self.model_interface((s, c), neighborlist, shift_values).energies
+
             self.assertEqual(e_expect, e)
 
 
