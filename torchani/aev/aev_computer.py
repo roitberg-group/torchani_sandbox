@@ -458,7 +458,7 @@ class AEVComputer(torch.nn.Module):
         return central_atom_index, local_index12 % n, sign12
 
 
-class InternalAEVComputer(AEVComputer):
+class AEVComputerInternal(AEVComputer):
 
     def __init__(self, *args, **kwargs):
         r"""AEVComputer for internal use of ANI Models"""
@@ -481,69 +481,4 @@ class InternalAEVComputer(AEVComputer):
                     The magnitudes of the displacement 3-vectors, shape (2, P)"""
 
         aev = self._compute_aev(species, neighborlist, diff_vectors, distances)
-        return SpeciesAEV(species, aev)
-
-
-class AEVComputerInterfaceExternal(AEVComputer):
-
-    assume_screened_input: Final[bool]
-
-    def __init__(self, *args, **kwargs):
-        r"""Modified AEVComputer, for interfaces
-
-        Used to interface with pmemd-cpu or similar MD code, which provides a
-        (usually not fully screened) neighborlist and cell shifts, but no
-        distances / position differences """
-
-        if 'assume_screened_input' not in kwargs:
-            kwargs.update({'assume_screened_input': False})
-        assert 'neighborlist' not in kwargs.keys(), "AEVComputerBare doesn't use a neighborlist"
-        kwargs.update({'neighborlist': BaseNeighborlist(0.0)})
-        assert not kwargs['use_cuda_extension'] or ('use_cuda_extension' not in kwargs),\
-                "AEVComputerBare doesn't suport cuaev"
-        kwargs.update({'use_cuda_extension': False})
-        super().__init__(*args, **kwargs)
-        self.assume_screened_input = kwargs['assume_screened_input']
-
-    def forward(self, input_: Tuple[Tensor, Tensor],
-                atom_index12: Optional[Tensor] = None,
-                shift_values: Optional[Tensor] = None) -> SpeciesAEV:
-        species, coordinates = input_
-        # check shapes for correctness
-        assert species.dim() == 2
-        assert coordinates.dim() == 3
-        assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
-
-        # It is convenient to keep these arguments optional due to JIT, but
-        # actually they are needed for this class
-        assert atom_index12 is not None
-        assert shift_values is not None
-
-        # check consistency of shapes of neighborlist
-        assert atom_index12.dim() == 2 and atom_index12.shape[0] == 2
-        assert shift_values.dim() == 2 and shift_values.shape[1] == 3
-        assert atom_index12.shape[1] == shift_values.shape[0]
-
-        if not self.assume_screened_input:
-            # first we screen the input neighborlist in case some of the
-            # values are at distances larger than the radial cutoff, or some of
-            # the values are masked with dummy atoms. The first may happen if
-            # the neighborlist uses some sort of skin value to rebuild itself
-            # (as in Loup Verlet lists).
-            nl_out = self.neighborlist._screen_with_cutoff(self.radial_terms.get_cutoff(),
-                                                           coordinates,
-                                                           atom_index12,
-                                                           shift_values,
-                                                           (species == -1))
-            atom_index12, _, diff_vec, distances = nl_out
-        else:
-            # if the input neighborlist is assumed to be pre screened then we
-            # just calculate the distances and diff_vector here
-            coordinates = coordinates.view(-1, 3)
-            coords0 = coordinates.index_select(0, atom_index12[0])
-            coords1 = coordinates.index_select(0, atom_index12[1])
-            diff_vec = coords0 - coords1 + shift_values
-            distances = diff_vec.norm(2, -1)
-
-        aev = self._compute_aev(species, atom_index12, diff_vec, distances)
         return SpeciesAEV(species, aev)

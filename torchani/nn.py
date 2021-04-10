@@ -3,6 +3,7 @@ from collections import OrderedDict
 from torch import Tensor
 from typing import Tuple, NamedTuple, Optional
 from . import utils
+from .compat import Final
 
 
 class SpeciesEnergies(NamedTuple):
@@ -39,6 +40,8 @@ class ANIModel(torch.nn.ModuleDict):
             module by putting the same reference in :attr:`modules`.
     """
 
+    size: Final[int]
+
     @staticmethod
     def ensureOrderedDict(modules):
         if isinstance(modules, OrderedDict):
@@ -50,6 +53,7 @@ class ANIModel(torch.nn.ModuleDict):
 
     def __init__(self, modules):
         super().__init__(self.ensureOrderedDict(modules))
+        self.size = 1
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
                 cell: Optional[Tensor] = None,
@@ -84,6 +88,8 @@ class ANIModel(torch.nn.ModuleDict):
 class Ensemble(torch.nn.ModuleList):
     """Compute the average output of an ensemble of modules."""
 
+    size: Final[int]
+
     def __init__(self, modules):
         super().__init__(modules)
         self.size = len(modules)
@@ -96,6 +102,14 @@ class Ensemble(torch.nn.ModuleList):
             sum_ += x(species_input)[1]
         species, _ = species_input
         return SpeciesEnergies(species, sum_ / self.size)
+
+    @torch.jit.export
+    def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
+        members_list = []
+        for nnp in self:
+            members_list.append(nnp._atomic_energies((species_aev)).unsqueeze(0))
+        member_atomic_energies = torch.cat(members_list, dim=0)
+        return member_atomic_energies
 
 
 class Sequential(torch.nn.ModuleList):

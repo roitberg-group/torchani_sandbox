@@ -31,7 +31,7 @@ formats of NeuroChem at :attr:`torchani.neurochem`, and more at :attr:`torchani.
 
 from .utils import EnergyShifter
 from .nn import ANIModel, Ensemble, SpeciesConverter
-from .aev import AEVComputer, AEVComputerBare
+from .aev import AEVComputer, AEVComputerInternal
 from . import utils
 from . import neurochem
 from . import models
@@ -45,7 +45,7 @@ except DistributionNotFound:
     # package is not installed
     pass
 
-__all__ = ['AEVComputer', 'AEVComputerBare', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
+__all__ = ['AEVComputer', 'AEVComputerInternal', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
            'utils', 'neurochem', 'models', 'units', 'testing']
 
 try:
