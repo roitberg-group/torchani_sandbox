@@ -359,6 +359,24 @@ class BuiltinModelExternalInterface(BuiltinModel):
         species_energies = self.neural_networks(species_aevs)
         return self.energy_shifter(species_energies)
 
+    @torch.jit.export
+    def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
+                neighbors: Optional[Tensor] = None,
+                shift_values: Optional[Tensor] = None):
+        assert False, "Not implemented for external interface"
+
+    @torch.jit.export
+    def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
+                neighbors: Optional[Tensor] = None,
+                shift_values: Optional[Tensor] = None):
+        assert False, "Not implemented for external interface"
+
+    @torch.jit.export
+    def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
+                neighbors: Optional[Tensor] = None,
+                shift_values: Optional[Tensor] = None):
+        assert False, "Not implemented for external interface"
+
 
 def _build_neurochem_model(info_file_path, periodic_table_index=False, external_cell_list=False, model_index=None):
     from . import neurochem  # noqa
