@@ -36,7 +36,7 @@ constexpr int csubaev_offsets(int i, int j, int n) {
 // [ 1,  2,  2,  3,  3,  3]
 // then j will be:
 // [ 0,  0,  1,  0,  1,  2]
-__device__ __forceinline__ int2 pairidx_to_jk(int n, int jnum) {
+__device__ __forceinline__ int2 pairidx_to_jk(int n) {
   int kk = ceil((sqrt(8 * (n + 1) + 1.f) - 1) / 2.f); // x (x + 1) / 2 = n --> x = (-1 + sqrt(1 + 8n)) / 2
   int jj = n - kk * (kk - 1) / 2;
   return make_int2(jj, kk);
@@ -292,7 +292,7 @@ __global__ void cuAngularAEVs(
       __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
-        int2 jk = pairidx_to_jk(m, jnum);
+        int2 jk = pairidx_to_jk(m);
         int jj = jk.x, kk = jk.y;
         const DataT Rij = sdist[jj];
         const DataT Rik = sdist[kk];
@@ -303,7 +303,7 @@ __global__ void cuAngularAEVs(
     }
     // run angular calculation
     if (n < totalpairs) {
-      int2 jk = pairidx_to_jk(n, jnum);
+      int2 jk = pairidx_to_jk(n);
       int jj = jk.x, kk = jk.y;
       const DataT Rij = sdist[jj];
       SpeciesT specie_j = s_species[jj];
@@ -468,7 +468,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
       __syncthreads();
       int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
       if (m < totalpairs) {
-        int2 jk = pairidx_to_jk(m, jnum);
+        int2 jk = pairidx_to_jk(m);
         int jj = jk.x, kk = jk.y;
         const DataT Rij = sdist[jj];
         const DataT Rik = sdist[kk];
@@ -483,7 +483,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
       __syncthreads();
     }
     if (n < totalpairs) {
-      int2 jk = pairidx_to_jk(n, jnum);
+      int2 jk = pairidx_to_jk(n);
       int jj = jk.x, kk = jk.y;
       const DataT Rij = sdist[jj];
       DataT fc_ij = sfc[jj];
