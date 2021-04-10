@@ -113,15 +113,15 @@ struct alignas(2 * sizeof(int)) AtomI {
 
 struct NeighborList {
   int nJ;
-  int maxNumJPerI_aligned; // aligned to multiple of 4
+  int maxNumJPerI;
 
   Tensor atomJ_t; // only j index
   Tensor numJPerI_t;
   Tensor distJ_t;
 
   NeighborList() = default;
-  NeighborList(int nJ, int maxNumJPerI_aligned, Tensor atomJ_t, Tensor numJPerI_t, Tensor distJ_t)
-      : nJ(nJ), maxNumJPerI_aligned(maxNumJPerI_aligned), atomJ_t(atomJ_t), numJPerI_t(numJPerI_t), distJ_t(distJ_t) {}
+  NeighborList(int nJ, int maxNumJPerI, Tensor atomJ_t, Tensor numJPerI_t, Tensor distJ_t)
+      : nJ(nJ), maxNumJPerI(maxNumJPerI), atomJ_t(atomJ_t), numJPerI_t(numJPerI_t), distJ_t(distJ_t) {}
 };
 
 struct AEVScalarParams {
@@ -181,12 +181,12 @@ struct Result {
         coordinates_t,
         species_t,
         torch::tensor(radialNbr.nJ),
-        torch::tensor(radialNbr.maxNumJPerI_aligned),
+        torch::tensor(radialNbr.maxNumJPerI),
         radialNbr.atomJ_t,
         radialNbr.numJPerI_t,
         radialNbr.distJ_t,
         torch::tensor(angularNbr.nJ),
-        torch::tensor(angularNbr.maxNumJPerI_aligned),
+        torch::tensor(angularNbr.maxNumJPerI),
         angularNbr.atomJ_t,
         angularNbr.numJPerI_t,
         angularNbr.distJ_t};
