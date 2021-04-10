@@ -658,7 +658,6 @@ __global__ void cuRadialAEVs(
   AtomI aI = atom_i[cIdx];
   int mol_idx = aI.midx;
   int i = aI.i;
-  int laneIdx = threadIdx.x % blockDim.x;
 
   for (int iaev = tIdx; iaev < radial_length; iaev += blockDim.x * blockDim.y) {
     s_radial[iaev] = 0;
@@ -676,7 +675,7 @@ __global__ void cuRadialAEVs(
     int j = atomJ[start_idx + jj];
     SpeciesT specie_j = species_t[mol_idx][j];
 
-    for (int ishfr = laneIdx; ishfr < nShfR; ishfr += blockDim.x) {
+    for (int ishfr = threadIdx.x; ishfr < nShfR; ishfr += blockDim.x) {
       DataT ShfR = __ldg(&ShfR_t[ishfr]);
       DataT GmR = 0.25f * __expf(-EtaR * (Rij - ShfR) * (Rij - ShfR)) * fc;
       atomicAdd(&s_radial[specie_j * radial_sublength + ishfr], GmR);
@@ -731,7 +730,6 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
   AtomI aI = atom_i[cIdx];
   int mol_idx = aI.midx;
   int i = aI.i;
-  int laneIdx = threadIdx.x % blockDim.x;
 
   float3 pos_i = pos_p_3[mol_idx * max_natoms_per_mol + i];
 
@@ -774,7 +772,7 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
       upstream_grad = s_grad_dist[jj];
     }
 
-    for (int ishfr = laneIdx; ishfr < nShfR; ishfr += blockDim.x) {
+    for (int ishfr = threadIdx.x; ishfr < nShfR; ishfr += blockDim.x) {
       DataT ShfR = __ldg(&ShfR_t[ishfr]);
 
       DataT GmR = 0.25f * __expf(-EtaR * (Rij - ShfR) * (Rij - ShfR));
