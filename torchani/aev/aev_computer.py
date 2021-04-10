@@ -1,16 +1,18 @@
 import math
-from typing import Tuple, Optional, NamedTuple, List
+from typing import Tuple, Optional, NamedTuple
 import warnings
 import importlib_metadata
 
 import torch
 from torch import Tensor
 
-from .cutoffs import CutoffCosine
-from .aev_terms import AngularTerms, RadialTerms
-from .neighbors import FullPairwise
 from ..utils import cumsum_from_zero
 from ..compat import Final
+# modular parts of AEVComputer
+from .cutoffs import _parse_cutoff_fn
+from .aev_terms import _parse_angular_terms, _parse_radial_terms
+from .neighbors import _parse_neighborlist
+
 
 cuaev_is_installed = 'torchani.cuaev' in importlib_metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
@@ -83,10 +85,16 @@ class AEVComputer(torch.nn.Module):
                 ShfZ: Tensor,
                 num_species: int,
                 use_cuda_extension=False,
-                cutoff_function=CutoffCosine,
-                neighborlist=FullPairwise):
+                cutoff_fn='cosine',
+                cutoff_fn_kwargs=None,
+                neighborlist='full_pairwise',
+                neighborlist_kwargs=None,
+                radial_terms='ani1',
+                radial_kwargs=None,
+                angular_terms='ani1',
+                angular_kwargs=None):
+
         super().__init__()
-        assert Rca <= Rcr, "Current implementation of AEVComputer assumes Rca <= Rcr"
         self.use_cuda_extension = use_cuda_extension
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
@@ -95,38 +103,81 @@ class AEVComputer(torch.nn.Module):
                              self._calculate_triu_index(num_species))
         self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
         self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool))
+        self.triu_index: Tensor
+        self.default_cell: Tensor
+        self.default_pbc: Tensor
 
-        # radial and angular calculators
-        self.angular_terms = AngularTerms(EtaA,
-                                          Zeta,
-                                          ShfA,
-                                          ShfZ,
-                                          Rca,
-                                          cutoff_function=cutoff_function)
-        self.radial_terms = RadialTerms(EtaR,
-                                        ShfR,
-                                        Rcr,
-                                        cutoff_function=cutoff_function)
+        # currently only cosine, smooth and custom cutoffs are supported
+        # only ANI-1 style angular terms or radial terms
+        # and only full pairwise neighborlist
+        cutoff_fn = _parse_cutoff_fn(cutoff_fn)
+        angular_terms = _parse_angular_terms(angular_terms)
+        radial_terms = _parse_radial_terms(radial_terms)
+        neighborlist = _parse_neighborlist(neighborlist)
 
-        # neighborlist uses radial cutoff only
-        self.neighborlist = neighborlist(Rcr) if neighborlist is not None else None
+        # build angular terms
+        a_args = (EtaA, Zeta, ShfA, ShfZ, Rca)
+        a_kwargs = dict() if angular_kwargs is None else angular_kwargs
+        self.angular_terms = angular_terms(*a_args, **a_kwargs, cutoff_fn=cutoff_fn, cutoff_fn_kwargs=cutoff_fn_kwargs)
+
+        # build radial terms
+        r_args = (EtaR, ShfR, Rcr)
+        r_kwargs = dict() if radial_kwargs is None else radial_kwargs
+        self.radial_terms = radial_terms(*r_args, **r_kwargs, cutoff_fn=cutoff_fn, cutoff_fn_kwargs=cutoff_fn_kwargs)
+
+        # build neighborlist
+        nl_args = (Rcr,)
+        nl_kwargs = dict() if neighborlist_kwargs is None else neighborlist_kwargs
+        self.neighborlist = neighborlist(*nl_args, **nl_kwargs)
+
+        self._validate_cutoffs_init()
 
         # length variables are updated once radial and angular terms are initialized
-        self._update_lengths()
+        # The lengths of buffers can't be changed with load_state_dict so we can
+        # cache all lengths in the model itself
+        self.radial_sublength = self.radial_terms.sublength()
+        self.angular_sublength = self.angular_terms.sublength()
+        self.radial_length = self.radial_sublength * self.num_species
+        self.angular_length = self.angular_sublength * self.num_species_pairs
+        self.aev_length = self.radial_length + self.angular_length
 
         # cuda aev
         if self.use_cuda_extension:
             assert cuaev_is_installed, "AEV cuda extension is not installed"
         # cuaev_computer is created only when use_cuda_extension is True.
         # However jit needs to know cuaev_computer's Type even when
-        # use_cuda_extension is False
+        # use_cuda_extension is False. **NOTE: this is only a kind of "dummy"
+        # initialization, it is always necessary to reinitialize in forward at
+        # least once, since some tensors may be on CPU at this point**
         if cuaev_is_installed:
             self._init_cuaev_computer()
 
+        # We defer true cuaev initialization to forward so that we ensure that
+        # all tensors are in GPU once it is initialized.
+        self.register_buffer('cuaev_is_initialized', torch.tensor(False))
+        self.cuaev_is_initialized: Tensor
+
+    def _validate_cutoffs_init(self):
+        # validate cutoffs and emit warnings for strange configurations
+        if self.neighborlist.cutoff > self.radial_terms.get_cutoff():
+            raise ValueError(f"""The neighborlist cutoff {self.neighborlist.cutoff}
+                    is larger than the radial cutoff, {self.radial_terms.get_cutoff()}.
+                    AEVComputer can't possibly reuse the neighborlist for other
+                    interactions, you probably want to use a different class,
+                    since this configuration will will not use the extra atom pairs""")
+        elif self.neighborlist.cutoff < self.radial_terms.get_cutoff():
+            raise ValueError(f"""The neighborlist cutoff,
+                             {self.neighborlist.cutoff} should be at least as
+                             large as the radial cutoff, {self.radial_terms.get_cutoff()}""")
+        if self.angular_terms.get_cutoff() > self.radial_terms.get_cutoff():
+            raise ValueError(f"""Current implementation assumes angular cutoff
+                             {self.angular_terms.get_cutoff()} < radial cutoff
+                             {self.radial_terms.get_cutoff()}""")
+
     @jit_unused_if_no_cuaev()
     def _init_cuaev_computer(self):
-        self.cuaev_computer = torch.classes.cuaev.CuaevComputer(self.radial_terms.cutoff.item(),
-                                                                self.angular_terms.cutoff.item(),
+        self.cuaev_computer = torch.classes.cuaev.CuaevComputer(self.radial_terms.get_cutoff().item(),
+                                                                self.angular_terms.get_cutoff().item(),
                                                                 self.radial_terms.EtaR.flatten(),
                                                                 self.radial_terms.ShfR.flatten(),
                                                                 self.angular_terms.EtaA.flatten(),
@@ -146,15 +197,6 @@ class AEVComputer(torch.nn.Module):
         ret[species2, species1] = pair_index
         return ret
 
-    def _update_lengths(self):
-        # the lengths of buffers can't be changed with load_state_dict so we can
-        # cache all lengths in the model itself
-        self.radial_sublength = self.radial_terms.sublength()
-        self.angular_sublength = self.angular_terms.sublength()
-        self.radial_length = self.radial_sublength * self.num_species
-        self.angular_length = self.angular_sublength * self.num_species_pairs
-        self.aev_length = self.radial_length + self.angular_length
-
     @classmethod
     def cover_linearly(cls,
                        radial_cutoff: float,
@@ -167,7 +209,7 @@ class AEVComputer(torch.nn.Module):
                        angle_sections: int,
                        num_species: int,
                        angular_start: float = 0.9,
-                       radial_start: float = 0.9):
+                       radial_start: float = 0.9, **kwargs):
         r""" Provides a convenient way to linearly fill cutoffs
 
         This is a user friendly constructor that builds an
@@ -184,16 +226,64 @@ class AEVComputer(torch.nn.Module):
         # best or most optimal way but it is a relatively sensible default.
         Rcr = radial_cutoff
         Rca = angular_cutoff
-        EtaR = torch.tensor([float(radial_eta)])
-        EtaA = torch.tensor([float(angular_eta)])
-        Zeta = torch.tensor([float(zeta)])
+        EtaR = torch.tensor([radial_eta], dtype=torch.float)
+        EtaA = torch.tensor([angular_eta], dtype=torch.float)
+        Zeta = torch.tensor([zeta], dtype=torch.float)
         ShfR = torch.linspace(radial_start, radial_cutoff,
-                              radial_dist_divisions + 1)[:-1]
+                              radial_dist_divisions + 1)[:-1].to(torch.float)
         ShfA = torch.linspace(angular_start, angular_cutoff,
-                              angular_dist_divisions + 1)[:-1]
+                              angular_dist_divisions + 1)[:-1].to(torch.float)
         angle_start = math.pi / (2 * angle_sections)
-        ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) + angle_start)[:-1]
-        return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
+        ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) + angle_start)[:-1].to(torch.float)
+        return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, **kwargs)
+
+    @classmethod
+    def like_1x(cls, **kwargs):
+        cls_kwargs = {
+            'radial_cutoff': 5.2,
+            'angular_cutoff': 3.5,
+            'radial_eta': 16.0,
+            'angular_eta': 8.0,
+            'radial_dist_divisions': 16,
+            'angular_dist_divisions': 4,
+            'zeta': 32.0,
+            'angle_sections': 8,
+            'num_species': 4,
+            'angular_start': 0.9,
+            'radial_start': 0.9
+        }
+        cls_kwargs.update(kwargs)
+        return cls.cover_linearly(**cls_kwargs)
+
+    @classmethod
+    def like_2x(cls, **kwargs):
+        cls_kwargs = {
+            'radial_cutoff': 5.1,
+            'angular_cutoff': 3.5,
+            'radial_eta': 19.7,
+            'angular_eta': 12.5,
+            'radial_dist_divisions': 16,
+            'angular_dist_divisions': 8,
+            'zeta': 14.1,
+            'angle_sections': 4,
+            'num_species': 7,
+            'angular_start': 0.8,
+            'radial_start': 0.8
+        }
+        cls_kwargs.update(kwargs)
+        # note that there is a small difference of 1 digit in one decimal place
+        # in the eight element of ShfR this element is 2.6812 using this method
+        # and 2.6813 for the actual network, but this is not significant for
+        # retraining purposes
+        # In any way we change this for consistency
+        out = cls.cover_linearly(**cls_kwargs)
+        out.radial_terms.ShfR[0, 7] = 2.6813
+        return out
+
+    @classmethod
+    def like_1ccx(cls, **kwargs):
+        # just a synonym
+        return cls.like_1x(**kwargs)
 
     def forward(self,
                 input_: Tuple[Tensor, Tensor],
@@ -244,61 +334,54 @@ class AEVComputer(torch.nn.Module):
         assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
         assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
 
+        # validate cutoffs
+        assert self.neighborlist.cutoff >= self.radial_terms.get_cutoff()
+        assert self.angular_terms.get_cutoff() < self.radial_terms.get_cutoff()
+
         cell = cell if cell is not None else self.default_cell
         pbc = pbc if pbc is not None else self.default_pbc
 
         if self.use_cuda_extension:
+            if not self.cuaev_is_initialized:
+                self._init_cuaev_computer()
+                self.cuaev_is_initialized = torch.tensor(True)
             assert not pbc.any(), "cuaev currently does not support PBC"
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
 
-        atom_index12, shift_values = self.neighborlist(species, coordinates, cell, pbc)
-        aev = self._compute_aev(species, coordinates, atom_index12, shift_values)
+        atom_index12, shift_values, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
+        aev = self._compute_aev(species, atom_index12, shift_values, diff_vector, distances)
         return SpeciesAEV(species, aev)
 
     @jit_unused_if_no_cuaev()
     def _compute_cuaev(self, species, coordinates):
         species_int = species.to(torch.int32)
+        coordinates = coordinates.to(torch.float)
         aev = torch.ops.cuaev.run(coordinates, species_int, self.cuaev_computer)
         return aev
 
-    def _compute_aev(self, species: Tensor, coordinates: Tensor,
-                    atom_index12: Tensor, shift_values: Tensor) -> Tensor:
+    def _compute_aev(self, species: Tensor,
+            atom_index12: Tensor, shift_values: Tensor, diff_vector: Tensor, distances: Tensor) -> Tensor:
 
         species12 = species.flatten()[atom_index12]
-        vec = self._compute_difference_vector(coordinates, atom_index12,
-                                              shift_values)
-
-        distances = vec.norm(2, -1)
-        radial_aev = self._compute_radial_aev(species12, distances,
-                                              atom_index12, species.shape)
+        radial_aev = self._compute_radial_aev(species.shape[0], species.shape[1], species12,
+                                              distances, atom_index12)
 
         # Rca is usually much smaller than Rcr, using neighbor list with
-        # cutoff = Rcr is a waste of resources Now we will get a smaller neighbor
+        # cutoff = Rcr is a waste of resources. Now we will get a smaller neighbor
         # list that only cares about atoms with distances <= Rca
-        even_closer_indices = (distances <= self.angular_terms.cutoff).nonzero().flatten()
-
+        even_closer_indices = (distances <= self.angular_terms.get_cutoff()).nonzero().flatten()
         atom_index12 = atom_index12.index_select(1, even_closer_indices)
         species12 = species12.index_select(1, even_closer_indices)
-        vec = vec.index_select(0, even_closer_indices)
+        diff_vector = diff_vector.index_select(0, even_closer_indices)
 
-        angular_aev = self._compute_angular_aev(species12, vec, atom_index12,
-                                                species.shape)
+        angular_aev = self._compute_angular_aev(species.shape[0], species.shape[1], species12,
+                                                diff_vector, atom_index12)
 
         return torch.cat([radial_aev, angular_aev], dim=-1)
 
-    @staticmethod
-    def _compute_difference_vector(coordinates: Tensor, atom_index12: Tensor,
-                                   shift_values: Tensor) -> Tensor:
-        selected_coordinates = coordinates.view(-1, 3).index_select(
-            0, atom_index12.view(-1)).view(2, -1, 3)
-        vec = selected_coordinates[0] - selected_coordinates[1] + shift_values
-        return vec
-
-    def _compute_angular_aev(self, species12: Tensor, vec: Tensor,
-                             atom_index12: Tensor,
-                             species_shape: List[int]) -> Tensor:
-        num_molecules, num_atoms = species_shape
+    def _compute_angular_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, vec: Tensor,
+                             atom_index12: Tensor) -> Tensor:
 
         central_atom_index, pair_index12, sign12 = self._triple_by_molecule(
             atom_index12)
@@ -319,10 +402,8 @@ class AEVComputer(torch.nn.Module):
                                           self.angular_length)
         return angular_aev
 
-    def _compute_radial_aev(self, species12: Tensor, distances: Tensor,
-                            atom_index12: Tensor,
-                            species_shape: List[int]) -> Tensor:
-        num_molecules, num_atoms = species_shape
+    def _compute_radial_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, distances: Tensor,
+                            atom_index12: Tensor) -> Tensor:
 
         radial_terms_ = self.radial_terms(distances)
         radial_aev = radial_terms_.new_zeros(

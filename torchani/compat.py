@@ -1,4 +1,6 @@
 import sys
+# This is needed for compatibility with python3.6, in python 3.6 torch.jit
+# Final doesn't work correctly
 
 if sys.version_info[:2] < (3, 7):
 
@@ -8,4 +10,4 @@ if sys.version_info[:2] < (3, 7):
 
     Final = FakeFinal()
 else:
-    from torch.jit import Final
+    from torch.jit import Final # noqa

@@ -40,8 +40,8 @@ class TestAEVConstructor(TestCase):
 
     @staticmethod
     def _get_aev_constants(aev_computer):
-        return aev_computer.radial_terms.cutoff, aev_computer.radial_terms.EtaR,\
-            aev_computer.radial_terms.ShfR, aev_computer.angular_terms.cutoff,\
+        return aev_computer.radial_terms.get_cutoff(), aev_computer.radial_terms.EtaR,\
+            aev_computer.radial_terms.ShfR, aev_computer.angular_terms.get_cutoff(),\
             aev_computer.angular_terms.ShfZ, aev_computer.angular_terms.EtaA,\
             aev_computer.angular_terms.Zeta, aev_computer.angular_terms.ShfA, aev_computer.num_species
 
@@ -55,8 +55,8 @@ class TestIsolated(TestCase):
         consts = torchani.neurochem.Constants(const_file)
         self.aev_computer = torchani.AEVComputer(**consts).to(self.device)
         self.species_to_tensor = consts.species_to_tensor
-        self.rcr = self.aev_computer.radial_terms.cutoff
-        self.rca = self.aev_computer.angular_terms.cutoff
+        self.rcr = self.aev_computer.radial_terms.get_cutoff()
+        self.rca = self.aev_computer.angular_terms.get_cutoff()
 
     def testCO2(self):
         species = self.species_to_tensor(['O', 'C', 'O']).to(self.device).unsqueeze(0)
@@ -112,6 +112,35 @@ class TestIsolated(TestCase):
 
 
 class TestAEV(_TestAEVBase):
+
+    def testGradsBatches(self):
+        # test if gradients are the same for single molecules and for batches
+        # with dummy atoms
+        N = 25
+        assert N % 5 == 0, "N must be a multiple of 5"
+        coordinates_list = []
+        species_list = []
+        grads_expect = []
+        for j in range(N):
+            c = torch.randn((1, 3, 3), dtype=torch.float, requires_grad=True)
+            s = torch.randint(low=0, high=4, size=(1, 3), dtype=torch.long)
+            if j % 5 == 0:
+                s[0, 0] = -1
+            _, aev = self.aev_computer((s, c))
+            aev.backward(torch.ones_like(aev))
+
+            grads_expect.append(c.grad)
+            coordinates_list.append(c)
+            species_list.append(s)
+
+        coordinates_cat = torch.cat(coordinates_list, dim=0).detach()
+        coordinates_cat.requires_grad_(True)
+        species_cat = torch.cat(species_list, dim=0)
+        grads_expect = torch.cat(grads_expect, dim=0)
+
+        _, aev = self.aev_computer((species_cat, coordinates_cat))
+        aev.backward(torch.ones_like(aev))
+        self.assertEqual(grads_expect, coordinates_cat.grad)
 
     def testIsomers(self):
         for i in range(N):
@@ -220,7 +249,7 @@ class TestPBCSeeEachOther(TestCase):
 
         for xyz2 in xyz2s:
             coordinates = torch.stack([xyz1, xyz2]).to(torch.double).unsqueeze(0)
-            atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -237,7 +266,7 @@ class TestPBCSeeEachOther(TestCase):
             xyz2[i] = 9.9
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -257,7 +286,7 @@ class TestPBCSeeEachOther(TestCase):
                 xyz2[j] = new_j
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -272,7 +301,7 @@ class TestPBCSeeEachOther(TestCase):
         xyz2 = torch.tensor([10.0, 0.1, 0.1], dtype=torch.double)
 
         coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-        atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
+        atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
         atom_index1, atom_index2 = atom_index12.unbind(0)
         self.assertEqual(atom_index1.tolist(), [0])
         self.assertEqual(atom_index2.tolist(), [1])

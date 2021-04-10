@@ -4,11 +4,23 @@ from torch import Tensor
 from ..compat import Final
 
 
+def _parse_cutoff_fn(cutoff_fn):
+    # currently only cosine, smooth and custom cutoffs are supported
+    if cutoff_fn == 'cosine':
+        cutoff_fn = CutoffCosine
+    elif cutoff_fn == 'smooth':
+        cutoff_fn = CutoffSmooth
+    else:
+        assert issubclass(cutoff_fn, torch.nn.Module)
+    return cutoff_fn
+
+
 class CutoffCosine(torch.nn.Module):
 
     def __init__(self, cutoff: float):
         super().__init__()
         self.register_buffer('cutoff', torch.tensor(cutoff))
+        self.cutoff: Tensor
 
     def forward(self, distances: Tensor) -> Tensor:
         # assuming all elements in distances are smaller than cutoff
@@ -29,6 +41,8 @@ class CutoffSmooth(torch.nn.Module):
         self.order = order
         self.register_buffer('cutoff', torch.tensor(cutoff))
         self.register_buffer('eps', torch.tensor(eps))
+        self.cutoff: Tensor
+        self.eps: Tensor
 
     def forward(self, distances: Tensor) -> Tensor:
         # assuming all elements in distances are smaller than cutoff
