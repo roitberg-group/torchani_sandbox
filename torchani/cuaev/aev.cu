@@ -110,8 +110,7 @@ __global__ void pairwiseDistance(
       }
 
     } // if i is not padding atom
-    AtomI aI = {mol_idx, i};
-    atom_i[mol_idx * max_natoms_per_mol + i] = aI;
+    atom_i[mol_idx * max_natoms_per_mol + i] = {mol_idx, i};
   }
   __syncthreads();
 
