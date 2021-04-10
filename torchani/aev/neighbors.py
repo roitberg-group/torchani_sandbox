@@ -54,6 +54,10 @@ class BaseNeighborlist(torch.nn.Module):
     @staticmethod
     def _screen_with_cutoff(cutoff: float, coordinates: Tensor, input_neighborlist: Tensor,
             shift_values: Tensor, mask: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+        r"""shift_values: a set of displacements for the coordinates of the
+            second atom in each pair, of shape (P, 3). These are nonzero if
+            the second atom in the pair is interacting with the first atom
+            through periodic boundary conditions, otherwise they are zeros."""
         # Screen a given neighborlist using a cutoff and return a neighborlist with
         # atoms that are within that cutoff, for all molecules in a coordinate set.
         #
