@@ -152,7 +152,6 @@ __global__ void pairwiseDistanceSingleMolecule(
 
   if (tIdx < ATOM_I_PER_BLOCK)
     s_pcounter_i[tIdx] = 0;
-  __syncthreads();
 
   for (int tileidx = 0; tileidx < num_tiles; tileidx++) {
     // load 1 block size of atoms j into share memory
