@@ -31,7 +31,7 @@ def plot_file(file_path, comment, show=False):
     assert len(std) == len(mean)
     assert len(std) == len(sizes)
     for times in all_trials:
-        ax.errorbar(x=sizes, y=mean, yerr=std*2, ecolor='k', capsize =2, fmt='s--', ms=1)
+        ax.errorbar(x=sizes, y=mean, yerr=std * 2, ecolor='k', capsize=2, fmt='s--', ms=1)
     ax.set_xlabel('System size (atoms)')
     ax.set_ylabel('Total Walltime per ns (days)')
     ax.set_title(comment)
@@ -70,40 +70,48 @@ def plot_many(path_to_files, comment, show=False):
     if show:
         plt.show(block=False)
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(2, 1, sharex=True)
     for p in file_paths:
         with open(Path(p).resolve(), 'rb') as f:
             times_sizes = pickle.load(f)
             all_trials = np.asarray(times_sizes['times'])
             sizes = times_sizes['atoms']
             timers = times_sizes['timers']
-    
 
         std = all_trials.std(axis=0)
         mean = all_trials.mean(axis=0)
+        inverse_mean = (1/all_trials).mean(axis=0)
+        inverse_std = (1/all_trials).std(axis=0)
         assert len(std) == len(mean)
         assert len(std) == len(sizes)
         if '_clist_update_all_steps' in p.stem:
             c = 'b'
-            l = "TorchANI + cell list (Updating every step)"
+            l = "TorchANI+pmemd (improved codebase)"
         elif 'clist_reuse' in p.stem:
             c = 'r'
             l = "TorchANI + cell list (Not Updating every step)"
         else:
             c = 'g'
-            l = 'TorchANI' 
+            l = 'Original TorchANI'
         fmt = 's-'
-        ax.errorbar(x=sizes, y=mean, color=c, yerr=std*2, ecolor='k', capsize =2, fmt=fmt, ms=4, label=l)
-    ax.set_xlabel('System size (atoms)')
-    ax.set_ylabel('Walltime per ns (h)')
-    ax.set_title('Benchmarks for ANI-1x model, water boxes')
-    plt.legend()
+        ax[0].errorbar(x=sizes, y=mean, color=c, yerr=std * 2, ecolor='k', capsize=2, fmt=fmt, ms=4, label=l)
+        ax[1].errorbar(x=sizes, y=inverse_mean, color=c, yerr=inverse_std * 2, ecolor='k', capsize=2, fmt=fmt, ms=4, label=l)
+    ax[0].set_xlabel('System size (atoms)')
+    ax[0].set_ylabel('Walltime for 1 ns (days)')
+    ax[0].legend()
+
+    ax[1].set_xlabel('System size (atoms)')
+    ax[1].set_ylabel('Performance, (ns/day)')
+    #ax[1].legend()
+
+    fig.suptitle('Benchmarks for ANI-1x model, bulk water')
+
     if show:
         plt.show()
 
 def get_model(model_arg, torch_cell_list, model_index, adaptive_torch_cell_list):
-    args = {'periodic_table_index' : True, 
-            'torch_cell_list': torch_cell_list, 
+    args = {'periodic_table_index' : True,
+            'torch_cell_list': torch_cell_list,
             'adaptive_torch_cell_list': adaptive_torch_cell_list}
 
     if model_index:
@@ -115,7 +123,7 @@ def get_model(model_arg, torch_cell_list, model_index, adaptive_torch_cell_list)
         model = torchani.models.ANI2x(**args).to(device, dtype=torch.double)
     elif model_arg == 'ani1ccx':
         model = torchani.models.ANI1ccx(**args).to(device, dtype=torch.double)
-    return model
+    return model.to(torch.float)
 
 def print_info(device, steps, sizes):
     print(f'Running on {device} {torch.cuda.get_device_name()}')
@@ -131,14 +139,14 @@ if __name__ == "__main__":
     parser.add_argument('-j', '--jit', action='store_true', default=False)
     parser.add_argument('-m', '--model', default='ani1x')
     parser.add_argument('-d', '--device', type=str, default='cuda')
-    parser.add_argument('-s', '--steps', type=int, default=100, help="Timesteps to run in dynamics")
+    parser.add_argument('-s', '--steps', type=int, default=250, help="Timesteps to run in dynamics")
     parser.add_argument('--no-pbc', action='store_true', default=False, help="Use periodic boundary conditions")
     parser.add_argument('--model-index', default=None, help="Specify a model index")
 
     # may want to change
     parser.add_argument('-x', '--xyz', default=None, help="path to directory with xyz files")
-    parser.add_argument('-t', '--trials', default=1, help="Repetitions to calculate std dev")
-    parser.add_argument('-b', '--box-repeats', type=int, default=15, help="Number of replications of molecule in all directions")
+    parser.add_argument('-t', '--trials', default=5, help="Repetitions to calculate std dev")
+    parser.add_argument('-b', '--box-repeats', type=int, default=15, help="Number of replications of molecule in all directions" )
     parser.add_argument('--cell-list', action='store_true', default=False, help="Use a cell list")
     parser.add_argument('--adaptive-cell-list', action='store_true', default=False, help="Reuse cell list")
 
@@ -155,10 +163,10 @@ if __name__ == "__main__":
         path_to_xyz = Path(args.xyz).resolve()
     else:
         path_to_xyz = ''
-    
+
     # the output file name is the model name by default
     if args.cell_list:
-        clist_str = '_clist_update_all_steps' 
+        clist_str = '_clist_update_all_steps'
     elif args.adaptive_cell_list:
         clist_str = '_clist_reuse'
     else:
@@ -200,7 +208,7 @@ if __name__ == "__main__":
         print_info(device, args.steps, sizes)
         model = get_model(args.model, args.cell_list, args.model_index, args.adaptive_cell_list)
 
-        timers = {'forward': 0.0, 'backward': 0.0, 'neighborlist': 0.0, 'aev_forward': 0.0} 
+        timers = {'forward': 0.0, 'backward': 0.0, 'neighborlist': 0.0, 'aev_forward': 0.0}
         def time_func(key, func):
             def wrapper(*args, **kwargs):
                 torch.cuda.synchronize()
@@ -217,7 +225,7 @@ if __name__ == "__main__":
             model.forward = time_func('forward', model.forward)
             torchani.ase.Calculator._get_ani_forces = time_func('backward', torchani.ase.Calculator._get_ani_forces)
 
-        all_trials = [] 
+        all_trials = []
         timers_list = []
         raw_trials = []
         for j in range(args.trials):
@@ -238,7 +246,7 @@ if __name__ == "__main__":
                 if not path_to_xyz:
                     species, coordinates = make_water(device)
                     species, coordinates, cell = geometry.tile_into_tight_cell((species, coordinates),
-                                                                density=0.0923, 
+                                                                density=0.0923,
                                                                 noise=0.1,
                                                                 repeats=r + 1)
                 else:
@@ -248,27 +256,27 @@ if __name__ == "__main__":
                 calc = model.ase()
                 if args.jit:
                     torch._C._jit_set_profiling_executor(False)
-                    torch._C._jit_set_profiling_mode(False) # this also has an effect
+                    torch._C._jit_set_profiling_mode(False)  # this also has an effect
                     torch._C._jit_override_can_fuse_on_cpu(False)
-                    torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
+                    torch._C._jit_set_texpr_fuser_enabled(False)  # this has an effect
                     torch._C._jit_set_nvfuser_enabled(False)
                     calc.model = torch.jit.script(calc.model)
-                atoms_args = {'symbols': species.squeeze().tolist(), 
-                             'positions': coordinates.squeeze().tolist(), 
+                atoms_args = {'symbols': species.squeeze().tolist(),
+                             'positions': coordinates.to(torch.float).squeeze().tolist(),
                              'calculator': calc}
 
                 if not args.no_pbc:
                     atoms_args.update({'cell': cell.cpu().numpy(), 'pbc': True})
 
                 molecule = ase.Atoms(**atoms_args)
-                
-                # run and time Langevin dynamics 
+
+                # run and time Langevin dynamics
                 dyn = Langevin(molecule, 1 * units.fs, 300 * units.kB, 0.2)
                 start = time.time()
                 dyn.run(args.steps)
                 end = time.time()
 
-                times.append((end - start)/(3600*24)  * 1e6/args.steps)
+                times.append((end - start) * 1e6/args.steps /(3600*24))
                 timers_list.append(copy.deepcopy(timers))
                 raw_times.append(end - start)
             all_trials.append(times)
