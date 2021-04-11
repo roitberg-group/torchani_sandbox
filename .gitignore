@@ -2,6 +2,7 @@
 __pycache__
 /data
 a.out
+nohup.out
 /test.py
 /.vscode
 /build*
