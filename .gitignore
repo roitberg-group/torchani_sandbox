@@ -1,6 +1,7 @@
 *.prof
 __pycache__
 /data
+nohup.out
 a.out
 /test.py
 /.vscode
