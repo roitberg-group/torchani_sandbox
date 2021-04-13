@@ -461,141 +461,142 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
 
   short2 tile = make_short2(laneIdx % TILE_SIZE, laneIdx / TILE_SIZE);
   const DataT tc = 0.95f; // theta constant factor
+  int num_pre_process = (totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-  for (int n = threadIdx.y * TILE_PER_WARP + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
-       n += blockDim.y * TILE_PER_WARP) {
-    if (n % BLOCK_SIZE < BLOCK_Y * TILE_PER_WARP) { // only run once for every BLOCK_SIZE of n
-      __syncthreads();
-      int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
-      if (m < totalpairs) {
-        int2 jk = pairidx_to_jk(m);
-        int jj = jk.x, kk = jk.y;
-        const DataT Rij = sdist[jj];
-        const DataT Rik = sdist[kk];
-        DataT vij_vik_dot = svec[jj].x * svec[kk].x + svec[jj].y * svec[kk].y + svec[jj].z * svec[kk].z;
-        s_vij_vik_dot[tIdx] = vij_vik_dot;
-        s_theta[tIdx] = acos(tc * vij_vik_dot / (Rij * Rik));
-        s_vij_factor[tIdx] =
-            tc / (Rij * Rij * Rij * sqrt(-tc * tc * vij_vik_dot * vij_vik_dot / (Rij * Rij) + Rik * Rik));
-        s_vik_factor[tIdx] =
-            tc / (Rik * Rik * Rik * sqrt(-tc * tc * vij_vik_dot * vij_vik_dot / (Rik * Rik) + Rij * Rij));
-      }
-      __syncthreads();
-    }
-    if (n < totalpairs) {
-      int2 jk = pairidx_to_jk(n);
+  for (int ppIdx = 0; ppIdx < num_pre_process; ppIdx++) {
+    // preprocess 1 blocksize of theta, vij_vik_dot, vij_factor and vik_factor
+    int m = tIdx + ppIdx * BLOCK_SIZE;
+    if (m < totalpairs) {
+      int2 jk = pairidx_to_jk(m);
       int jj = jk.x, kk = jk.y;
       const DataT Rij = sdist[jj];
-      DataT fc_ij = sfc[jj];
-      DataT grad_fc_ij = sfc_grad[jj];
       const DataT Rik = sdist[kk];
-      DataT fc_ik = sfc[kk];
-      DataT grad_fc_ik = sfc_grad[kk];
+      DataT vij_vik_dot = svec[jj].x * svec[kk].x + svec[jj].y * svec[kk].y + svec[jj].z * svec[kk].z;
+      s_vij_vik_dot[tIdx] = vij_vik_dot;
+      s_theta[tIdx] = acos(tc * vij_vik_dot / (Rij * Rik));
+      s_vij_factor[tIdx] =
+          tc / (Rij * Rij * Rij * sqrt(-tc * tc * vij_vik_dot * vij_vik_dot / (Rij * Rij) + Rik * Rik));
+      s_vik_factor[tIdx] =
+          tc / (Rik * Rik * Rik * sqrt(-tc * tc * vij_vik_dot * vij_vik_dot / (Rik * Rik) + Rij * Rij));
+    }
+    __syncthreads();
+    // run angular calculation
+    for (int nn = threadIdx.y * TILE_PER_WARP + tile.y; nn < BLOCK_SIZE; nn += BLOCK_Y * TILE_PER_WARP) {
+      int n = nn + ppIdx * BLOCK_SIZE;
+      if (n < totalpairs) {
+        int2 jk = pairidx_to_jk(n);
+        int jj = jk.x, kk = jk.y;
+        const DataT Rij = sdist[jj];
+        DataT fc_ij = sfc[jj];
+        DataT grad_fc_ij = sfc_grad[jj];
+        const DataT Rik = sdist[kk];
+        DataT fc_ik = sfc[kk];
+        DataT grad_fc_ik = sfc_grad[kk];
 
-      int sidx = n % BLOCK_SIZE;
-      DataT theta = s_theta[sidx];
-      DataT vij_vik_dot = s_vij_vik_dot[sidx];
-      DataT vij_factor = s_vij_factor[sidx];
-      DataT vik_factor = s_vik_factor[sidx];
+        DataT theta = s_theta[nn];
+        DataT vij_vik_dot = s_vij_vik_dot[nn];
+        DataT vij_factor = s_vij_factor[nn];
+        DataT vik_factor = s_vik_factor[nn];
 
-      DataT Rijk = (Rij + Rik) / 2.0f;
-      DataT fc_ijk = fc_ij * fc_ik;
+        DataT Rijk = (Rij + Rik) / 2.0f;
+        DataT fc_ijk = fc_ij * fc_ik;
 
-      IndexT subaev_offset = angular_sublength * csubaev_offsets(s_species[jj], s_species[kk], num_species);
-      float3 grad_vij = make_float3(0.f, 0.f, 0.f);
-      float3 grad_vik = make_float3(0.f, 0.f, 0.f);
+        IndexT subaev_offset = angular_sublength * csubaev_offsets(s_species[jj], s_species[kk], num_species);
+        float3 grad_vij = make_float3(0.f, 0.f, 0.f);
+        float3 grad_vik = make_float3(0.f, 0.f, 0.f);
 
-      for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILE_SIZE) {
-        DataT ShfA = __ldg(&ShfA_t[ishfr]);
-        DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
-        DataT grad_factor2_dist = -EtaA * (Rijk - ShfA) * factor2;
+        for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILE_SIZE) {
+          DataT ShfA = __ldg(&ShfA_t[ishfr]);
+          DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
+          DataT grad_factor2_dist = -EtaA * (Rijk - ShfA) * factor2;
 
-        for (int itheta = 0; itheta < nShfZ; itheta++) {
-          DataT ShfZ = __ldg(&ShfZ_t[itheta]);
+          for (int itheta = 0; itheta < nShfZ; itheta++) {
+            DataT ShfZ = __ldg(&ShfZ_t[itheta]);
 
-          DataT sin_theta_ShfZ, cos_theta_ShfZ;
-          __sincosf(theta - ShfZ, &sin_theta_ShfZ, &cos_theta_ShfZ);
-          DataT factor1 = __powf((1 + cos_theta_ShfZ) / 2, Zeta);
-          DataT grad_factor1_theta = -0.5f * Zeta * __powf((1 + cos_theta_ShfZ) / 2, Zeta - 1) * sin_theta_ShfZ;
+            DataT sin_theta_ShfZ, cos_theta_ShfZ;
+            __sincosf(theta - ShfZ, &sin_theta_ShfZ, &cos_theta_ShfZ);
+            DataT factor1 = __powf((1 + cos_theta_ShfZ) / 2, Zeta);
+            DataT grad_factor1_theta = -0.5f * Zeta * __powf((1 + cos_theta_ShfZ) / 2, Zeta - 1) * sin_theta_ShfZ;
 
-          DataT a = grad_factor1_theta * factor2 * fc_ijk;
-          DataT bj = factor1 / Rij * (grad_factor2_dist * fc_ijk + factor2 * fc_ik * grad_fc_ij);
-          DataT bk = factor1 / Rik * (grad_factor2_dist * fc_ijk + factor2 * fc_ij * grad_fc_ik);
+            DataT a = grad_factor1_theta * factor2 * fc_ijk;
+            DataT bj = factor1 / Rij * (grad_factor2_dist * fc_ijk + factor2 * fc_ik * grad_fc_ij);
+            DataT bk = factor1 / Rik * (grad_factor2_dist * fc_ijk + factor2 * fc_ij * grad_fc_ik);
 
-          DataT grad_vij_x =
-              2.0f * (a * vij_factor * (svec[jj].x * vij_vik_dot - svec[kk].x * Rij * Rij) + svec[jj].x * bj);
-          DataT grad_vij_y =
-              2.0f * (a * vij_factor * (svec[jj].y * vij_vik_dot - svec[kk].y * Rij * Rij) + svec[jj].y * bj);
-          DataT grad_vij_z =
-              2.0f * (a * vij_factor * (svec[jj].z * vij_vik_dot - svec[kk].z * Rij * Rij) + svec[jj].z * bj);
-          DataT grad_vik_x =
-              2.0f * (a * vik_factor * (svec[kk].x * vij_vik_dot - svec[jj].x * Rik * Rik) + svec[kk].x * bk);
-          DataT grad_vik_y =
-              2.0f * (a * vik_factor * (svec[kk].y * vij_vik_dot - svec[jj].y * Rik * Rik) + svec[kk].y * bk);
-          DataT grad_vik_z =
-              2.0f * (a * vik_factor * (svec[kk].z * vij_vik_dot - svec[jj].z * Rik * Rik) + svec[kk].z * bk);
+            DataT grad_vij_x =
+                2.0f * (a * vij_factor * (svec[jj].x * vij_vik_dot - svec[kk].x * Rij * Rij) + svec[jj].x * bj);
+            DataT grad_vij_y =
+                2.0f * (a * vij_factor * (svec[jj].y * vij_vik_dot - svec[kk].y * Rij * Rij) + svec[jj].y * bj);
+            DataT grad_vij_z =
+                2.0f * (a * vij_factor * (svec[jj].z * vij_vik_dot - svec[kk].z * Rij * Rij) + svec[jj].z * bj);
+            DataT grad_vik_x =
+                2.0f * (a * vik_factor * (svec[kk].x * vij_vik_dot - svec[jj].x * Rik * Rik) + svec[kk].x * bk);
+            DataT grad_vik_y =
+                2.0f * (a * vik_factor * (svec[kk].y * vij_vik_dot - svec[jj].y * Rik * Rik) + svec[kk].y * bk);
+            DataT grad_vik_z =
+                2.0f * (a * vik_factor * (svec[kk].z * vij_vik_dot - svec[jj].z * Rik * Rik) + svec[kk].z * bk);
 
-          if (is_double_backward) {
-            int atomj_idx = atomJ[start_idx + jj];
-            int atomk_idx = atomJ[start_idx + kk];
-            float3 grad_force_j = grad_force_3[mol_idx * max_natoms_per_mol + atomj_idx];
-            float3 grad_force_k = grad_force_3[mol_idx * max_natoms_per_mol + atomk_idx];
-            grad_vij_x *= (grad_force_j.x - grad_force_i.x);
-            grad_vij_y *= (grad_force_j.y - grad_force_i.y);
-            grad_vij_z *= (grad_force_j.z - grad_force_i.z);
-            grad_vik_x *= (grad_force_k.x - grad_force_i.x);
-            grad_vik_y *= (grad_force_k.y - grad_force_i.y);
-            grad_vik_z *= (grad_force_k.z - grad_force_i.z);
-            atomicAdd(
-                &saev[subaev_offset + ishfr * nShfZ + itheta],
-                grad_vij_x + grad_vij_y + grad_vij_z + grad_vik_x + grad_vik_y + grad_vik_z);
-          } else {
-            DataT grad_output_item = saev[subaev_offset + ishfr * nShfZ + itheta];
-            grad_vij_x *= grad_output_item;
-            grad_vij_y *= grad_output_item;
-            grad_vij_z *= grad_output_item;
-            grad_vik_x *= grad_output_item;
-            grad_vik_y *= grad_output_item;
-            grad_vik_z *= grad_output_item;
+            if (is_double_backward) {
+              int atomj_idx = atomJ[start_idx + jj];
+              int atomk_idx = atomJ[start_idx + kk];
+              float3 grad_force_j = grad_force_3[mol_idx * max_natoms_per_mol + atomj_idx];
+              float3 grad_force_k = grad_force_3[mol_idx * max_natoms_per_mol + atomk_idx];
+              grad_vij_x *= (grad_force_j.x - grad_force_i.x);
+              grad_vij_y *= (grad_force_j.y - grad_force_i.y);
+              grad_vij_z *= (grad_force_j.z - grad_force_i.z);
+              grad_vik_x *= (grad_force_k.x - grad_force_i.x);
+              grad_vik_y *= (grad_force_k.y - grad_force_i.y);
+              grad_vik_z *= (grad_force_k.z - grad_force_i.z);
+              atomicAdd(
+                  &saev[subaev_offset + ishfr * nShfZ + itheta],
+                  grad_vij_x + grad_vij_y + grad_vij_z + grad_vik_x + grad_vik_y + grad_vik_z);
+            } else {
+              DataT grad_output_item = saev[subaev_offset + ishfr * nShfZ + itheta];
+              grad_vij_x *= grad_output_item;
+              grad_vij_y *= grad_output_item;
+              grad_vij_z *= grad_output_item;
+              grad_vik_x *= grad_output_item;
+              grad_vik_y *= grad_output_item;
+              grad_vik_z *= grad_output_item;
 
-            grad_vij.x += grad_vij_x;
-            grad_vij.y += grad_vij_y;
-            grad_vij.z += grad_vij_z;
-            grad_vik.x += grad_vik_x;
-            grad_vik.y += grad_vik_y;
-            grad_vik.z += grad_vik_z;
+              grad_vij.x += grad_vij_x;
+              grad_vij.y += grad_vij_y;
+              grad_vij.z += grad_vij_z;
+              grad_vik.x += grad_vik_x;
+              grad_vik.y += grad_vik_y;
+              grad_vik.z += grad_vik_z;
+            }
           }
         }
-      }
 
-      spos_i_grad.x += (-grad_vij.x - grad_vik.x);
-      spos_i_grad.y += (-grad_vij.y - grad_vik.y);
-      spos_i_grad.z += (-grad_vij.z - grad_vik.z);
+        spos_i_grad.x += (-grad_vij.x - grad_vik.x);
+        spos_i_grad.y += (-grad_vij.y - grad_vik.y);
+        spos_i_grad.z += (-grad_vij.z - grad_vik.z);
 
-      for (int offset = TILE_SIZE / 2; offset > 0; offset /= 2) {
-        grad_vij.x += __shfl_down_sync(0xFFFFFFFF, grad_vij.x, offset);
-        grad_vij.y += __shfl_down_sync(0xFFFFFFFF, grad_vij.y, offset);
-        grad_vij.z += __shfl_down_sync(0xFFFFFFFF, grad_vij.z, offset);
-        grad_vik.x += __shfl_down_sync(0xFFFFFFFF, grad_vik.x, offset);
-        grad_vik.y += __shfl_down_sync(0xFFFFFFFF, grad_vik.y, offset);
-        grad_vik.z += __shfl_down_sync(0xFFFFFFFF, grad_vik.z, offset);
-      }
+        for (int offset = TILE_SIZE / 2; offset > 0; offset /= 2) {
+          grad_vij.x += __shfl_down_sync(0xFFFFFFFF, grad_vij.x, offset);
+          grad_vij.y += __shfl_down_sync(0xFFFFFFFF, grad_vij.y, offset);
+          grad_vij.z += __shfl_down_sync(0xFFFFFFFF, grad_vij.z, offset);
+          grad_vik.x += __shfl_down_sync(0xFFFFFFFF, grad_vik.x, offset);
+          grad_vik.y += __shfl_down_sync(0xFFFFFFFF, grad_vik.y, offset);
+          grad_vik.z += __shfl_down_sync(0xFFFFFFFF, grad_vik.z, offset);
+        }
 
-      // TODO this is a bottleneck
-      // 0.6ms/2.9ms = 20.1% (2.9ms is the total backward timing)
-      // bank confilct or atomicAdd?
-      if (laneIdx % TILE_SIZE == 0) {
-        atomicAdd(&spos_j_grad[jj].x, grad_vij.x);
-        atomicAdd(&spos_j_grad[jj].y, grad_vij.y);
-        atomicAdd(&spos_j_grad[jj].z, grad_vij.z);
+        // TODO this is a bottleneck
+        // 0.6ms/2.9ms = 20.1% (2.9ms is the total backward timing)
+        // bank confilct or atomicAdd?
+        if (laneIdx % TILE_SIZE == 0) {
+          atomicAdd(&spos_j_grad[jj].x, grad_vij.x);
+          atomicAdd(&spos_j_grad[jj].y, grad_vij.y);
+          atomicAdd(&spos_j_grad[jj].z, grad_vij.z);
 
-        atomicAdd(&spos_j_grad[kk].x, grad_vik.x);
-        atomicAdd(&spos_j_grad[kk].y, grad_vik.y);
-        atomicAdd(&spos_j_grad[kk].z, grad_vik.z);
+          atomicAdd(&spos_j_grad[kk].x, grad_vik.x);
+          atomicAdd(&spos_j_grad[kk].y, grad_vik.y);
+          atomicAdd(&spos_j_grad[kk].z, grad_vik.z);
+        }
       }
     }
+    __syncthreads();
   }
-  __syncthreads();
 
   if (is_double_backward) {
     auto& grad_grad_aev = grad_input;
