@@ -282,57 +282,59 @@ __global__ void cuAngularAEVs(
   __syncthreads();
 
   short2 tile = make_short2(laneIdx % TILE_SIZE, laneIdx / TILE_SIZE);
+  int num_pre_process = (totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-  for (int n = threadIdx.y * TILE_PER_WARP + tile.y; n < ((totalpairs + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
-       n += blockDim.y * TILE_PER_WARP) {
+  // cache aev result on smem
+  for (int ppIdx = 0; ppIdx < num_pre_process; ppIdx++) {
     // store 1 blocksize of theta to share mem
-    if (n % BLOCK_SIZE < BLOCK_Y * TILE_PER_WARP) { // only run once for every BLOCK_SIZE of n
-      __syncthreads();
-      int m = tIdx + (n / BLOCK_SIZE) * BLOCK_SIZE;
-      if (m < totalpairs) {
-        int2 jk = pairidx_to_jk(m);
-        int jj = jk.x, kk = jk.y;
-        const DataT Rij = sdist[jj];
-        const DataT Rik = sdist[kk];
-        s_theta[tIdx] =
-            acosf(0.95f * (svec[jj].x * svec[kk].x + svec[jj].y * svec[kk].y + svec[jj].z * svec[kk].z) / (Rij * Rik));
-      }
-      __syncthreads();
-    }
-    // run angular calculation
-    if (n < totalpairs) {
-      int2 jk = pairidx_to_jk(n);
+    int m = tIdx + ppIdx * BLOCK_SIZE;
+    if (m < totalpairs) {
+      int2 jk = pairidx_to_jk(m);
       int jj = jk.x, kk = jk.y;
       const DataT Rij = sdist[jj];
-      SpeciesT specie_j = s_species[jj];
-      DataT fc_ij = sfc[jj];
       const DataT Rik = sdist[kk];
-      SpeciesT specie_k = s_species[kk];
-      DataT fc_ik = sfc[kk];
+      s_theta[tIdx] =
+          acosf(0.95f * (svec[jj].x * svec[kk].x + svec[jj].y * svec[kk].y + svec[jj].z * svec[kk].z) / (Rij * Rik));
+    }
+    __syncthreads();
+    // run angular calculation
+    for (int nn = threadIdx.y * TILE_PER_WARP + tile.y; nn < BLOCK_SIZE; nn += BLOCK_Y * TILE_PER_WARP) {
+      int n = nn + ppIdx * BLOCK_SIZE;
+      if (n < totalpairs) {
+        int2 jk = pairidx_to_jk(n);
+        int jj = jk.x, kk = jk.y;
+        const DataT Rij = sdist[jj];
+        SpeciesT specie_j = s_species[jj];
+        DataT fc_ij = sfc[jj];
+        const DataT Rik = sdist[kk];
+        SpeciesT specie_k = s_species[kk];
+        DataT fc_ik = sfc[kk];
 
-      DataT theta = s_theta[n % BLOCK_SIZE];
-      DataT Rijk = (Rij + Rik) / 2;
-      DataT fc_ijk = fc_ij * fc_ik;
+        DataT theta = s_theta[nn];
+        DataT Rijk = (Rij + Rik) / 2;
+        DataT fc_ijk = fc_ij * fc_ik;
 
-      IndexT subaev_offset = angular_sublength * csubaev_offsets(specie_j, specie_k, num_species);
+        IndexT subaev_offset = angular_sublength * csubaev_offsets(specie_j, specie_k, num_species);
 
-      for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILE_SIZE) {
-        DataT ShfA = __ldg(&ShfA_t[ishfr]);
-        DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
+        for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILE_SIZE) {
+          DataT ShfA = __ldg(&ShfA_t[ishfr]);
+          DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
 
-        for (int itheta = 0; itheta < nShfZ; itheta++) {
-          DataT ShfZ = __ldg(&ShfZ_t[itheta]);
-          DataT factor1 = __powf((1 + __cosf(theta - ShfZ)) / 2, Zeta);
+          for (int itheta = 0; itheta < nShfZ; itheta++) {
+            DataT ShfZ = __ldg(&ShfZ_t[itheta]);
+            DataT factor1 = __powf((1 + __cosf(theta - ShfZ)) / 2, Zeta);
 
-          DataT res = 2 * factor1 * factor2 * fc_ijk;
+            DataT res = 2 * factor1 * factor2 * fc_ijk;
 
-          atomicAdd(&saev[subaev_offset + ishfr * nShfZ + itheta], res);
+            atomicAdd(&saev[subaev_offset + ishfr * nShfZ + itheta], res);
+          }
         }
       }
     }
+    __syncthreads();
   }
-  __syncthreads();
 
+  // write aev result to global memory
   for (int iaev = tIdx; iaev < angular_length; iaev += blockDim.x * blockDim.y) {
     aev_t[mol_idx][i][radial_length + iaev] = saev[iaev];
   }
