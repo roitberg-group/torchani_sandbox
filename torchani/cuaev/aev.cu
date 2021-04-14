@@ -379,6 +379,8 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
 
   int laneIdx = threadIdx.x;
 
+  // for backward, atomicadd on saev to minimize bandwidth
+  // for double backward, reading ddcoord once to share mem
   DataT* saev = &smem[0];
 
   int offset = angular_length;
@@ -415,6 +417,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
   float3 spos_i_grad;
   float3 grad_force_i;
 
+  // initlize share memories
   if (is_double_backward) {
     for (int iaev = tIdx; iaev < angular_length; iaev += blockDim.x * blockDim.y) {
       saev[iaev] = 0.0f;
@@ -489,6 +492,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
         float3 grad_vij = make_float3(0.f, 0.f, 0.f);
         float3 grad_vik = make_float3(0.f, 0.f, 0.f);
 
+        // iterate over ShfA and ShfZ
         for (int ishfr = tile.x; ishfr < nShfA; ishfr += TILE_SIZE) {
           DataT ShfA = __ldg(&ShfA_t[ishfr]);
           DataT factor2 = __expf(-EtaA * (Rijk - ShfA) * (Rijk - ShfA));
@@ -552,30 +556,33 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
           }
         }
 
-        spos_i_grad.x += (-grad_vij.x - grad_vik.x);
-        spos_i_grad.y += (-grad_vij.y - grad_vik.y);
-        spos_i_grad.z += (-grad_vij.z - grad_vik.z);
+        // accumulate gradients to share memory for backward
+        if (!is_double_backward) {
+          spos_i_grad.x += (-grad_vij.x - grad_vik.x);
+          spos_i_grad.y += (-grad_vij.y - grad_vik.y);
+          spos_i_grad.z += (-grad_vij.z - grad_vik.z);
 
-        for (int offset = TILE_SIZE / 2; offset > 0; offset /= 2) {
-          grad_vij.x += __shfl_down_sync(0xFFFFFFFF, grad_vij.x, offset);
-          grad_vij.y += __shfl_down_sync(0xFFFFFFFF, grad_vij.y, offset);
-          grad_vij.z += __shfl_down_sync(0xFFFFFFFF, grad_vij.z, offset);
-          grad_vik.x += __shfl_down_sync(0xFFFFFFFF, grad_vik.x, offset);
-          grad_vik.y += __shfl_down_sync(0xFFFFFFFF, grad_vik.y, offset);
-          grad_vik.z += __shfl_down_sync(0xFFFFFFFF, grad_vik.z, offset);
-        }
+          for (int offset = TILE_SIZE / 2; offset > 0; offset /= 2) {
+            grad_vij.x += __shfl_down_sync(0xFFFFFFFF, grad_vij.x, offset);
+            grad_vij.y += __shfl_down_sync(0xFFFFFFFF, grad_vij.y, offset);
+            grad_vij.z += __shfl_down_sync(0xFFFFFFFF, grad_vij.z, offset);
+            grad_vik.x += __shfl_down_sync(0xFFFFFFFF, grad_vik.x, offset);
+            grad_vik.y += __shfl_down_sync(0xFFFFFFFF, grad_vik.y, offset);
+            grad_vik.z += __shfl_down_sync(0xFFFFFFFF, grad_vik.z, offset);
+          }
 
-        // TODO this is a bottleneck
-        // 0.6ms/2.9ms = 20.1% (2.9ms is the total backward timing)
-        // bank confilct or atomicAdd?
-        if (laneIdx % TILE_SIZE == 0) {
-          atomicAdd(&spos_j_grad[jj].x, grad_vij.x);
-          atomicAdd(&spos_j_grad[jj].y, grad_vij.y);
-          atomicAdd(&spos_j_grad[jj].z, grad_vij.z);
+          // TODO this is a bottleneck
+          // 0.6ms/2.9ms = 20.1% (2.9ms is the total backward timing)
+          // bank confilct or atomicAdd?
+          if (laneIdx % TILE_SIZE == 0) {
+            atomicAdd(&spos_j_grad[jj].x, grad_vij.x);
+            atomicAdd(&spos_j_grad[jj].y, grad_vij.y);
+            atomicAdd(&spos_j_grad[jj].z, grad_vij.z);
 
-          atomicAdd(&spos_j_grad[kk].x, grad_vik.x);
-          atomicAdd(&spos_j_grad[kk].y, grad_vik.y);
-          atomicAdd(&spos_j_grad[kk].z, grad_vik.z);
+            atomicAdd(&spos_j_grad[kk].x, grad_vik.x);
+            atomicAdd(&spos_j_grad[kk].y, grad_vik.y);
+            atomicAdd(&spos_j_grad[kk].z, grad_vik.z);
+          }
         }
       }
     }
