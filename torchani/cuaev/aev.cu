@@ -201,8 +201,7 @@ __global__ void cuAngularAEVs(
     int angular_sublength,
     int radial_length,
     int num_species,
-    int maxnbrs_per_atom_aligned,
-    int angular_length_aligned,
+    int maxnbrs_per_atom,
     int ncentral_atoms) {
   constexpr int BLOCK_SIZE = BLOCK_X * BLOCK_Y;
 
@@ -224,16 +223,16 @@ __global__ void cuAngularAEVs(
 
   DataT* saev = &smem[0];
 
-  int offset = angular_length_aligned;
+  int offset = angular_length;
   float3* svec = reinterpret_cast<float3*>(&smem[offset]);
 
-  offset += 3 * maxnbrs_per_atom_aligned;
+  offset += 3 * maxnbrs_per_atom;
   DataT* sdist = &smem[offset];
 
-  offset += maxnbrs_per_atom_aligned;
+  offset += maxnbrs_per_atom;
   DataT* sfc = &smem[offset];
 
-  offset += maxnbrs_per_atom_aligned;
+  offset += maxnbrs_per_atom;
   int* s_species = (int*)&smem[offset];
 
   DataT EtaA = EtaA_t[0];
@@ -356,8 +355,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
     int angular_sublength,
     int radial_length,
     int num_species,
-    int maxnbrs_per_atom_aligned,
-    int angular_length_aligned,
+    int maxnbrs_per_atom,
     int ncentral_atoms) {
   constexpr int BLOCK_SIZE = BLOCK_X * BLOCK_Y;
 
@@ -383,22 +381,22 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
 
   DataT* saev = &smem[0];
 
-  int offset = angular_length_aligned;
+  int offset = angular_length;
   float3* svec = reinterpret_cast<float3*>(&smem[offset]);
 
-  offset += 3 * maxnbrs_per_atom_aligned;
+  offset += 3 * maxnbrs_per_atom;
   float3* spos_j_grad = reinterpret_cast<float3*>(&smem[offset]); // only for backward
 
-  offset += 3 * maxnbrs_per_atom_aligned;
+  offset += 3 * maxnbrs_per_atom;
   DataT* sdist = &smem[offset];
 
-  offset += maxnbrs_per_atom_aligned;
+  offset += maxnbrs_per_atom;
   DataT* sfc = &smem[offset];
 
-  offset += maxnbrs_per_atom_aligned;
+  offset += maxnbrs_per_atom;
   DataT* sfc_grad = &smem[offset];
 
-  offset += maxnbrs_per_atom_aligned;
+  offset += maxnbrs_per_atom;
   int* s_species = (int*)&smem[offset];
 
   DataT EtaA = EtaA_t[0];
@@ -1051,7 +1049,7 @@ void cuaev_forward(
   }
 
   { // AngularAEV
-    auto smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
+    auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
       int sm_aev = sizeof(float) * aev_params.angular_length;
       int sxyz = sizeof(float) * max_nbrs * 3;
       int sRij = sizeof(float) * max_nbrs;
@@ -1061,10 +1059,9 @@ void cuaev_forward(
     };
 
     result.angularNbr.maxNumJPerI = cubMax(angularNbr_numJPerI_p, result.nI, stream);
-    int smem_size_aligned = smem_size(result.angularNbr.maxNumJPerI, 1);
-    int angular_length_aligned = aev_params.angular_length;
+    int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
     constexpr dim3 block(C10_WARP_SIZE, 4, 1);
-    cuAngularAEVs<block.x, block.y><<<result.nI, block, smem_size_aligned, stream>>>(
+    cuAngularAEVs<block.x, block.y><<<result.nI, block, smem_size, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_p,
         aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1083,11 +1080,10 @@ void cuaev_forward(
         aev_params.radial_length,
         aev_params.num_species,
         result.angularNbr.maxNumJPerI,
-        angular_length_aligned,
         result.nI);
 #ifdef TORCHANI_DEBUG
     printf("%-35s %d\n", "angularNbr maxNumJPerI", result.angularNbr.maxNumJPerI);
-    printf("%-35s %'d bytes\n", "forward  angular smem_size", smem_size_aligned);
+    printf("%-35s %'d bytes\n", "forward  angular smem_size", smem_size);
 #endif
   }
 }
@@ -1132,7 +1128,7 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
       result.radialNbr.maxNumJPerI);
 
   // angular
-  auto smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
+  auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
     int sm_aev = sizeof(float) * (aev_params.angular_length);
     int sxyz = sizeof(float) * max_nbrs * 3;
     int sj_xyz_grad = sizeof(float) * max_nbrs * 3;
@@ -1142,14 +1138,14 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
     int sj = sizeof(int) * max_nbrs;
     return sm_aev + (sxyz + sj_xyz_grad + sRij + sfc + sfc_grad + sj) * ncatom_per_tpb;
   };
-  int smem_size_aligned = smem_size(result.angularNbr.maxNumJPerI, 1);
+  int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
 
 #ifdef TORCHANI_DEBUG
-  printf("%-35s %'d bytes\n", "backward angular smem_size", smem_size_aligned);
+  printf("%-35s %'d bytes\n", "backward angular smem_size", smem_size);
 #endif
 
   constexpr dim3 block(C10_WARP_SIZE, 4, 1);
-  cuAngularAEVs_backward_or_doublebackward<false, block.x, block.y><<<result.nI, block, smem_size_aligned, stream>>>(
+  cuAngularAEVs_backward_or_doublebackward<false, block.x, block.y><<<result.nI, block, smem_size, stream>>>(
       species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
       coordinates_p,
       aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1169,7 +1165,6 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
       aev_params.radial_length,
       aev_params.num_species,
       result.angularNbr.maxNumJPerI,
-      aev_params.angular_length,
       result.nI);
 
   return grad_coord;
@@ -1220,7 +1215,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
       result.radialNbr.maxNumJPerI);
 
   // angular
-  auto smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
+  auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
     int sm_aev = sizeof(float) * aev_params.angular_length;
     int sxyz = sizeof(float) * max_nbrs * 3;
     int sj_xyz_grad = sizeof(float) * max_nbrs * 3;
@@ -1230,9 +1225,9 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
     int sj = sizeof(int) * max_nbrs;
     return sm_aev + (sxyz + sj_xyz_grad + sRij + sfc + sfc_grad + sj) * ncatom_per_tpb;
   };
-  int smem_size_aligned = smem_size(result.angularNbr.maxNumJPerI, 1);
+  int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
   constexpr dim3 block(C10_WARP_SIZE, 4, 1);
-  cuAngularAEVs_backward_or_doublebackward<true, block.x, block.y><<<result.nI, block, smem_size_aligned, stream>>>(
+  cuAngularAEVs_backward_or_doublebackward<true, block.x, block.y><<<result.nI, block, smem_size, stream>>>(
       species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
       coordinates_p,
       aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1252,7 +1247,6 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
       aev_params.radial_length,
       aev_params.num_species,
       result.angularNbr.maxNumJPerI,
-      aev_params.angular_length,
       result.nI);
 
   return grad_grad_aev;
