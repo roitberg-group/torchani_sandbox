@@ -981,7 +981,7 @@ void cuaev_forward(
     // https://github.com/NVIDIA/cub/issues/235
     auto flags_t = numJPerI_t.to(torch::kBool);
     char* flags_p = (char*)flags_t.data_ptr();
-    int num_i = cubDeviceSelectFlagged(atom_i_p, atomI_p, total_atoms, flags_p, stream);
+    cubDeviceSelectFlagged(atom_i_p, atomI_p, total_atoms, flags_p, stream);
   }
 
   cubScan(radialNbr_numJPerI_p, startIdxJ_p, total_atoms, stream);

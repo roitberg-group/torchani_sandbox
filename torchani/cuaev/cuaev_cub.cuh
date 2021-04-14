@@ -44,17 +44,11 @@ int cubDeviceSelectIf(const DataT* d_in, DataT* d_out, int num_items, LambdaOpT 
 }
 
 template <typename DataT>
-int cubDeviceSelectFlagged(const DataT* d_in, DataT* d_out, int num_items, char* d_flags, cudaStream_t stream) {
+void cubDeviceSelectFlagged(const DataT* d_in, DataT* d_out, int num_items, char* d_flags, cudaStream_t stream) {
   auto allocator = c10::cuda::CUDACachingAllocator::get();
   auto buffer_count = allocator->allocate(sizeof(int));
   int* d_num_selected_out = (int*)buffer_count.get();
-
   CUB_WRAPPER(cuaev::cub::DeviceSelect::Flagged, d_in, d_flags, d_out, d_num_selected_out, num_items, stream);
-
-  int num_selected = 0;
-  cudaMemcpyAsync(&num_selected, d_num_selected_out, sizeof(int), cudaMemcpyDefault, stream);
-  cudaStreamSynchronize(stream);
-  return num_selected;
 }
 
 template <typename DataT>
