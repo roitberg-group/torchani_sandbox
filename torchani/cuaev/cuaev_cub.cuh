@@ -10,6 +10,8 @@
 #undef CUB_NS_POSTFIX
 #undef CUB_NS_PREFIX
 
+#include <ATen/cuda/Exceptions.h>
+
 // handle the temporary storage and 'twice' calls for cub API
 #define CUB_WRAPPER(func, ...)                                   \
   do {                                                           \
@@ -23,7 +25,7 @@
 template <typename DataT>
 void cubScan(const DataT* d_in, DataT* d_out, int num_items, cudaStream_t stream) {
   auto allocator = c10::cuda::CUDACachingAllocator::get();
-  CUB_WRAPPER(cub::DeviceScan::ExclusiveSum, d_in, d_out, num_items, stream);
+  CUB_WRAPPER(cuaev::cub::DeviceScan::ExclusiveSum, d_in, d_out, num_items, stream);
 }
 
 template <typename DataT, typename LambdaOpT>
@@ -32,7 +34,7 @@ int cubDeviceSelectIf(const DataT* d_in, DataT* d_out, int num_items, LambdaOpT 
   auto buffer_count = allocator->allocate(sizeof(int));
   int* d_num_selected_out = (int*)buffer_count.get();
 
-  CUB_WRAPPER(cub::DeviceSelect::If, d_in, d_out, d_num_selected_out, num_items, select_op, stream);
+  CUB_WRAPPER(cuaev::cub::DeviceSelect::If, d_in, d_out, d_num_selected_out, num_items, select_op, stream);
 
   // TODO copy num_selected to host, this part is slow
   int num_selected = 0;
@@ -47,7 +49,7 @@ int cubDeviceSelectFlagged(const DataT* d_in, DataT* d_out, int num_items, char*
   auto buffer_count = allocator->allocate(sizeof(int));
   int* d_num_selected_out = (int*)buffer_count.get();
 
-  CUB_WRAPPER(cub::DeviceSelect::Flagged, d_in, d_flags, d_out, d_num_selected_out, num_items, stream);
+  CUB_WRAPPER(cuaev::cub::DeviceSelect::Flagged, d_in, d_flags, d_out, d_num_selected_out, num_items, stream);
 
   int num_selected = 0;
   cudaMemcpyAsync(&num_selected, d_num_selected_out, sizeof(int), cudaMemcpyDefault, stream);
@@ -61,7 +63,7 @@ DataT cubMax(const DataT* d_in, int num_items, cudaStream_t stream) {
   auto buffer_count = allocator->allocate(sizeof(int));
   DataT* d_out = (DataT*)buffer_count.get();
 
-  CUB_WRAPPER(cub::DeviceReduce::Max, d_in, d_out, num_items, stream);
+  CUB_WRAPPER(cuaev::cub::DeviceReduce::Max, d_in, d_out, num_items, stream);
 
   DataT maxVal = 0;
   cudaMemcpyAsync(&maxVal, d_out, sizeof(DataT), cudaMemcpyDefault, stream);
@@ -75,7 +77,7 @@ DataT cubSum(const DataT* d_in, int num_items, cudaStream_t stream) {
   auto buffer_count = allocator->allocate(sizeof(int));
   DataT* d_out = (DataT*)buffer_count.get();
 
-  CUB_WRAPPER(cub::DeviceReduce::Sum, d_in, d_out, num_items, stream);
+  CUB_WRAPPER(cuaev::cub::DeviceReduce::Sum, d_in, d_out, num_items, stream);
 
   DataT sumVal = 0;
   cudaMemcpyAsync(&sumVal, d_out, sizeof(DataT), cudaMemcpyDefault, stream);

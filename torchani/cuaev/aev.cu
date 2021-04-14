@@ -1,13 +1,10 @@
 #include <aev.h>
 #include <torch/extension.h>
 #include <cuaev_cub.cuh>
-#include <vector>
 
 #include <ATen/Context.h>
-#include <ATen/cuda/Exceptions.h>
 #include <THC/THC.h>
 #include <c10/cuda/CUDACachingAllocator.h>
-#include <THC/THCThrustAllocator.cuh>
 
 #define PI 3.141592653589793
 using torch::Tensor;
@@ -906,6 +903,7 @@ void cuaev_forward(
   }
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  at::globalContext().lazyInitCUDA();
 
   int pairs_per_mol = max_natoms_per_mol * (max_natoms_per_mol - 1);
   auto total_natom_pairs = n_molecules * pairs_per_mol;
