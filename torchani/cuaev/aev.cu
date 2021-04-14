@@ -808,9 +808,9 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
   }
 }
 
-// There are 2 tasks in the post process
-// 1. copy radial's neighbor from tmp buffer
-// 2. and check whether it is within Rca, if so then also copy it into angular's neighbor list
+// There are 2 tasks in the post process:
+// 1. Copy radial's neighbor from tmp buffer
+// 2. And check whether it is within Rca, if so then also copy it into angular's neighbor list
 template <int ATOM_I_PER_BLOCK>
 __global__ void postProcessNbrList(
     const int* __restrict__ atomJ,
@@ -1195,6 +1195,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
   int* radial_numJPerI_p = (int*)result.radialNbr.numJPerI_t.data_ptr();
   int* startIdxJ_p = (int*)result.startIdxJ_t.data_ptr();
   float* coordinates_p = (float*)coordinates_t.data_ptr();
+  TORCH_CHECK(grad_force.is_contiguous(), "grad_force's data is not contiguous");
 
   // radial
   constexpr dim3 block_radial(8, 16, 1);
