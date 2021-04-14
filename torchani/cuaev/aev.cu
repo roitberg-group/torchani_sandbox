@@ -1,7 +1,6 @@
 #include <aev.h>
-#include <thrust/equal.h>
 #include <torch/extension.h>
-#include <cub/cub.cuh>
+#include <cuaev_cub.cuh>
 #include <vector>
 
 #include <ATen/Context.h>
@@ -12,16 +11,6 @@
 
 #define PI 3.141592653589793
 using torch::Tensor;
-
-// handle the temporary storage and 'twice' calls for cub API
-#define CUB_WRAPPER(func, ...)                                   \
-  do {                                                           \
-    size_t temp_storage_bytes = 0;                               \
-    func(nullptr, temp_storage_bytes, __VA_ARGS__);              \
-    auto temp_storage = allocator->allocate(temp_storage_bytes); \
-    func(temp_storage.get(), temp_storage_bytes, __VA_ARGS__);   \
-    AT_CUDA_CHECK(cudaGetLastError());                           \
-  } while (false)
 
 // fetch from the following matrix
 // [[ 0,  1,  2,  3,  4],
@@ -888,69 +877,6 @@ __global__ void postProcessNbrList(
   }
 }
 
-template <typename DataT>
-void cubScan(const DataT* d_in, DataT* d_out, int num_items, cudaStream_t stream) {
-  auto allocator = c10::cuda::CUDACachingAllocator::get();
-  CUB_WRAPPER(cub::DeviceScan::ExclusiveSum, d_in, d_out, num_items, stream);
-}
-
-template <typename DataT, typename LambdaOpT>
-int cubDeviceSelectIf(const DataT* d_in, DataT* d_out, int num_items, LambdaOpT select_op, cudaStream_t stream) {
-  auto allocator = c10::cuda::CUDACachingAllocator::get();
-  auto buffer_count = allocator->allocate(sizeof(int));
-  int* d_num_selected_out = (int*)buffer_count.get();
-
-  CUB_WRAPPER(cub::DeviceSelect::If, d_in, d_out, d_num_selected_out, num_items, select_op, stream);
-
-  // TODO copy num_selected to host, this part is slow
-  int num_selected = 0;
-  cudaMemcpyAsync(&num_selected, d_num_selected_out, sizeof(int), cudaMemcpyDefault, stream);
-  cudaStreamSynchronize(stream);
-  return num_selected;
-}
-
-template <typename DataT>
-int cubDeviceSelectFlagged(const DataT* d_in, DataT* d_out, int num_items, char* d_flags, cudaStream_t stream) {
-  auto allocator = c10::cuda::CUDACachingAllocator::get();
-  auto buffer_count = allocator->allocate(sizeof(int));
-  int* d_num_selected_out = (int*)buffer_count.get();
-
-  CUB_WRAPPER(cub::DeviceSelect::Flagged, d_in, d_flags, d_out, d_num_selected_out, num_items, stream);
-
-  int num_selected = 0;
-  cudaMemcpyAsync(&num_selected, d_num_selected_out, sizeof(int), cudaMemcpyDefault, stream);
-  cudaStreamSynchronize(stream);
-  return num_selected;
-}
-
-template <typename DataT>
-DataT cubMax(const DataT* d_in, int num_items, cudaStream_t stream) {
-  auto allocator = c10::cuda::CUDACachingAllocator::get();
-  auto buffer_count = allocator->allocate(sizeof(int));
-  DataT* d_out = (DataT*)buffer_count.get();
-
-  CUB_WRAPPER(cub::DeviceReduce::Max, d_in, d_out, num_items, stream);
-
-  DataT maxVal = 0;
-  cudaMemcpyAsync(&maxVal, d_out, sizeof(DataT), cudaMemcpyDefault, stream);
-  cudaStreamSynchronize(stream);
-  return maxVal;
-}
-
-template <typename DataT>
-DataT cubSum(const DataT* d_in, int num_items, cudaStream_t stream) {
-  auto allocator = c10::cuda::CUDACachingAllocator::get();
-  auto buffer_count = allocator->allocate(sizeof(int));
-  DataT* d_out = (DataT*)buffer_count.get();
-
-  CUB_WRAPPER(cub::DeviceReduce::Sum, d_in, d_out, num_items, stream);
-
-  DataT sumVal = 0;
-  cudaMemcpyAsync(&sumVal, d_out, sizeof(DataT), cudaMemcpyDefault, stream);
-  cudaStreamSynchronize(stream);
-  return sumVal;
-}
-
 // NOTE: assumes size of EtaA_t = Zeta_t = EtaR_t = 1
 void cuaev_forward(
     const Tensor& coordinates_t,
@@ -980,9 +906,6 @@ void cuaev_forward(
   }
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  auto thrust_allocator = THCThrustAllocator(at::globalContext().lazyInitCUDA());
-  auto policy = thrust::cuda::par(thrust_allocator).on(stream);
-  auto& allocator = *c10::cuda::CUDACachingAllocator::get();
 
   int pairs_per_mol = max_natoms_per_mol * (max_natoms_per_mol - 1);
   auto total_natom_pairs = n_molecules * pairs_per_mol;
