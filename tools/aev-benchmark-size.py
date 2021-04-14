@@ -7,6 +7,8 @@ import os
 import numpy as np
 from ase.io import read
 import argparse
+from distutils.spawn import find_executable
+
 
 summary = '\n'
 runcounter = 0
@@ -226,7 +228,7 @@ def plot(maxatoms, aev_fd, cuaev_fd, aev_fdbd, cuaev_fdbd):
     rc('xtick', labelsize=13)
     rc('ytick', labelsize=13)
     rc('axes', labelsize=16)
-    rc('text', usetex=True)
+    rc('text', usetex=bool(find_executable('latex')))
 
     aev_fd = np.array(aev_fd) * 1000
     cuaev_fd = np.array(cuaev_fd) * 1000
