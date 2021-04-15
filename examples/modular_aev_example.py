@@ -1,96 +1,66 @@
 import torch
-import math
+import torchani
+import torch.utils.tensorboard
 from torch import Tensor
-from .cutoffs import _parse_cutoff_fn
-from ..compat import Final
+
+# this example is meant to show how to take advantage of the modular AEV implementation
+
+# device to run the training
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# coordinates and species
+coordinates = torch.tensor([[[0.03192167, 0.00638559, 0.01301679],
+                             [-0.83140486, 0.39370209, -0.26395324],
+                             [-0.66518241, -0.84461308, 0.20759389],
+                             [0.45554739, 0.54289633, 0.81170881],
+                             [0.66091919, -0.16799635, -0.91037834]]],
+                           device=device)
+species = torch.tensor([[1, 0, 0, 0, 0]], device=device)
+
+# suppose we want to make an AEV computer essentially like the 1x aev computer,
+# but using a different cutoff function, such as a smooth cutoff
+# we can then call:
+aev_computer_smooth = torchani.AEVComputer.like_1x(
+    cutoff_fn='smooth').to(device)
+
+# and use this AEV Computer normally:
+species, aevs = aev_computer_smooth((species, coordinates))
+
+# WARNING: Be very careful, if a model has not been trained using this cutoff function
+# then using this aev computer with it will give nonsensical results
+
+# Lets say now we want to experiment with a different cutoff function, such as
+# a biweight cutoff (this is a bad idea, biweight does not have a continuous
+# second derivative at the cutoff radius value, this is done just as an
+# example)
+
+# since biweight is not coded in Torchani we can code it ourselves and pass it
+# to the AEVComputer
 
 
-class StandardRadial(torch.nn.Module):
-    """Compute the radial subAEV terms of the center atom given neighbors
-
-    This correspond to equation (3) in the `ANI paper`_. This function just
-    computes the terms. The sum in the equation is not computed.  The input
-    tensor has shape (conformations, atoms, N), where ``N`` is the number of
-    neighbor atoms within the cutoff radius and the output tensor should have
-    shape (conformations, atoms, ``self.sublength``)
-
-    .. _ANI paper:
-        http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
-    """
-    cutoff: Final[float]
-    sublength: Final[int]
-    EtaR: Tensor
-    ShfR: Tensor
-
-    def __init__(self,
-                 EtaR: Tensor,
-                 ShfR: Tensor,
-                 cutoff: float,
-                 cutoff_fn='cosine'):
+class CutoffBiweight(torch.nn.Module):
+    def __init__(self, cutoff: float):
         super().__init__()
-        # initialize the cutoff function
-        self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
-
-        # convert constant tensors to a ready-to-broadcast shape
-        # shape convension (..., EtaR, ShfR)
-        self.register_buffer('EtaR', EtaR.view(-1, 1))
-        self.register_buffer('ShfR', ShfR.view(1, -1))
-        self.sublength = self.EtaR.numel() * self.ShfR.numel()
-        self.cutoff = cutoff
+        self.register_buffer('cutoff', torch.tensor(cutoff))
+        self.cutoff: Tensor
 
     def forward(self, distances: Tensor) -> Tensor:
-        distances = distances.view(-1, 1, 1)
-        fc = self.cutoff_fn(distances, self.cutoff)
-        # Note that in the equation in the paper there is no 0.25
-        # coefficient, but in NeuroChem there is such a coefficient.
-        # We choose to be consistent with NeuroChem instead of the paper here.
-        ret = 0.25 * torch.exp(-self.EtaR * (distances - self.ShfR)**2) * fc
-        # At this point, ret now has shape
-        # (conformations x atoms, ?, ?) where ? depend on constants.
-        # We then should flat the last 2 dimensions to view the subAEV as a two
-        # dimensional tensor (onnx doesn't support negative indices in flatten)
-        return ret.flatten(start_dim=1)
-
-    @classmethod
-    def cover_linearly(cls, eta: float, num_shifts: int, start: float = 0.9, cutoff: float = 5.2, cutoff_fn='cosine'):
-        r""" Builds angular terms by linearly subdividing space radially up to a cutoff
-
-        "num_shifts" are created, starting from "start" until "cutoff",
-        excluding it.  This is the way angular and radial shifts were
-        originally created in ANI
-
-        To reproduce ANI-1x angular terms the signature cutoff=5.2, eta=16.0,
-        num_shifts=16
-        """
-        ShfR = torch.linspace(start, cutoff, int(num_shifts) + 1)[:-1].to(torch.float)
-        EtaR = torch.tensor([eta], dtype=torch.float)
-        return cls(EtaR, ShfR, cutoff, cutoff_fn)
-
-    @classmethod
-    def like_1x(cls, **kwargs):
-        return cls.cover_linearly(cutoff=5.2, eta=16.0, num_shifts=16, **kwargs)
-
-    @classmethod
-    def like_2x(cls, **kwargs):
-        return cls.cover_linearly(cutoff=5.1, eta=19.7, num_shifts=16, **kwargs)
-
-    @classmethod
-    def like_1ccx(cls, **kwargs):
-        return cls.like_1x(**kwargs)
+        # assuming all elements in distances are smaller than cutoff
+        return (self.cutoff**2 - distances**2)**2 / self.cutoff**4
 
 
-class StandardAngular(torch.nn.Module):
-    """Compute the angular subAEV terms of the center atom given neighbor pairs.
+cutoff_fn = CutoffBiweight()
+aev_computer_bw = torchani.AEVComputer.like_1x(cutoff_fn=cutoff_fn).to(device)
+species, aevs = aev_computer_smooth((species, coordinates))
 
-    This correspond to equation (4) in the `ANI paper`_. This function just
-    compute the terms. The sum is not computed.  The input tensor has shape
-    (conformations, atoms, N), where N is the number of neighbor atom pairs
-    within the cutoff radius and the output tensor should have shape
-    (conformations, atoms, ``self.sublength``)
 
-    .. _ANI paper:
-        http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
-    """
+# Now lets try something a bit more complicated. I want to experiment with
+# different angular terms that have a form of exp(-alpha * (cos(theta) -
+# cos(theta0))**2) how can I do that? I can pass this function to 
+# torchani, as long as it exposes the same API as StandardAngular
+
+
+class AngularCosDiff(torchani.aev.StandardAngular):
     EtaA: Tensor
     Zeta: Tensor
     ShfA: Tensor
@@ -216,3 +186,11 @@ def _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr):
         radial_terms = StandardRadial.like_1ccx()
         raise ValueError(f'Radial terms {radial_terms} are not implemented')
     return radial_terms
+
+
+
+
+
+
+
+
