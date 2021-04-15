@@ -4,13 +4,13 @@ from typing import Tuple, Optional
 from ..compat import Final
 
 
-def _parse_neighborlist(neighborlist):
+def _parse_neighborlist(neighborlist, cutoff):
     if neighborlist == 'full_pairwise':
-        neighborlist = FullPairwise
+        neighborlist = FullPairwise(cutoff)
     elif neighborlist is None:
-        neighborlist = BaseNeighborlist
+        neighborlist = BaseNeighborlist(cutoff)
     else:
-        assert issubclass(neighborlist, torch.nn.Module)
+        assert isinstance(neighborlist, torch.nn.Module)
     return neighborlist
 
 

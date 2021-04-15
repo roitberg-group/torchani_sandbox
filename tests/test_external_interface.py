@@ -15,7 +15,7 @@ class TestExternalInterface(TestCase):
         self.model = torchani.models.ANI1x(periodic_table_index=False)
         self.model = self.model.to(device=self.device, dtype=torch.float)
 
-        self.cutoff = self.model.aev_computer.radial_terms.get_cutoff()
+        self.cutoff = self.model.aev_computer.radial_terms.cutoff
         self.N = 20
 
     def testForcesEqualUnscreened(self):

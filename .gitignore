@@ -1,5 +1,6 @@
 *.prof
 __pycache__
+nohup.out
 /data
 nohup.out
 a.out
