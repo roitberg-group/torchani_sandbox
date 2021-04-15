@@ -87,7 +87,7 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
     force_time = 0
     torch.cuda.empty_cache()
     gc.collect()
-    synchronize(args.nsight)
+    synchronize(not args.nsight)
     start = time.time()
 
     aev = None
@@ -97,7 +97,7 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
         species, coordinates = speciesPositions
         coordinates = coordinates.requires_grad_(runbackward)
 
-        synchronize(args.nsight)
+        synchronize(not args.nsight)
         forward_start = time.time()
         try:
             _, aev = aev_comp((species, coordinates))
@@ -106,7 +106,7 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
             addSummaryLine(items)
             runcounter += 1
             return None, None, None
-        synchronize(args.nsight)
+        synchronize(not args.nsight)
         forward_time += time.time() - forward_start
 
         if runbackward:  # backward
@@ -118,13 +118,13 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
                 addSummaryLine(items)
                 runcounter += 1
                 return None, None, None
-            synchronize(args.nsight)
+            synchronize(not args.nsight)
             force_time += time.time() - force_start
 
         if i == 2 and verbose:
             gpumem = checkgpu()
 
-    synchronize(args.nsight)
+    synchronize(not args.nsight)
     total_time = (time.time() - start) / N
     force_time = force_time / N
     forward_time = forward_time / N
@@ -165,16 +165,22 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
     return aev, total_time, force
 
 
-def check_speedup_error(aev, aev_ref, speed, speed_ref):
+def check_speedup_error(aev, aev_ref, force_cuaev, force_ref, speed, speed_ref):
     if (speed_ref is not None) and (speed is not None) and (aev is not None) and (aev_ref is not None):
         speedUP = speed_ref / speed
         if speedUP > 1:
-            info(f'  Speed up: {speedUP:.2f} X\n')
+            info(f'  Speed up: {speedUP:.2f} X')
         else:
-            alert(f'  Speed up (slower): {speedUP:.2f} X\n')
+            alert(f'  Speed up (slower): {speedUP:.2f} X')
 
         aev_error = torch.max(torch.abs(aev - aev_ref))
-        assert aev_error < 0.02, f'  Error: {aev_error:.1e}\n'
+        info(f'  aev_error: {aev_error:.2e}')
+        assert aev_error < 1e-4, f'  Error: {aev_error:.1e}\n'
+        if (force_cuaev is not None) and (force_cuaev is not None):
+            force_error = torch.max(torch.abs(force_cuaev - force_ref))
+            info(f'  force_error: {force_error:.2e}')
+            assert force_error < 2e-4, f'  Error: {aev_error:.1e}\n'
+        print()
 
 
 def run(file, nnp_ref, nnp_cuaev, runbackward, maxatoms=10000):
@@ -208,7 +214,7 @@ def run(file, nnp_ref, nnp_cuaev, runbackward, maxatoms=10000):
         torch.cuda.nvtx.range_pop()
 
     if not args.nsight:
-        check_speedup_error(aev, aev_ref, delta, delta_ref)
+        check_speedup_error(aev, aev_ref, force_cuaev, force_ref, delta, delta_ref)
     print('-' * 70 + '\n')
 
     delta = np.nan if delta is None else delta
