@@ -3,6 +3,7 @@ import torchani
 import math
 import torch.utils.tensorboard
 from torch import Tensor
+from torchani.compat import Final
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -56,7 +57,7 @@ class CutoffBiweight(torch.nn.Module):
 
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
         # assuming all elements in distances are smaller than cutoff
-        return (self.cutoff**2 - distances**2)**2 / cutoff**4
+        return (cutoff**2 - distances**2)**2 / cutoff**4
 
 
 cutoff_fn = CutoffBiweight()
@@ -76,6 +77,12 @@ print()
 # (it has to have a *sublength*, a *cutoff*, and a *forward method* with the same signature)
 
 class AngularCosDiff(torch.nn.Module):
+
+    ShfZ: Tensor
+    Gamma: Tensor
+    ShfA: Tensor
+    EtaA: Tensor
+    cutoff: Final[float]
 
     def __init__(self, EtaA, ShfA, Gamma, ShfZ, cutoff, cutoff_fn='cosine'):
         super().__init__()
