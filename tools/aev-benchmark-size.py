@@ -247,6 +247,14 @@ def plot(maxatoms, aev_fd, cuaev_fd, aev_fdbd, cuaev_fdbd):
     plt.plot(maxatoms, cuaev_fd, '--ro', label='cuaev forward')
     plt.plot(maxatoms, aev_fdbd, '-bo', label='pyaev forward + backward')
     plt.plot(maxatoms, cuaev_fdbd, '-ro', label='cuaev forward + backward')
+    for i, txt in enumerate(aev_fd):
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], aev_fd[i] - 2), ha='center', va='center')
+    for i, txt in enumerate(cuaev_fd):
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], cuaev_fd[i] - 2), ha='center', va='center')
+    for i, txt in enumerate(aev_fdbd):
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], aev_fdbd[i] + 2), ha='center', va='center')
+    for i, txt in enumerate(cuaev_fdbd):
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], cuaev_fdbd[i] + 2), ha='center', va='center')
     plt.legend(frameon=False, fontsize=15, loc='upper left')
     plt.xlim(0, )
     plt.ylim(0, 65)
@@ -321,7 +329,7 @@ if __name__ == "__main__":
         maxatoms = [10000]
 
     if args.plot:
-        maxatoms = np.arange(1000, 18000, 5000)
+        maxatoms = np.arange(1000, 18000, 4000)
         file = '1C17.pdb'
         run_for_plot(file, maxatoms, nnp_ref, nnp_cuaev)
     else:
