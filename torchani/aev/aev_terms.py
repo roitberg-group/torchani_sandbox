@@ -69,7 +69,12 @@ class StandardRadial(torch.nn.Module):
 
     @classmethod
     def like_2x(cls, **kwargs):
-        return cls.cover_linearly(cutoff=5.1, eta=19.7, num_shifts=16, **kwargs)
+        out = cls.cover_linearly(cutoff=5.1, eta=19.7, num_shifts=16, **kwargs)
+        # note that this term is different in the last decimal in 2x,
+        # using this method the term is 2.6812 but in 2x it is 2.6813,
+        # here we keep consistency with 2x
+        out.ShfR[0, 7] = 2.6813
+        return
 
     @classmethod
     def like_1ccx(cls, **kwargs):
