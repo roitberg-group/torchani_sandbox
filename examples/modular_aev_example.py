@@ -1,14 +1,13 @@
 import torch
 import torchani
+import math
 import torch.utils.tensorboard
 from torch import Tensor
 
-# this example is meant to show how to take advantage of the modular AEV implementation
-
-# device to run the training
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# coordinates and species
+# this example is meant to show how to take advantage of the modular AEV implementation
+# We will use these coordinates and species:
 coordinates = torch.tensor([[[0.03192167, 0.00638559, 0.01301679],
                              [-0.83140486, 0.39370209, -0.26395324],
                              [-0.66518241, -0.84461308, 0.20759389],
@@ -17,180 +16,113 @@ coordinates = torch.tensor([[[0.03192167, 0.00638559, 0.01301679],
                            device=device)
 species = torch.tensor([[1, 0, 0, 0, 0]], device=device)
 
+# suppose that we want to make exactly the same aev computer as ANI 2x:
+aev_computer = torchani.AEVComputer.like_2x().to(device)
+species, aevs = aev_computer((species, coordinates))
+radial_length = aev_computer.radial_length
+print('AEV computer like 2x')
+print('for first atom, first 10 terms of radial:', aevs[0, 0, :10])
+print('for first atom, first 10 terms of angular:', aevs[0, 0, radial_length:radial_length + 10])
+print()
+
 # suppose we want to make an AEV computer essentially like the 1x aev computer,
 # but using a different cutoff function, such as a smooth cutoff
-# we can then call:
-aev_computer_smooth = torchani.AEVComputer.like_1x(
-    cutoff_fn='smooth').to(device)
-
-# and use this AEV Computer normally:
-species, aevs = aev_computer_smooth((species, coordinates))
 
 # WARNING: Be very careful, if a model has not been trained using this cutoff function
 # then using this aev computer with it will give nonsensical results
 
-# Lets say now we want to experiment with a different cutoff function, such as
-# a biweight cutoff (this is a bad idea, biweight does not have a continuous
-# second derivative at the cutoff radius value, this is done just as an
-# example)
+# we can then call:
+aev_computer_smooth = torchani.AEVComputer.like_1x(cutoff_fn='smooth').to(device)
+radial_length = aev_computer_smooth.radial_length
+species, aevs = aev_computer_smooth((species, coordinates))
+print('AEV computer like 1x, but with a smooth cutoff')
+print('for first atom, first 10 terms of radial:', aevs[0, 0, :10])
+print('for first atom, first 10 terms of angular:', aevs[0, 0, radial_length:radial_length + 10])
+print()
 
-# since biweight is not coded in Torchani we can code it ourselves and pass it
-# to the AEVComputer
+# Lets say now we want to experiment with a different cutoff function, such as
+# a biweight cutoff (WARNING: biweight does not have a continuous
+# second derivative at the cutoff radius value, this is done just as an example)
+
+# Since biweight is not coded in Torchani we can code it ourselves and pass it
+# to the AEVComputer, as long as the forward method has this form, it will work!
+
+# the same cutoff function will be used for both radial and angular terms
 
 
 class CutoffBiweight(torch.nn.Module):
-    def __init__(self, cutoff: float):
+    def __init__(self):
         super().__init__()
-        self.register_buffer('cutoff', torch.tensor(cutoff))
-        self.cutoff: Tensor
 
-    def forward(self, distances: Tensor) -> Tensor:
+    def forward(self, distances: Tensor, cutoff: float) -> Tensor:
         # assuming all elements in distances are smaller than cutoff
-        return (self.cutoff**2 - distances**2)**2 / self.cutoff**4
+        return (self.cutoff**2 - distances**2)**2 / cutoff**4
 
 
 cutoff_fn = CutoffBiweight()
 aev_computer_bw = torchani.AEVComputer.like_1x(cutoff_fn=cutoff_fn).to(device)
+radial_length = aev_computer_bw.radial_length
 species, aevs = aev_computer_smooth((species, coordinates))
+print('AEV computer like 1x, but with a custom cutoff function')
+print('for first atom, first 10 terms of radial:', aevs[0, 0, :10])
+print('for first atom, first 10 terms of angular:', aevs[0, 0, radial_length:radial_length + 10])
+print()
 
 
 # Now lets try something a bit more complicated. I want to experiment with
-# different angular terms that have a form of exp(-alpha * (cos(theta) -
-# cos(theta0))**2) how can I do that? I can pass this function to 
+# different angular terms that have a form of exp(-gamma * (cos(theta) -
+# cos(theta0))**2) how can I do that? I can pass this function to
 # torchani, as long as it exposes the same API as StandardAngular
+# (it has to have a *sublength*, a *cutoff*, and a *forward method* with the same signature)
 
+class AngularCosDiff(torch.nn.Module):
 
-class AngularCosDiff(torchani.aev.StandardAngular):
-    EtaA: Tensor
-    Zeta: Tensor
-    ShfA: Tensor
-    ShfZ: Tensor
-    sublength: Final[int]
-    cutoff: Final[float]
-
-    def __init__(self,
-                 EtaA: Tensor,
-                 Zeta: Tensor,
-                 ShfA: Tensor,
-                 ShfZ: Tensor,
-                 cutoff: float,
-                 cutoff_fn='cosine'):
+    def __init__(self, EtaA, ShfA, Gamma, ShfZ, cutoff, cutoff_fn='cosine'):
         super().__init__()
-        # initialize the cutoff function
-        self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
+        self.register_buffer('Gamma', Gamma.view(1, 1, -1))
+        self.register_buffer('EtaA', EtaA.view(-1, 1, 1))
+        self.register_buffer('ShfA', ShfA.view(1, -1, 1))
+        self.register_buffer('ShfZ', ShfZ.view(1, 1, -1))
+        self.cutoff_fn = torchani.aev.cutoffs._parse_cutoff_fn(cutoff_fn)
+        self.cutoff = cutoff
 
-        # convert constant tensors to a ready-to-broadcast shape
-        # shape convension (..., EtaA, Zeta, ShfA, ShfZ)
-        self.register_buffer('EtaA', EtaA.view(-1, 1, 1, 1))
-        self.register_buffer('Zeta', Zeta.view(1, -1, 1, 1))
-        self.register_buffer('ShfA', ShfA.view(1, 1, -1, 1))
-        self.register_buffer('ShfZ', ShfZ.view(1, 1, 1, -1))
-        self.sublength = self.EtaA.numel() * self.Zeta.numel() * self.ShfA.numel() * self.ShfZ.numel()
+        assert self.ShfZ.numel() == self.Gamma.numel()
+
+        self.sublength = self.EtaA.numel() * self.ShfA.numel() * self.ShfZ.numel()
         self.cutoff = cutoff
 
     def forward(self, vectors12: Tensor) -> Tensor:
-        vectors12 = vectors12.view(2, -1, 3, 1, 1, 1, 1)
-        distances12 = vectors12.norm(2, dim=-5)
+        vectors12 = vectors12.view(2, -1, 3, 1, 1, 1)
+        distances12 = vectors12.norm(2, dim=2)
         cos_angles = vectors12.prod(0).sum(1) / torch.clamp(
             distances12.prod(0), min=1e-10)
-        # 0.95 is multiplied to the cos values to prevent acos from returning NaN.
-        angles = torch.acos(0.95 * cos_angles)
 
         fcj12 = self.cutoff_fn(distances12, self.cutoff)
-        factor1 = ((1 + torch.cos(angles - self.ShfZ)) / 2)**self.Zeta
-        factor2 = torch.exp(-self.EtaA * (distances12.sum(0) / 2 - self.ShfA)**2)
-        ret = 2 * factor1 * factor2 * fcj12.prod(0)
-        # At this point, ret now has shape
-        # (conformations x atoms, ?, ?, ?, ?) where ? depend on constants.
-        # We then should flat the last 4 dimensions to view the subAEV as a two
-        # dimensional tensor (onnx doesn't support negative indices in flatten)
-        return ret.flatten(start_dim=1)
-
-    @classmethod
-    def cover_linearly(cls, eta: float, num_shifts: int, zeta: float,
-            num_angle_sections: int, start: float = 0.9, cutoff: float = 5.2, cutoff_fn='cosine'):
-        r""" Builds angular terms by linearly subdividing space in the angular
-        dimension and in the radial one up to a cutoff
-
-        "num_shifts" are created, starting from "start" until "cutoff",
-        excluding it. "num_angle_sections" does a similar thing for the angles.
-        This is the way angular and radial shifts were originally created in
-        ANI.
-
-        To reproduce ANI-1x angular terms the signature cutoff=3.5, eta=16.0,
-        num_angle_sections=8, num_shifts=4
-        """
-        EtaA = torch.tensor([eta], dtype=torch.float)
-        ShfA = torch.linspace(start, cutoff, int(num_shifts) + 1)[:-1].to(torch.float)
-        Zeta = torch.tensor([zeta], dtype=torch.float)
-        angle_start = math.pi / (2 * int(num_angle_sections))
-        ShfZ = (torch.linspace(0, math.pi, int(num_angle_sections) + 1) + angle_start)[:-1].to(torch.float)
-        return cls(EtaA, Zeta, ShfA, ShfZ, cutoff, cutoff_fn)
-
-    @classmethod
-    def like_1x(cls, **kwargs):
-        return cls.cover_linearly(cutoff=3.5, eta=12.5, zeta=32.0, num_shifts=4, num_angle_sections=8, **kwargs)
-
-    @classmethod
-    def like_2x(cls, **kwargs):
-        return cls.cover_linearly(cutoff=3.5, eta=19.7, num_shifts=8, zeta=14.1, num_angle_sections=4, **kwargs)
+        term1 = self.Gamma * (cos_angles - torch.cos(self.ShfZ))**2
+        term2 = self.EtaA * (distances12.sum(0) / 2 - self.ShfA)**2
+        exponent = term1 + term2
+        ret = 4 * torch.exp(-exponent) * fcj12.prod(0)
+        out = ret.flatten(start_dim=1)
+        return out
 
 
-# for legacy aev computer initialization the parameters for the angular and
-# radial terms are passed directly to the aev computer and we forward them
-# here, otherwise the fully built module is passed, so we just return it,
-# and we make sure that the paramters passed are None to prevent confusion
-def _parse_angular_terms(angular_terms, cutoff_fn, EtaA, Zeta, ShfA, ShfZ, Rca):
+# Now to initialize this function I want EtaA and ShfA to be the same as in
+# standard ANI 1x, but I want Gamma and ShfZ to be different.
+# note that here I have one Gamma for each ShfZ, and they come in pairs and
+# belong together, for this reason the shapes of the tensors and sublengths
+# are a bit different than in standard angular terms
+EtaA = torchani.aev.StandardAngular.like_1x().EtaA
+ShfA = torchani.aev.StandardAngular.like_1x().ShfA
+cutoff = torchani.aev.StandardAngular.like_1x().cutoff
+ShfZ = torch.linspace(0, math.pi, 9)
+Gamma = torch.tensor([1023, 146.5, 36, 18.6, 15.5, 18.6, 36, 146.5, 1023], dtype=torch.float)
 
-    if isinstance(angular_terms, torch.nn.Module):
-        assert EtaA is None
-        assert Zeta is None
-        assert ShfA is None
-        assert ShfZ is None
-        assert Rca is None
-        assert cutoff_fn is None
-        return angular_terms
-    else:
-        assert isinstance(angular_terms, str)
+custom_terms = AngularCosDiff(EtaA, ShfA, Gamma, ShfZ, cutoff, cutoff_fn='cosine')
 
-    # currently only ANI-1 style angular terms or custom are supported
-    if angular_terms == 'standard':
-        angular_terms = StandardAngular(EtaA, Zeta, ShfA, ShfZ, Rca, cutoff_fn=cutoff_fn)
-    elif angular_terms == 'ani1x':
-        angular_terms = StandardAngular.like_1x()
-    elif angular_terms == 'ani2x':
-        angular_terms = StandardAngular.like_2x()
-    elif angular_terms == 'ani1ccx':
-        angular_terms = StandardAngular.like_1ccx()
-        raise ValueError(f'Angular terms {angular_terms} are not implemented')
-    return angular_terms
-
-
-def _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr):
-    if isinstance(radial_terms, torch.nn.Module):
-        assert EtaR is None
-        assert ShfR is None
-        assert Rcr is None
-        assert cutoff_fn is None
-        return radial_terms
-    else:
-        assert isinstance(radial_terms, str)
-
-    if radial_terms == 'standard':
-        radial_terms = StandardRadial(EtaR, ShfR, Rcr, cutoff_fn=cutoff_fn)
-    elif radial_terms == 'ani1x':
-        radial_terms = StandardRadial.like_1x()
-    elif radial_terms == 'ani2x':
-        radial_terms = StandardRadial.like_2x()
-    elif radial_terms == 'ani1ccx':
-        radial_terms = StandardRadial.like_1ccx()
-        raise ValueError(f'Radial terms {radial_terms} are not implemented')
-    return radial_terms
-
-
-
-
-
-
-
-
+aev_computer_cosdiff = torchani.aev.AEVComputer(radial_terms='ani1x', angular_terms=custom_terms, num_species=4).to(device)
+radial_length = aev_computer_cosdiff.radial_length
+species, aevs = aev_computer_cosdiff((species, coordinates))
+print('AEV computer like 1x, but with custom angular terms')
+print('for first atom, first 10 terms of radial:', aevs[0, 0, :10])
+print('for first atom, first 10 terms of angular:', aevs[0, 0, radial_length:radial_length + 10])
+print()

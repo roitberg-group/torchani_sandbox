@@ -74,6 +74,7 @@ class AEVComputer(torch.nn.Module):
 
     use_cuda_extension: Final[bool]
     triu_index: Tensor
+    cuaev_is_initialized: Tensor
 
     def __init__(self,
                 Rcr: Optional[float] = None,
@@ -126,27 +127,24 @@ class AEVComputer(torch.nn.Module):
         # cuda aev
         if self.use_cuda_extension:
             assert cuaev_is_installed, "AEV cuda extension is not installed"
-        # cuaev_computer is created only when use_cuda_extension is True.
-        # However jit needs to know cuaev_computer's Type even when
-        # use_cuda_extension is False. **NOTE: this is only a kind of "dummy"
-        # initialization, it is always necessary to reinitialize in forward at
-        # least once, since some tensors may be on CPU at this point**
+            assert angular_terms == 'standard', 'nonstandard aev terms not supported for cuaev'
+            assert radial_terms == 'standard', 'nonstandard aev terms not supported for cuaev'
         if cuaev_is_installed:
-            self._init_cuaev_computer()
+            self._register_cuaev_computer()
 
         # We defer true cuaev initialization to forward so that we ensure that
         # all tensors are in GPU once it is initialized.
         self.register_buffer('cuaev_is_initialized', torch.tensor(False))
-        self.cuaev_is_initialized: Tensor
 
     def _validate_cutoffs_init(self):
         # validate cutoffs and emit warnings for strange configurations
         if self.neighborlist.cutoff > self.radial_terms.cutoff:
             raise ValueError(f"""The neighborlist cutoff {self.neighborlist.cutoff}
-                    is larger than the radial cutoff, {self.radial_terms.cutoff}.
+                    is larger than the radial cutoff,
+                    {self.radial_terms.cutoff}.  please fix this since
                     AEVComputer can't possibly reuse the neighborlist for other
-                    interactions, you probably want to use a different class,
-                    since this configuration will will not use the extra atom pairs""")
+                    interactions, so this configuration would not use the extra
+                    atom pairs""")
         elif self.neighborlist.cutoff < self.radial_terms.cutoff:
             raise ValueError(f"""The neighborlist cutoff,
                              {self.neighborlist.cutoff} should be at least as
@@ -155,6 +153,16 @@ class AEVComputer(torch.nn.Module):
             raise ValueError(f"""Current implementation assumes angular cutoff
                              {self.angular_terms.cutoff} < radial cutoff
                              {self.radial_terms.cutoff}""")
+
+    @jit_unused_if_no_cuaev()
+    def _register_cuaev_computer(self):
+        # cuaev_computer is created only when use_cuda_extension is True.
+        # However jit needs to know cuaev_computer's Type even when
+        # use_cuda_extension is False. **this is only a kind of "dummy"
+        # initialization, it is always necessary to reinitialize in forward at
+        # least once, since some tensors may be on CPU at this point**
+        empty = torch.empty(1)
+        self.cuaev_computer = torch.classes.cuaev.CuaevComputer(0.0, 0.0, empty, empty, empty, empty, empty, empty, 1)
 
     @jit_unused_if_no_cuaev()
     def _init_cuaev_computer(self):

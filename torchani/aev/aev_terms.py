@@ -58,9 +58,6 @@ class StandardRadial(torch.nn.Module):
         "num_shifts" are created, starting from "start" until "cutoff",
         excluding it.  This is the way angular and radial shifts were
         originally created in ANI
-
-        To reproduce ANI-1x angular terms the signature cutoff=5.2, eta=16.0,
-        num_shifts=16
         """
         ShfR = torch.linspace(start, cutoff, int(num_shifts) + 1)[:-1].to(torch.float)
         EtaR = torch.tensor([eta], dtype=torch.float)
@@ -91,12 +88,12 @@ class StandardAngular(torch.nn.Module):
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
+    sublength: Final[int]
+    cutoff: Final[float]
     EtaA: Tensor
     Zeta: Tensor
     ShfA: Tensor
     ShfZ: Tensor
-    sublength: Final[int]
-    cutoff: Final[float]
 
     def __init__(self,
                  EtaA: Tensor,
@@ -146,9 +143,6 @@ class StandardAngular(torch.nn.Module):
         excluding it. "num_angle_sections" does a similar thing for the angles.
         This is the way angular and radial shifts were originally created in
         ANI.
-
-        To reproduce ANI-1x angular terms the signature cutoff=3.5, eta=16.0,
-        num_angle_sections=8, num_shifts=4
         """
         EtaA = torch.tensor([eta], dtype=torch.float)
         ShfA = torch.linspace(start, cutoff, int(num_shifts) + 1)[:-1].to(torch.float)
@@ -172,47 +166,50 @@ class StandardAngular(torch.nn.Module):
 # and we make sure that the paramters passed are None to prevent confusion
 def _parse_angular_terms(angular_terms, cutoff_fn, EtaA, Zeta, ShfA, ShfZ, Rca):
 
-    if isinstance(angular_terms, torch.nn.Module):
-        assert EtaA is None
-        assert Zeta is None
-        assert ShfA is None
-        assert ShfZ is None
-        assert Rca is None
-        assert cutoff_fn is None
-        return angular_terms
-    else:
-        assert isinstance(angular_terms, str)
-
-    # currently only ANI-1 style angular terms or custom are supported
+    # legacy input
     if angular_terms == 'standard':
-        angular_terms = StandardAngular(EtaA, Zeta, ShfA, ShfZ, Rca, cutoff_fn=cutoff_fn)
-    elif angular_terms == 'ani1x':
+        return StandardAngular(EtaA, Zeta, ShfA, ShfZ, Rca, cutoff_fn=cutoff_fn)
+
+    # new input
+    assert EtaA is None
+    assert Zeta is None
+    assert ShfA is None
+    assert ShfZ is None
+    assert Rca is None
+    if angular_terms == 'ani1x':
         angular_terms = StandardAngular.like_1x()
     elif angular_terms == 'ani2x':
         angular_terms = StandardAngular.like_2x()
     elif angular_terms == 'ani1ccx':
         angular_terms = StandardAngular.like_1ccx()
-        raise ValueError(f'Angular terms {angular_terms} are not implemented')
+    else:
+        assert isinstance(angular_terms, torch.nn.Module), "Custom angular terms should be a torch module"
+        assert hasattr(angular_terms, 'sublength'), "Custom angular terms should have a sublength attribute"
+        assert hasattr(angular_terms, 'cutoff'), "Custom angular terms should have a cutoff attribute"
+
     return angular_terms
 
 
 def _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr):
-    if isinstance(radial_terms, torch.nn.Module):
-        assert EtaR is None
-        assert ShfR is None
-        assert Rcr is None
-        assert cutoff_fn is None
-        return radial_terms
-    else:
-        assert isinstance(radial_terms, str)
 
+    # legacy input
     if radial_terms == 'standard':
         radial_terms = StandardRadial(EtaR, ShfR, Rcr, cutoff_fn=cutoff_fn)
-    elif radial_terms == 'ani1x':
-        radial_terms = StandardRadial.like_1x()
+        return radial_terms
+
+    # new input
+    assert EtaR is None
+    assert ShfR is None
+    assert Rcr is None
+    if radial_terms == 'ani1x':
+        radial_terms = StandardRadial.like_1x(cutoff_fn=cutoff_fn)
     elif radial_terms == 'ani2x':
-        radial_terms = StandardRadial.like_2x()
+        radial_terms = StandardRadial.like_2x(cutoff_fn=cutoff_fn)
     elif radial_terms == 'ani1ccx':
-        radial_terms = StandardRadial.like_1ccx()
-        raise ValueError(f'Radial terms {radial_terms} are not implemented')
+        radial_terms = StandardRadial.like_1ccx(cutoff_fn=cutoff_fn)
+    else:
+        assert isinstance(radial_terms, torch.nn.Module), "Custom radial terms should be a torch module"
+        assert hasattr(radial_terms, 'sublength'), "Custom radial terms should have a sublength attribute"
+        assert hasattr(radial_terms, 'cutoff'), "Custom radial terms should have a cutoff attribute"
+
     return radial_terms
