@@ -7,7 +7,6 @@ import os
 import numpy as np
 from ase.io import read
 import argparse
-from distutils.spawn import find_executable
 
 
 summary = '\n'
@@ -167,20 +166,21 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
 
 def check_speedup_error(aev, aev_ref, force_cuaev, force_ref, speed, speed_ref):
     if (speed_ref is not None) and (speed is not None) and (aev is not None) and (aev_ref is not None):
-        speedUP = speed_ref / speed
-        if speedUP > 1:
-            info(f'  Speed up: {speedUP:.2f} X')
-        else:
-            alert(f'  Speed up (slower): {speedUP:.2f} X')
-
+        # aev error
         aev_error = torch.max(torch.abs(aev - aev_ref))
-        info(f'  aev_error: {aev_error:.2e}')
+        print(f'  aev_error: {aev_error:.2e}')
         assert aev_error < 1e-4, f'  Error: {aev_error:.1e}\n'
+        # force error
         if (force_cuaev is not None) and (force_cuaev is not None):
             force_error = torch.max(torch.abs(force_cuaev - force_ref))
-            info(f'  force_error: {force_error:.2e}')
+            print(f'  force_error: {force_error:.2e}')
             assert force_error < 2e-4, f'  Error: {aev_error:.1e}\n'
-        print()
+        # speedup
+        speedUP = speed_ref / speed
+        if speedUP > 1:
+            info(f'  Speed up: {speedUP:.2f} X\n')
+        else:
+            alert(f'  Speed up (slower): {speedUP:.2f} X\n')
 
 
 def run(file, nnp_ref, nnp_cuaev, runbackward, maxatoms=10000):
@@ -229,12 +229,14 @@ def plot(maxatoms, aev_fd, cuaev_fd, aev_fdbd, cuaev_fdbd):
     from matplotlib import rc
     import datetime
     import subprocess
+    from distutils.spawn import find_executable
 
+    usetex = bool(find_executable('latex')) and bool(find_executable('dvipng'))
     rc('mathtext', fontset='cm')
     rc('xtick', labelsize=13)
     rc('ytick', labelsize=13)
     rc('axes', labelsize=16)
-    rc('text', usetex=bool(find_executable('latex')))
+    rc('text', usetex=usetex)
 
     aev_fd = np.array(aev_fd) * 1000
     cuaev_fd = np.array(cuaev_fd) * 1000
