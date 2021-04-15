@@ -203,6 +203,8 @@ def run(file, nnp_ref, nnp_cuaev, runbackward, maxatoms=10000):
         print('Original TorchANI:')
         aev_ref, delta_ref, force_ref = benchmark(speciesPositions, nnp_ref.aev_computer, runbackward, mol_info)
         print()
+    else:
+        delta_ref = None
 
     print('CUaev:')
     # warm up
@@ -231,12 +233,19 @@ def plot(maxatoms, aev_fd, cuaev_fd, aev_fdbd, cuaev_fdbd):
     import subprocess
     from distutils.spawn import find_executable
 
-    usetex = bool(find_executable('latex')) and bool(find_executable('dvipng'))
     rc('mathtext', fontset='cm')
-    rc('xtick', labelsize=13)
-    rc('ytick', labelsize=13)
-    rc('axes', labelsize=16)
-    rc('text', usetex=usetex)
+    usetex = bool(find_executable('latex')) and bool(find_executable('dvipng'))
+    # usetex = False
+    rc('axes.spines', **{'right': False, 'top': False})
+    rc('axes', grid=True)
+    plt.rcParams['grid.linewidth'] = 0.15
+    if usetex:
+        rc('xtick', labelsize=14)
+        rc('ytick', labelsize=14)
+        rc('text', usetex=True)
+        rc('font', **{'size': 16, 'family': 'serif', 'sans-serif': ['Lucid', 'Arial', 'Helvetica'], 'serif': ['Times', 'Times New Roman']})
+    else:
+        rc('font', **{'size': 14})
 
     aev_fd = np.array(aev_fd) * 1000
     cuaev_fd = np.array(cuaev_fd) * 1000
@@ -247,16 +256,16 @@ def plot(maxatoms, aev_fd, cuaev_fd, aev_fdbd, cuaev_fdbd):
     plt.plot(maxatoms, cuaev_fd, '--ro', label='cuaev forward')
     plt.plot(maxatoms, aev_fdbd, '-bo', label='pyaev forward + backward')
     plt.plot(maxatoms, cuaev_fdbd, '-ro', label='cuaev forward + backward')
-    plt.hlines(0, -100000, 100000, linestyle="dotted", colors='black', lw=0.6)
     for i, txt in enumerate(aev_fd):
-        plt.annotate(f'{txt:.2f}', (maxatoms[i], aev_fd[i] - 2), ha='center', va='center')
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], aev_fd[i] - 2.5), ha='center', va='center', fontsize=13)
     for i, txt in enumerate(cuaev_fd):
-        plt.annotate(f'{txt:.2f}', (maxatoms[i], cuaev_fd[i] - 2), ha='center', va='center')
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], cuaev_fd[i] - 2.5), ha='center', va='center', fontsize=13)
     for i, txt in enumerate(aev_fdbd):
-        plt.annotate(f'{txt:.2f}', (maxatoms[i], aev_fdbd[i] + 2), ha='center', va='center')
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], aev_fdbd[i] + 2.5), ha='center', va='center', fontsize=13)
     for i, txt in enumerate(cuaev_fdbd):
-        plt.annotate(f'{txt:.2f}', (maxatoms[i], cuaev_fdbd[i] + 2), ha='center', va='center')
-    plt.legend(frameon=False, fontsize=15, loc='upper left')
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], cuaev_fdbd[i] + 2.5), ha='center', va='center', fontsize=13)
+    # plt.legend(frameon=False, fontsize=15, loc='upper left')
+    plt.legend(frameon=True, fontsize=15, loc='best')
     plt.xlim(maxatoms[0] - 500, maxatoms[-1] + 500)
     plt.ylim(-2, 65)
     plt.xlabel(r'System Size (atoms)')
@@ -281,14 +290,12 @@ def run_for_plot(file, maxatoms, nnp_ref, nnp_cuaev):
     aev_fdbd = []
     cuaev_fdbd = []
     for maxatom in maxatoms:
-        file = '1C17.pdb'
         cuaev_t, aev_t = run(file, nnp_ref, nnp_cuaev, runbackward=False, maxatoms=maxatom)
         cuaev_fd.append(cuaev_t)
         aev_fd.append(aev_t)
     addSummaryEmptyLine()
     info('Add Backward\n')
     for maxatom in maxatoms:
-        file = '1C17.pdb'
         cuaev_t, aev_t = run(file, nnp_ref, nnp_cuaev, runbackward=True, maxatoms=maxatom)
         cuaev_fdbd.append(cuaev_t)
         aev_fdbd.append(aev_t)
@@ -329,20 +336,23 @@ if __name__ == "__main__":
         torch.cuda.profiler.start()
         maxatoms = [10000]
 
+    # if run for plots
     if args.plot:
-        maxatoms = np.arange(4000, 18000, 4000)
-        file = '1C17.pdb'
+        maxatoms = np.arange(5000, 30000, 5000)
+        file = '6ZDH.pdb'
         run_for_plot(file, maxatoms, nnp_ref, nnp_cuaev)
     else:
-        for file in files:
-            run(file, nnp_ref, nnp_cuaev, runbackward=False)
-        for maxatom in maxatoms:
-            file = '1C17.pdb'
-            run(file, nnp_ref, nnp_cuaev, runbackward=False, maxatoms=maxatom)
-        addSummaryEmptyLine()
-        info('Add Backward\n')
-        for file in files:
-            run(file, nnp_ref, nnp_cuaev, runbackward=True)
+        # if not for nsight
+        if not args.nsight:
+            for file in files:
+                run(file, nnp_ref, nnp_cuaev, runbackward=False)
+            for maxatom in maxatoms:
+                file = '1C17.pdb'
+                run(file, nnp_ref, nnp_cuaev, runbackward=False, maxatoms=maxatom)
+            addSummaryEmptyLine()
+            info('Add Backward\n')
+            for file in files:
+                run(file, nnp_ref, nnp_cuaev, runbackward=True)
         for maxatom in maxatoms:
             file = '1C17.pdb'
             run(file, nnp_ref, nnp_cuaev, runbackward=True, maxatoms=maxatom)
