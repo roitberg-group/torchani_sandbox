@@ -338,7 +338,7 @@ if __name__ == "__main__":
 
     # if run for plots
     if args.plot:
-        maxatoms = np.arange(5000, 30000, 5000)
+        maxatoms = np.arange(5000, 35000, 5000)
         file = '6ZDH.pdb'
         run_for_plot(file, maxatoms, nnp_ref, nnp_cuaev)
     else:
