@@ -247,6 +247,7 @@ def plot(maxatoms, aev_fd, cuaev_fd, aev_fdbd, cuaev_fdbd):
     plt.plot(maxatoms, cuaev_fd, '--ro', label='cuaev forward')
     plt.plot(maxatoms, aev_fdbd, '-bo', label='pyaev forward + backward')
     plt.plot(maxatoms, cuaev_fdbd, '-ro', label='cuaev forward + backward')
+    plt.hlines(0, -100000, 100000, linestyle="dotted", colors='black', lw=0.6)
     for i, txt in enumerate(aev_fd):
         plt.annotate(f'{txt:.2f}', (maxatoms[i], aev_fd[i] - 2), ha='center', va='center')
     for i, txt in enumerate(cuaev_fd):
@@ -256,8 +257,8 @@ def plot(maxatoms, aev_fd, cuaev_fd, aev_fdbd, cuaev_fdbd):
     for i, txt in enumerate(cuaev_fdbd):
         plt.annotate(f'{txt:.2f}', (maxatoms[i], cuaev_fdbd[i] + 2), ha='center', va='center')
     plt.legend(frameon=False, fontsize=15, loc='upper left')
-    plt.xlim(0, )
-    plt.ylim(0, 65)
+    plt.xlim(maxatoms[0] - 500, maxatoms[-1] + 500)
+    plt.ylim(-2, 65)
     plt.xlabel(r'System Size (atoms)')
     plt.ylabel(r'Time (ms)')
     plt.title(f'Benchmark of cuaev (cuda extension) and pyaev (torch operators) \non {getGpuName()}', fontsize=16)
@@ -268,7 +269,7 @@ def plot(maxatoms, aev_fd, cuaev_fd, aev_fdbd, cuaev_fdbd):
         os.makedirs(dir)
     timenow = f"{datetime.datetime.now():%Y-%m-%d-%H-%M-%S}"
     imgfilename = f"{dir}/{timenow}.png"
-    plt.savefig(imgfilename, dpi=130, bbox_inches='tight')
+    plt.savefig(imgfilename, dpi=200, bbox_inches='tight')
     cmd = f"if command -v imgcat > /dev/null; then imgcat {imgfilename} --height 30; fi"
     subprocess.run(cmd, shell=True, check=True, universal_newlines=True)
     info(f"\nBenchmark plot saved at {os.path.realpath(imgfilename)}")
@@ -329,7 +330,7 @@ if __name__ == "__main__":
         maxatoms = [10000]
 
     if args.plot:
-        maxatoms = np.arange(1000, 18000, 4000)
+        maxatoms = np.arange(4000, 18000, 4000)
         file = '1C17.pdb'
         run_for_plot(file, maxatoms, nnp_ref, nnp_cuaev)
     else:
