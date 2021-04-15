@@ -1,7 +1,6 @@
 import torch
 import torchani
 import math
-import torch.utils.tensorboard
 from torch import Tensor
 from torchani.compat import Final
 
