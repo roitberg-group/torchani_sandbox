@@ -145,12 +145,15 @@ class SpeciesConverter(torch.nn.Module):
         according to atomic number).
     """
     conv_tensor: Tensor
+    supported_atomic_numbers: Tensor
 
     def __init__(self, species):
         super().__init__()
         rev_idx = {s: k for k, s in enumerate(utils.PERIODIC_TABLE)}
         maxidx = max(rev_idx.values())
         self.register_buffer('conv_tensor', torch.full((maxidx + 2,), -1, dtype=torch.long))
+        self.register_buffer('supported_atomic_numbers', torch.tensor([utils.PERIODIC_TABLE[s] for s in species], dtype=torch.long))
+
         for i, s in enumerate(species):
             self.conv_tensor[rev_idx[s]] = i
 
@@ -166,3 +169,65 @@ class SpeciesConverter(torch.nn.Module):
             raise ValueError(f'Unknown species found in {species}')
 
         return SpeciesCoordinates(converted_species.to(species.device), coordinates)
+
+
+class EnergyAdder(torch.nn.Module):
+    """Helper class for adding and subtracting self atomic energies
+
+    Arguments:
+        self_energies (:class:`collections.abc.Sequence`): optional sequence of
+            floating numbers for the self energy of each atom type. The numbers
+            should be in order, i.e. ``self_energies[i]`` should be atom type
+            ``i``, if not passed then GSAE's are used.
+        elements: supported elements by the EnergyAdder.
+        intercept: float,  intercept to add to the SAE's, only supported if self_energies are passed directly
+        level_of_theory: Level of theory for the GSAE's
+    """
+    self_energies: Tensor
+    supported_atomic_numbers: Tensor
+    intercept: Tensor
+
+    def __init__(self, elements, intercept: float = 0.0, self_energies=None, level_of_theory: str = 'RwB97X'):
+        super().__init__()
+        assert isinstance(elements, tuple), 'elements must be a tuple of atomic symbols'
+        assert isinstance(elements[0], str), 'elements must be a tuple of atomic symbols'
+
+        if self_energies is not None:
+            self_energies = torch.tensor(self_energies, dtype=torch.float)
+        else:
+            # if self_energies are not passed, we use the QM atomic energies for these elements
+            self_energies = torch.tensor([utils.GSAEs[level_of_theory][e] for e in elements], dtype=torch.float)
+            assert intercept is None, "No physical meaning to an intercept if you are using GSAEs"
+
+        self.register_buffer('intercept', torch.tensor(intercept, dtype=torch.float))
+        self.register_buffer('self_energies', self_energies)
+        self.register_buffer('supported_atomic_numbers', torch.tensor([utils.PERIODIC_TABLE[s] for s in elements], dtype=torch.long))
+
+    def forward(self, species_energies: Tuple[Tensor, Tensor]) -> SpeciesEnergies:
+        """(species, molecular energies) -> (species, molecular energies + sae)"""
+        species, energies = species_energies
+        energies += self.sae(species)
+        return SpeciesEnergies(species, energies)
+
+    @torch.jit.export
+    def sae(self, species: Tensor) -> Tensor:
+        """Compute self energies for molecules.
+
+        Dummy atoms are automatically excluded.
+
+        Arguments:
+            species (:class:`torch.Tensor`): Long tensor in shape
+                ``(conformations, atoms)``.
+
+        Returns:
+            :class:`torch.Tensor`: 1D vector in shape ``(conformations,)``
+            with molecular self energies.
+        """
+        return self._calc_atomic_saes(species).sum(dim=1) + self.intercept
+
+    @torch.jit.export
+    def _calc_atomic_saes(self, species: Tensor) -> Tensor:
+        # Compute atomic self energies for a set of species.
+        self_atomic_energies = self.self_energies[species]
+        self_atomic_energies = self_atomic_energies.masked_fill(species == -1, 0.0)
+        return self_atomic_energies

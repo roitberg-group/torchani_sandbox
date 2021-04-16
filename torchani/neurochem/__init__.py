@@ -12,7 +12,7 @@ import timeit
 import collections.abc
 import sys
 from ..nn import ANIModel, Ensemble, Gaussian, Sequential
-from ..utils import EnergyShifter, ChemicalSymbolsToInts
+from ..utils import ChemicalSymbolsToInts
 from ..aev import AEVComputer
 from .parse_resources import parse_neurochem_resources
 from torch.optim import AdamW
@@ -72,8 +72,7 @@ class Constants(collections.abc.Mapping):
 
 
 def load_sae(filename, return_dict=False):
-    """Returns an object of :class:`EnergyShifter` with self energies from
-    NeuroChem sae file"""
+    """Returns self energies from NeuroChem sae file"""
     self_energies = []
     d = {}
     with open(filename) as f:
@@ -86,8 +85,8 @@ def load_sae(filename, return_dict=False):
             self_energies.append((index, value))
     self_energies = [i for _, i in sorted(self_energies)]
     if return_dict:
-        return EnergyShifter(self_energies), d
-    return EnergyShifter(self_energies)
+        return self_energies, d
+    return self_energies
 
 
 def _get_activation(activation_index):

@@ -28,7 +28,7 @@ Available transformations are listed below:
     dataset. It accepts two different kinds of arguments: You can pass a dict
     of self energies, in which case self energies are directly subtracted
     according to the key-value pairs, or a
-    :class:`torchani.utils.EnergyShifter`, in which case the self energies are
+    :class:`torchani.utils.EnergyAdder`, in which case the self energies are
     calculated by linear regression and stored inside the class in the order
     specified by species_order. By default the function orders by atomic
     number if no extra argument is provided, but a specific order may be requested.
@@ -80,7 +80,7 @@ Example:
 
 .. code-block:: python
 
-    energy_shifter = torchani.utils.EnergyShifter(None)
+    energy_shifter = torchani.utils.EnergyAdder(elements=('H', 'C', 'N', 'O'))
     training, validation = torchani.data.load(dspath).subtract_self_energies(energy_shifter).species_to_indices().shuffle().split(int(0.8 * size), None)
     training = training.collate(batch_size).cache()
     validation = validation.collate(batch_size).cache()
@@ -169,20 +169,20 @@ class Transformations:
             return IterableAdapter(reenterable_iterable_factory)
 
     @staticmethod
-    def subtract_self_energies(reenterable_iterable, self_energies=None, species_order=None):
+    def subtract_self_energies(reenterable_iterable, self_energies=None, fit_intercept=False):
         intercept = 0.0
         shape_inference = False
-        if isinstance(self_energies, utils.EnergyShifter):
+        if isinstance(self_energies, utils.EnergyAdder):
             shape_inference = True
             shifter = self_energies
             self_energies = {}
             counts = {}
             Y = []
+            count = Counter()
+
             for n, d in enumerate(reenterable_iterable):
                 species = d['species']
-                count = Counter()
-                for s in species:
-                    count[s] += 1
+                count.update(species)
                 for s, c in count.items():
                     if s not in counts:
                         counts[s] = [0] * n
@@ -192,28 +192,31 @@ class Transformations:
                         counts[s].append(0)
                 Y.append(d['energies'])
 
-            # sort based on the order in periodic table by default
-            if species_order is None:
-                species_order = utils.PERIODIC_TABLE
-
-            species = sorted(list(counts.keys()), key=lambda x: species_order.index(x))
+            # sort based on the order given to the energy shifter by default
+            elements = [utils.PERIODIC_TABLE[z] for z in shifter.supported_atomic_numbers]
+            species = sorted(list(counts.keys()), key=lambda x: elements.index(x))
 
             X = [counts[s] for s in species]
-            if shifter.fit_intercept:
+            if fit_intercept:
                 X.append([1] * n)
             X = numpy.array(X).transpose()
             Y = numpy.array(Y)
             if Y.shape[0] == 0:
                 raise RuntimeError("subtract_self_energies could not find any energies in the provided dataset.\n"
                                    "Please make sure the path provided to data.load() points to a dataset has energies and is not empty or corrupted.")
+
             sae, _, _, _ = numpy.linalg.lstsq(X, Y, rcond=None)
-            sae_ = sae
-            if shifter.fit_intercept:
+
+            if fit_intercept:
                 intercept = sae[-1]
                 sae_ = sae[:-1]
+            else:
+                sae_ = sae
+
             for s, e in zip(species, sae_):
                 self_energies[s] = e
-            shifter.__init__(sae, shifter.fit_intercept)
+
+            shifter.__init__(elements=tuple(species), self_energies=sae_, intercept=intercept)
         gc.collect()
 
         def reenterable_iterable_factory():

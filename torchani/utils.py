@@ -1,4 +1,5 @@
 import torch
+import warnings
 from torch import Tensor
 import torch.utils.data
 import math
@@ -144,6 +145,77 @@ def map2central(cell, coordinates, pbc):
     return torch.matmul(coordinates_cell, cell)
 
 
+GSAEs = {'RwB97X': {'H': -0.499321200000, 'C': -37.83383340000, 'N': -54.57328250000, 'O': -75.04245190000}}
+
+
+class EnergyAdder(torch.nn.Module):
+    """Helper class for adding and subtracting self atomic energies
+
+    This is a subclass of :class:`torch.nn.Module`, so it can be used directly
+    in a pipeline as ``[input->AEVComputer->ANIModel->EnergyAdder->output]``.
+
+    Arguments:
+        self_energies (:class:`collections.abc.Sequence`): optional sequence of
+            floating numbers for the self energy of each atom type. The numbers
+            should be in order, i.e. ``self_energies[i]`` should be atom type
+            ``i``, if not passed then GSAE's are used.
+        elements: supported elements by the EnergyAdder.
+        intercept: intercept to add to the SAE's, only supported if self_energies are passed directly
+        level_of_theory: Level of theory for the GSAE's
+    """
+    self_energies: Tensor
+    supported_atomic_numbers: Tensor
+    intercept: Tensor
+
+    def __init__(self, elements, intercept=None, self_energies=None, level_of_theory='RwB97X'):
+        super().__init__()
+        assert isinstance(elements, tuple), 'elements must be a tuple of atomic symbols'
+        assert isinstance(elements[0], str), 'elements must be a tuple of atomic symbols'
+
+        if self_energies is not None:
+            self_energies = torch.tensor(self_energies, dtype=torch.double)
+        else:
+            # if self_energies are not passed, we use the QM atomic energies for these elements
+            self_energies = torch.tensor([GSAEs[level_of_theory][e] for e in elements], dtype=torch.float)
+            assert intercept is None, "No physical meaning to an intercept if you are using GSAEs"
+
+        if intercept is None:
+            intercept = torch.tensor(0, dtype=torch.float)
+
+        self.register_buffer('intercept', intercept)
+        self.register_buffer('self_energies', self_energies)
+        self.register_buffer('supported_atomic_numbers', torch.tensor([PERIODIC_TABLE[s] for s in elements], dtype=torch.long))
+
+    def forward(self, species_energies: Tuple[Tensor, Tensor]) -> SpeciesEnergies:
+        """(species, molecular energies) -> (species, molecular energies + sae)"""
+        species, energies = species_energies
+        energies += self.sae(species)
+        return SpeciesEnergies(species, energies)
+
+    @torch.jit.export
+    def _calc_atomic_saes(self, species: Tensor) -> Tensor:
+        # Compute atomic self energies for a set of species.
+        self_atomic_energies = self.self_energies[species]
+        self_atomic_energies = self_atomic_energies.masked_fill(species == -1, 0.0)
+        return self_atomic_energies
+
+    @torch.jit.export
+    def sae(self, species: Tensor) -> Tensor:
+        """Compute self energies for molecules.
+
+        Dummy atoms are automatically excluded.
+
+        Arguments:
+            species (:class:`torch.Tensor`): Long tensor in shape
+                ``(conformations, atoms)``.
+
+        Returns:
+            :class:`torch.Tensor`: 1D vector in shape ``(conformations,)``
+            with molecular self energies.
+        """
+        return self._calc_atomic_saes(species).sum(dim=1) + self.intercept
+
+
 class EnergyShifter(torch.nn.Module):
     """Helper class for adding and subtracting self atomic energies
 
@@ -165,6 +237,7 @@ class EnergyShifter(torch.nn.Module):
         if self_energies is not None:
             self_energies = torch.tensor(self_energies, dtype=torch.double)
         self.register_buffer('self_energies', self_energies)
+        warnings.warn("EnergyShifter is very error prone, and will be removed in the future, please use EnergyAdder")
 
     def forward(self, species_energies: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -245,6 +318,7 @@ class ChemicalSymbolsToInts:
 
     def __init__(self, all_species):
         self.rev_species = {s: i for i, s in enumerate(all_species)}
+        warnings.warn("ChemicalSymbolsToInts is very error prone, and will be removed in the future")
 
     def __call__(self, species):
         r"""Convert species from sequence of strings to 1D tensor"""

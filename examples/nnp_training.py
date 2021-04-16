@@ -119,7 +119,7 @@ print('Self atomic energies: ', energy_shifter.self_energies)
 # When iterating the dataset, we will get a dict of name->property mapping
 #
 ###############################################################################
-# Now let's define atomic neural networks, we use convenience builders to 
+# Now let's define atomic neural networks, we use convenience builders to
 # make networks like the ANI-1x ones.
 H_network = atomic_networks.make_like_1x('H')
 C_network = atomic_networks.make_like_1x('C')

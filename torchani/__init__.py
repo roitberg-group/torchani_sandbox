@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """`TorchANI`_ is a PyTorch implementation of `ANI`_, created and maintained by
 the `Roitberg group`_.  TorchANI contains classes like
-:class:`AEVComputer`, :class:`ANIModel`, and :class:`EnergyShifter` that can
+:class:`AEVComputer`, :class:`ANIModel`, and :class:`EnergyAdder` that can
 be pipelined to compute molecular energies from the 3D coordinates of
 molecules.  It also include tools to: deal with ANI datasets(e.g. `ANI-1`_,
 `ANI-1x`_, `ANI-1ccx`_, `ANI-2x`_) at :attr:`torchani.data`, import various file
@@ -30,12 +30,13 @@ formats of NeuroChem at :attr:`torchani.neurochem`, and more at :attr:`torchani.
 """
 
 from .utils import EnergyShifter
-from .nn import ANIModel, Ensemble, SpeciesConverter
+from .nn import ANIModel, Ensemble, SpeciesConverter, EnergyAdder
 from .aev import AEVComputer, AEVComputerInternal
 from . import utils
 from . import neurochem
 from . import models
 from . import units
+from . import atomics
 from pkg_resources import get_distribution, DistributionNotFound
 import warnings
 
@@ -45,8 +46,8 @@ except DistributionNotFound:
     # package is not installed
     pass
 
-__all__ = ['AEVComputer', 'AEVComputerInternal', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
-           'utils', 'neurochem', 'models', 'units', 'testing']
+__all__ = ['AEVComputer', 'AEVComputerInternal', 'EnergyShifter', 'EnergyAdder', 'ANIModel', 'Ensemble', 'SpeciesConverter',
+           'utils', 'neurochem', 'models', 'units', 'testing', 'atomics']
 
 try:
     from . import ase  # noqa: F401
