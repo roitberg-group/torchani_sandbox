@@ -20,19 +20,34 @@ N = 97
 class TestAEVConstructor(TestCase):
     # Test that checks that the friendly constructor
     # reproduces the values from ANI1x with the correct parameters
-    def testCoverLinearly(self):
+
+    def testANI1x(self):
         consts = torchani.neurochem.Constants(const_file)
+
         aev_computer = torchani.AEVComputer(**consts)
-        ani1x_values = {'radial_cutoff': 5.2,
-                        'angular_cutoff': 3.5,
-                        'radial_eta': 16.0,
-                        'angular_eta': 8.0,
-                        'radial_dist_divisions': 16,
-                        'angular_dist_divisions': 4,
-                        'zeta': 32.0,
-                        'angle_sections': 8,
-                        'num_species': 4}
-        aev_computer_alt = torchani.AEVComputer.cover_linearly(**ani1x_values)
+        aev_computer_alt = torchani.AEVComputer.like_1x()
+
+        self._compare_constants(aev_computer, aev_computer_alt)
+
+    def testANI2x(self):
+        const_file_2x = os.path.join(path, '../torchani/resources/ani-2x_8x/rHCNOSFCl-5.1R_16-3.5A_a8-4.params')
+        consts = torchani.neurochem.Constants(const_file_2x)
+
+        aev_computer = torchani.AEVComputer(**consts)
+        aev_computer_alt = torchani.AEVComputer.like_2x()
+
+        self._compare_constants(aev_computer, aev_computer_alt)
+
+    def testANI1ccx(self):
+        const_file_1ccx = os.path.join(path, '../torchani/resources/ani-1ccx_8x/rHCNO-5.2R_16-3.5A_a4-8.params')
+        consts = torchani.neurochem.Constants(const_file_1ccx)
+
+        aev_computer = torchani.AEVComputer(**consts)
+        aev_computer_alt = torchani.AEVComputer.like_1ccx()
+
+        self._compare_constants(aev_computer, aev_computer_alt)
+
+    def _compare_constants(self, aev_computer, aev_computer_alt):
         constants = self._get_aev_constants(aev_computer)
         constants_alt = self._get_aev_constants(aev_computer_alt)
         for c, ca in zip(constants, constants_alt):

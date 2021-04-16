@@ -220,7 +220,7 @@ class AEVComputer(torch.nn.Module):
 
     @classmethod
     def like_2x(cls, **kwargs):
-        return cls(angular_terms='ani2x', radial_terms='ani2x', num_species=4)
+        return cls(angular_terms='ani2x', radial_terms='ani2x', num_species=7)
 
     @classmethod
     def like_1ccx(cls, **kwargs):
