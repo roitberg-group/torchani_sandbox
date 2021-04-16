@@ -26,9 +26,9 @@ class Calculator(ase.calculators.calculator.Calculator):
 
     implemented_properties = ['energy', 'forces', 'stress', 'free_energy']
 
-    def __init__(self, species, model, overwrite=False):
+    def __init__(self, model, overwrite=False):
         super().__init__()
-        self.species_to_tensor = utils.ChemicalSymbolsToInts(species)
+        self.species_to_tensor = model._species_to_tensor
         self.model = model
         # Since ANI is used in inference mode, no gradients on model parameters are required here
         for p in self.model.parameters():
@@ -56,15 +56,14 @@ class Calculator(ase.calculators.calculator.Calculator):
                            device=self.device)
         pbc_enabled = pbc.any().item()
 
-        if self.periodic_table_index:
-            species = torch.tensor(self.atoms.get_atomic_numbers(), dtype=torch.long, device=self.device)
-        else:
-            species = self.species_to_tensor(self.atoms.get_chemical_symbols()).to(self.device)
-
+        species = torch.tensor(self.atoms.get_atomic_numbers(), dtype=torch.long, device=self.device)
         species = species.unsqueeze(0)
         coordinates = torch.tensor(self.atoms.get_positions())
         coordinates = coordinates.to(self.device).to(self.dtype) \
                                  .requires_grad_('forces' in properties)
+
+        if not self.periodic_table_index:
+            species = self.model.species_converter((species, coordinates)).species
 
         if pbc_enabled:
             coordinates = utils.map2central(cell, coordinates, pbc)

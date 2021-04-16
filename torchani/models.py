@@ -46,21 +46,14 @@ class SpeciesEnergiesQBC(NamedTuple):
 class BuiltinModel(torch.nn.Module):
     r"""Private template for the builtin ANI models """
 
-    def __init__(self, species_converter, aev_computer, neural_networks,
-            energy_shifter, species_to_tensor, consts, sae_dict,
-            periodic_table_index):
+    def __init__(self, species_converter, aev_computer, neural_networks, energy_shifter, species_to_tensor, periodic_table_index):
         super().__init__()
         self.species_converter = species_converter
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
         self.energy_shifter = energy_shifter
         self._species_to_tensor = species_to_tensor
-        self.species = consts.species
         self.periodic_table_index = periodic_table_index
-
-        # a bit useless maybe
-        self.consts = consts
-        self.sae_dict = sae_dict
 
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -121,7 +114,7 @@ class BuiltinModel(torch.nn.Module):
             calculator (:class:`int`): A calculator to be used with ASE
         """
         from . import ase
-        return ase.Calculator(self.species, self, **kwargs)
+        return ase.Calculator(self, **kwargs)
 
     def __len__(self):
         """Get the number of networks being used by the model
@@ -147,8 +140,7 @@ class BuiltinModel(torch.nn.Module):
         assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
         ret = BuiltinModel(self.species_converter, self.aev_computer,
                            self.neural_networks[index], self.energy_shifter,
-                           self._species_to_tensor, self.consts, self.sae_dict,
-                           self.periodic_table_index)
+                           self._species_to_tensor, self.periodic_table_index)
         return ret
 
     @torch.jit.export
@@ -397,11 +389,9 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
         network_dir = os.path.join('{}{}'.format(ensemble_prefix, model_index), 'networks')
         neural_networks = neurochem.load_model(consts.species, network_dir)
 
-    energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
+    energy_shifter = neurochem.load_sae(sae_file, return_dict=False)
 
-    kwargs = {'sae_dict': sae_dict,
-            'consts': consts,
-            'species_converter': SpeciesConverter(consts.species),
+    kwargs = {'species_converter': SpeciesConverter(consts.species),
             'aev_computer': aev_computer,
             'energy_shifter': energy_shifter,
             'species_to_tensor': consts.species_to_tensor,
