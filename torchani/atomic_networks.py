@@ -2,8 +2,9 @@
 import torch
 import copy
 
-def make_classic(dim_in, dims, activation=None, bias=True):
-    """Makes a classic ANI style atomic network"""
+
+def make_standard(dim_in, dims, activation=None, bias=True):
+    """Makes a standard ANI style atomic network"""
     # automatically insert the first dimension
     if activation is None:
         activation = torch.nn.CELU(0.1)
@@ -14,12 +15,15 @@ def make_classic(dim_in, dims, activation=None, bias=True):
     dimensions = range(len(dims_) - 1)
     layers = []
     for j in dimensions:
-        block = [torch.nn.Linear(dims_[j], dims_[j + 1], bias=bias), activation]
+        block = [
+            torch.nn.Linear(dims_[j], dims_[j + 1], bias=bias), activation
+        ]
         layers.extend(block)
     # final layer is always appended
     layers.append(torch.nn.Linear(dims_[-1], 1, bias=bias))
-    assert len(layers) == (len(dims_)-1)*2 + 1
+    assert len(layers) == (len(dims_) - 1) * 2 + 1
     return torch.nn.Sequential(*layers)
+
 
 def make_like_1x(atom='H', activation=None, bias=True):
     args_for_atoms = {
@@ -40,7 +44,10 @@ def make_like_1x(atom='H', activation=None, bias=True):
             'dims': (128, 112, 96)
         },
     }
-    return make_classic(**args_for_atoms[atom], activation=activation, bias=bias)
+    return make_standard(**args_for_atoms[atom],
+                        activation=activation,
+                        bias=bias)
+
 
 def make_like_2x(atom='H', activation=None, bias=True):
     args_for_atoms = {
@@ -73,7 +80,10 @@ def make_like_2x(atom='H', activation=None, bias=True):
             'dims': (160, 128, 96)
         },
     }
-    return make_classic(**args_for_atoms[atom], activation=activation, bias=bias)
+    return make_standard(**args_for_atoms[atom],
+                        activation=activation,
+                        bias=bias)
+
 
 def make_like_1ccx(atom='H', activation=None, bias=True):
     return make_like_1x(atom)
