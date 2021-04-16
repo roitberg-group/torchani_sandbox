@@ -1,4 +1,3 @@
-
 import torch
 import torchani
 import time
@@ -6,6 +5,7 @@ import pickle
 import ase
 import copy
 import numpy as np
+from typing import Union
 from tqdm import tqdm
 import timeit
 
@@ -16,7 +16,7 @@ from ase import units
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from pathlib import Path
-from molecule_utils import make_water, make_methane, tensor_from_xyz
+from molecule_utils import make_water, tensor_from_xyz
 
 
 def plot_file(file_path, comment, show=False):
@@ -31,16 +31,26 @@ def plot_file(file_path, comment, show=False):
     assert len(std) == len(mean)
     assert len(std) == len(sizes)
     for times in all_trials:
-        ax.errorbar(x=sizes, y=mean, yerr=std * 2, ecolor='k', capsize=2, fmt='s--', ms=1)
+        ax.errorbar(x=sizes,
+                    y=mean,
+                    yerr=std * 2,
+                    ecolor='k',
+                    capsize=2,
+                    fmt='s--',
+                    ms=1)
     ax.set_xlabel('System size (atoms)')
     ax.set_ylabel('Total Walltime per ns (days)')
     ax.set_title(comment)
     if show:
         plt.show()
 
+
 def plot_many(path_to_files, comment, show=False):
     mpl.rc('font', size=16)
-    file_paths = [f for f in Path(path_to_files).resolve().iterdir() if f.suffix == '.pkl']
+    file_paths = [
+        f for f in Path(path_to_files).resolve().iterdir()
+        if f.suffix == '.pkl'
+    ]
 
     fig, ax = plt.subplots(1, len(file_paths), sharex=True, sharey=True)
     for j, p in enumerate(file_paths):
@@ -80,39 +90,58 @@ def plot_many(path_to_files, comment, show=False):
 
         std = all_trials.std(axis=0)
         mean = all_trials.mean(axis=0)
-        inverse_mean = (1/all_trials).mean(axis=0)
-        inverse_std = (1/all_trials).std(axis=0)
+        inverse_mean = (1 / all_trials).mean(axis=0)
+        inverse_std = (1 / all_trials).std(axis=0)
         assert len(std) == len(mean)
         assert len(std) == len(sizes)
         if '_clist_update_all_steps' in p.stem:
             c = 'b'
-            l = "TorchANI+pmemd (improved codebase)"
+            label = "TorchANI+pmemd (improved codebase)"
         elif 'clist_reuse' in p.stem:
             c = 'r'
-            l = "TorchANI + cell list (Not Updating every step)"
+            label = "TorchANI + cell list (Not Updating every step)"
         else:
             c = 'g'
-            l = 'Original TorchANI'
+            label = 'Original TorchANI'
         fmt = 's-'
-        ax[0].errorbar(x=sizes, y=mean, color=c, yerr=std * 2, ecolor='k', capsize=2, fmt=fmt, ms=4, label=l)
-        ax[1].errorbar(x=sizes, y=inverse_mean, color=c, yerr=inverse_std * 2, ecolor='k', capsize=2, fmt=fmt, ms=4, label=l)
+        ax[0].errorbar(x=sizes,
+                       y=mean,
+                       color=c,
+                       yerr=std * 2,
+                       ecolor='k',
+                       capsize=2,
+                       fmt=fmt,
+                       ms=4,
+                       label=label)
+        ax[1].errorbar(x=sizes,
+                       y=inverse_mean,
+                       color=c,
+                       yerr=inverse_std * 2,
+                       ecolor='k',
+                       capsize=2,
+                       fmt=fmt,
+                       ms=4,
+                       label=label)
     ax[0].set_xlabel('System size (atoms)')
     ax[0].set_ylabel('Walltime for 1 ns (days)')
     ax[0].legend()
 
     ax[1].set_xlabel('System size (atoms)')
     ax[1].set_ylabel('Performance, (ns/day)')
-    #ax[1].legend()
 
     fig.suptitle('Benchmarks for ANI-1x model, bulk water')
 
     if show:
         plt.show()
 
-def get_model(model_arg, torch_cell_list, model_index, adaptive_torch_cell_list):
-    args = {'periodic_table_index' : True,
-            'torch_cell_list': torch_cell_list,
-            'adaptive_torch_cell_list': adaptive_torch_cell_list}
+
+def get_model(model_arg, torch_cell_list, model_index,
+              adaptive_torch_cell_list):
+    args = {
+        'periodic_table_index': True,
+        'torch_cell_list': torch_cell_list,
+        'adaptive_torch_cell_list': adaptive_torch_cell_list
+    }
 
     if model_index:
         args.update({'model_index': model_index})
@@ -125,30 +154,59 @@ def get_model(model_arg, torch_cell_list, model_index, adaptive_torch_cell_list)
         model = torchani.models.ANI1ccx(**args).to(device, dtype=torch.double)
     return model.to(torch.float)
 
+
 def print_info(device, steps, sizes):
     print(f'Running on {device} {torch.cuda.get_device_name()}')
     print(f'CUDA is avaliable: {torch.cuda.is_available()}')
     print(f'Running benchmark for {steps} steps')
     print(f'Running on the following sizes: {sizes}')
 
+
 if __name__ == "__main__":
     import argparse
     # parse command line arguments
-    parser = argparse.ArgumentParser(description='MD scaling benchmark for torchani')
+    parser = argparse.ArgumentParser(
+        description='MD scaling benchmark for torchani')
     # generally good defaults
     parser.add_argument('-j', '--jit', action='store_true', default=False)
     parser.add_argument('-m', '--model', default='ani1x')
     parser.add_argument('-d', '--device', type=str, default='cuda')
-    parser.add_argument('-s', '--steps', type=int, default=250, help="Timesteps to run in dynamics")
-    parser.add_argument('--no-pbc', action='store_true', default=False, help="Use periodic boundary conditions")
-    parser.add_argument('--model-index', default=None, help="Specify a model index")
+    parser.add_argument('-s',
+                        '--steps',
+                        type=int,
+                        default=250,
+                        help="Timesteps to run in dynamics")
+    parser.add_argument('--no-pbc',
+                        action='store_true',
+                        default=False,
+                        help="Use periodic boundary conditions")
+    parser.add_argument('--model-index',
+                        default=None,
+                        help="Specify a model index")
 
     # may want to change
-    parser.add_argument('-x', '--xyz', default=None, help="path to directory with xyz files")
-    parser.add_argument('-t', '--trials', default=5, help="Repetitions to calculate std dev")
-    parser.add_argument('-b', '--box-repeats', type=int, default=15, help="Number of replications of molecule in all directions" )
-    parser.add_argument('--cell-list', action='store_true', default=False, help="Use a cell list")
-    parser.add_argument('--adaptive-cell-list', action='store_true', default=False, help="Reuse cell list")
+    parser.add_argument('-x',
+                        '--xyz',
+                        default=None,
+                        help="path to directory with xyz files")
+    parser.add_argument('-t',
+                        '--trials',
+                        default=5,
+                        help="Repetitions to calculate std dev")
+    parser.add_argument(
+        '-b',
+        '--box-repeats',
+        type=int,
+        default=15,
+        help="Number of replications of molecule in all directions")
+    parser.add_argument('--cell-list',
+                        action='store_true',
+                        default=False,
+                        help="Use a cell list")
+    parser.add_argument('--adaptive-cell-list',
+                        action='store_true',
+                        default=False,
+                        help="Reuse cell list")
 
     parser.add_argument('-p', '--plot', action='store_true', default=False)
     parser.add_argument('-f', '--file-name', default=None)
@@ -159,6 +217,7 @@ if __name__ == "__main__":
     show = args.no_show
     assert args.box_repeats > 3
 
+    path_to_xyz: Union[Path, str]
     if args.xyz is not None:
         path_to_xyz = Path(args.xyz).resolve()
     else:
@@ -190,12 +249,15 @@ if __name__ == "__main__":
     else:
         device = torch.device(args.device)
         if not path_to_xyz:
-            num_atoms = 3 # for water
-            sizes = (num_atoms * torch.arange(4,
-                args.box_repeats + 1)**3).numpy().tolist()
+            num_atoms = 3  # for water
+            sizes = (
+                num_atoms * torch.arange(4, args.box_repeats + 1)**3).numpy().tolist()
         else:
+            assert isinstance(path_to_xyz, Path)
             sizes = []
-            xyz_files = [p for p in path_to_xyz.iterdir() if '.xyz' == p.suffix]
+            xyz_files = [
+                p for p in path_to_xyz.iterdir() if '.xyz' == p.suffix
+            ]
             for f in xyz_files:
                 species, coordinates, _ = tensor_from_xyz(f)
                 sizes.append(len(species))
@@ -206,9 +268,16 @@ if __name__ == "__main__":
             xyz_files = xyz_files[idx]
 
         print_info(device, args.steps, sizes)
-        model = get_model(args.model, args.cell_list, args.model_index, args.adaptive_cell_list)
+        model = get_model(args.model, args.cell_list, args.model_index,
+                          args.adaptive_cell_list)
 
-        timers = {'forward': 0.0, 'backward': 0.0, 'neighborlist': 0.0, 'aev_forward': 0.0}
+        timers = {
+            'forward': 0.0,
+            'backward': 0.0,
+            'neighborlist': 0.0,
+            'aev_forward': 0.0
+        }
+
         def time_func(key, func):
             def wrapper(*args, **kwargs):
                 torch.cuda.synchronize()
@@ -216,14 +285,19 @@ if __name__ == "__main__":
                 ret = func(*args, **kwargs)
                 torch.cuda.synchronize()
                 end = timeit.default_timer()
-                timers[key] += (end - start)/(3600*24)  * 1e6/100
+                timers[key] += (end - start) / (3600 * 24) * 1e6 / 100
                 return ret
+
             return wrapper
+
         if not args.jit:
-            model.aev_computer._compute_aev = time_func('aev_forward', model.aev_computer._compute_aev)
-            model.aev_computer.neighborlist.forward = time_func('neighborlist', model.aev_computer.neighborlist.forward)
-            model.forward = time_func('forward', model.forward)
-            torchani.ase.Calculator._get_ani_forces = time_func('backward', torchani.ase.Calculator._get_ani_forces)
+            model.aev_computer._compute_aev = time_func(  # type: ignore
+                'aev_forward', model.aev_computer._compute_aev)
+            model.aev_computer.neighborlist.forward = time_func(  # type: ignore
+                'neighborlist', model.aev_computer.neighborlist.forward)
+            model.forward = time_func('forward', model.forward)  # type: ignore
+            torchani.ase.Calculator._get_ani_forces = time_func(  # type: ignore
+                'backward', torchani.ase.Calculator._get_ani_forces)
 
         all_trials = []
         timers_list = []
@@ -238,17 +312,18 @@ if __name__ == "__main__":
 
             for r in it:
                 # reset timers
-                timers = {k : 0.0 for k in timers}
+                timers = {k: 0.0 for k in timers}
                 try:
                     model.aev_computer.neighborlist.reset_cached_values()
                 except AttributeError:
                     pass
                 if not path_to_xyz:
                     species, coordinates = make_water(device)
-                    species, coordinates, cell = geometry.tile_into_tight_cell((species, coordinates),
-                                                                density=0.0923,
-                                                                noise=0.1,
-                                                                repeats=r + 1)
+                    species, coordinates, cell = geometry.tile_into_tight_cell(
+                        (species, coordinates),
+                        density=0.0923,
+                        noise=0.1,
+                        repeats=r + 1)
                 else:
                     species, coordinates, cell = tensor_from_xyz(r)
 
@@ -256,17 +331,25 @@ if __name__ == "__main__":
                 calc = model.ase()
                 if args.jit:
                     torch._C._jit_set_profiling_executor(False)
-                    torch._C._jit_set_profiling_mode(False)  # this also has an effect
+                    torch._C._jit_set_profiling_mode(
+                        False)  # this also has an effect
                     torch._C._jit_override_can_fuse_on_cpu(False)
-                    torch._C._jit_set_texpr_fuser_enabled(False)  # this has an effect
+                    torch._C._jit_set_texpr_fuser_enabled(
+                        False)  # this has an effect
                     torch._C._jit_set_nvfuser_enabled(False)
                     calc.model = torch.jit.script(calc.model)
-                atoms_args = {'symbols': species.squeeze().tolist(),
-                             'positions': coordinates.to(torch.float).squeeze().tolist(),
-                             'calculator': calc}
+                atoms_args = {
+                    'symbols': species.squeeze().tolist(),
+                    'positions':
+                    coordinates.to(torch.float).squeeze().tolist(),
+                    'calculator': calc
+                }
 
                 if not args.no_pbc:
-                    atoms_args.update({'cell': cell.cpu().numpy(), 'pbc': True})
+                    atoms_args.update({
+                        'cell': cell.cpu().numpy(),
+                        'pbc': True
+                    })
 
                 molecule = ase.Atoms(**atoms_args)
 
@@ -276,21 +359,30 @@ if __name__ == "__main__":
                 dyn.run(args.steps)
                 end = time.time()
 
-                times.append((end - start) * 1e6/args.steps /(3600*24))
+                times.append((end - start) * 1e6 / args.steps / (3600 * 24))
                 timers_list.append(copy.deepcopy(timers))
                 raw_times.append(end - start)
             all_trials.append(times)
             raw_trials.append(raw_times)
 
-        with open(pickle_file, 'wb') as f:
-            pickle.dump({'times': all_trials, 'atoms': sizes, 'timers': timers_list, 'raw_times': raw_trials}, f)
+        with open(pickle_file, 'wb') as fb:
+            pickle.dump(
+                {
+                    'times': all_trials,
+                    'atoms': sizes,
+                    'timers': timers_list,
+                    'raw_times': raw_trials
+                }, fb)
 
-        with open(csv_file, 'w') as f:
-            f.write(f'#{comment}')
-            titles = '#' + ' '.join([f'Trial {j} walltime per ns (days)' for j in range(args.trials)])
+        with open(csv_file, 'w') as fc:
+            fc.write(f'#{comment}')
+            titles = '#' + ' '.join([
+                f'Trial {j} walltime per ns (days)' for j in range(args.trials)
+            ])
             titles += '\n'
-            f.write(titles)
+            fc.write(titles)
             all_trials = np.asarray(all_trials)
             for times, s in zip(all_trials, sizes):
-                    string = ' '.join(times.astype(str)) + f' {s}\n'
-                    f.write(string)
+                assert isinstance(times, np.ndarray)
+                string = ' '.join(times.astype(str)) + f' {s}\n'
+                fc.write(string)

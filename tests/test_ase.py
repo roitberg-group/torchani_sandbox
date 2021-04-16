@@ -14,6 +14,7 @@ import os
 
 path = os.path.dirname(os.path.realpath(__file__))
 
+
 class TestASE(TestCase):
 
     def setUp(self):
@@ -39,7 +40,7 @@ class TestASE(TestCase):
         model_cell = torchani.models.ANI1x(model_index=0, torch_cell_list=True)
         model_cell = model_cell.to(dtype=torch.double, device=self.device)
         model_dyn = torchani.models.ANI1x(model_index=0, torch_cell_list=True)
-        model_dyn.aev_computer.neighborlist = CellList(model_dyn.aev_computer.radial_terms.cutoff, dynamic_update=True)
+        model_dyn.aev_computer.neighborlist = CellList(model_dyn.aev_computer.radial_terms.cutoff, verlet=True)
         model_dyn = model_cell.to(dtype=torch.double, device=self.device)
 
         f_cell = self._testForcesPBC(model_cell, only_get_forces=True)
@@ -58,7 +59,7 @@ class TestASE(TestCase):
 
     def testNumericalForcesCellListDynamic(self):
         model = torchani.models.ANI1x(model_index=0, torch_cell_list=True)
-        model.aev_computer.neighborlist = CellList(model.aev_computer.radial_terms.cutoff, dynamic_update=True)
+        model.aev_computer.neighborlist = CellList(model.aev_computer.radial_terms.cutoff, verlet=True)
         model = model.to(dtype=torch.double, device=self.device)
         self._testForcesPBC(model, steps=100)
 
@@ -97,6 +98,7 @@ class TestASE(TestCase):
             for j in range(3):
                 fn[i, j] = numeric_force(atoms, i, j, eps)
         return fn
+
     def testWithNumericalStressFullPairwise(self):
         model = torchani.models.ANI1x(model_index=0)
         model = model.to(dtype=torch.double, device=self.device)

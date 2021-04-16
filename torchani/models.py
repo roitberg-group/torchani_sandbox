@@ -33,7 +33,8 @@ import torch
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
 from .nn import SpeciesConverter, SpeciesEnergies
-from .aev import AEVComputer, AEVComputerBare, CellList
+from .aev import AEVComputer, AEVComputerInternal
+from .compat import Final
 
 
 class SpeciesEnergiesQBC(NamedTuple):
@@ -89,44 +90,6 @@ class BuiltinModel(torch.nn.Module):
         return self.energy_shifter(species_energies)
 
     @torch.jit.export
-    def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
-                        cell: Optional[Tensor] = None,
-                        pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        """Calculates predicted atomic energies of all atoms in a molecule
-
-        ..warning::
-            Since this function does not call ``__call__`` directly,
-            hooks are not registered and profiling is not done correctly by
-            pytorch on it. It is meant as a convenience function for analysis
-             and active learning.
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            will be in Hartree.
-
-        Args:
-            species_coordinates: minibatch of configurations
-            cell: the cell used in PBC computation, set to None if PBC is not enabled
-            pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
-
-        Returns:
-            species_atomic_energies: species and energies for the given configurations
-                note that the shape of species is (C, A), where C is
-                the number of configurations and A the number of atoms, and
-                the shape of energies is (C, A) for a BuiltinModel.
-        """
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
-        atomic_energies = self.neural_networks._atomic_energies((species, aevs))
-        self_energies = self.energy_shifter.self_energies.clone().to(species.device)
-        self_energies = self_energies[species]
-        self_energies[species == torch.tensor(-1, device=species.device)] = 0.0
-        # shift all atomic energies individually
-        assert self_energies.shape == atomic_energies.shape
-        atomic_energies += self_energies
-        return SpeciesEnergies(species, atomic_energies)
-
-    @torch.jit.export
     def _recast_long_buffers(self):
         self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
         self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
@@ -160,81 +123,19 @@ class BuiltinModel(torch.nn.Module):
         from . import ase
         return ase.Calculator(self.species, self, **kwargs)
 
+    def __len__(self):
+        """Get the number of networks being used by the model
 
-class BuiltinEnsemble(BuiltinModel):
-    """Private template for the builtin ANI ensemble models.
-
-    ANI ensemble models form the ANI models zoo are instances of this class.
-    This class is a torch module that sequentially calculates
-    AEVs, then energies from a torchani.Ensemble and then uses EnergyShifter
-    to shift those energies. It is essentially a sequential
-
-    'AEVComputer -> Ensemble -> EnergyShifter'
-
-    (periodic_table_index=False), or a sequential
-
-    'SpeciesConverter -> AEVComputer -> Ensemble -> EnergyShifter'
-
-    (periodic_table_index=True).
-
-    .. note::
-        This class is for internal use only, avoid relying on anything from it
-        except the public methods, always use ANI1x, ANI1ccx, etc to instance
-        the models.
-        Also, don't confuse this class with torchani.Ensemble, which is only a
-        container for many ANIModel instances and shouldn't be used directly
-        for calculations.
-
-    Attributes:
-        species_converter (:class:`torchani.nn.SpeciesConverter`): Converts periodic table index to
-            internal indices. Only present if periodic_table_index is `True`.
-        aev_computer (:class:`torchani.AEVComputer`): AEV computer with
-            builtin constants
-        energy_shifter (:class:`torchani.EnergyShifter`): Energy shifter with
-            builtin Self Atomic Energies.
-        periodic_table_index (bool): Whether to use element number in periodic table
-            to index species. If set to `False`, then indices must be `0, 1, 2, ..., N - 1`
-            where `N` is the number of parametrized species.
-    """
-    @torch.jit.export
-    def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
-                        cell: Optional[Tensor] = None,
-                        pbc: Optional[Tensor] = None, average: bool = True) -> SpeciesEnergies:
-        """Calculates predicted atomic energies of all atoms in a molecule
-
-        see `:method:torchani.BuiltinModel.atomic_energies`
-
-        If average is True (the default) it returns the average over all models
-        (shape (C, A)), otherwise it returns one atomic energy per model (shape
-        (M, C, A))
+        Returns:
+            length (:class:`int`): Number of networks in the ensemble
         """
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
-        members_list = []
-        for nnp in self.neural_networks:
-            members_list.append(nnp._atomic_energies((species, aevs)).unsqueeze(0))
-        member_atomic_energies = torch.cat(members_list, dim=0)
-
-        self_energies = self.energy_shifter.self_energies.clone().to(species.device)
-        self_energies = self_energies[species]
-        self_energies[species == torch.tensor(-1, device=species.device)] = torch.tensor(0, device=species.device, dtype=torch.double)
-        # shift all atomic energies individually
-        assert self_energies.shape == member_atomic_energies.shape[1:]
-        member_atomic_energies += self_energies
-        if average:
-            return SpeciesEnergies(species, member_atomic_energies.mean(dim=0))
-        return SpeciesEnergies(species, member_atomic_energies)
+        return self.neural_networks.size
 
     def __getitem__(self, index):
-        """Get a single 'AEVComputer -> ANIModel -> EnergyShifter' sequential model
+        """Get a model that uses a single network
 
-        Get a single 'AEVComputer -> ANIModel -> EnergyShifter' sequential model
-        or
         Indexing allows access to a single model inside the ensemble
-        that can be used directly for calculations. The model consists
-        of a sequence AEVComputer -> ANIModel -> EnergyShifter
-        and can return an ase calculator and convert species to tensor.
+        that can be used directly for calculations.
 
         Args:
             index (:class:`int`): Index of the model
@@ -243,11 +144,62 @@ class BuiltinEnsemble(BuiltinModel):
             ret: (:class:`torchani.models.BuiltinModel`) Model ready for
                 calculations
         """
+        assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
         ret = BuiltinModel(self.species_converter, self.aev_computer,
                            self.neural_networks[index], self.energy_shifter,
                            self._species_to_tensor, self.consts, self.sae_dict,
                            self.periodic_table_index)
         return ret
+
+    @torch.jit.export
+    def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
+                        cell: Optional[Tensor] = None,
+                        pbc: Optional[Tensor] = None, average: bool = True) -> SpeciesEnergies:
+        """Calculates predicted atomic energies of all atoms in a molecule
+
+        ..warning::
+            Since this function does not call ``__call__`` directly,
+            hooks are not registered and profiling is not done correctly by
+            pytorch on it. It is meant as a convenience function for analysis
+             and active learning.
+
+        .. note:: The coordinates, and cell are in Angstrom, and the energies
+            will be in Hartree.
+
+        Args:
+            species_coordinates: minibatch of configurations
+            cell: the cell used in PBC computation, set to None if PBC is not enabled
+            pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
+
+        Returns:
+            species_atomic_energies: species and energies for the given configurations
+                note that the shape of species is (C, A), where C is
+                the number of configurations and A the number of atoms, and
+                the shape of energies is (C, A) for a BuiltinModel.
+
+        If average is True (the default) it returns the average over all models
+        in the ensemble, should there be more than one (shape (C, A)),
+        otherwise it returns one atomic energy per model (shape (M, C, A)).
+        """
+        if self.periodic_table_index:
+            species_coordinates = self.species_converter(species_coordinates)
+
+        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
+
+        atomic_energies = self.neural_networks._atomic_energies((species, aevs))
+
+        atomic_saes = self.energy_shifter._calc_atomic_saes(species)
+
+        # shift all atomic energies individually
+        if atomic_energies.dim() == 2:
+            atomic_energies = atomic_energies.unsqueeze(0)
+
+        assert atomic_saes.shape == atomic_energies[0].shape
+
+        atomic_energies += atomic_saes
+        if average:
+            return SpeciesEnergies(species, atomic_energies.mean(dim=0))
+        return SpeciesEnergies(species, atomic_energies)
 
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -277,11 +229,15 @@ class BuiltinEnsemble(BuiltinModel):
                 of modules in the ensemble
 
         """
+        assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
         species, aevs = self.aev_computer(species_coordinates, cell, pbc)
         member_outputs = []
         for nnp in self.neural_networks:
+            # hint for JIT, this function can only be called if neural_networks
+            # is an ensemble and not an ANIModel
+            assert not isinstance(nnp, str)
             unshifted_energies = nnp((species, aevs)).energies
             shifted_energies = self.energy_shifter((species, unshifted_energies)).energies
             member_outputs.append(shifted_energies.unsqueeze(0))
@@ -320,11 +276,12 @@ class BuiltinEnsemble(BuiltinModel):
 
         Returns:
             species_energies_qbcs: species, energies and qbc factors for the
-                given configurations note that the shape of species is (C, A),
+                given configurations. Note that the shape of species is (C, A),
                 where C is the number of configurations and A the number of
                 atoms, the shape of energies is (C,) and the shape of qbc
                 factors is also (C,).
         """
+        assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
         species, energies = self.members_energies(species_coordinates, cell, pbc)
 
         # standard deviation is taken across ensemble members
@@ -338,21 +295,16 @@ class BuiltinEnsemble(BuiltinModel):
         assert qbc_factors.shape == energies.shape
         return SpeciesEnergiesQBC(species, energies, qbc_factors)
 
-    def __len__(self):
-        """Get the number of networks in the ensemble
-
-        Returns:
-            length (:class:`int`): Number of networks in the ensemble
-        """
-        return len(self.neural_networks)
 
 # unfortunately this is an UGLY workaround to a torchscript bug
 class BuiltinModelCellList(BuiltinModel):
 
     @torch.jit.export
     def _recast_long_buffers(self):
+        # for species converter and aev computer
         self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
         self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
+        # for cell list
         self.aev_computer.neighborlist.total_buckets = self.aev_computer.neighborlist.total_buckets.to(dtype=torch.long)
         self.aev_computer.neighborlist.scaling_for_flat_index = self.aev_computer.neighborlist.scaling_for_flat_index.to(dtype=torch.long)
         self.aev_computer.neighborlist.shape_buckets_grid = self.aev_computer.neighborlist.shape_buckets_grid.to(dtype=torch.long)
@@ -361,19 +313,86 @@ class BuiltinModelCellList(BuiltinModel):
         self.aev_computer.neighborlist.vector_index_displacement = self.aev_computer.neighborlist.vector_index_displacement.to(dtype=torch.long)
         self.aev_computer.neighborlist.translation_displacement_indices = self.aev_computer.neighborlist.translation_displacement_indices.to(dtype=torch.long)
 
-class BuiltinEnsembleCellList(BuiltinEnsemble):
+
+class BuiltinModelExternalInterface(BuiltinModel):
+    # TODO: Most BuiltinModel functions fail here, only forward works this
+    # It will be necessary to rewrite that code for this use case if we
+    # want those functions in amber, I'm looking for a different solution though
+    assume_screened_input: Final[bool]
+
+    def __init__(self, *args, **kwargs):
+        assume_screened_input = kwargs.pop('assume_screened_input', False)
+        super().__init__(*args, **kwargs)
+        self.assume_screened_input = assume_screened_input
+
+    def forward(self, species_coordinates: Tuple[Tensor, Tensor],
+                neighbors: Optional[Tensor] = None,
+                shift_values: Optional[Tensor] = None) -> SpeciesEnergies:
+        # It is convenient to keep these arguments optional due to JIT, but
+        # actually they are needed for this class
+        assert neighbors is not None
+        assert shift_values is not None
+
+        # check consistency of shapes of neighborlist
+        assert neighbors.dim() == 2 and neighbors.shape[0] == 2
+        assert shift_values.dim() == 2 and shift_values.shape[1] == 3
+        assert neighbors.shape[1] == shift_values.shape[0]
+
+        if self.periodic_table_index:
+            species_coordinates = self.species_converter(species_coordinates)
+        # check if unknown species are included
+        if species_coordinates[0].ge(self.aev_computer.num_species).any():
+            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
+
+        species, coordinates = species_coordinates
+        # check shapes for correctness
+        assert species.dim() == 2
+        assert coordinates.dim() == 3
+        assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
+
+        if not self.assume_screened_input:
+            # first we screen the input neighbors in case some of the
+            # values are at distances larger than the radial cutoff, or some of
+            # the values are masked with dummy atoms. The first may happen if
+            # the neighborlist uses some sort of skin value to rebuild itself
+            # (as in Loup Verlet lists), which is common in MD programs.
+            cutoff = self.aev_computer.radial_terms.cutoff
+            nl_out = self.aev_computer.neighborlist._screen_with_cutoff(cutoff,
+                                                           coordinates,
+                                                           neighbors,
+                                                           shift_values,
+                                                           (species == -1))
+            neighbors, _, diff_vectors, distances = nl_out
+        else:
+            # if the input neighbors is assumed to be pre screened then we
+            # just calculate the distances and diff_vector here
+            coordinates = coordinates.view(-1, 3)
+            coords0 = coordinates.index_select(0, neighbors[0])
+            coords1 = coordinates.index_select(0, neighbors[1])
+            diff_vectors = coords0 - coords1 + shift_values
+            distances = diff_vectors.norm(2, -1)
+
+        species_aevs = self.aev_computer(species, neighbors, diff_vectors, distances)
+        species_energies = self.neural_networks(species_aevs)
+        return self.energy_shifter(species_energies)
 
     @torch.jit.export
-    def _recast_long_buffers(self):
-        self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
-        self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
-        self.aev_computer.neighborlist.total_buckets = self.aev_computer.neighborlist.total_buckets.to(dtype=torch.long)
-        self.aev_computer.neighborlist.scaling_for_flat_index = self.aev_computer.neighborlist.scaling_for_flat_index.to(dtype=torch.long)
-        self.aev_computer.neighborlist.shape_buckets_grid = self.aev_computer.neighborlist.shape_buckets_grid.to(dtype=torch.long)
-        self.aev_computer.neighborlist.vector_idx_to_flat = self.aev_computer.neighborlist.vector_idx_to_flat.to(dtype=torch.long)
-        self.aev_computer.neighborlist.translation_cases = self.aev_computer.neighborlist.translation_cases.to(dtype=torch.long)
-        self.aev_computer.neighborlist.vector_index_displacement = self.aev_computer.neighborlist.vector_index_displacement.to(dtype=torch.long)
-        self.aev_computer.neighborlist.translation_displacement_indices = self.aev_computer.neighborlist.translation_displacement_indices.to(dtype=torch.long)
+    def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
+                neighbors: Optional[Tensor] = None,
+                shift_values: Optional[Tensor] = None):
+        assert False, "Not implemented for external interface"
+
+    @torch.jit.export
+    def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
+                neighbors: Optional[Tensor] = None,
+                shift_values: Optional[Tensor] = None):
+        assert False, "Not implemented for external interface"
+
+    @torch.jit.export
+    def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
+                neighbors: Optional[Tensor] = None,
+                shift_values: Optional[Tensor] = None):
+        assert False, "Not implemented for external interface"
 
 
 def _build_neurochem_model(info_file_path, periodic_table_index=False, external_cell_list=False, model_index=None, torch_cell_list=False, adaptive_torch_cell_list=False):
@@ -385,12 +404,11 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
     consts = neurochem.Constants(const_file)
 
     if external_cell_list:
-        aev_computer = AEVComputerBare(**consts)
+        aev_computer = AEVComputerInternal(**consts)
     elif torch_cell_list:
-        aev_computer = AEVComputer(**consts, neighborlist=CellList)
+        aev_computer = AEVComputer(**consts, neighborlist='cell_list')
     elif adaptive_torch_cell_list:
-        aev_computer = AEVComputer(**consts)
-        aev_computer.neighborlist = CellList(aev_computer.radial_terms.cutoff, dynamic_update=True)
+        aev_computer = AEVComputer(**consts, neighborlist='verlet_cell_list')
     else:
         aev_computer = AEVComputer(**consts)
 
@@ -413,16 +431,12 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
             'neural_networks': neural_networks,
             'periodic_table_index': periodic_table_index}
 
-    if model_index is None:
-        if torch_cell_list or adaptive_torch_cell_list:
-            return BuiltinEnsembleCellList(**kwargs)
-        else:
-            return BuiltinEnsemble(**kwargs)
+    if external_cell_list:
+        return BuiltinModelExternalInterface(**kwargs)
+    elif torch_cell_list or adaptive_torch_cell_list:
+        return BuiltinModelCellList(**kwargs)
     else:
-        if torch_cell_list or adaptive_torch_cell_list:
-            return BuiltinModelCellList(**kwargs)
-        else:
-            return BuiltinModel(**kwargs)
+        return BuiltinModel(**kwargs)
 
 
 def ANI1x(*args, **kwargs):

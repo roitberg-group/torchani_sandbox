@@ -1,7 +1,6 @@
 import os
 import torch
 import pickle
-import torchani
 import unittest
 from torchani.aev import CellList
 from common_aev_test import _TestAEVBase
@@ -23,7 +22,6 @@ class TestAEVBenzeneMD(_TestAEVBase):
                 expected_angular = torch.from_numpy(expected_angular).float().unsqueeze(0)
                 cell = torch.from_numpy(cell).float()
                 pbc = torch.from_numpy(pbc)
-                #coordinates = torchani.utils.map_to_central(coordinates, cell, pbc)
                 _, aev = self.aev_computer((species, coordinates), cell=cell, pbc=pbc)
                 self.assertAEVEqual(expected_radial, expected_angular, aev)
 
@@ -40,7 +38,6 @@ class TestAEVBenzeneMD(_TestAEVBase):
                 expected_angular = torch.from_numpy(expected_angular).float().unsqueeze(0)
                 cell = torch.from_numpy(cell).float()
                 pbc = torch.from_numpy(pbc)
-                #coordinates = torchani.utils.map_to_central(coordinates, cell, pbc)
                 _, aev = self.aev_computer((species, coordinates), cell=cell, pbc=pbc)
                 self.assertAEVEqual(expected_radial, expected_angular, aev)
 
