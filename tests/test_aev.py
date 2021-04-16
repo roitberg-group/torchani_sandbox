@@ -48,17 +48,10 @@ class TestAEVConstructor(TestCase):
         self._compare_constants(aev_computer, aev_computer_alt)
 
     def _compare_constants(self, aev_computer, aev_computer_alt):
-        constants = self._get_aev_constants(aev_computer)
-        constants_alt = self._get_aev_constants(aev_computer_alt)
-        for c, ca in zip(constants, constants_alt):
-            self.assertEqual(c, ca)
-
-    @staticmethod
-    def _get_aev_constants(aev_computer):
-        return aev_computer.radial_terms.cutoff, aev_computer.radial_terms.EtaR,\
-            aev_computer.radial_terms.ShfR, aev_computer.angular_terms.cutoff,\
-            aev_computer.angular_terms.ShfZ, aev_computer.angular_terms.EtaA,\
-            aev_computer.angular_terms.Zeta, aev_computer.angular_terms.ShfA, aev_computer.num_species
+        alt_state_dict = aev_computer_alt.state_dict()
+        for k, v in aev_computer.state_dict().items():
+            self.assertEqual(alt_state_dict[k], v)
+        self.assertEqual(aev_computer.num_species, aev_computer_alt.num_species)
 
 
 class TestIsolated(TestCase):
