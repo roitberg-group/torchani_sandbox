@@ -1,4 +1,5 @@
 #include <aev.h>
+#include <assert.h>
 #include <torch/extension.h>
 #include <cuaev_cub.cuh>
 
@@ -7,6 +8,7 @@
 #include <c10/cuda/CUDACachingAllocator.h>
 
 #define PI 3.141592653589793
+#define MAX_NUMJ_PER_I_IN_RCR 1000
 using torch::Tensor;
 
 // fetch from the following matrix
@@ -48,7 +50,8 @@ __global__ void pairwiseDistance(
     int* __restrict__ atomJ_p,
     float* __restrict__ distJ_p,
     const DataT Rcr,
-    const IndexT max_natoms_per_mol) {
+    const IndexT max_natoms_per_mol,
+    const IndexT max_numj_per_i_in_Rcr) {
   extern __shared__ float smem[];
   int* s_pcounter_i = reinterpret_cast<int*>(&smem[0]);
   int* s_species = reinterpret_cast<int*>(&smem[max_natoms_per_mol]);
@@ -69,7 +72,7 @@ __global__ void pairwiseDistance(
   }
   __syncthreads();
 
-  int pairs_per_mol = max_natoms_per_mol * (max_natoms_per_mol - 1);
+  int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
 
   for (int i = threadIdx.y; i < max_natoms_per_mol; i += blockDim.y) {
     SpeciesT specie_i = s_species[i];
@@ -86,12 +89,14 @@ __global__ void pairwiseDistance(
           if (Rij <= Rcr) {
             // for atom i
             int pidx_i = atomicAdd(&s_pcounter_i[i], 1);
-            atomJ_p[mol_idx * pairs_per_mol + i * (max_natoms_per_mol - 1) + pidx_i] = j;
-            distJ_p[mol_idx * pairs_per_mol + i * (max_natoms_per_mol - 1) + pidx_i] = Rij;
+            assert(pidx_i < max_numj_per_i_in_Rcr);
+            atomJ_p[mol_idx * pairs_per_mol + i * max_numj_per_i_in_Rcr + pidx_i] = j;
+            distJ_p[mol_idx * pairs_per_mol + i * max_numj_per_i_in_Rcr + pidx_i] = Rij;
             // for atom j
             int pidx_j = atomicAdd(&s_pcounter_i[j], 1);
-            atomJ_p[mol_idx * pairs_per_mol + j * (max_natoms_per_mol - 1) + pidx_j] = i;
-            distJ_p[mol_idx * pairs_per_mol + j * (max_natoms_per_mol - 1) + pidx_j] = Rij;
+            assert(pidx_j < max_numj_per_i_in_Rcr);
+            atomJ_p[mol_idx * pairs_per_mol + j * max_numj_per_i_in_Rcr + pidx_j] = i;
+            distJ_p[mol_idx * pairs_per_mol + j * max_numj_per_i_in_Rcr + pidx_j] = Rij;
           } // if Rij is within Rcr
         } // if j is not padding atom and i is not j
       } // loop over atom j
@@ -116,14 +121,15 @@ __global__ void pairwiseDistanceSingleMolecule(
     int* __restrict__ atomJ_p,
     float* __restrict__ distJ_p,
     const DataT Rcr,
-    const IndexT max_natoms_per_mol) {
+    const IndexT max_natoms_per_mol,
+    const IndexT max_numj_per_i_in_Rcr) {
   __shared__ int s_pcounter_i[ATOM_I_PER_BLOCK];
   constexpr int BLOCK_SIZE = ATOM_I_PER_BLOCK * ATOM_J_PER_TILE;
   __shared__ float3 s_coord_j[BLOCK_SIZE];
   const float3* pos_p_3 = reinterpret_cast<const float3*>(pos_p);
 
   constexpr int mol_idx = 0;
-  int natom_pairs = max_natoms_per_mol * (max_natoms_per_mol - 1);
+  int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
   int i = blockIdx.x * blockDim.y + threadIdx.y;
   int ii = threadIdx.y;
   int tIdx = blockDim.x * threadIdx.y + threadIdx.x;
@@ -159,8 +165,9 @@ __global__ void pairwiseDistanceSingleMolecule(
           DataT Rij = sqrt(Rsq);
           if (Rij <= Rcr) {
             int pidx = atomicAdd(&s_pcounter_i[ii], 1);
-            atomJ_p[mol_idx * natom_pairs + i * (max_natoms_per_mol - 1) + pidx] = j;
-            distJ_p[mol_idx * natom_pairs + i * (max_natoms_per_mol - 1) + pidx] = Rij;
+            assert(pidx < max_numj_per_i_in_Rcr);
+            atomJ_p[mol_idx * pairs_per_mol + i * max_numj_per_i_in_Rcr + pidx] = j;
+            distJ_p[mol_idx * pairs_per_mol + i * max_numj_per_i_in_Rcr + pidx] = Rij;
           }
         }
       }
@@ -829,7 +836,8 @@ __global__ void postProcessNbrList(
     float Rca,
     int* __restrict__ angular_numJPerI,
     int num_atomI,
-    int max_natoms_per_mol) {
+    int max_natoms_per_mol,
+    int max_numj_per_i_in_Rcr) {
   __shared__ int s_new_pcounter_i[ATOM_I_PER_BLOCK];
   __shared__ int s_num_max;
   int gi = blockIdx.x * blockDim.y + threadIdx.y;
@@ -843,7 +851,7 @@ __global__ void postProcessNbrList(
   int start_i = startIdxPerI[gi];
   int ii = threadIdx.y;
   int idx = blockDim.x * threadIdx.y + threadIdx.x;
-  int natom_pairs = max_natoms_per_mol * (max_natoms_per_mol - 1);
+  int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
 
   if (idx < ATOM_I_PER_BLOCK) {
     s_new_pcounter_i[idx] = 0;
@@ -860,8 +868,8 @@ __global__ void postProcessNbrList(
   __syncthreads();
 
   for (int jj = threadIdx.x; jj < s_num_max && jj < jnum; jj += blockDim.x) {
-    int j = atomJ[natom_pairs * mol_idx + i * (max_natoms_per_mol - 1) + jj];
-    float dist = distJ[natom_pairs * mol_idx + i * (max_natoms_per_mol - 1) + jj];
+    int j = atomJ[pairs_per_mol * mol_idx + i * max_numj_per_i_in_Rcr + jj];
+    float dist = distJ[pairs_per_mol * mol_idx + i * max_numj_per_i_in_Rcr + jj];
     radial_atomJ[start_i + jj] = j;
     radial_distJ[start_i + jj] = dist;
     if (dist <= Rca) {
@@ -909,7 +917,8 @@ void cuaev_forward(
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   at::globalContext().lazyInitCUDA();
 
-  int pairs_per_mol = max_natoms_per_mol * (max_natoms_per_mol - 1);
+  int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
+  int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
   auto total_natom_pairs = n_molecules * pairs_per_mol;
   auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
 
@@ -950,7 +959,8 @@ void cuaev_forward(
         atomJ_p,
         distJ_p,
         Rcr,
-        max_natoms_per_mol);
+        max_natoms_per_mol,
+        max_numj_per_i_in_Rcr);
     result.nI = total_atoms;
   } else { // batch mode
     // tmp storage because of padding
@@ -974,7 +984,8 @@ void cuaev_forward(
         atomJ_p,
         distJ_p,
         Rcr,
-        max_natoms_per_mol);
+        max_natoms_per_mol,
+        max_numj_per_i_in_Rcr);
 
     // remove padding numJPerI if numj == 0
     result.nI = cubDeviceSelectIf(
@@ -1023,7 +1034,8 @@ void cuaev_forward(
         Rca,
         angularNbr_numJPerI_p,
         result.nI,
-        max_natoms_per_mol);
+        max_natoms_per_mol,
+        max_numj_per_i_in_Rcr);
 #ifdef TORCHANI_DEBUG
     result.angularNbr.nJ = cubSum(angularNbr_numJPerI_p, result.nI, stream);
     printf("%-35s %'d\n", "angularNbr nJ", result.angularNbr.nJ);
