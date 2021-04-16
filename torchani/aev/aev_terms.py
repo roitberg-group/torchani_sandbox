@@ -74,7 +74,7 @@ class StandardRadial(torch.nn.Module):
         # using this method the term is 2.6812 but in 2x it is 2.6813,
         # here we keep consistency with 2x
         out.ShfR[0, 7] = 2.6813
-        return
+        return out
 
     @classmethod
     def like_1ccx(cls, **kwargs):
