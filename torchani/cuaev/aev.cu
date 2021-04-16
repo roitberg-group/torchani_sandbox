@@ -386,8 +386,8 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
 
   int laneIdx = threadIdx.x;
 
-  // for backward, atomicadd on saev to minimize bandwidth
-  // for double backward, reading ddcoord once to share mem
+  // for backward, reading daev once to share mem to minimize bandwidth
+  // for double backward, save the output of ddaev, and do atomicadd on saev to minimize bandwidth
   DataT* saev = &smem[0];
 
   int offset = angular_length;
