@@ -161,7 +161,7 @@ class AEVComputer(torch.nn.Module):
         # use_cuda_extension is False. **this is only a kind of "dummy"
         # initialization, it is always necessary to reinitialize in forward at
         # least once, since some tensors may be on CPU at this point**
-        empty = torch.empty(1)
+        empty = torch.empty(0)
         self.cuaev_computer = torch.classes.cuaev.CuaevComputer(0.0, 0.0, empty, empty, empty, empty, empty, empty, 1)
 
     @jit_unused_if_no_cuaev()
@@ -220,7 +220,7 @@ class AEVComputer(torch.nn.Module):
 
     @classmethod
     def like_2x(cls, **kwargs):
-        return cls(angular_terms='ani2x', radial_terms='ani2x', num_species=4)
+        return cls(angular_terms='ani2x', radial_terms='ani2x', num_species=7)
 
     @classmethod
     def like_1ccx(cls, **kwargs):
