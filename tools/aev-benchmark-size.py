@@ -258,13 +258,13 @@ def plot(maxatoms, aev_fd, cuaev_fd, aev_fdbd, cuaev_fdbd):
     plt.plot(maxatoms, aev_fdbd, '-bo', label='pyaev forward + backward')
     plt.plot(maxatoms, cuaev_fdbd, '-ro', label='cuaev forward + backward')
     for i, txt in enumerate(aev_fd):
-        plt.annotate(f'{txt:.2f}', (maxatoms[i], aev_fd[i] - 2.5), ha='center', va='center', fontsize=13)
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], aev_fd[i] - 2.5), ha='center', va='center', fontsize=12)
     for i, txt in enumerate(cuaev_fd):
-        plt.annotate(f'{txt:.2f}', (maxatoms[i], cuaev_fd[i] - 2.5), ha='center', va='center', fontsize=13)
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], cuaev_fd[i] - 2.5), ha='center', va='center', fontsize=12)
     for i, txt in enumerate(aev_fdbd):
-        plt.annotate(f'{txt:.2f}', (maxatoms[i], aev_fdbd[i] + 2.5), ha='center', va='center', fontsize=13)
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], aev_fdbd[i] + 2.5), ha='center', va='center', fontsize=12)
     for i, txt in enumerate(cuaev_fdbd):
-        plt.annotate(f'{txt:.2f}', (maxatoms[i], cuaev_fdbd[i] + 2.5), ha='center', va='center', fontsize=13)
+        plt.annotate(f'{txt:.2f}', (maxatoms[i], cuaev_fdbd[i] + 2.5), ha='center', va='center', fontsize=12)
     # plt.legend(frameon=False, fontsize=15, loc='upper left')
     plt.legend(frameon=True, fontsize=15, loc='best')
     plt.xlim(maxatoms[0] - 500, maxatoms[-1] + 500)
@@ -339,7 +339,7 @@ if __name__ == "__main__":
 
     # if run for plots
     if args.plot:
-        maxatoms = np.arange(5000, 30000, 5000)
+        maxatoms = np.concatenate([[5000, 6000, 8000, 10000], np.arange(10000, 31000, 5000)])
         file = '6ZDH.pdb'
         run_for_plot(file, maxatoms, nnp_ref, nnp_cuaev)
     else:
