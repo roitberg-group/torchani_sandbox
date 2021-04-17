@@ -33,7 +33,7 @@ import torch
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
 from .nn import SpeciesConverter, SpeciesEnergies
-from .aev import AEVComputer, AEVComputerInternal
+from .aev import AEVComputer
 from .compat import Final
 
 
@@ -355,8 +355,8 @@ class BuiltinModelExternalInterface(BuiltinModel):
             diff_vectors = coords0 - coords1 + shift_values
             distances = diff_vectors.norm(2, -1)
 
-        species_aevs = self.aev_computer(species, neighbors, diff_vectors, distances)
-        species_energies = self.neural_networks(species_aevs)
+        aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
+        species_energies = self.neural_networks((species, aevs))
         return self.energy_shifter(species_energies)
 
     @torch.jit.export
@@ -384,10 +384,7 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
     const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
     consts = neurochem.Constants(const_file)
 
-    if external_cell_list:
-        aev_computer = AEVComputerInternal(**consts)
-    else:
-        aev_computer = AEVComputer(**consts)
+    aev_computer = AEVComputer(**consts)
 
     if model_index is None:
         neural_networks = neurochem.load_model_ensemble(consts.species, ensemble_prefix, ensemble_size)

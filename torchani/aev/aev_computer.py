@@ -400,29 +400,3 @@ class AEVComputer(torch.nn.Module):
         n = atom_index12.shape[1]
         sign12 = ((local_index12 < n).to(torch.int8) * 2) - 1
         return central_atom_index, local_index12 % n, sign12
-
-
-class AEVComputerInternal(AEVComputer):
-
-    def __init__(self, *args, **kwargs):
-        r"""AEVComputer for internal use of ANI Models"""
-        assert 'neighborlist' not in kwargs.keys(), "InternalAEVComputer doesn't use a neighborlist"
-        kwargs.update({'neighborlist': None})
-        super().__init__(*args, **kwargs)
-
-    def forward(self, species: Tensor,  # type: ignore
-                neighbors: Tensor,  # type: ignore
-                diff_vectors: Tensor, distances: Tensor) -> SpeciesAEV:  # type: ignore
-        r"""Arguments:
-                species: internal indices of the atomic species used by ani models
-                neighbors: A tensor with atom indexes, with shape (2, P)
-                    where P is the number unique atom pairs. The first dimension
-                    has atom (a) in index 0 and atom (b) in index 1
-                difference_vectors:
-                    The displacement 3-vector that points from the first neighborlist
-                    atom (a) to the second atom (b), shape (2, P, 3)
-                distances:
-                    The magnitudes of the displacement 3-vectors, shape (2, P)"""
-
-        aev = self._compute_aev(species, neighbors, diff_vectors, distances)
-        return SpeciesAEV(species, aev)
