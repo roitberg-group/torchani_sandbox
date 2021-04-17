@@ -339,7 +339,7 @@ if __name__ == "__main__":
 
     # if run for plots
     if args.plot:
-        maxatoms = np.concatenate([[5000, 6000, 8000, 10000], np.arange(10000, 31000, 5000)])
+        maxatoms = np.concatenate([[5000, 6000, 8000], np.arange(10000, 31000, 5000)])
         file = '6ZDH.pdb'
         run_for_plot(file, maxatoms, nnp_ref, nnp_cuaev)
     else:
