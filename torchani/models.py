@@ -33,7 +33,7 @@ import torch
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
 from .nn import SpeciesConverter, SpeciesEnergies
-from .aev import AEVComputer, AEVComputerInternal
+from .aev import AEVComputer
 from .compat import Final
 
 
@@ -46,9 +46,7 @@ class SpeciesEnergiesQBC(NamedTuple):
 class BuiltinModel(torch.nn.Module):
     r"""Private template for the builtin ANI models """
 
-    def __init__(self, species_converter, aev_computer, neural_networks,
-            energy_shifter, species_to_tensor, consts, sae_dict,
-            periodic_table_index):
+    def __init__(self, species_converter, aev_computer, neural_networks, energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index):
         super().__init__()
         self.species_converter = species_converter
         self.aev_computer = aev_computer
@@ -85,9 +83,59 @@ class BuiltinModel(torch.nn.Module):
         if species_coordinates[0].ge(self.aev_computer.num_species).any():
             raise ValueError(f'Unknown species found in {species_coordinates[0]}')
 
-        species_aevs = self.aev_computer(species_coordinates, cell, pbc)
+        species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         species_energies = self.neural_networks(species_aevs)
         return self.energy_shifter(species_energies)
+
+    @torch.jit.export
+    def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
+                        cell: Optional[Tensor] = None,
+                        pbc: Optional[Tensor] = None, average: bool = True) -> SpeciesEnergies:
+        """Calculates predicted atomic energies of all atoms in a molecule
+
+        ..warning::
+            Since this function does not call ``__call__`` directly,
+            hooks are not registered and profiling is not done correctly by
+            pytorch on it. It is meant as a convenience function for analysis
+             and active learning.
+
+        .. note:: The coordinates, and cell are in Angstrom, and the energies
+            will be in Hartree.
+
+        Args:
+            species_coordinates: minibatch of configurations
+            cell: the cell used in PBC computation, set to None if PBC is not enabled
+            pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
+
+        Returns:
+            species_atomic_energies: species and energies for the given configurations
+                note that the shape of species is (C, A), where C is
+                the number of configurations and A the number of atoms, and
+                the shape of energies is (C, A) for a BuiltinModel.
+
+        If average is True (the default) it returns the average over all models
+        in the ensemble, should there be more than one (shape (C, A)),
+        otherwise it returns one atomic energy per model (shape (M, C, A)).
+        """
+        if self.periodic_table_index:
+            species_coordinates = self.species_converter(species_coordinates)
+
+        species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
+
+        atomic_energies = self.neural_networks._atomic_energies((species, aevs))
+
+        atomic_saes = self.energy_shifter._calc_atomic_saes(species)
+
+        # shift all atomic energies individually
+        if atomic_energies.dim() == 2:
+            atomic_energies = atomic_energies.unsqueeze(0)
+
+        assert atomic_saes.shape == atomic_energies[0].shape
+
+        atomic_energies += atomic_saes
+        if average:
+            return SpeciesEnergies(species, atomic_energies.mean(dim=0))
+        return SpeciesEnergies(species, atomic_energies)
 
     @torch.jit.export
     def _recast_long_buffers(self):
@@ -123,14 +171,6 @@ class BuiltinModel(torch.nn.Module):
         from . import ase
         return ase.Calculator(self.species, self, **kwargs)
 
-    def __len__(self):
-        """Get the number of networks being used by the model
-
-        Returns:
-            length (:class:`int`): Number of networks in the ensemble
-        """
-        return self.neural_networks.size
-
     def __getitem__(self, index):
         """Get a model that uses a single network
 
@@ -150,56 +190,6 @@ class BuiltinModel(torch.nn.Module):
                            self._species_to_tensor, self.consts, self.sae_dict,
                            self.periodic_table_index)
         return ret
-
-    @torch.jit.export
-    def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
-                        cell: Optional[Tensor] = None,
-                        pbc: Optional[Tensor] = None, average: bool = True) -> SpeciesEnergies:
-        """Calculates predicted atomic energies of all atoms in a molecule
-
-        ..warning::
-            Since this function does not call ``__call__`` directly,
-            hooks are not registered and profiling is not done correctly by
-            pytorch on it. It is meant as a convenience function for analysis
-             and active learning.
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            will be in Hartree.
-
-        Args:
-            species_coordinates: minibatch of configurations
-            cell: the cell used in PBC computation, set to None if PBC is not enabled
-            pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
-
-        Returns:
-            species_atomic_energies: species and energies for the given configurations
-                note that the shape of species is (C, A), where C is
-                the number of configurations and A the number of atoms, and
-                the shape of energies is (C, A) for a BuiltinModel.
-
-        If average is True (the default) it returns the average over all models
-        in the ensemble, should there be more than one (shape (C, A)),
-        otherwise it returns one atomic energy per model (shape (M, C, A)).
-        """
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-
-        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
-
-        atomic_energies = self.neural_networks._atomic_energies((species, aevs))
-
-        atomic_saes = self.energy_shifter._calc_atomic_saes(species)
-
-        # shift all atomic energies individually
-        if atomic_energies.dim() == 2:
-            atomic_energies = atomic_energies.unsqueeze(0)
-
-        assert atomic_saes.shape == atomic_energies[0].shape
-
-        atomic_energies += atomic_saes
-        if average:
-            return SpeciesEnergies(species, atomic_energies.mean(dim=0))
-        return SpeciesEnergies(species, atomic_energies)
 
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -232,7 +222,7 @@ class BuiltinModel(torch.nn.Module):
         assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell, pbc)
+        species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         member_outputs = []
         for nnp in self.neural_networks:
             # hint for JIT, this function can only be called if neural_networks
@@ -294,6 +284,14 @@ class BuiltinModel(torch.nn.Module):
         energies = energies.mean(dim=0)
         assert qbc_factors.shape == energies.shape
         return SpeciesEnergiesQBC(species, energies, qbc_factors)
+
+    def __len__(self):
+        """Get the number of networks being used by the model
+
+        Returns:
+            length (:class:`int`): Number of networks in the ensemble
+        """
+        return self.neural_networks.size
 
 
 # unfortunately this is an UGLY workaround to a torchscript bug
@@ -372,8 +370,8 @@ class BuiltinModelExternalInterface(BuiltinModel):
             diff_vectors = coords0 - coords1 + shift_values
             distances = diff_vectors.norm(2, -1)
 
-        species_aevs = self.aev_computer(species, neighbors, diff_vectors, distances)
-        species_energies = self.neural_networks(species_aevs)
+        aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
+        species_energies = self.neural_networks((species, aevs))
         return self.energy_shifter(species_energies)
 
     @torch.jit.export
@@ -403,9 +401,7 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
     const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
     consts = neurochem.Constants(const_file)
 
-    if external_cell_list:
-        aev_computer = AEVComputerInternal(**consts)
-    elif torch_cell_list:
+    if torch_cell_list:
         aev_computer = AEVComputer(**consts, neighborlist='cell_list')
     elif adaptive_torch_cell_list:
         aev_computer = AEVComputer(**consts, neighborlist='verlet_cell_list')
@@ -431,9 +427,7 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
             'neural_networks': neural_networks,
             'periodic_table_index': periodic_table_index}
 
-    if external_cell_list:
-        return BuiltinModelExternalInterface(**kwargs)
-    elif torch_cell_list or adaptive_torch_cell_list:
+    if torch_cell_list or adaptive_torch_cell_list:
         return BuiltinModelCellList(**kwargs)
     else:
         return BuiltinModel(**kwargs)

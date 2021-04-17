@@ -196,7 +196,7 @@ class EnergyShifter(torch.nn.Module):
     def sae(self, species: Tensor) -> Tensor:
         """Compute self energies for molecules.
 
-        Dummy atoms are automatically excluded.
+        Padding atoms will be automatically excluded.
 
         Arguments:
             species (:class:`torch.Tensor`): Long tensor in shape

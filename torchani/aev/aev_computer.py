@@ -127,8 +127,8 @@ class AEVComputer(torch.nn.Module):
         # cuda aev
         if self.use_cuda_extension:
             assert cuaev_is_installed, "AEV cuda extension is not installed"
-            assert angular_terms == 'standard', 'nonstandard aev terms not supported for cuaev'
-            assert radial_terms == 'standard', 'nonstandard aev terms not supported for cuaev'
+            assert angular_terms in ['standard', 'ani1x', 'ani2x'], 'nonstandard aev terms not supported for cuaev'
+            assert radial_terms in ['standard', 'ani1x', 'ani2x'], 'nonstandard aev terms not supported for cuaev'
         if cuaev_is_installed:
             self._register_cuaev_computer()
 
@@ -161,7 +161,7 @@ class AEVComputer(torch.nn.Module):
         # use_cuda_extension is False. **this is only a kind of "dummy"
         # initialization, it is always necessary to reinitialize in forward at
         # least once, since some tensors may be on CPU at this point**
-        empty = torch.empty(1)
+        empty = torch.empty(0)
         self.cuaev_computer = torch.classes.cuaev.CuaevComputer(0.0, 0.0, empty, empty, empty, empty, empty, empty, 1)
 
     @jit_unused_if_no_cuaev()
@@ -216,11 +216,11 @@ class AEVComputer(torch.nn.Module):
 
     @classmethod
     def like_1x(cls, **kwargs):
-        return cls(angular_terms='ani1x', radial_terms='ani1x', num_species=4)
+        return cls(angular_terms='ani1x', radial_terms='ani1x', num_species=4, **kwargs)
 
     @classmethod
     def like_2x(cls, **kwargs):
-        return cls(angular_terms='ani2x', radial_terms='ani2x', num_species=4)
+        return cls(angular_terms='ani2x', radial_terms='ani2x', num_species=7, **kwargs)
 
     @classmethod
     def like_1ccx(cls, **kwargs):
@@ -379,9 +379,10 @@ class AEVComputer(torch.nn.Module):
             sorted_ai1, return_inverse=False, return_counts=True)
 
         # compute central_atom_index
-        # NOTE: this "one" tensor prevents a JIT bug
-        one = torch.tensor(1, dtype=torch.long, device=counts.device)
-        pair_sizes = torch.div(counts * (counts - one), 2, rounding_mode='floor')
+        # JIT has a bug that makes this line fail under some circumstances, on some
+        # torch versions unless the "one" tensor is defined
+        one = torch.tensor(1, device=atom_index12.device, dtype=atom_index12.dtype)
+        pair_sizes = counts * (counts - one) // 2
         pair_indices = torch.repeat_interleave(pair_sizes)
         central_atom_index = uniqued_central_atom_index.index_select(
             0, pair_indices)
@@ -403,29 +404,3 @@ class AEVComputer(torch.nn.Module):
         n = atom_index12.shape[1]
         sign12 = ((local_index12 < n).to(torch.int8) * 2) - 1
         return central_atom_index, local_index12 % n, sign12
-
-
-class AEVComputerInternal(AEVComputer):
-
-    def __init__(self, *args, **kwargs):
-        r"""AEVComputer for internal use of ANI Models"""
-        assert 'neighborlist' not in kwargs.keys(), "InternalAEVComputer doesn't use a neighborlist"
-        kwargs.update({'neighborlist': None})
-        super().__init__(*args, **kwargs)
-
-    def forward(self, species: Tensor,  # type: ignore
-                neighbors: Tensor,  # type: ignore
-                diff_vectors: Tensor, distances: Tensor) -> SpeciesAEV:  # type: ignore
-        r"""Arguments:
-                species: internal indices of the atomic species used by ani models
-                neighbors: A tensor with atom indexes, with shape (2, P)
-                    where P is the number unique atom pairs. The first dimension
-                    has atom (a) in index 0 and atom (b) in index 1
-                difference_vectors:
-                    The displacement 3-vector that points from the first neighborlist
-                    atom (a) to the second atom (b), shape (2, P, 3)
-                distances:
-                    The magnitudes of the displacement 3-vectors, shape (2, P)"""
-
-        aev = self._compute_aev(species, neighbors, diff_vectors, distances)
-        return SpeciesAEV(species, aev)
