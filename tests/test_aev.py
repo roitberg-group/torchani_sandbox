@@ -43,7 +43,7 @@ class TestAEVConstructor(TestCase):
         consts = torchani.neurochem.Constants(const_file_1ccx)
 
         aev_computer = torchani.AEVComputer(**consts)
-        aev_computer_alt = torchani.AEVComputer.like_1ccx()
+        aev_computer_alt = torchani.AEVComputer.like_2x()
 
         self._compare_constants(aev_computer, aev_computer_alt)
 
@@ -171,6 +171,7 @@ class TestAEV(_TestAEVBase):
         self.assertFalse(torch.isnan(aev).any())
 
     def testBoundingCell(self):
+        # AEV should not output NaN even when coordinates are superimposed
         datafile = os.path.join(path, 'test_data/ANI1_subset/10')
         with open(datafile, 'rb') as f:
             coordinates, species, _, _, _, _ = pickle.load(f)
