@@ -1,5 +1,4 @@
 #include <aev.h>
-#include <assert.h>
 #include <torch/extension.h>
 #include <cuaev_cub.cuh>
 
@@ -8,7 +7,7 @@
 #include <c10/cuda/CUDACachingAllocator.h>
 
 #define PI 3.141592653589793
-#define MAX_NUMJ_PER_I_IN_RCR 1000
+#define MAX_NUMJ_PER_I_IN_RCR 1000 // normally this value is less than 100 when Rcr is 5 A
 using torch::Tensor;
 
 // fetch from the following matrix
@@ -89,12 +88,12 @@ __global__ void pairwiseDistance(
           if (Rij <= Rcr) {
             // for atom i
             int pidx_i = atomicAdd(&s_pcounter_i[i], 1);
-            assert(pidx_i < max_numj_per_i_in_Rcr);
+            CUDA_KERNEL_ASSERT(pidx_i < max_numj_per_i_in_Rcr);  // check to avoid illegal memory access
             atomJ_p[mol_idx * pairs_per_mol + i * max_numj_per_i_in_Rcr + pidx_i] = j;
             distJ_p[mol_idx * pairs_per_mol + i * max_numj_per_i_in_Rcr + pidx_i] = Rij;
             // for atom j
             int pidx_j = atomicAdd(&s_pcounter_i[j], 1);
-            assert(pidx_j < max_numj_per_i_in_Rcr);
+            CUDA_KERNEL_ASSERT(pidx_j < max_numj_per_i_in_Rcr);
             atomJ_p[mol_idx * pairs_per_mol + j * max_numj_per_i_in_Rcr + pidx_j] = i;
             distJ_p[mol_idx * pairs_per_mol + j * max_numj_per_i_in_Rcr + pidx_j] = Rij;
           } // if Rij is within Rcr
@@ -165,7 +164,7 @@ __global__ void pairwiseDistanceSingleMolecule(
           DataT Rij = sqrt(Rsq);
           if (Rij <= Rcr) {
             int pidx = atomicAdd(&s_pcounter_i[ii], 1);
-            assert(pidx < max_numj_per_i_in_Rcr);
+            CUDA_KERNEL_ASSERT(pidx < max_numj_per_i_in_Rcr);
             atomJ_p[mol_idx * pairs_per_mol + i * max_numj_per_i_in_Rcr + pidx] = j;
             distJ_p[mol_idx * pairs_per_mol + i * max_numj_per_i_in_Rcr + pidx] = Rij;
           }
