@@ -189,11 +189,12 @@ def run(file, nnp_ref, nnp_cuaev, runbackward, maxatoms=10000):
     species = torch.tensor([mol.get_atomic_numbers()], device=device)
     positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=device)
     spelist = list(torch.unique(species.flatten()).cpu().numpy())
+    realmolsize = species.shape[-1]
     species = species[:, :maxatoms]
     positions = positions[:, :maxatoms, :]
-    speciesPositions = nnp_ref.species_converter((species, positions))
     molsize = species.shape[-1]
-    print(f'File: {file}, Molecule size: {molsize}, Species: {spelist}\n')
+    speciesPositions = nnp_ref.species_converter((species, positions))
+    print(f'File: {file}, Molecule size: {molsize} / {realmolsize}, Species: {spelist}\n')
 
     if args.nsight:
         torch.cuda.nvtx.range_push(f'{molsize}-{file}')
