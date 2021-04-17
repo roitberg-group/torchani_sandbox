@@ -33,7 +33,7 @@ class TestASE(TestCase):
         f = self._testForcesPBC(model, only_get_forces=True)
         self.assertEqual(f, f_cell, rtol=0.1, atol=0.1)
 
-    def testConsistentForcesCellWithDynamic(self):
+    def testConsistentForcesCellListVerlet(self):
         # Run a Langevin thermostat dynamic for 100 steps and after the dynamic
         # check once that the numerical and analytical force agree to a given
         # relative tolerance
@@ -57,7 +57,7 @@ class TestASE(TestCase):
         model = model.to(dtype=torch.double, device=self.device)
         self._testForcesPBC(model)
 
-    def testNumericalForcesCellListDynamic(self):
+    def testNumericalForcesCellListVerlet(self):
         model = torchani.models.ANI1x(model_index=0, torch_cell_list=True)
         model.aev_computer.neighborlist = CellList(model.aev_computer.radial_terms.cutoff, verlet=True)
         model = model.to(dtype=torch.double, device=self.device)
