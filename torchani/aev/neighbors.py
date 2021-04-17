@@ -365,7 +365,7 @@ class CellList(BaseNeighborlist):
         if (not self.constant_volume) or (not self.cell_variables_are_set):
             # Cell parameters need to be set only once for constant V simulations,
             # and every time for variable V, (constant P, NPT) simulations
-            shape_buckets_grid, total_buckets = self._setup_variables(cell.detach())
+            self._setup_variables(cell.detach())
 
         if self.verlet and self.old_values_are_cached and (not self._need_new_list(coordinates.detach())):
             # If a new cell list is not needed just use the old values in the
@@ -480,7 +480,7 @@ class CellList(BaseNeighborlist):
 
         return atom_pairs, shift_indices
 
-    def _setup_variables(self, cell: Tensor) -> Tuple[Tensor, Tensor]:
+    def _setup_variables(self, cell: Tensor):
         current_device = cell.device
         # 1) Update the cell diagonal and translation displacements
         # sizes of each side are given by norm of each basis vector of the unit cell
@@ -555,8 +555,6 @@ class CellList(BaseNeighborlist):
         self.translation_cases[-1, -1, 1:-1] = 16
         self.translation_cases[-1, 1:-1, 1:-1] = 17
         self.cell_variables_are_set = torch.tensor(True, dtype=torch.bool, device=current_device)
-
-        return self.shape_buckets_grid, self.total_buckets
 
     @staticmethod
     def _pad_circular(x: Tensor) -> Tensor:
