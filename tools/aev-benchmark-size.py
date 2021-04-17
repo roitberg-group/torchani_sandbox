@@ -268,7 +268,7 @@ def plot(maxatoms, aev_fd, cuaev_fd, aev_fdbd, cuaev_fdbd):
     # plt.legend(frameon=False, fontsize=15, loc='upper left')
     plt.legend(frameon=True, fontsize=15, loc='best')
     plt.xlim(maxatoms[0] - 500, maxatoms[-1] + 500)
-    plt.ylim(-3, 80)
+    plt.ylim(-3, 85)
     plt.xlabel(r'System Size (atoms)')
     plt.ylabel(r'Time (ms)')
     plt.title(f'Benchmark of cuaev (cuda extension) and pyaev (torch operators) \non {getGpuName()}', fontsize=16)
