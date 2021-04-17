@@ -28,7 +28,7 @@ Available transformations are listed below:
     dataset. It accepts two different kinds of arguments: You can pass a dict
     of self energies, in which case self energies are directly subtracted
     according to the key-value pairs, or a
-    :class:`torchani.utils.EnergyAdder`, in which case the self energies are
+    :class:`torchani.nn.EnergyAdder`, in which case the self energies are
     calculated by linear regression and stored inside the class in the order
     specified by species_order. By default the function orders by atomic
     number if no extra argument is provided, but a specific order may be requested.
@@ -80,7 +80,7 @@ Example:
 
 .. code-block:: python
 
-    energy_shifter = torchani.utils.EnergyAdder(elements=('H', 'C', 'N', 'O'))
+    energy_shifter = torchani.nn.EnergyAdder(elements=('H', 'C', 'N', 'O'))
     training, validation = torchani.data.load(dspath).subtract_self_energies(energy_shifter).species_to_indices().shuffle().split(int(0.8 * size), None)
     training = training.collate(batch_size).cache()
     validation = validation.collate(batch_size).cache()
@@ -97,6 +97,8 @@ with multiprocessing to achieve comparable performance with less memory usage:
 
 from os.path import join, isfile, isdir
 import os
+import torch
+import warnings
 from ._pyanitools import anidataloader
 from .. import utils
 from .. import nn
@@ -170,21 +172,36 @@ class Transformations:
             return IterableAdapter(reenterable_iterable_factory)
 
     @staticmethod
-    def subtract_self_energies(reenterable_iterable, self_energies=None, fit_intercept=False):
+    def subtract_self_energies(reenterable_iterable, self_energies=None, species_order=None, fit_intercept=False):
+
+        if species_order is not None:
+            # this is only necessary for the energy shifter, EnergyAdder stores atomic numbers in order inside of itself
+            assert not isinstance(self_energies, nn.EnergyAdder), 'species_order is incompatible with EnergyAdder'
+            warnings.warn('species_order is deprecated')
+
         intercept = 0.0
         shape_inference = False
-        if isinstance(self_energies, nn.EnergyAdder):
+        if isinstance(self_energies, (nn.EnergyAdder, utils.EnergyShifter)):
             shape_inference = True
             shifter = self_energies
+
+            if isinstance(self_energies, utils.EnergyShifter):
+                # this is only necessary for EnergyShifter, EnergyAdder stores the intercept
+                # as a tensor, and can have dtype double or float
+                warnings.warn("EnergyShifter is deprecated and will be deleted, please don't use it")
+                shifter_dtype = torch.double
+                fit_intercept = shifter.fit_intercept
+
             shifter_dtype = self_energies.self_energies.dtype
             self_energies = {}
             counts = {}
             Y = []
-            count = Counter()
-
             for n, d in enumerate(reenterable_iterable):
                 species = d['species']
-                count.update(species)
+                count = Counter()
+                for s in species:
+                    count[s] += 1
+
                 for s, c in count.items():
                     if s not in counts:
                         counts[s] = [0] * n
@@ -195,7 +212,10 @@ class Transformations:
                 Y.append(d['energies'])
 
             # sort based on the order given to the energy shifter by default
-            elements = [utils.PERIODIC_TABLE[z] for z in shifter.supported_atomic_numbers]
+            if isinstance(shifter, nn.EnergyAdder):
+                elements = [utils.PERIODIC_TABLE[z] for z in shifter.supported_atomic_numbers]
+            elif isinstance(shifter, utils.EnergyShifter):
+                elements = species_order if species_order is not None else utils.PERIODIC_TABLE
             species = sorted(list(counts.keys()), key=lambda x: elements.index(x))
 
             X = [counts[s] for s in species]
@@ -218,7 +238,12 @@ class Transformations:
             for s, e in zip(species, sae_):
                 self_energies[s] = e
 
-            shifter.__init__(elements=tuple(species), self_energies=sae_, intercept=intercept)
+            if isinstance(shifter, utils.EnergyShifter):
+                # this is only necessary for the shifter, energy adder stores
+                # saes and intercept in different tensors, not the same
+                shifter.__init__(self_energies=sae, fit_intercept=fit_intercept)
+            elif isinstance(shifter, nn.EnergyAdder):
+                shifter.__init__(elements=tuple(species), self_energies=sae_, intercept=intercept)
             shifter = shifter.to(shifter_dtype)
         gc.collect()
 
