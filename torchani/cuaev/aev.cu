@@ -88,7 +88,7 @@ __global__ void pairwiseDistance(
           if (Rij <= Rcr) {
             // for atom i
             int pidx_i = atomicAdd(&s_pcounter_i[i], 1);
-            CUDA_KERNEL_ASSERT(pidx_i < max_numj_per_i_in_Rcr);  // check to avoid illegal memory access
+            CUDA_KERNEL_ASSERT(pidx_i < max_numj_per_i_in_Rcr); // check to avoid illegal memory access
             atomJ_p[mol_idx * pairs_per_mol + i * max_numj_per_i_in_Rcr + pidx_i] = j;
             distJ_p[mol_idx * pairs_per_mol + i * max_numj_per_i_in_Rcr + pidx_i] = Rij;
             // for atom j
