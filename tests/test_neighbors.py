@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from torchani.aev import AEVComputer, CellList, FullPairwise
+from torchani.aev import AEVComputer, CellList
 from torchani.geometry import tile_into_cube
 import torchani
 
@@ -195,13 +195,13 @@ class TestCellList(unittest.TestCase):
         self.assertTrue((within[1] == torch.arange(1, 55, 2)).all())
 
     def testCellListInit(self):
-        AEVComputer.like_1x(neighborlist=CellList)
+        AEVComputer.like_1x(neighborlist='cell_list')
 
     def _check_neighborlists_consistency(self, coordinates, species=None):
         if species is None:
             species = torch.tensor([0, 0, 0]).unsqueeze(0)
-        aev_cl = AEVComputer.like_1x(neighborlist=CellList)
-        aev_fp = AEVComputer.like_1x(neighborlist=FullPairwise)
+        aev_cl = AEVComputer.like_1x(neighborlist='cell_list')
+        aev_fp = AEVComputer.like_1x(neighborlist='full_pairwise')
         _, aevs_cl = aev_cl((species, coordinates),
                             cell=self.cell,
                             pbc=self.pbc)
@@ -291,8 +291,8 @@ class TestCellListEnergies(unittest.TestCase):
         self.cell = torch.diag(
             torch.tensor([self.cell_size, self.cell_size,
                           self.cell_size])).float()
-        self.aev_cl = AEVComputer.like_1x(neighborlist=CellList)
-        self.aev_fp = AEVComputer.like_1x(neighborlist=FullPairwise)
+        self.aev_cl = AEVComputer.like_1x(neighborlist='cell_list')
+        self.aev_fp = AEVComputer.like_1x(neighborlist='full_pairwise')
         self.model_cl = torchani.models.ANI1x(model_index=0).to(self.device)
         self.model_fp = torchani.models.ANI1x(model_index=0).to(self.device)
         self.model_cl.aev_computer = self.aev_cl
