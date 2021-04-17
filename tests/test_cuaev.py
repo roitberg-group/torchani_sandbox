@@ -50,11 +50,9 @@ class TestCUAEV(TestCase):
         self.cuaev_computer_1x = torchani.AEVComputer.like_1x(use_cuda_extension=True).to(self.device)
         self.nn = torch.nn.Sequential(torch.nn.Linear(384, 1, False)).to(self.device)
 
+        self.aev_computer_2x = torchani.AEVComputer.like_2x().to(self.device)
+        self.cuaev_computer_2x = torchani.AEVComputer.like_2x(use_cuda_extension=True).to(self.device)
         self.ani2x = self.__class__.ani2x
-        self.aev_computer_2x = self.ani2x.aev_computer.to(self.device)
-        self.cuaev_computer_2x = torchani.AEVComputer(self.aev_computer_2x.Rcr, self.aev_computer_2x.Rca, self.aev_computer_2x.EtaR, self.aev_computer_2x.ShfR,
-                                                      self.aev_computer_2x.EtaA, self.aev_computer_2x.Zeta, self.aev_computer_2x.ShfA, self.aev_computer_2x.ShfZ,
-                                                      self.aev_computer_2x.num_species, use_cuda_extension=True)
 
     def _double_backward_1_test(self, species, coordinates):
 
