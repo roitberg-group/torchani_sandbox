@@ -153,7 +153,7 @@ class BuiltinModel(torch.nn.Module):
                 calculations
         """
         atomic_numbers = self.species_converter.supported_atomic_numbers
-        elements = (PERIODIC_TABLE[z] for z in atomic_numbers)
+        elements = tuple(PERIODIC_TABLE[z] for z in atomic_numbers)
         assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
         return BuiltinModel(self.aev_computer, self.neural_networks[index], self.energy_shifter, elements, self.periodic_table_index)
 

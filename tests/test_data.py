@@ -97,7 +97,7 @@ class TestData(TestCase):
         self.assertTrue(entered)
 
     def testShapeInference(self):
-        shifter = torchani.EnergyShifter(None)
+        shifter = torchani.nn.EnergyAdder(elements=('H', 'C', 'N', 'O'))
         ds = torchani.data.load(dataset_path).subtract_self_energies(shifter)
         len(ds)
         ds = ds.species_to_indices()
@@ -108,7 +108,7 @@ class TestData(TestCase):
         len(ds)
 
     def testSAE(self):
-        shifter = torchani.EnergyShifter(None)
+        shifter = torchani.nn.EnergyAdder(elements=('H', 'C', 'N', 'O')).to(torch.double)
         torchani.data.load(dataset_path).subtract_self_energies(shifter)
         true_self_energies = torch.tensor([-19.354171758844188,
                                            -19.354171758844046,
@@ -117,7 +117,7 @@ class TestData(TestCase):
         self.assertEqual(true_self_energies, shifter.self_energies)
 
     def testDataloader(self):
-        shifter = torchani.EnergyShifter(None)
+        shifter = torchani.nn.EnergyAdder(elements=('H', 'C', 'N', 'O'))
         dataset = list(torchani.data.load(dataset_path).subtract_self_energies(shifter).species_to_indices().shuffle())
         loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, collate_fn=torchani.data.collate_fn, num_workers=64)
         for _ in loader:

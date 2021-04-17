@@ -152,7 +152,7 @@ class SpeciesConverter(torch.nn.Module):
         rev_idx = {s: k for k, s in enumerate(utils.PERIODIC_TABLE)}
         maxidx = max(rev_idx.values())
         self.register_buffer('conv_tensor', torch.full((maxidx + 2,), -1, dtype=torch.long))
-        self.register_buffer('supported_atomic_numbers', torch.tensor([utils.PERIODIC_TABLE[s] for s in species], dtype=torch.long))
+        self.register_buffer('supported_atomic_numbers', torch.tensor([utils.PERIODIC_TABLE.index(s) for s in species], dtype=torch.long))
 
         for i, s in enumerate(species):
             self.conv_tensor[rev_idx[s]] = i
@@ -189,21 +189,20 @@ class EnergyAdder(torch.nn.Module):
 
     def __init__(self, elements, intercept: float = 0.0, self_energies=None, level_of_theory: str = 'RwB97X'):
         super().__init__()
-        assert isinstance(elements, tuple), 'elements must be a tuple of atomic symbols'
-        assert isinstance(elements[0], str), 'elements must be a tuple of atomic symbols'
+        assert isinstance(elements[0], str), f'elements must be a tuple of atomic symbols but got {elements}, {type(elements)} of type {type(elements[0])}'
 
         if self_energies is not None:
             self_energies = torch.tensor(self_energies, dtype=torch.float)
         else:
             # if self_energies are not passed, we use the QM atomic energies for these elements
             self_energies = torch.tensor([utils.GSAEs[level_of_theory][e] for e in elements], dtype=torch.float)
-            assert intercept is None, "No physical meaning to an intercept if you are using GSAEs"
+            assert intercept == 0.0, "No physical meaning to an intercept if you are using GSAEs"
 
         self.register_buffer('intercept', torch.tensor(intercept, dtype=torch.float))
         self.register_buffer('self_energies', self_energies)
-        self.register_buffer('supported_atomic_numbers', torch.tensor([utils.PERIODIC_TABLE[s] for s in elements], dtype=torch.long))
+        self.register_buffer('supported_atomic_numbers', torch.tensor([utils.PERIODIC_TABLE.index(s) for s in elements], dtype=torch.long))
 
-    def forward(self, species_energies: Tuple[Tensor, Tensor]) -> SpeciesEnergies:
+    def forward(self, species_energies: Tuple[Tensor, Tensor], cell: Optional[Tensor] = None, pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         """(species, molecular energies) -> (species, molecular energies + sae)"""
         species, energies = species_energies
         energies += self.sae(species)

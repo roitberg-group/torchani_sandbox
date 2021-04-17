@@ -99,6 +99,7 @@ from os.path import join, isfile, isdir
 import os
 from ._pyanitools import anidataloader
 from .. import utils
+from .. import nn
 import importlib
 import functools
 import math
@@ -172,9 +173,10 @@ class Transformations:
     def subtract_self_energies(reenterable_iterable, self_energies=None, fit_intercept=False):
         intercept = 0.0
         shape_inference = False
-        if isinstance(self_energies, utils.EnergyAdder):
+        if isinstance(self_energies, nn.EnergyAdder):
             shape_inference = True
             shifter = self_energies
+            shifter_dtype = self_energies.self_energies.dtype
             self_energies = {}
             counts = {}
             Y = []
@@ -217,6 +219,7 @@ class Transformations:
                 self_energies[s] = e
 
             shifter.__init__(elements=tuple(species), self_energies=sae_, intercept=intercept)
+            shifter = shifter.to(shifter_dtype)
         gc.collect()
 
         def reenterable_iterable_factory():
