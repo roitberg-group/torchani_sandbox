@@ -336,6 +336,29 @@ class TestCUAEV(TestCase):
             _, cu_aev = self.cuaev_computer_2x((species, coordinates))
             self.assertEqual(cu_aev, aev)
 
+    def testPDBBackward(self):
+        files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
+        for file in files:
+            filepath = os.path.join(path, f'../dataset/pdb/{file}')
+            mol = read(filepath)
+            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
+            positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
+            speciesPositions = self.ani2x.species_converter((species, positions))
+            species, coordinates = speciesPositions
+            coordinates.requires_grad_(True)
+
+            _, aev = self.aev_computer_2x((species, coordinates))
+            aev.backward(torch.ones_like(aev))
+            aev_grad = coordinates.grad
+
+            coordinates = coordinates.clone().detach()
+            coordinates.requires_grad_()
+            _, cu_aev = self.cuaev_computer_2x((species, coordinates))
+            cu_aev.backward(torch.ones_like(cu_aev))
+            cuaev_grad = coordinates.grad
+            self.assertEqual(cu_aev, aev, atol=5e-5, rtol=5e-5)
+            self.assertEqual(cuaev_grad, aev_grad, atol=5e-4, rtol=5e-4)
+
 
 if __name__ == '__main__':
     unittest.main()
