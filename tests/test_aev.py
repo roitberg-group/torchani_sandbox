@@ -50,7 +50,7 @@ class TestAEVConstructor(TestCase):
     def _compare_constants(self, aev_computer, aev_computer_alt):
         alt_state_dict = aev_computer_alt.state_dict()
         for k, v in aev_computer.state_dict().items():
-            self.assertEqual(alt_state_dict[k], v)
+            self.assertEqual(alt_state_dict[k], v, rtol=1e-7, atol=1e-7)
         self.assertEqual(aev_computer.num_species, aev_computer_alt.num_species)
 
 
