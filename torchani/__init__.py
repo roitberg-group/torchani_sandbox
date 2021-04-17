@@ -46,7 +46,7 @@ except DistributionNotFound:
     pass
 
 __all__ = ['AEVComputer', 'AEVComputerInternal', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
-           'utils', 'neurochem', 'models', 'units', 'testing']
+           'utils', 'neurochem', 'models', 'units']
 
 try:
     from . import ase  # noqa: F401
