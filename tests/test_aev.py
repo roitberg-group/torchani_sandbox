@@ -43,7 +43,7 @@ class TestAEVConstructor(TestCase):
         consts = torchani.neurochem.Constants(const_file_1ccx)
 
         aev_computer = torchani.AEVComputer(**consts)
-        aev_computer_alt = torchani.AEVComputer.like_2x()
+        aev_computer_alt = torchani.AEVComputer.like_1ccx()
 
         self._compare_constants(aev_computer, aev_computer_alt)
 
