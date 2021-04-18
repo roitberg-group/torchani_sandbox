@@ -20,30 +20,38 @@ N = 97
 class TestAEVConstructor(TestCase):
     # Test that checks that the friendly constructor
     # reproduces the values from ANI1x with the correct parameters
-    def testCoverLinearly(self):
-        consts = torchani.neurochem.Constants(const_file)
-        aev_computer = torchani.AEVComputer(**consts)
-        ani1x_values = {'radial_cutoff': 5.2,
-                        'angular_cutoff': 3.5,
-                        'radial_eta': 16.0,
-                        'angular_eta': 8.0,
-                        'radial_dist_divisions': 16,
-                        'angular_dist_divisions': 4,
-                        'zeta': 32.0,
-                        'angle_sections': 8,
-                        'num_species': 4}
-        aev_computer_alt = torchani.AEVComputer.cover_linearly(**ani1x_values)
-        constants = self._get_aev_constants(aev_computer)
-        constants_alt = self._get_aev_constants(aev_computer_alt)
-        for c, ca in zip(constants, constants_alt):
-            self.assertEqual(c, ca)
 
-    @staticmethod
-    def _get_aev_constants(aev_computer):
-        return aev_computer.radial_terms.cutoff, aev_computer.radial_terms.EtaR,\
-            aev_computer.radial_terms.ShfR, aev_computer.angular_terms.cutoff,\
-            aev_computer.angular_terms.ShfZ, aev_computer.angular_terms.EtaA,\
-            aev_computer.angular_terms.Zeta, aev_computer.angular_terms.ShfA, aev_computer.num_species
+    def testANI1x(self):
+        consts = torchani.neurochem.Constants(const_file)
+
+        aev_computer = torchani.AEVComputer(**consts)
+        aev_computer_alt = torchani.AEVComputer.like_1x()
+
+        self._compare_constants(aev_computer, aev_computer_alt)
+
+    def testANI2x(self):
+        const_file_2x = os.path.join(path, '../torchani/resources/ani-2x_8x/rHCNOSFCl-5.1R_16-3.5A_a8-4.params')
+        consts = torchani.neurochem.Constants(const_file_2x)
+
+        aev_computer = torchani.AEVComputer(**consts)
+        aev_computer_alt = torchani.AEVComputer.like_2x()
+
+        self._compare_constants(aev_computer, aev_computer_alt)
+
+    def testANI1ccx(self):
+        const_file_1ccx = os.path.join(path, '../torchani/resources/ani-1ccx_8x/rHCNO-5.2R_16-3.5A_a4-8.params')
+        consts = torchani.neurochem.Constants(const_file_1ccx)
+
+        aev_computer = torchani.AEVComputer(**consts)
+        aev_computer_alt = torchani.AEVComputer.like_1ccx()
+
+        self._compare_constants(aev_computer, aev_computer_alt)
+
+    def _compare_constants(self, aev_computer, aev_computer_alt):
+        alt_state_dict = aev_computer_alt.state_dict()
+        for k, v in aev_computer.state_dict().items():
+            self.assertEqual(alt_state_dict[k], v, rtol=1e-7, atol=1e-7)
+        self.assertEqual(aev_computer.num_species, aev_computer_alt.num_species)
 
 
 class TestIsolated(TestCase):
@@ -112,6 +120,35 @@ class TestIsolated(TestCase):
 
 
 class TestAEV(_TestAEVBase):
+
+    def testGradsBatches(self):
+        # test if gradients are the same for single molecules and for batches
+        # with dummy atoms
+        N = 25
+        assert N % 5 == 0, "N must be a multiple of 5"
+        coordinates_list = []
+        species_list = []
+        grads_expect = []
+        for j in range(N):
+            c = torch.randn((1, 3, 3), dtype=torch.float, requires_grad=True)
+            s = torch.randint(low=0, high=4, size=(1, 3), dtype=torch.long)
+            if j % 5 == 0:
+                s[0, 0] = -1
+            _, aev = self.aev_computer((s, c))
+            aev.backward(torch.ones_like(aev))
+
+            grads_expect.append(c.grad)
+            coordinates_list.append(c)
+            species_list.append(s)
+
+        coordinates_cat = torch.cat(coordinates_list, dim=0).detach()
+        coordinates_cat.requires_grad_(True)
+        species_cat = torch.cat(species_list, dim=0)
+        grads_expect = torch.cat(grads_expect, dim=0)
+
+        _, aev = self.aev_computer((species_cat, coordinates_cat))
+        aev.backward(torch.ones_like(aev))
+        self.assertEqual(grads_expect, coordinates_cat.grad)
 
     def testIsomers(self):
         for i in range(N):
@@ -220,7 +257,7 @@ class TestPBCSeeEachOther(TestCase):
 
         for xyz2 in xyz2s:
             coordinates = torch.stack([xyz1, xyz2]).to(torch.double).unsqueeze(0)
-            atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -237,7 +274,7 @@ class TestPBCSeeEachOther(TestCase):
             xyz2[i] = 9.9
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -257,7 +294,7 @@ class TestPBCSeeEachOther(TestCase):
                 xyz2[j] = new_j
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -272,7 +309,7 @@ class TestPBCSeeEachOther(TestCase):
         xyz2 = torch.tensor([10.0, 0.1, 0.1], dtype=torch.double)
 
         coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-        atom_index12, _ = self.neighborlist(species, coordinates, cell, pbc)
+        atom_index12, _, _, _ = self.neighborlist(species, coordinates, cell, pbc)
         atom_index1, atom_index2 = atom_index12.unbind(0)
         self.assertEqual(atom_index1.tolist(), [0])
         self.assertEqual(atom_index2.tolist(), [1])

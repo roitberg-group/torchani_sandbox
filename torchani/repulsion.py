@@ -6,22 +6,21 @@ from torch import Tensor
 from . import units
 from .utils import PERIODIC_TABLE
 from .nn import SpeciesEnergies
-from .aev import CutoffSmooth
 from .standalone import StandalonePairwiseWrapper
 from .parse_repulsion_constants import alpha_constants, y_eff_constants
+from .aev.cutoffs import _parse_cutoff_fn
+from .compat import Final
 
 
 class RepulsionCalculator(torch.nn.Module):
     r"""Calculates the QMDFF repulsion energy terms for a given molecule as seen
     in work by Grimme: https://pubs.acs.org/doi/10.1021/acs.jctc.8b01176"""
 
-    def __init__(self, cutoff=5.2, alpha=None, y_eff=None, k_rep_ab=None,
-            elements=('H', 'C', 'N', 'O'), cutoff_function=CutoffSmooth):
+    cutoff: Final[float]
 
+    def __init__(self, cutoff=5.2, alpha=None, y_eff=None, k_rep_ab=None,
+            elements=('H', 'C', 'N', 'O'), cutoff_fn='smooth'):
         super().__init__()
-        # all operations in this module are performed using AU so the cutoff is
-        # converted to bohr
-        cutoff = units.angstrom2bohr(cutoff)
         supported_znumbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
 
         if alpha is None:
@@ -50,10 +49,11 @@ class RepulsionCalculator(torch.nn.Module):
         y_ab = torch.outer(y_eff, y_eff)
         sqrt_alpha_ab = torch.sqrt(torch.outer(alpha, alpha))
 
+        self.cutoff_function = _parse_cutoff_fn(cutoff_fn)
+        self.cutoff = cutoff
         self.register_buffer('y_ab', y_ab)
         self.register_buffer('sqrt_alpha_ab', sqrt_alpha_ab)
         self.register_buffer('k_rep_ab', k_rep_ab)
-        self.cutoff_function = cutoff_function(cutoff) if cutoff_function is not None else None
 
     def _calculate_repulsion(self, species_energies: Tensor, atom_index12:
             Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
@@ -85,7 +85,8 @@ class RepulsionCalculator(torch.nn.Module):
         repulsion_energy = prefactor * torch.exp(-sqrt_alpha_ab * (distances ** k_rep_ab))
 
         if self.cutoff_function is not None:
-            repulsion_energy *= self.cutoff_function(distances)
+            cutoff = units.angstrom2bohr(self.cutoff)
+            repulsion_energy *= self.cutoff_function(distances, cutoff)
 
         molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
         energies.index_add_(0, molecule_indices, repulsion_energy)
@@ -99,7 +100,7 @@ class RepulsionCalculator(torch.nn.Module):
 class StandaloneRepulsionCalculator(StandalonePairwiseWrapper, RepulsionCalculator):
     def _perform_module_actions(self, species_coordinates: Tuple[Tensor, Tensor], atom_index12: Tensor,
             distances: Tensor) -> Tuple[Tensor, Tensor]:
-        species, coordinates = species_coordinates
-        energies = torch.zeros(species.shape[0], dtype=coordinates.dtype, device=coordinates.device)
+        species, _ = species_coordinates
+        energies = torch.zeros(species.shape[0], dtype=distances.dtype, device=distances.device)
         species_energies = (species, energies)
         return self._calculate_repulsion(species_energies, atom_index12, distances)
