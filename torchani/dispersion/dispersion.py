@@ -1,5 +1,6 @@
-from typing import Tuple
+from typing import Tuple, Union
 import warnings
+import math
 
 import torch
 from torch import Tensor
@@ -8,6 +9,9 @@ from torchani.standalone import StandalonePairwiseWrapper
 from .. import units
 from ..nn import SpeciesEnergies
 from . import constants
+from ..aev.cutoffs import _parse_cutoff_fn
+from ..compat import Final
+from ..utils import PERIODIC_TABLE
 
 
 def _init_df_constants(df_constants, functional):
@@ -26,6 +30,11 @@ def _init_df_constants(df_constants, functional):
 class DampFunction(torch.nn.Module):
     # D3M modifies parameters AND damp function for zero-damp and only
     # parameters for BJ damp cutoff radii are used for damp functions
+    a1: Union[Tensor, None]
+    a2: Union[Tensor, None]
+    sr6: Union[Tensor, None]
+    beta: Union[Tensor, None]
+
     def __init__(self, functional=None, df_constants=None, modified=False):
         super().__init__()
         modified = torch.tensor(modified, dtype=torch.bool)
@@ -42,8 +51,13 @@ class DampFunction(torch.nn.Module):
 
 
 class RationalDamp(DampFunction):
+
+    cutoff_radii: Tensor
+
     def __init__(self, *args, **kwargs):
+        elements = kwargs.pop('elements', ('H', 'C', 'N', 'O'))
         super().__init__(*args, **kwargs)
+        supported_znumbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
         assert self.a1 is not None
         assert self.a2 is not None
         sqrt_q = constants.get_sqrt_empirical_charge()
@@ -52,7 +66,7 @@ class RationalDamp(DampFunction):
         # matrix of T x T where T are the possible atom types and that these
         # cutoff radii are in AU (Bohr)
         cutoff_radii = torch.sqrt(3 * torch.outer(sqrt_q, sqrt_q))
-        self.register_buffer('cutoff_radii', cutoff_radii)
+        self.register_buffer('cutoff_radii', cutoff_radii[:, supported_znumbers][supported_znumbers, :])
         assert cutoff_radii.shape[0] == constants.SUPPORTED_D3_ELEMENTS + 1
         assert cutoff_radii.shape[1] == constants.SUPPORTED_D3_ELEMENTS + 1
         assert cutoff_radii.ndim == 2
@@ -68,8 +82,14 @@ class RationalDamp(DampFunction):
 
 class ZeroDamp(DampFunction):
     # TODO: zero damp is untested
+
+    cutoff_radii: Tensor
+
     def __init__(self, *args, **kwargs):
+        elements = kwargs.pop('elements', ('H', 'C', 'N', 'O'))
         super().__init__(*args, **kwargs)
+        supported_znumbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
+
         if self.beta is None:
             assert not kwargs['modified']
         assert self.sr6 is not None
@@ -79,7 +99,7 @@ class ZeroDamp(DampFunction):
         # and these cutoff radii are in Angstrom, so we convert to Bohr before
         # using
         cutoff_radii = units.angstrom2bohr(constants.get_cutoff_radii())
-        self.register_buffer('cutoff_radii', cutoff_radii)
+        self.register_buffer('cutoff_radii', cutoff_radii[:, supported_znumbers][supported_znumbers, :])
         assert cutoff_radii.shape[0] == constants.SUPPORTED_D3_ELEMENTS + 1
         assert cutoff_radii.shape[1] == constants.SUPPORTED_D3_ELEMENTS + 1
         assert cutoff_radii.ndim == 2
@@ -107,13 +127,23 @@ class ZeroDamp(DampFunction):
 
 class DispersionD3(torch.nn.Module):
     r"""Calculates the DFT-D3 dispersion corrections"""
+
+    cutoff: Final[float]
+    s6: Tensor
+    s8: Tensor
+    covalent_radii: Tensor
+    precalc_coordnums_a: Tensor
+    precalc_coordnums_b: Tensor
+    sqrt_charge_ab: Tensor
+    precalc_order6_coeffs: Tensor
+
     def __init__(self,
                  df_constants=None,
                  functional=None,
                  damp='rational',
-                 modified_damp=False, use_three_body=False, cutoff_function=None):
-
+                 modified_damp=False, use_three_body=False, cutoff_fn=None, cutoff=math.inf, elements=('H', 'C', 'N', 'O')):
         super().__init__()
+        supported_znumbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
         # rational damp is becke-johnson
         assert not use_three_body, "Not yet implemented"
         assert damp in ['rational', 'zero'], 'Unsupported damp'
@@ -122,29 +152,30 @@ class DispersionD3(torch.nn.Module):
         if damp == 'rational':
             self.register_buffer('s6', torch.tensor(df_constants['s6_bj']))
             self.register_buffer('s8', torch.tensor(df_constants['s8_bj']))
-            self.damp_function = RationalDamp(df_constants=df_constants, modified=modified_damp)
+            self.damp_function = RationalDamp(df_constants=df_constants, modified=modified_damp, elements=elements)
         else:
             self.register_buffer('s6', torch.tensor(df_constants['s6_zero']))
             self.register_buffer('s8', torch.tensor(df_constants['s8_zero']))
-            self.damp_function = ZeroDamp(df_constants=df_constants, modified=modified_damp)
+            self.damp_function = ZeroDamp(df_constants=df_constants, modified=modified_damp, elements=elements)
 
         if self.s6 != 1.0:
             warnings.warn("The s6 parameter is not set to 1 in\
             D3, Are you sure this is what you want?  usually s6 should be set to\
             1.0 except for B2PLYP, where it is set to 0.5")
 
-        self.cutoff_function = cutoff_function
+        self.cutoff = cutoff
+        self.cutoff_function = _parse_cutoff_fn(cutoff_fn)
         order6_constants, coordnums_a, coordnums_b = constants.get_c6_constants()
-        self.register_buffer('precalc_order6_coeffs', order6_constants)
-        self.register_buffer('precalc_coordnums_a', coordnums_a)
-        self.register_buffer('precalc_coordnums_b', coordnums_b)
+        self.register_buffer('precalc_order6_coeffs', order6_constants[supported_znumbers, :][:, supported_znumbers])
+        self.register_buffer('precalc_coordnums_a', coordnums_a[supported_znumbers, :][:, supported_znumbers])
+        self.register_buffer('precalc_coordnums_b', coordnums_b[supported_znumbers, :][:, supported_znumbers])
         # covalent radii are in angstrom so we first convert to bohr
         covalent_radii = units.angstrom2bohr(constants.get_covalent_radii())
-        self.register_buffer('covalent_radii', covalent_radii)
+        self.register_buffer('covalent_radii', covalent_radii[supported_znumbers])
         # the product of the sqrt of the empirical q's is stored directly
         sqrt_empirical_charge = constants.get_sqrt_empirical_charge()
         charge_ab = torch.outer(sqrt_empirical_charge, sqrt_empirical_charge)
-        self.register_buffer('sqrt_charge_ab', charge_ab)
+        self.register_buffer('sqrt_charge_ab', charge_ab[supported_znumbers, :][:, supported_znumbers])
 
     def _get_coordnums(self, num_molecules: int, num_atoms: int, species12: Tensor,
                        atom_index12: Tensor, distances: Tensor) -> Tensor:
@@ -246,8 +277,8 @@ class DispersionD3(torch.nn.Module):
 
         # factor of 1/2 is not needed for two body since we only add the
         # interacting pairs once
-        if self.cutoff_function is not None:
-            two_body_dispersion *= self.cutoff_function(distances)
+        cutoff = units.angstrom2bohr(self.cutoff)
+        two_body_dispersion *= self.cutoff_function(distances, cutoff)
 
         molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
         energies.index_add_(0, molecule_indices, two_body_dispersion)
@@ -266,7 +297,6 @@ class StandaloneDispersionD3(StandalonePairwiseWrapper, DispersionD3):
     """
     def _perform_module_actions(self, species_coordinates: Tuple[Tensor, Tensor], atom_index12: Tensor,
             distances: Tensor) -> Tuple[Tensor, Tensor]:
-        species, coordinates = species_coordinates
+        species, _ = species_coordinates
         energies = torch.zeros(species.shape[0], dtype=distances.dtype, device=distances.device)
-        species_energies = (species, energies)
-        return self._calculate_dispersion_correction(species_energies, atom_index12, distances)
+        return self._calculate_dispersion_correction((species, energies), atom_index12, distances)

@@ -3,7 +3,6 @@ import torch
 import torchani
 import unittest
 import pickle
-import copy
 from torchani.testing import TestCase, make_tensor
 
 path = os.path.dirname(os.path.realpath(__file__))
@@ -42,17 +41,8 @@ class TestCUAEV(TestCase):
     def setUp(self):
         self.tolerance = 5e-5
         self.device = 'cuda'
-        Rcr = 5.2000e+00
-        Rca = 3.5000e+00
-        EtaR = torch.tensor([1.6000000e+01], device=self.device)
-        ShfR = torch.tensor([9.0000000e-01, 1.1687500e+00, 1.4375000e+00, 1.7062500e+00, 1.9750000e+00, 2.2437500e+00, 2.5125000e+00, 2.7812500e+00, 3.0500000e+00, 3.3187500e+00, 3.5875000e+00, 3.8562500e+00, 4.1250000e+00, 4.3937500e+00, 4.6625000e+00, 4.9312500e+00], device=self.device)
-        Zeta = torch.tensor([3.2000000e+01], device=self.device)
-        ShfZ = torch.tensor([1.9634954e-01, 5.8904862e-01, 9.8174770e-01, 1.3744468e+00, 1.7671459e+00, 2.1598449e+00, 2.5525440e+00, 2.9452431e+00], device=self.device)
-        EtaA = torch.tensor([8.0000000e+00], device=self.device)
-        ShfA = torch.tensor([9.0000000e-01, 1.5500000e+00, 2.2000000e+00, 2.8500000e+00], device=self.device)
-        num_species = 4
-        self.aev_computer = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species).to(self.device)
-        self.cuaev_computer = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, use_cuda_extension=True).to(self.device)
+        self.aev_computer = torchani.AEVComputer.like_1x().to(self.device)
+        self.cuaev_computer = torchani.AEVComputer.like_1x(use_cuda_extension=True).to(self.device)
         self.nn = torch.nn.Sequential(torch.nn.Linear(384, 1, False)).to(self.device)
         self.radial_length = self.aev_computer.radial_length
 
@@ -68,8 +58,7 @@ class TestCUAEV(TestCase):
             loss = torch.abs(force_true - force).sum(dim=(1, 2)).mean()
             loss.backward()
             param = next(self.nn.parameters())
-            param_grad = copy.deepcopy(param.grad)
-            return aev, force, param_grad
+            return aev, force, param.grad
 
         aev, force_ref, param_grad_ref = double_backward(self.aev_computer, species, coordinates)
         cu_aev, force_cuaev, param_grad = double_backward(self.cuaev_computer, species, coordinates)
@@ -148,15 +137,15 @@ class TestCUAEV(TestCase):
 
         _, aev = self.aev_computer((species, coordinates))
         aev.backward(torch.ones_like(aev))
-        force_ref = coordinates.grad
+        aev_grad = coordinates.grad
 
         coordinates = coordinates.clone().detach()
         coordinates.requires_grad_()
         _, cu_aev = self.cuaev_computer((species, coordinates))
         cu_aev.backward(torch.ones_like(cu_aev))
-        force_cuaev = coordinates.grad
+        cuaev_grad = coordinates.grad
         self.assertEqual(cu_aev, aev, f'cu_aev: {cu_aev}\n aev: {aev}')
-        self.assertEqual(force_cuaev, force_ref, f'\nforce_cuaev: {force_cuaev}\n aev_grad: {force_ref}')
+        self.assertEqual(cuaev_grad, aev_grad, f'\ncuaev_grad: {cuaev_grad}\n aev_grad: {aev_grad}')
 
     def testSimpleDoubleBackward_1(self):
         """

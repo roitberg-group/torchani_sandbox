@@ -114,7 +114,8 @@ def strip_redundant_padding(atomic_properties):
 
 def map2central(cell: Tensor, coordinates: Tensor, pbc: Tensor) -> Tensor:
     warnings.warn("map2central is deprecated, use map_to_central instead")
-    return image_to_central(coordinates, cell, pbc)
+    return map_to_central(coordinates, cell, pbc)
+
 
 def map_to_central(coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
     """Map atoms outside the unit cell into the cell using PBC.
@@ -163,17 +164,36 @@ class EnergyShifter(torch.nn.Module):
         fit_intercept (bool): Whether to calculate the intercept during the LSTSQ
             fit. The intercept will also be taken into account to shift energies.
     """
+    self_energies: Tensor
 
     def __init__(self, self_energies, fit_intercept=False):
         super().__init__()
-
         self.fit_intercept = fit_intercept
         if self_energies is not None:
             self_energies = torch.tensor(self_energies, dtype=torch.double)
-
         self.register_buffer('self_energies', self_energies)
 
-    def sae(self, species):
+    def forward(self, species_energies: Tuple[Tensor, Tensor],
+                cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        """(species, molecular energies)->(species, molecular energies + sae)
+        """
+        species, energies = species_energies
+        sae = self._calc_atomic_saes(species).sum(dim=1)
+
+        if self.fit_intercept:
+            sae += self.self_energies[-1]
+        return SpeciesEnergies(species, energies + sae)
+
+    @torch.jit.export
+    def _calc_atomic_saes(self, species: Tensor) -> Tensor:
+        # Compute atomic self energies for a set of species.
+        self_atomic_energies = self.self_energies[species]
+        self_atomic_energies = self_atomic_energies.masked_fill(species == -1, 0.0)
+        return self_atomic_energies
+
+    @torch.jit.export
+    def sae(self, species: Tensor) -> Tensor:
         """Compute self energies for molecules.
 
         Padding atoms will be automatically excluded.
@@ -186,22 +206,14 @@ class EnergyShifter(torch.nn.Module):
             :class:`torch.Tensor`: 1D vector in shape ``(conformations,)``
             for molecular self energies.
         """
-        intercept = 0.0
-        if self.fit_intercept:
-            intercept = self.self_energies[-1]
+        self_energies = self._calc_atomic_saes(species).sum(dim=1)
 
         self_energies = self.self_energies[species]
         self_energies[species == torch.tensor(-1, device=species.device)] = 0.0
-        return self_energies.sum(dim=1) + intercept
-
-    def forward(self, species_energies: Tuple[Tensor, Tensor],
-                cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        """(species, molecular energies)->(species, molecular energies + sae)
-        """
-        species, energies = species_energies
-        sae = self.sae(species)
-        return SpeciesEnergies(species, energies + sae)
+        sae = self_energies.sum(dim=1)
+        if self.fit_intercept:
+            sae += self.self_energies[-1]
+        return sae
 
 
 class ChemicalSymbolsToInts:

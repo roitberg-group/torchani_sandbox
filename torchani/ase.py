@@ -68,7 +68,8 @@ class Calculator(ase.calculators.calculator.Calculator):
                                  .requires_grad_('forces' in properties)
 
         if pbc_enabled and self.overwrite and atoms is not None:
-            warnings.warn("If overwrite is set for pbc calculations the cell list will be rebuilt every step")
+            warnings.warn("""If overwrite is set for pbc calculations the cell list will be rebuilt every step,
+                    also take into account you are loosing information this way""")
             coordinates = utils.map_to_central(coordinates, cell, pbc)
             atoms.set_positions(coordinates.detach().cpu().reshape(-1, 3).numpy())
 

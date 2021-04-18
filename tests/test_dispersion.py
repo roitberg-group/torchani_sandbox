@@ -1,37 +1,24 @@
 import torch
-import torchani
 import unittest
 from torchani.testing import TestCase
 from torchani.dispersion import DispersionD3, StandaloneDispersionD3, constants
-from torchani.aev import AEVComputerForRepulsion
-from torchani import units
+from torchani import units, AEVComputer
 
 
 class TestDispersion(TestCase):
     def setUp(self):
         self.device = torch.device(
             'cuda' if torch.cuda.is_available() else 'cpu')
-        ani1x_values = {
-            'radial_cutoff': 5.2,
-            'angular_cutoff': 3.5,
-            'radial_eta': 16.0,
-            'angular_eta': 8.0,
-            'radial_dist_divisions': 16,
-            'angular_dist_divisions': 4,
-            'zeta': 32.0,
-            'angle_sections': 8,
-            'num_species': 4
-        }
-        self.aev_computer = AEVComputerForRepulsion.cover_linearly(
-            **ani1x_values).double().to(self.device)
-        self.converter = torchani.SpeciesConverter(['H', 'C', 'N', 'O'
-                                                    ]).double().to(self.device)
+        self.aev_computer = AEVComputer.like_1x().double().to(self.device)
         # fully symmetric methane
         self.coordinates = torch.tensor(
             [[0, 0, 0], [0, 1, 1], [1, 0, 1], [1, 1, 0], [0.5, 0.5, 0.5]],
             dtype=torch.double,
             device=self.device).unsqueeze(0)
-        self.species = torch.tensor([[1, 1, 1, 1, 6]],
+        self.species = torch.tensor([[0, 0, 0, 0, 1]],
+                                    dtype=torch.long,
+                                    device=self.device)
+        self.atomic_numbers = torch.tensor([[1, 1, 1, 1, 6]],
                                     dtype=torch.long,
                                     device=self.device)
         # for the purposes of testing we use the exact same conversion factors
@@ -47,16 +34,11 @@ class TestDispersion(TestCase):
         units.HARTREE_TO_KCALMOL = self.old_hartree_to_kcalmol
 
     def testConstructor(self):
-        species_idx = self.converter((self.species, self.coordinates)).species
-        species, aevs, atom_index12, distances =\
-                self.aev_computer((species_idx, self.coordinates))
         disp = DispersionD3()
         self.assertTrue(disp.s6 == torch.tensor(1.))
 
     def testMethaneCoordinationNums(self):
-        species_idx = self.converter((self.species, self.coordinates)).species
-        _, _, atom_index12, distances =\
-                self.aev_computer((species_idx, self.coordinates))
+        atom_index12, _, _, distances = self.aev_computer.neighborlist(self.species, self.coordinates)
         disp = DispersionD3().to(self.device)
         distances = units.angstrom2bohr(distances)
         coordnums = disp._get_coordnums(self.coordinates.shape[0], self.coordinates.shape[1],
@@ -71,15 +53,13 @@ class TestDispersion(TestCase):
                      3.999873048]).double()).all())
 
     def testPrecomputedC6(self):
-        species_idx = self.converter((self.species, self.coordinates)).species
-        _, _, atom_index12, distances =\
-                self.aev_computer((species_idx, self.coordinates))
+        atom_index12, _, _, distances = self.aev_computer.neighborlist(self.species, self.coordinates)
         disp = DispersionD3().to(self.device)
         diags = {
-            'H': torch.diag(disp.precalc_order6_coeffs[1, 1]),
-            'C': torch.diag(disp.precalc_order6_coeffs[6, 6]),
-            'O': torch.diag(disp.precalc_order6_coeffs[7, 7]),
-            'N': torch.diag(disp.precalc_order6_coeffs[8, 8])
+            'H': torch.diag(disp.precalc_order6_coeffs[0, 0]),
+            'C': torch.diag(disp.precalc_order6_coeffs[1, 1]),
+            'O': torch.diag(disp.precalc_order6_coeffs[2, 2]),
+            'N': torch.diag(disp.precalc_order6_coeffs[3, 3])
         }
         # values from DFTD3 Grimme et. al. code
         expect_diags = {
@@ -120,9 +100,7 @@ class TestDispersion(TestCase):
             torch.isclose(expect_c6_carbon, c6_constants[6, 6]).all())
 
     def testMethaneC6(self):
-        species_idx = self.converter((self.species, self.coordinates)).species
-        _, _, atom_index12, distances =\
-                self.aev_computer((species_idx, self.coordinates))
+        atom_index12, _, _, distances = self.aev_computer.neighborlist(self.species, self.coordinates)
         disp = DispersionD3().to(self.device)
         distances = units.angstrom2bohr(distances)
         species12 = self.species.flatten()[atom_index12]
@@ -139,9 +117,7 @@ class TestDispersion(TestCase):
             torch.isclose(order6_coeffs.cpu(), expect_order6).all())
 
     def testMethaneEnergy(self):
-        species_idx = self.converter((self.species, self.coordinates)).species
-        _, _, atom_index12, distances =\
-                self.aev_computer((species_idx, self.coordinates))
+        atom_index12, _, _, distances = self.aev_computer.neighborlist(self.species, self.coordinates)
         energy = torch.tensor([0.0],
                               dtype=self.coordinates.dtype,
                               device=self.device)
@@ -153,18 +129,18 @@ class TestDispersion(TestCase):
                           torch.tensor([-1.251336]).double()))
 
     def testMethaneStandalone(self):
-        disp = StandaloneDispersionD3(neighborlist_cutoff=8.0).to(self.device)
-        energy = disp((self.species, self.coordinates)).energies
+        disp = StandaloneDispersionD3(neighborlist_cutoff=8.0, periodic_table_index=True).to(self.device)
+        energy = disp((self.atomic_numbers, self.coordinates)).energies
         energy = units.hartree2kcalmol(energy)
         self.assertTrue(
             torch.isclose(energy.cpu(),
                           torch.tensor([-1.251336]).double()))
 
     def testMethaneStandaloneBatch(self):
-        disp = StandaloneDispersionD3(neighborlist_cutoff=8.0).to(self.device)
+        disp = StandaloneDispersionD3(neighborlist_cutoff=8.0, periodic_table_index=True).to(self.device)
         r = 2
         coordinates = self.coordinates.repeat(r, 1, 1)
-        species = self.species.repeat(r, 1)
+        species = self.atomic_numbers.repeat(r, 1)
         energy = disp((species, coordinates)).energies
         energy = units.hartree2kcalmol(energy)
         self.assertTrue(
@@ -172,7 +148,7 @@ class TestDispersion(TestCase):
                           torch.tensor([-1.251336, -1.251336]).double()).all())
 
     def testDispersionBatches(self):
-        rep = StandaloneDispersionD3(neighborlist_cutoff=8.0)
+        rep = StandaloneDispersionD3(neighborlist_cutoff=8.0, periodic_table_index=True)
         coordinates1 = torch.tensor([[0.0, 0.0, 0.0],
                                     [1.5, 0.0, 0.0],
                                     [3.0, 0.0, 0.0]]).unsqueeze(0)
@@ -197,10 +173,8 @@ class TestDispersion(TestCase):
         self.assertTrue(torch.isclose(energies, energies_cat).all())
 
     def testForce(self):
-        species_idx = self.converter((self.species, self.coordinates)).species
         self.coordinates.requires_grad_(True)
-        _, _, atom_index12, distances =\
-                self.aev_computer((species_idx, self.coordinates))
+        atom_index12, _, _, distances = self.aev_computer.neighborlist(self.species, self.coordinates)
         energy = torch.tensor([0.0],
                               dtype=self.coordinates.dtype,
                               device=self.device)
