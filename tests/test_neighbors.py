@@ -357,6 +357,44 @@ class TestCellListEnergies(unittest.TestCase):
                                 pbc=self.pbc.to(device))
             self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
 
+    def testCellListLargeRandomNoPBC(self):
+        device = torch.device('cuda')
+        aev_cl = self.aev_cl.to(device).double()
+        aev_fp = self.aev_fp.to(device).double()
+        species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
+        for j in range(100):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
+                torch.double) * 3 * self.cell_size
+            coordinates = torch.clamp(coordinates,
+                                      min=0.0001,
+                                      max=self.cell_size - 0.0001)
+
+            _, aevs_cl = aev_cl((species, coordinates))
+            _, aevs_fp = aev_fp((species, coordinates))
+            self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
+
+    def testCellListLargeRandomJITNoPBC(self):
+        device = torch.device('cuda')
+        # JIT optimizations are avoided to prevent cuda bugs that make first evaluations extremely slow
+        torch._C._jit_set_profiling_executor(False)
+        torch._C._jit_set_profiling_mode(False)  # this also has an effect
+        torch._C._jit_override_can_fuse_on_cpu(False)
+        torch._C._jit_set_texpr_fuser_enabled(False)  # this has an effect
+        torch._C._jit_set_nvfuser_enabled(False)
+        aev_cl = torch.jit.script(self.aev_cl).to(device).double()
+        aev_fp = torch.jit.script(self.aev_fp).to(device).double()
+        species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
+        for j in range(100):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
+                torch.double) * 3 * self.cell_size
+            coordinates = torch.clamp(coordinates,
+                                      min=0.0001,
+                                      max=self.cell_size - 0.0001)
+
+            _, aevs_cl = aev_cl((species, coordinates))
+            _, aevs_fp = aev_fp((species, coordinates))
+            self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
+
     def testCellListLargeRandomJIT(self):
         device = torch.device('cuda')
         # JIT optimizations are avoided to prevent cuda bugs that make first evaluations extremely slow
