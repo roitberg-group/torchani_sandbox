@@ -411,7 +411,10 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
             'neural_networks': neural_networks,
             'periodic_table_index': periodic_table_index}
 
-    return BuiltinModel(**kwargs)
+    if external_cell_list:
+        return BuiltinModelExternalInterface(**kwargs)
+    else:
+        return BuiltinModel(**kwargs)
 
 
 def ANI1x(*args, **kwargs):
