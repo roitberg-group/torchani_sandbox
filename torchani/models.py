@@ -137,10 +137,12 @@ class BuiltinModel(torch.nn.Module):
             return SpeciesEnergies(species, atomic_energies.mean(dim=0))
         return SpeciesEnergies(species, atomic_energies)
 
+    # unfortunately this is an UGLY workaround to a torchscript bug
     @torch.jit.export
     def _recast_long_buffers(self):
         self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
         self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
+        self.aev_computer.neighborlist._recast_long_buffers()
 
     def species_to_tensor(self, *args, **kwargs):
         """Convert species from strings to tensor.
@@ -294,24 +296,6 @@ class BuiltinModel(torch.nn.Module):
         return self.neural_networks.size
 
 
-# unfortunately this is an UGLY workaround to a torchscript bug
-class BuiltinModelCellList(BuiltinModel):
-
-    @torch.jit.export
-    def _recast_long_buffers(self):
-        # for species converter and aev computer
-        self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
-        self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
-        # for cell list
-        self.aev_computer.neighborlist.total_buckets = self.aev_computer.neighborlist.total_buckets.to(dtype=torch.long)
-        self.aev_computer.neighborlist.scaling_for_flat_index = self.aev_computer.neighborlist.scaling_for_flat_index.to(dtype=torch.long)
-        self.aev_computer.neighborlist.shape_buckets_grid = self.aev_computer.neighborlist.shape_buckets_grid.to(dtype=torch.long)
-        self.aev_computer.neighborlist.vector_idx_to_flat = self.aev_computer.neighborlist.vector_idx_to_flat.to(dtype=torch.long)
-        self.aev_computer.neighborlist.translation_cases = self.aev_computer.neighborlist.translation_cases.to(dtype=torch.long)
-        self.aev_computer.neighborlist.vector_index_displacement = self.aev_computer.neighborlist.vector_index_displacement.to(dtype=torch.long)
-        self.aev_computer.neighborlist.translation_displacement_indices = self.aev_computer.neighborlist.translation_displacement_indices.to(dtype=torch.long)
-
-
 class BuiltinModelExternalInterface(BuiltinModel):
     # TODO: Most BuiltinModel functions fail here, only forward works this
     # It will be necessary to rewrite that code for this use case if we
@@ -427,10 +411,7 @@ def _build_neurochem_model(info_file_path, periodic_table_index=False, external_
             'neural_networks': neural_networks,
             'periodic_table_index': periodic_table_index}
 
-    if torch_cell_list or adaptive_torch_cell_list:
-        return BuiltinModelCellList(**kwargs)
-    else:
-        return BuiltinModel(**kwargs)
+    return BuiltinModel(**kwargs)
 
 
 def ANI1x(*args, **kwargs):

@@ -100,6 +100,10 @@ class BaseNeighborlist(torch.nn.Module):
 
         return screened_neighborlist, screened_shift_values, screened_diff_vector, screened_distances
 
+    @torch.jit.export
+    def _recast_long_buffers(self):
+        pass
+
 
 class FullPairwise(BaseNeighborlist):
 
@@ -353,6 +357,17 @@ class CellList(BaseNeighborlist):
         # variables are not set until we have received a cell at least once
         self.register_buffer('cell_variables_are_set', torch.tensor(False, dtype=torch.bool))
         self.register_buffer('old_values_are_cached', torch.tensor(False, dtype=torch.bool))
+
+    @torch.jit.export
+    def _recast_long_buffers(self):
+        # for cell list
+        self.total_buckets = self.total_buckets.to(dtype=torch.long)
+        self.scaling_for_flat_index = self.scaling_for_flat_index.to(dtype=torch.long)
+        self.shape_buckets_grid = self.shape_buckets_grid.to(dtype=torch.long)
+        self.vector_idx_to_flat = self.vector_idx_to_flat.to(dtype=torch.long)
+        self.translation_cases = self.translation_cases.to(dtype=torch.long)
+        self.vector_index_displacement = self.vector_index_displacement.to(dtype=torch.long)
+        self.translation_displacement_indices = self.translation_displacement_indices.to(dtype=torch.long)
 
     def forward(self, species: Tensor,
                 coordinates: Tensor,
