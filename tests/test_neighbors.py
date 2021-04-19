@@ -65,8 +65,6 @@ vector_bucket_index_compare = torch.tensor([[[0, 0, 0],
 class TestCellList(unittest.TestCase):
     def setUp(self):
         self.device = torch.device('cpu')
-        #self.device = torch.device(
-        #    'cuda' if torch.cuda.is_available() else 'cpu')
         cut = 5.2
         cell_size = cut * 3 + 0.1
         self.cut = cut
@@ -278,7 +276,6 @@ class TestCellList(unittest.TestCase):
 
 class TestCellListEnergies(unittest.TestCase):
     def setUp(self):
-        #self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.device = torch.device('cpu')
         cut = 5.2
         self.cut = cut
