@@ -64,8 +64,7 @@ vector_bucket_index_compare = torch.tensor([[[0, 0, 0],
 
 class TestCellList(unittest.TestCase):
     def setUp(self):
-        self.device = torch.device(
-            'cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cpu')
         cut = 5.2
         cell_size = cut * 3 + 0.1
         self.cut = cut
@@ -277,8 +276,7 @@ class TestCellList(unittest.TestCase):
 
 class TestCellListEnergies(unittest.TestCase):
     def setUp(self):
-        self.device = torch.device(
-            'cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cpu')
         cut = 5.2
         self.cut = cut
         self.cell_size = cut * 3 + 0.1
@@ -297,73 +295,70 @@ class TestCellListEnergies(unittest.TestCase):
         self.model_fp = torchani.models.ANI1x(model_index=0).to(self.device)
         self.model_cl.aev_computer = self.aev_cl
         self.model_fp.aev_computer = self.aev_fp
+        self.num_to_test = 10
 
     def testCellListEnergiesRandom(self):
-        device = torch.device('cuda')
-        self.model_cl = self.model_cl.to(device).double()
-        self.model_fp = self.model_fp.to(device).double()
-        species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
-        for j in range(100):
-            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
+        self.model_cl = self.model_cl.to(self.device).double()
+        self.model_fp = self.model_fp.to(self.device).double()
+        species = torch.zeros(100).unsqueeze(0).to(torch.long).to(self.device)
+        for j in range(self.num_to_test):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(self.device).to(
                 torch.double) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
                                       min=0.0001,
                                       max=self.cell_size - 0.0001)
             _, e_cl = self.model_cl((species, coordinates),
-                                    cell=self.cell.to(device).double(),
-                                    pbc=self.pbc.to(device))
+                                    cell=self.cell.to(self.device).double(),
+                                    pbc=self.pbc.to(self.device))
             _, e_fp = self.model_fp((species, coordinates),
-                                    cell=self.cell.to(device).double(),
-                                    pbc=self.pbc.to(device))
+                                    cell=self.cell.to(self.device).double(),
+                                    pbc=self.pbc.to(self.device))
             self.assertTrue(torch.isclose(e_cl, e_fp).all())
 
     def testCellListEnergiesRandomFloat(self):
-        device = torch.device('cuda')
-        self.model_cl = self.model_cl.to(device).float()
-        self.model_fp = self.model_fp.to(device).float()
-        species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
-        for j in range(100):
-            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
+        self.model_cl = self.model_cl.to(self.device).float()
+        self.model_fp = self.model_fp.to(self.device).float()
+        species = torch.zeros(100).unsqueeze(0).to(torch.long).to(self.device)
+        for j in range(self.num_to_test):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(self.device).to(
                 torch.float) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
                                       min=0.0001,
                                       max=self.cell_size - 0.0001).float()
 
             _, e_c = self.model_cl((species, coordinates),
-                                   cell=self.cell.to(device).float(),
-                                   pbc=self.pbc.to(device))
+                                   cell=self.cell.to(self.device).float(),
+                                   pbc=self.pbc.to(self.device))
             _, e_j = self.model_fp((species, coordinates),
-                                   cell=self.cell.to(device).float(),
-                                   pbc=self.pbc.to(device))
+                                   cell=self.cell.to(self.device).float(),
+                                   pbc=self.pbc.to(self.device))
             self.assertTrue(torch.isclose(e_c, e_j).all())
 
     def testCellListLargeRandom(self):
-        device = torch.device('cuda')
-        aev_cl = self.aev_cl.to(device).double()
-        aev_fp = self.aev_fp.to(device).double()
-        species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
-        for j in range(100):
-            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
+        aev_cl = self.aev_cl.to(self.device).double()
+        aev_fp = self.aev_fp.to(self.device).double()
+        species = torch.LongTensor(100).random_(0, 4).to(self.device).unsqueeze(0)
+        for j in range(self.num_to_test):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(self.device).to(
                 torch.double) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
                                       min=0.0001,
                                       max=self.cell_size - 0.0001)
 
             _, aevs_cl = aev_cl((species, coordinates),
-                                cell=self.cell.to(device).double(),
-                                pbc=self.pbc.to(device))
+                                cell=self.cell.to(self.device).double(),
+                                pbc=self.pbc.to(self.device))
             _, aevs_fp = aev_fp((species, coordinates),
-                                cell=self.cell.to(device).double(),
-                                pbc=self.pbc.to(device))
+                                cell=self.cell.to(self.device).double(),
+                                pbc=self.pbc.to(self.device))
             self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
 
     def testCellListLargeRandomNoPBC(self):
-        device = torch.device('cuda')
-        aev_cl = self.aev_cl.to(device).double()
-        aev_fp = self.aev_fp.to(device).double()
-        species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
-        for j in range(100):
-            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
+        aev_cl = self.aev_cl.to(self.device).double()
+        aev_fp = self.aev_fp.to(self.device).double()
+        species = torch.LongTensor(100).random_(0, 4).to(self.device).unsqueeze(0)
+        for j in range(self.num_to_test):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(self.device).to(
                 torch.double) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
                                       min=0.0001,
@@ -374,18 +369,17 @@ class TestCellListEnergies(unittest.TestCase):
             self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
 
     def testCellListLargeRandomJITNoPBC(self):
-        device = torch.device('cuda')
         # JIT optimizations are avoided to prevent cuda bugs that make first evaluations extremely slow
         torch._C._jit_set_profiling_executor(False)
         torch._C._jit_set_profiling_mode(False)  # this also has an effect
         torch._C._jit_override_can_fuse_on_cpu(False)
         torch._C._jit_set_texpr_fuser_enabled(False)  # this has an effect
         torch._C._jit_set_nvfuser_enabled(False)
-        aev_cl = torch.jit.script(self.aev_cl).to(device).double()
-        aev_fp = torch.jit.script(self.aev_fp).to(device).double()
-        species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
-        for j in range(100):
-            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
+        aev_cl = torch.jit.script(self.aev_cl).to(self.device).double()
+        aev_fp = torch.jit.script(self.aev_fp).to(self.device).double()
+        species = torch.LongTensor(100).random_(0, 4).to(self.device).unsqueeze(0)
+        for j in range(self.num_to_test):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(self.device).to(
                 torch.double) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
                                       min=0.0001,
@@ -396,52 +390,58 @@ class TestCellListEnergies(unittest.TestCase):
             self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
 
     def testCellListLargeRandomJIT(self):
-        device = torch.device('cuda')
         # JIT optimizations are avoided to prevent cuda bugs that make first evaluations extremely slow
         torch._C._jit_set_profiling_executor(False)
         torch._C._jit_set_profiling_mode(False)  # this also has an effect
         torch._C._jit_override_can_fuse_on_cpu(False)
         torch._C._jit_set_texpr_fuser_enabled(False)  # this has an effect
         torch._C._jit_set_nvfuser_enabled(False)
-        aev_cl = torch.jit.script(self.aev_cl).to(device).double()
-        aev_fp = torch.jit.script(self.aev_fp).to(device).double()
-        species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
-        for j in range(100):
-            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
+        aev_cl = torch.jit.script(self.aev_cl).to(self.device).double()
+        aev_fp = torch.jit.script(self.aev_fp).to(self.device).double()
+        species = torch.LongTensor(100).random_(0, 4).to(self.device).unsqueeze(0)
+        for j in range(self.num_to_test):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(self.device).to(
                 torch.double) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
                                       min=0.0001,
                                       max=self.cell_size - 0.0001)
 
             _, aevs_cl = aev_cl((species, coordinates),
-                                cell=self.cell.to(device).double(),
-                                pbc=self.pbc.to(device))
+                                cell=self.cell.to(self.device).double(),
+                                pbc=self.pbc.to(self.device))
             _, aevs_fp = aev_fp((species, coordinates),
-                                cell=self.cell.to(device).double(),
-                                pbc=self.pbc.to(device))
+                                cell=self.cell.to(self.device).double(),
+                                pbc=self.pbc.to(self.device))
             self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
 
     # TODO: Note that this test fails with single precision!
     @unittest.skipIf(True, '')
     def testCellListRandomFloat(self):
-        device = torch.device('cuda')
-        aev_cl = self.aev_cl.to(device).to(torch.float)
-        aev_fp = self.aev_fp.to(device).to(torch.float)
-        species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
-        for j in range(100):
-            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(
+        aev_cl = self.aev_cl.to(self.device).to(torch.float)
+        aev_fp = self.aev_fp.to(self.device).to(torch.float)
+        species = torch.LongTensor(100).random_(0, 4).to(self.device).unsqueeze(0)
+        for j in range(self.num_to_test):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(self.device).to(
                 torch.float) * 3 * self.cell_size
             coordinates = torch.clamp(coordinates,
                                       min=0.0001,
                                       max=self.cell_size - 0.0001)
 
             _, aevs_cl = aev_cl((species, coordinates),
-                                cell=self.cell.to(device),
-                                pbc=self.pbc.to(device))
+                                cell=self.cell.to(self.device),
+                                pbc=self.pbc.to(self.device))
             _, aevs_fp = aev_fp((species, coordinates),
-                                cell=self.cell.to(device),
-                                pbc=self.pbc.to(device))
+                                cell=self.cell.to(self.device),
+                                pbc=self.pbc.to(self.device))
             self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
+
+
+@unittest.skipIf(not torch.cuda.is_available(), 'No cuda device found')
+class TestCellListEnergiesCuda(TestCellListEnergies):
+    def setUp(self):
+        super().setUp()
+        self.device = torch.device('cuda')
+        self.num_to_test = 100
 
 
 if __name__ == '__main__':
