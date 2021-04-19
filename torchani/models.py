@@ -136,6 +136,7 @@ class BuiltinModel(torch.nn.Module):
             return SpeciesEnergies(species, atomic_energies.mean(dim=0))
         return SpeciesEnergies(species, atomic_energies)
 
+    # unfortunately this is an UGLY workaround to a torchscript bug
     @torch.jit.export
     def _recast_long_buffers(self):
         self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
