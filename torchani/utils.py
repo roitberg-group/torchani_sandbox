@@ -17,6 +17,14 @@ def cumsum_from_zero(input_: Tensor) -> Tensor:
     return cumsum
 
 
+def cumsum_from_zero(input_: Tensor) -> Tensor:
+    r"""Cumulative sum just like pytorch's cumsum, but with the first element of
+    the result being zero"""
+    cumsum = torch.zeros_like(input_)
+    torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
+    return cumsum
+
+
 def stack_with_padding(properties, padding):
     output = defaultdict(list)
     for p in properties:
