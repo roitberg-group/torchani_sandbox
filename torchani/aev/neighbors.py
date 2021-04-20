@@ -66,13 +66,13 @@ class BaseNeighborlist(torch.nn.Module):
         # screening, this prevents recalculation in other modules. We have to
         # keep coords in the graph for this to work
         vec = coords0 - coords1
-        distances_sq = vec.pow(2).sum(-1)
-        in_cutoff = (distances_sq <= cutoff ** 2).nonzero().flatten()
+        distances = vec.norm(2, -1)
+        in_cutoff = (distances <= cutoff).nonzero().flatten()
 
         screened_neighborlist = input_neighborlist.index_select(1, in_cutoff)
 
         screened_diff_vector = vec.index_select(0, in_cutoff)
-        screened_distances = distances_sq.index_select(0, in_cutoff).sqrt()
+        screened_distances = distances.index_select(0, in_cutoff)
 
         return screened_neighborlist, None, screened_diff_vector, screened_distances
 
@@ -105,14 +105,14 @@ class BaseNeighborlist(torch.nn.Module):
         # screening, this prevents recalculation in other modules. We have to
         # keep coords in the graph for this to work
         vec = coords0 - coords1 + shift_values
-        distances_sq = vec.pow(2).sum(-1)
-        in_cutoff = (distances_sq <= cutoff ** 2).nonzero().flatten()
+        distances = vec.norm(2, -1)
+        in_cutoff = (distances <= cutoff).nonzero().flatten()
 
         screened_neighborlist = input_neighborlist.index_select(1, in_cutoff)
         screened_shift_values = shift_values.index_select(0, in_cutoff)
 
         screened_diff_vector = vec.index_select(0, in_cutoff)
-        screened_distances = distances_sq.index_select(0, in_cutoff).sqrt()
+        screened_distances = distances.index_select(0, in_cutoff)
 
         return screened_neighborlist, screened_shift_values, screened_diff_vector, screened_distances
 
