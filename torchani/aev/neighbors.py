@@ -380,7 +380,7 @@ class CellList(BaseNeighborlist):
         # mapped to the central cell, since it is meaningless for the coordinates
         # not to be mapped to the central cell if no pbc is requrested
         if cell is None:
-            coordinates, cell = self._compute_bounding_cell(coordinates, eps=1e-5)
+            coordinates, cell = self._compute_bounding_cell(coordinates, eps=1e-3)
         pbc = pbc if pbc is not None else self.default_pbc
 
         assert pbc.all() or (not pbc.any()), "Cell list is only implemented for PBC in all directions or no pbc"
