@@ -230,7 +230,8 @@ class AEVComputer(torch.nn.Module):
     def forward(self,
                 input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> SpeciesAEV:
+                pbc: Optional[Tensor] = None,
+                use_cuaev_interface: Optional[bool] = False) -> SpeciesAEV:
         """Compute AEVs
 
         Arguments:
@@ -283,8 +284,11 @@ class AEVComputer(torch.nn.Module):
             if not self.cuaev_is_initialized:
                 self._init_cuaev_computer()
                 self.cuaev_is_initialized = torch.tensor(True)
-            assert pbc is None or (not pbc.any()), "cuaev currently does not support PBC"
-            aev = self._compute_cuaev(species, coordinates)
+            if use_cuaev_interface:
+                atom_index12, _, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
+                aev = self._compute_cuaev_with_nbrlist(species, atom_index12, diff_vector, distances)
+            else:
+                aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
 
         atom_index12, _, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
@@ -296,6 +300,12 @@ class AEVComputer(torch.nn.Module):
         species_int = species.to(torch.int32)
         coordinates = coordinates.to(torch.float)
         aev = torch.ops.cuaev.run(coordinates, species_int, self.cuaev_computer)
+        return aev
+
+    @jit_unused_if_no_cuaev()
+    def _compute_cuaev_with_nbrlist(self, species, atom_index12, diff_vector, distances):
+        species_int = species.to(torch.int32)
+        aev = torch.ops.cuaev.run_with_nbrlist(species_int, atom_index12, diff_vector, distances, self.cuaev_computer)
         return aev
 
     def _compute_aev(self, species: Tensor,
