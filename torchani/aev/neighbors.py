@@ -54,25 +54,28 @@ class BaseNeighborlist(torch.nn.Module):
     @staticmethod
     def _screen_with_cutoff_nopbc(cutoff: float, coordinates: Tensor, input_neighborlist: Tensor, mask: Tensor) -> Tuple[Tensor, Union[Tensor, None], Tensor, Tensor]:
         # no pbc version of screening, to prevent torch from launching kernels with only zeros
+        # see screein_with_cutoff for more details
         if mask.any():
             mask = mask.view(-1)[input_neighborlist.view(-1)].view(2, -1)
             non_dummy_pairs = (~torch.any(mask, dim=0)).nonzero().flatten()
             input_neighborlist = input_neighborlist.index_select(1, non_dummy_pairs)
 
         coordinates = coordinates.view(-1, 3)
-        coords0 = coordinates.index_select(0, input_neighborlist[0])
-        coords1 = coordinates.index_select(0, input_neighborlist[1])
-        # Difference vector and distances can be obtained for free when
-        # screening, this prevents recalculation in other modules. We have to
-        # keep coords in the graph for this to work
-        vec = coords0 - coords1
-        distances = vec.norm(2, -1)
+
+        # detached calculation #
+        coordinates_ = coordinates.detach()
+        coords0 = coordinates_.index_select(0, input_neighborlist[0])
+        coords1 = coordinates_.index_select(0, input_neighborlist[1])
+        distances = (coords0 - coords1).norm(2, -1)
         in_cutoff = (distances <= cutoff).nonzero().flatten()
+        # ------------------- #
 
         screened_neighborlist = input_neighborlist.index_select(1, in_cutoff)
 
-        screened_diff_vector = vec.index_select(0, in_cutoff)
-        screened_distances = distances.index_select(0, in_cutoff)
+        coords0 = coordinates.index_select(0, screened_neighborlist[0])
+        coords1 = coordinates.index_select(0, screened_neighborlist[1])
+        screened_diff_vector = coords0 - coords1
+        screened_distances = screened_diff_vector.norm(2, -1)
 
         return screened_neighborlist, None, screened_diff_vector, screened_distances
 
@@ -99,20 +102,27 @@ class BaseNeighborlist(torch.nn.Module):
             shift_values = shift_values.index_select(0, non_dummy_pairs)
 
         coordinates = coordinates.view(-1, 3)
-        coords0 = coordinates.index_select(0, input_neighborlist[0])
-        coords1 = coordinates.index_select(0, input_neighborlist[1])
-        # Difference vector and distances can be obtained for free when
-        # screening, this prevents recalculation in other modules. We have to
-        # keep coords in the graph for this to work
-        vec = coords0 - coords1 + shift_values
-        distances = vec.norm(2, -1)
+
+        # Difference vector and distances could be obtained for free when
+        # screening, unfortunately distances have to be recalculated twice each
+        # time they are screened, since otherwise torch loops through all pairs
+        # in order to calculate derivatives
+
+        # detached calculation #
+        coordinates_ = coordinates.detach()
+        coords0 = coordinates_.index_select(0, input_neighborlist[0])
+        coords1 = coordinates_.index_select(0, input_neighborlist[1])
+        distances = (coords0 - coords1 + shift_values).norm(2, -1)
         in_cutoff = (distances <= cutoff).nonzero().flatten()
+        # ------------------- #
 
         screened_neighborlist = input_neighborlist.index_select(1, in_cutoff)
         screened_shift_values = shift_values.index_select(0, in_cutoff)
 
-        screened_diff_vector = vec.index_select(0, in_cutoff)
-        screened_distances = distances.index_select(0, in_cutoff)
+        coords0 = coordinates.index_select(0, screened_neighborlist[0])
+        coords1 = coordinates.index_select(0, screened_neighborlist[1])
+        screened_diff_vector = coords0 - coords1 + screened_shift_values
+        screened_distances = screened_diff_vector.norm(2, -1)
 
         return screened_neighborlist, screened_shift_values, screened_diff_vector, screened_distances
 
@@ -131,7 +141,7 @@ class FullPairwise(BaseNeighborlist):
         self.default_shift_values: Tensor
 
     def forward(self, species: Tensor, coordinates: Tensor, cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+                pbc: Optional[Tensor] = None) -> Tuple[Tensor, Union[Tensor, None], Tensor, Tensor]:
         """Arguments:
             coordinates (:class:`torch.Tensor`): tensor of shape
                 (molecules, atoms, 3) for atom coordinates.
