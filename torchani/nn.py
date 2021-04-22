@@ -70,18 +70,86 @@ class ANIModel(torch.nn.ModuleDict):
         # Obtain the atomic energies associated with a given tensor of AEV's
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
-        species_ = species.flatten()
-        aev = aev.flatten(0, 1)
+        species_ = species.view(-1)
+        aev = aev.view(-1, aev.shape[-1])
 
         output = aev.new_zeros(species_.shape)
 
         for i, m in enumerate(self.values()):
-            mask = (species_ == i)
-            midx = mask.nonzero().flatten()
+            midx = (species_ == i).nonzero().view(-1)
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
-                output.masked_scatter_(mask, m(input_).flatten())
+                output.index_add_(0, midx, m(input_).view(-1))
         output = output.view_as(species)
+        return output
+
+
+class ANIModelLocalMessagePassing(torch.nn.ModuleDict):
+
+    size: Final[int]
+    internal_size: Final[int]
+    decay_factor: Tensor
+    decay_prefactor: Tensor
+
+    @staticmethod
+    def ensureOrderedDict(modules):
+        if isinstance(modules, OrderedDict):
+            return modules
+        od = OrderedDict()
+        for i, m in enumerate(modules):
+            od[str(i)] = m
+        return od
+
+    def __init__(self, modules):
+        super().__init__(self.ensureOrderedDict(modules))
+        self.size = 1
+        self.internal_size = 96
+        self.register_parameter('decay_factor', torch.nn.Parameter(torch.tensor(1.0)))
+        self.register_parameter('decay_prefactor', torch.nn.Parameter(torch.tensor(1.0)))
+        second_pass_modules = [torch.nn.Linear(self.internal_size, 1) for _ in range(len(self))]
+        self.second_pass = torch.nn.ModuleDict(self.ensureOrderedDict(second_pass_modules))
+
+    def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
+                atom_index12: Tensor, distances: Tensor) -> SpeciesEnergies:
+        species, aev = species_aev
+        assert species.shape == aev.shape[:-1]
+
+        atomic_energies = self._atomic_energies((species, aev))
+        # shape of atomic energies is (C, A)
+        return SpeciesEnergies(species, torch.sum(atomic_energies, dim=1))
+
+    @torch.jit.export
+    def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor], atom_index12: Tensor, distances: Tensor) -> Tensor:
+        # Obtain the atomic energies associated with a given tensor of AEV's
+        species, aev = species_aev
+        assert species.shape == aev.shape[:-1]
+        species_ = species.view(-1)
+        aev = aev.view(-1, aev.shape[-1])
+
+        output = aev.new_zeros((species_.shape, self.internal_size))
+
+        for i, m in enumerate(self.values()):
+            midx = (species_ == i).nonzero().view(-1)
+            if midx.shape[0] > 0:
+                input_ = aev.index_select(0, midx)
+                output.index_add_(0, midx, m(input_).view(-1, self.internal_size))
+        # at this point output has a shape A', G
+        # I want first to duplicate this and then
+        # I'll add in each position a weighted sum of the aev's of all pairs of
+        # each atom, instead of attention I use simple distance weighting
+        internal_output = output.clone()
+        decay = self.decay_prefactor * torch.exp(-self.decay_factor * distances)
+        output = output[atom_index12] * decay.view(1, -1, 1)
+        internal_output.index_add(0, atom_index12.view(-1), output.view(-1, self.internal_size))
+        # now internal output has shape (A', 96), so now I do an extra NN pass
+
+        final_output = internal_output.new_zeros(species_.shape)
+        for i, m in enumerate(self.second_pass.values()):
+            midx = (species_ == i).nonzero().view(-1)
+            if midx.shape[0] > 0:
+                input_ = internal_output.index_select(0, midx)
+                final_output.index_add_(0, midx, m(input_).view(-1))
+
         return output
 
 
