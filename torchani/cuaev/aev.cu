@@ -1047,7 +1047,7 @@ void cuaev_forward(
 
   { // RadialAEV
     result.radialNbr.maxNumJPerI = cubMax(radialNbr_numJPerI_p, result.nI, stream);
-    constexpr dim3 block_radial(8, 16, 1);
+    constexpr dim3 block_radial(4, 16, 1);
     int smem_radial = aev_params.radial_length * sizeof(float) + result.radialNbr.maxNumJPerI * sizeof(float);
     cuRadialAEVs<int, float><<<result.nI, block_radial, smem_radial, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
@@ -1128,7 +1128,7 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
   float3* angularNbr_deltaJ_p = reinterpret_cast<float3*>(result.angularNbr.deltaJ_t.data_ptr());
 
   // radial
-  constexpr dim3 block_radial(8, 16, 1);
+  constexpr dim3 block_radial(4, 16, 1);
   int smem_radial =
       result.radialNbr.maxNumJPerI * sizeof(float) + aev_params.radial_length * sizeof(float); // grad_dist, grad_aev
   cuRadialAEVs_backward_or_doublebackward<false, int, float, 8><<<result.nI, block_radial, smem_radial, stream>>>(
@@ -1216,7 +1216,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
   TORCH_CHECK(grad_force.is_contiguous(), "grad_force's data is not contiguous");
 
   // radial
-  constexpr dim3 block_radial(8, 16, 1);
+  constexpr dim3 block_radial(4, 16, 1);
   int smem_radial = result.radialNbr.maxNumJPerI * sizeof(float) +
       aev_params.radial_length * sizeof(float); // grad_dist, grad_grad_aev
   cuRadialAEVs_backward_or_doublebackward<true, int, float, 8><<<result.nI, block_radial, smem_radial, stream>>>(
