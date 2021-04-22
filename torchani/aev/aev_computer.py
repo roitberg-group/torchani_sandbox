@@ -231,7 +231,7 @@ class AEVComputer(torch.nn.Module):
                 input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None,
-                use_cuaev_interface: Optional[bool] = False) -> SpeciesAEV:
+                use_cuaev_interface: Optional[bool] = None) -> SpeciesAEV:
         """Compute AEVs
 
         Arguments:
@@ -284,9 +284,9 @@ class AEVComputer(torch.nn.Module):
             if not self.cuaev_is_initialized:
                 self._init_cuaev_computer()
                 self.cuaev_is_initialized = torch.tensor(True)
-            if use_cuaev_interface:
+            if use_cuaev_interface is not None and use_cuaev_interface:
                 atom_index12, _, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
-                aev = self._compute_cuaev_with_nbrlist(species, atom_index12, diff_vector, distances)
+                aev = self._compute_cuaev_with_nbrlist(species, coordinates, atom_index12, diff_vector, distances)
             else:
                 aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
@@ -303,9 +303,10 @@ class AEVComputer(torch.nn.Module):
         return aev
 
     @jit_unused_if_no_cuaev()
-    def _compute_cuaev_with_nbrlist(self, species, atom_index12, diff_vector, distances):
+    def _compute_cuaev_with_nbrlist(self, species, coordinates, atom_index12, diff_vector, distances):
         species_int = species.to(torch.int32)
-        aev = torch.ops.cuaev.run_with_nbrlist(species_int, atom_index12, diff_vector, distances, self.cuaev_computer)
+        # coordinates will not be used in forward calculation, but it's gradient (force) will still be calculated in cuaev kernel
+        aev = torch.ops.cuaev.run_with_nbrlist(coordinates, species_int, atom_index12, diff_vector, distances, self.cuaev_computer)
         return aev
 
     def _compute_aev(self, species: Tensor,
