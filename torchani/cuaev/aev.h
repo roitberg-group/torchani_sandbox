@@ -118,10 +118,11 @@ struct NeighborList {
   Tensor atomJ_t; // only j index
   Tensor numJPerI_t;
   Tensor distJ_t;
+  Tensor deltaJ_t;
 
   NeighborList() = default;
-  NeighborList(int nJ, int maxNumJPerI, Tensor atomJ_t, Tensor numJPerI_t, Tensor distJ_t)
-      : nJ(nJ), maxNumJPerI(maxNumJPerI), atomJ_t(atomJ_t), numJPerI_t(numJPerI_t), distJ_t(distJ_t) {}
+  NeighborList(int nJ, int maxNumJPerI, Tensor atomJ_t, Tensor numJPerI_t, Tensor distJ_t, Tensor deltaJ_t)
+      : nJ(nJ), maxNumJPerI(maxNumJPerI), atomJ_t(atomJ_t), numJPerI_t(numJPerI_t), distJ_t(distJ_t), deltaJ_t(deltaJ_t){}
 };
 
 struct AEVScalarParams {
@@ -185,11 +186,13 @@ struct Result {
         radialNbr.atomJ_t,
         radialNbr.numJPerI_t,
         radialNbr.distJ_t,
+        radialNbr.deltaJ_t,
         torch::tensor(angularNbr.nJ),
         torch::tensor(angularNbr.maxNumJPerI),
         angularNbr.atomJ_t,
         angularNbr.numJPerI_t,
-        angularNbr.distJ_t};
+        angularNbr.distJ_t,
+        angularNbr.deltaJ_t};
   }
 };
 
