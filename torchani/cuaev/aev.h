@@ -122,7 +122,12 @@ struct NeighborList {
 
   NeighborList() = default;
   NeighborList(int nJ, int maxNumJPerI, Tensor atomJ_t, Tensor numJPerI_t, Tensor distJ_t, Tensor deltaJ_t)
-      : nJ(nJ), maxNumJPerI(maxNumJPerI), atomJ_t(atomJ_t), numJPerI_t(numJPerI_t), distJ_t(distJ_t), deltaJ_t(deltaJ_t){}
+      : nJ(nJ),
+        maxNumJPerI(maxNumJPerI),
+        atomJ_t(atomJ_t),
+        numJPerI_t(numJPerI_t),
+        distJ_t(distJ_t),
+        deltaJ_t(deltaJ_t) {}
 };
 
 struct AEVScalarParams {
