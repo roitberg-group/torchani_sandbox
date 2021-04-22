@@ -387,26 +387,29 @@ class CellList(BaseNeighborlist):
     def forward(self, species: Tensor,
                 coordinates: Tensor,
                 cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+                pbc: Optional[Tensor] = None) -> Tuple[Tensor, Union[Tensor, None], Tensor, Tensor]:
 
+        assert coordinates.shape[0] == 1, "Cell list doesn't support batches"
         assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
         # if cell is None then a bounding cell for the molecule is obtained
         # from the coordinates, in this case the coordinates are assumed to be
         # mapped to the central cell, since it is meaningless for the coordinates
         # not to be mapped to the central cell if no pbc is requrested
-        if cell is None:
-            coordinates, cell = self._compute_bounding_cell(coordinates, eps=1e-3)
         pbc = pbc if pbc is not None else self.default_pbc
-
         assert pbc.all() or (not pbc.any()), "Cell list is only implemented for PBC in all directions or no pbc"
-        assert coordinates.shape[0] == 1, "Cell list doesn't support batches"
+
+        if cell is None:
+            # displaced coordinates are only used for computation if pbc is not required
+            coordinates_displaced, cell = self._compute_bounding_cell(coordinates, eps=1e-3)
+        else:
+            coordinates_displaced = coordinates
 
         if (not self.constant_volume) or (not self.cell_variables_are_set):
             # Cell parameters need to be set only once for constant V simulations,
             # and every time for variable V, (constant P, NPT) simulations
             self._setup_variables(cell.detach())
 
-        if self.verlet and self.old_values_are_cached and (not self._need_new_list(coordinates.detach())):
+        if self.verlet and self.old_values_are_cached and (not self._need_new_list(coordinates_displaced.detach())):
             # If a new cell list is not needed use the old cached values
             # IMPORTANT: here cached values should NOT be updated if they are
             # updated the cache moves to the new step, which is incorrect
@@ -417,26 +420,27 @@ class CellList(BaseNeighborlist):
             # fractionalized before cell calculation, it is not needed for them to
             # be imaged to the central cell, they can lie outside the cell, so
             # they don't need to be mapped to the central cell in this step
-            atom_pairs, shift_indices = self._calculate_cell_list(coordinates.detach(), pbc)
+            atom_pairs, shift_indices = self._calculate_cell_list(coordinates_displaced.detach(), pbc)
             # 'Verlet' prevent unnecessary rebuilds of the neighborlist
             if self.verlet:
-                self._cache_values(atom_pairs, shift_indices, coordinates.detach())
+                self._cache_values(atom_pairs, shift_indices, coordinates_displaced.detach())
 
-        shift_values = shift_indices.to(cell.dtype) @ cell
-
-        # Before the screening step we map the coordinates to the central cell,
-        # same as with a full pairwise calculation
-        coordinates = map_to_central(coordinates, cell.detach(), pbc)
-
-        # The final screening does not use the skin, the skin is only used
-        # internally to prevent neighborlist recalculation.
-        # We must screen even
-        # if the list is not rebuilt, since two atoms may have moved a long
-        # enough distance that they are not neighbors anymore, but a short
-        # enough distance that the neighborlist is not rebuilt. Rebuilds happen
-        # only if it can't be guaranteed that the cached neighborlist holds at least
-        # all atom pairs, but it may hold more.
-        return self._screen_with_cutoff(self.cutoff, coordinates, atom_pairs, shift_values, species == -1)
+        if pbc.any():
+            shift_values = shift_indices.to(cell.dtype) @ cell
+            # Before the screening step we map the coordinates to the central cell,
+            # same as with a full pairwise calculation
+            coordinates = map_to_central(coordinates, cell.detach(), pbc)
+            # The final screening does not use the skin, the skin is only used
+            # internally to prevent neighborlist recalculation.
+            # We must screen even
+            # if the list is not rebuilt, since two atoms may have moved a long
+            # enough distance that they are not neighbors anymore, but a short
+            # enough distance that the neighborlist is not rebuilt. Rebuilds happen
+            # only if it can't be guaranteed that the cached neighborlist holds at least
+            # all atom pairs, but it may hold more.
+            return self._screen_with_cutoff(self.cutoff, coordinates, atom_pairs, shift_values, (species == -1))
+        else:
+            return self._screen_with_cutoff(self.cutoff, coordinates, atom_pairs, mask=(species == -1))
 
     def _calculate_cell_list(self, coordinates: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
         # 1) Fractionalize coordinates
