@@ -46,6 +46,7 @@ class TestExternalInterface(TestCase):
 
             c = c.detach().requires_grad_(True)
             neighbors, shift_values, _, _ = neighborlist(s, c)
+            shift_values = torch.zeros((neighbors.shape[-1], 3), dtype=torch.float, device=self.device)
             e = self.model_interface((s, c), neighbors, shift_values).energies
             f = -torch.autograd.grad(e.sum(), c)[0]
 
@@ -60,6 +61,7 @@ class TestExternalInterface(TestCase):
             e_expect = self.model((s, c)).energies
 
             neighbors, shift_values, _, _ = neighborlist(s, c)
+            shift_values = torch.zeros((neighbors.shape[-1], 3), dtype=torch.float, device=self.device)
             e = self.model_interface((s, c), neighbors, shift_values).energies
 
             self.assertEqual(e_expect, e)
