@@ -207,6 +207,14 @@ void cuaev_forward(
     const Tensor& species_t,
     const AEVScalarParams& aev_params,
     Result& result);
+void cuaev_forward_with_nbrlist(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const Tensor& atomIJ_t,
+    const Tensor& delta_t,
+    const Tensor& dist_t,
+    const AEVScalarParams& aev_params,
+    Result& result);
 Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_params, const Result& result);
 Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& aev_params, const Result& result);
 void initAEVConsts(AEVScalarParams& aev_params, cudaStream_t stream);
@@ -231,6 +239,17 @@ struct CuaevComputer : torch::CustomClassHolder {
   Result forward(const Tensor& coordinates_t, const Tensor& species_t) {
     Result result(coordinates_t, species_t);
     cuaev_forward(coordinates_t, species_t, aev_params, result);
+    return result;
+  }
+
+  Result forward_with_nbrlist(
+      const Tensor& coordinates_t,
+      const Tensor& species_t,
+      const Tensor& atomIJ_t,
+      const Tensor& delta_t,
+      const Tensor& dist_t) {
+    Result result(coordinates_t, species_t);
+    cuaev_forward_with_nbrlist(coordinates_t, species_t, atomIJ_t, delta_t, dist_t, aev_params, result);
     return result;
   }
 
@@ -260,6 +279,19 @@ class CuaevAutograd : public torch::autograd::Function<CuaevAutograd> {
       AutogradContext* ctx,
       const Tensor& coordinates_t,
       const Tensor& species_t,
+      const torch::intrusive_ptr<CuaevComputer>& cuaev_computer);
+  static tensor_list backward(AutogradContext* ctx, tensor_list grad_outputs);
+};
+
+class CuaevWithNbrlistAutograd : public torch::autograd::Function<CuaevWithNbrlistAutograd> {
+ public:
+  static Tensor forward(
+      AutogradContext* ctx,
+      const Tensor& coordinates_t,
+      const Tensor& species_t,
+      const Tensor& atomIJ_t,
+      const Tensor& delta_t,
+      const Tensor& dist_t,
       const torch::intrusive_ptr<CuaevComputer>& cuaev_computer);
   static tensor_list backward(AutogradContext* ctx, tensor_list grad_outputs);
 };

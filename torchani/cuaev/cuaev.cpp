@@ -133,6 +133,30 @@ tensor_list CuaevAutograd::backward(AutogradContext* ctx, tensor_list grad_outpu
   return {grad_coord, Tensor(), Tensor()};
 }
 
+Tensor CuaevWithNbrlistAutograd::forward(
+    AutogradContext* ctx,
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const Tensor& atomIJ_t,
+    const Tensor& delta_t,
+    const Tensor& dist_t,
+    const torch::intrusive_ptr<CuaevComputer>& cuaev_computer) {
+  at::AutoNonVariableTypeMode g;
+  Result result = cuaev_computer->forward_with_nbrlist(coordinates_t, species_t, atomIJ_t, delta_t, dist_t);
+  if (coordinates_t.requires_grad()) {
+    ctx->saved_data["cuaev_computer"] = cuaev_computer;
+    ctx->save_for_backward(result);
+  }
+  return result.aev_t;
+}
+
+tensor_list CuaevWithNbrlistAutograd::backward(AutogradContext* ctx, tensor_list grad_outputs) {
+  torch::intrusive_ptr<CuaevComputer> cuaev_computer = ctx->saved_data["cuaev_computer"].toCustomClass<CuaevComputer>();
+  tensor_list result_tensors = ctx->get_saved_variables();
+  Tensor grad_coord = CuaevDoubleAutograd::apply(grad_outputs[0], cuaev_computer, result_tensors);
+  return {grad_coord, Tensor(), Tensor(), Tensor(), Tensor(), Tensor()};
+}
+
 Tensor run_only_forward(
     const Tensor& coordinates_t,
     const Tensor& species_t,
@@ -148,18 +172,42 @@ Tensor run_autograd(
   return CuaevAutograd::apply(coordinates_t, species_t, cuaev_computer);
 }
 
+Tensor run_with_nbrlist_only_forward(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const Tensor& atomIJ_t,
+    const Tensor& delta_t,
+    const Tensor& dist_t,
+    const torch::intrusive_ptr<CuaevComputer>& cuaev_computer) {
+  Result result = cuaev_computer->forward(coordinates_t, species_t);
+  return result.aev_t;
+}
+
+Tensor run_with_nbrlist_autograd(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const Tensor& atomIJ_t,
+    const Tensor& delta_t,
+    const Tensor& dist_t,
+    const torch::intrusive_ptr<CuaevComputer>& cuaev_computer) {
+  return CuaevAutograd::apply(coordinates_t, species_t, cuaev_computer);
+}
+
 TORCH_LIBRARY(cuaev, m) {
   m.class_<CuaevComputer>("CuaevComputer")
       .def(torch::init<double, double, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, int64_t>());
   m.def("run", run_only_forward);
+  m.def("run_with_nbrlist", run_with_nbrlist_only_forward);
 }
 
 TORCH_LIBRARY_IMPL(cuaev, CUDA, m) {
   m.impl("run", run_only_forward);
+  m.impl("run_with_nbrlist", run_with_nbrlist_only_forward);
 }
 
 TORCH_LIBRARY_IMPL(cuaev, Autograd, m) {
   m.impl("run", run_autograd);
+  m.impl("run_with_nbrlist", run_with_nbrlist_autograd);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {}

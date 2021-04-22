@@ -1109,6 +1109,17 @@ void cuaev_forward(
   }
 }
 
+void cuaev_forward_with_nbrlist(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const Tensor& atomIJ_t,
+    const Tensor& delta_t,
+    const Tensor& dist_t,
+    const AEVScalarParams& aev_params,
+    Result& result) {
+  return;
+}
+
 Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_params, const Result& result) {
   using namespace torch::indexing;
   Tensor coordinates_t = result.coordinates_t;
