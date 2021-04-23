@@ -255,6 +255,7 @@ class CellList(BaseNeighborlist):
     vector_index_displacement: Tensor
     translation_displacement_indices: Tensor
     bucket_length_lower_bound: Tensor
+    spherical_factor: Tensor
 
     def __init__(self,
                  cutoff,
