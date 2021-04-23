@@ -269,6 +269,7 @@ class CellList(BaseNeighborlist):
         assert buckets_per_cutoff == 1, "Cell list currently only supports one bucket per cutoff"
         self.constant_volume = constant_volume
         self.verlet = verlet
+        self.register_buffer('spherical_factor', torch.full(size=(3, ), fill_value=1.0))
         self.register_buffer('cell_diagonal', torch.zeros(1))
         self.register_buffer('cell_inverse', torch.zeros(1))
         self.register_buffer('total_buckets', torch.zeros(1, dtype=torch.long))
@@ -622,7 +623,7 @@ class CellList(BaseNeighborlist):
         #
         # note that this is not actually the bucket length used in the grid,
         # it is only a lower bound used to calculate the grid size
-        spherical_factor = torch.ones(3, dtype=torch.double)
+        spherical_factor = self.spherical_factor
         self.bucket_length_lower_bound = (spherical_factor * self.cutoff / self.buckets_per_cutoff) + extra_space
 
     def _to_flat_index(self, x: Tensor) -> Tensor:

@@ -2,72 +2,19 @@ import unittest
 
 import torch
 
-from torchani.aev import AEVComputer, CellList
-from torchani.geometry import tile_into_cube
 import torchani
 from torchani.testing import TestCase
-
-vector_bucket_index_compare = torch.tensor([[[0, 0, 0],
-                                       [0, 0, 0],
-                                       [0, 0, 1],
-                                       [0, 0, 1],
-                                       [0, 0, 2],
-                                       [0, 0, 2],
-                                       [0, 1, 0],
-                                       [0, 1, 0],
-                                       [0, 1, 1],
-                                       [0, 1, 1],
-                                       [0, 1, 2],
-                                       [0, 1, 2],
-                                       [0, 2, 0],
-                                       [0, 2, 0],
-                                       [0, 2, 1],
-                                       [0, 2, 1],
-                                       [0, 2, 2],
-                                       [0, 2, 2],
-                                       [1, 0, 0],
-                                       [1, 0, 0],
-                                       [1, 0, 1],
-                                       [1, 0, 1],
-                                       [1, 0, 2],
-                                       [1, 0, 2],
-                                       [1, 1, 0],
-                                       [1, 1, 0],
-                                       [1, 1, 1],
-                                       [1, 1, 1],
-                                       [1, 1, 2],
-                                       [1, 1, 2],
-                                       [1, 2, 0],
-                                       [1, 2, 0],
-                                       [1, 2, 1],
-                                       [1, 2, 1],
-                                       [1, 2, 2],
-                                       [1, 2, 2],
-                                       [2, 0, 0],
-                                       [2, 0, 0],
-                                       [2, 0, 1],
-                                       [2, 0, 1],
-                                       [2, 0, 2],
-                                       [2, 0, 2],
-                                       [2, 1, 0],
-                                       [2, 1, 0],
-                                       [2, 1, 1],
-                                       [2, 1, 1],
-                                       [2, 1, 2],
-                                       [2, 1, 2],
-                                       [2, 2, 0],
-                                       [2, 2, 0],
-                                       [2, 2, 1],
-                                       [2, 2, 1],
-                                       [2, 2, 2],
-                                       [2, 2, 2]]], dtype=torch.long)
+from torchani.aev import AEVComputer, CellList
+from torchani.geometry import tile_into_cube
 
 
 class TestCellList(TestCase):
+
     def setUp(self):
         self.device = torch.device('cpu')
         cut = 5.2
         cell_size = cut * 3 + 0.1
+
         self.cut = cut
         self.cell_size = cell_size
         # The length of the box is ~ 3 * cutoff this so that
@@ -81,13 +28,13 @@ class TestCellList(TestCase):
                                               box_length=cut)
         assert species.shape[1] == 54
         assert coordinates.shape[1] == 54
+
         self.coordinates = coordinates
         self.species = species
         # first bucket is 0 - 5.2, in 3 directions, and subsequent buckets
         # are on top of that
         self.pbc = torch.tensor([True, True, True], dtype=torch.bool)
-        self.cell = torch.diag(torch.tensor([cell_size, cell_size,
-                                             cell_size])).float()
+        self.cell = torch.diag(torch.tensor([cell_size, cell_size, cell_size])).float()
         self.clist = CellList(cut)
 
     def testInitDefault(self):
@@ -95,8 +42,7 @@ class TestCellList(TestCase):
         self.assertTrue(clist.buckets_per_cutoff == 1)
         self.assertTrue(clist.cutoff == self.cut)
         self.assertTrue(clist.num_neighbors == 13)
-        self.assertTrue(
-            (clist.bucket_length_lower_bound == self.cut + 0.00001).all())
+        self.assertEqual(clist.bucket_length_lower_bound, torch.full(size=(3,), fill_value=self.cut + 0.00001, device=self.device))
 
     def testSetupCell(self):
         clist = self.clist
@@ -420,8 +366,6 @@ class TestCellListEnergies(TestCase):
                                 pbc=self.pbc.to(self.device))
             self.assertEqual(aevs_cl, aevs_fp)
 
-    # TODO: Note that this test fails with single precision!
-    #@unittest.skipIf(True, '')
     def testCellListRandomFloat(self):
         aev_cl = self.aev_cl.to(self.device).to(torch.float)
         aev_fp = self.aev_fp.to(self.device).to(torch.float)
@@ -448,6 +392,62 @@ class TestCellListEnergiesCuda(TestCellListEnergies):
         super().setUp()
         self.device = torch.device('cuda')
         self.num_to_test = 100
+
+
+vector_bucket_index_compare = torch.tensor([[[0, 0, 0],
+                                       [0, 0, 0],
+                                       [0, 0, 1],
+                                       [0, 0, 1],
+                                       [0, 0, 2],
+                                       [0, 0, 2],
+                                       [0, 1, 0],
+                                       [0, 1, 0],
+                                       [0, 1, 1],
+                                       [0, 1, 1],
+                                       [0, 1, 2],
+                                       [0, 1, 2],
+                                       [0, 2, 0],
+                                       [0, 2, 0],
+                                       [0, 2, 1],
+                                       [0, 2, 1],
+                                       [0, 2, 2],
+                                       [0, 2, 2],
+                                       [1, 0, 0],
+                                       [1, 0, 0],
+                                       [1, 0, 1],
+                                       [1, 0, 1],
+                                       [1, 0, 2],
+                                       [1, 0, 2],
+                                       [1, 1, 0],
+                                       [1, 1, 0],
+                                       [1, 1, 1],
+                                       [1, 1, 1],
+                                       [1, 1, 2],
+                                       [1, 1, 2],
+                                       [1, 2, 0],
+                                       [1, 2, 0],
+                                       [1, 2, 1],
+                                       [1, 2, 1],
+                                       [1, 2, 2],
+                                       [1, 2, 2],
+                                       [2, 0, 0],
+                                       [2, 0, 0],
+                                       [2, 0, 1],
+                                       [2, 0, 1],
+                                       [2, 0, 2],
+                                       [2, 0, 2],
+                                       [2, 1, 0],
+                                       [2, 1, 0],
+                                       [2, 1, 1],
+                                       [2, 1, 1],
+                                       [2, 1, 2],
+                                       [2, 1, 2],
+                                       [2, 2, 0],
+                                       [2, 2, 0],
+                                       [2, 2, 1],
+                                       [2, 2, 1],
+                                       [2, 2, 2],
+                                       [2, 2, 2]]], dtype=torch.long)
 
 
 if __name__ == '__main__':
