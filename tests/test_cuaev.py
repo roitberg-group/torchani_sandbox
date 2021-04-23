@@ -360,7 +360,7 @@ class TestCUAEV(TestCase):
             self.assertEqual(cuaev_grad, aev_grad, atol=5e-4, rtol=5e-4)
 
     def testWithNbrList_nopbc(self):
-        files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
+        files = ['3NIR.pdb']
         for file in files:
             filepath = os.path.join(path, f'../dataset/pdb/{file}')
             mol = read(filepath)
@@ -406,6 +406,7 @@ class TestCUAEV(TestCase):
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev)
             self.assertEqual(cuaev_grad, aev_grad, atol=5e-5, rtol=5e-5)
+
 
 if __name__ == '__main__':
     unittest.main()
