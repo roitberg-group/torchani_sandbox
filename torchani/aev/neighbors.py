@@ -1,6 +1,7 @@
 from typing import Tuple, Optional, Union
 
 import torch
+import math
 from torch import Tensor
 from torch.nn import functional
 from ..utils import map_to_central, cumsum_from_zero
@@ -63,6 +64,9 @@ class BaseNeighborlist(torch.nn.Module):
     @staticmethod
     def _screen_with_cutoff(cutoff: float, coordinates: Tensor, input_neighborlist: Tensor,
                             shift_values: Optional[Tensor] = None, mask: Optional[Tensor] = None) -> Tuple[Tensor, Union[Tensor, None], Tensor, Tensor]:
+        # passing an infinite cutoff will only work for non pbc conditions
+        # (shift values must be None)
+        #
         # Screen a given neighborlist using a cutoff and return a neighborlist with
         # atoms that are within that cutoff, for all molecules in a coordinate set.
         #
@@ -91,21 +95,24 @@ class BaseNeighborlist(torch.nn.Module):
         # screening, unfortunately distances have to be recalculated twice each
         # time they are screened, since otherwise torch prepares to calculate
         # derivatives of multiple distances that will later be disregarded
+        if cutoff != math.inf:
+            coordinates_ = coordinates.detach()
+            # detached calculation #
+            coords0 = coordinates_.index_select(0, input_neighborlist[0])
+            coords1 = coordinates_.index_select(0, input_neighborlist[1])
+            diff_vectors = coords0 - coords1
+            if shift_values is not None:
+                diff_vectors += shift_values
+            distances = diff_vectors.norm(2, -1)
+            in_cutoff = (distances <= cutoff).nonzero().flatten()
+            # ------------------- #
 
-        coordinates_ = coordinates.detach()
-        # detached calculation #
-        coords0 = coordinates_.index_select(0, input_neighborlist[0])
-        coords1 = coordinates_.index_select(0, input_neighborlist[1])
-        diff_vectors = coords0 - coords1
-        if shift_values is not None:
-            diff_vectors += shift_values
-        distances = diff_vectors.norm(2, -1)
-        in_cutoff = (distances <= cutoff).nonzero().flatten()
-        # ------------------- #
-
-        screened_neighborlist = input_neighborlist.index_select(1, in_cutoff)
-        if shift_values is not None:
-            shift_values = shift_values.index_select(0, in_cutoff)
+            screened_neighborlist = input_neighborlist.index_select(1, in_cutoff)
+            if shift_values is not None:
+                shift_values = shift_values.index_select(0, in_cutoff)
+        else:
+            assert shift_values is None, "PBC can't be implemented with an infinite cutoff"
+            screened_neighborlist = input_neighborlist
 
         coords0 = coordinates.index_select(0, screened_neighborlist[0])
         coords1 = coordinates.index_select(0, screened_neighborlist[1])
