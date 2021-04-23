@@ -138,11 +138,11 @@ Tensor CuaevWithNbrlistAutograd::forward(
     const Tensor& coordinates_t,
     const Tensor& species_t,
     const Tensor& atomIJ_t,
-    const Tensor& delta_t,
-    const Tensor& dist_t,
+    const Tensor& deltaJ_t,
+    const Tensor& distJ_t,
     const torch::intrusive_ptr<CuaevComputer>& cuaev_computer) {
   at::AutoNonVariableTypeMode g;
-  Result result = cuaev_computer->forward_with_nbrlist(coordinates_t, species_t, atomIJ_t, delta_t, dist_t);
+  Result result = cuaev_computer->forward_with_nbrlist(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t);
   if (coordinates_t.requires_grad()) {
     ctx->saved_data["cuaev_computer"] = cuaev_computer;
     ctx->save_for_backward(result);
@@ -176,10 +176,10 @@ Tensor run_with_nbrlist_only_forward(
     const Tensor& coordinates_t,
     const Tensor& species_t,
     const Tensor& atomIJ_t,
-    const Tensor& delta_t,
-    const Tensor& dist_t,
+    const Tensor& deltaJ_t,
+    const Tensor& distJ_t,
     const torch::intrusive_ptr<CuaevComputer>& cuaev_computer) {
-  Result result = cuaev_computer->forward(coordinates_t, species_t);
+  Result result = cuaev_computer->forward_with_nbrlist(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t);
   return result.aev_t;
 }
 
@@ -187,10 +187,10 @@ Tensor run_with_nbrlist_autograd(
     const Tensor& coordinates_t,
     const Tensor& species_t,
     const Tensor& atomIJ_t,
-    const Tensor& delta_t,
-    const Tensor& dist_t,
+    const Tensor& deltaJ_t,
+    const Tensor& distJ_t,
     const torch::intrusive_ptr<CuaevComputer>& cuaev_computer) {
-  return CuaevAutograd::apply(coordinates_t, species_t, cuaev_computer);
+  return CuaevWithNbrlistAutograd::apply(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, cuaev_computer);
 }
 
 TORCH_LIBRARY(cuaev, m) {

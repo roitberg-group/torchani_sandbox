@@ -629,7 +629,7 @@ __global__ void cuRadialAEVs(
     float Rcr,
     int radial_length,
     int radial_sublength,
-    int nRadialRij,
+    int nRadialRij, // TODO remove this
     int max_numPairsPerAtom) {
   extern __shared__ DataT smem[];
 
@@ -845,6 +845,8 @@ __global__ void postProcessNbrList(
   const float3* pos_p_3 = reinterpret_cast<const float3*>(pos_p);
   float3 coord_i = pos_p_3[mol_idx * max_natoms_per_mol + i];
 
+  // TODO why this is needed?
+  // This is wrong that ATOM_I_PER_BLOCK could only be WARP_SIZE
   if (idx < ATOM_I_PER_BLOCK) {
     s_new_pcounter_i[idx] = 0;
     int ii = blockIdx.x * blockDim.y + idx;
@@ -859,6 +861,7 @@ __global__ void postProcessNbrList(
   }
   __syncthreads();
 
+  // if blockDim.x is not warpsize, there will be control divergence because of different jnum
   for (int jj = threadIdx.x; jj < s_num_max && jj < jnum; jj += blockDim.x) {
     int j = atomJ[pairs_per_mol * mol_idx + i * max_numj_per_i_in_Rcr + jj];
     float dist = distJ[pairs_per_mol * mol_idx + i * max_numj_per_i_in_Rcr + jj];
@@ -879,6 +882,91 @@ __global__ void postProcessNbrList(
   gi = idx + blockIdx.x * blockDim.y;
   if (idx < blockDim.y && gi < num_atomI) {
     angular_numJPerI[gi] = s_new_pcounter_i[idx];
+  }
+}
+
+template <int ATOM_I_PER_BLOCK>
+__global__ void postProcessExternelNbrList(
+    // inputs
+    const int* __restrict__ atomIJ,
+    const float* __restrict__ distJ,
+    const float3* __restrict__ deltaJ,
+    const int* __restrict__ startIdxPerI,
+    const int* __restrict__ numJPerI,
+    // outputs
+    AtomI* __restrict__ atom_i,
+    int* __restrict__ radial_atomJ,
+    float* __restrict__ radial_distJ,
+    float3* __restrict__ radial_deltaJ,
+    int* __restrict__ angular_atomJ,
+    float* __restrict__ angular_distJ,
+    float3* __restrict__ angular_deltaJ,
+    int* __restrict__ radial_numJPerI,
+    int* __restrict__ angular_numJPerI,
+    // constants
+    float Rcr,
+    float Rca,
+    int num_atomI,
+    int max_natoms_per_mol,
+    int num_atomIJ) {
+  auto& atomI_p = atomIJ;
+  const int* atomJ_p = &atomIJ[num_atomIJ];
+
+  __shared__ int s_radial_pcounter_i[ATOM_I_PER_BLOCK];
+  __shared__ int s_angular_pcounter_i[ATOM_I_PER_BLOCK];
+  __shared__ int s_num_max;
+  int gi = blockIdx.x * blockDim.y + threadIdx.y;
+  if (gi >= num_atomI)
+    return;
+
+  int jnum = numJPerI[gi];
+  int start_i = startIdxPerI[gi];
+  int ii = threadIdx.y;
+  int idx = blockDim.x * threadIdx.y + threadIdx.x;
+
+  // TODO this is only needed if blockDim.x is not WARP_SIZE
+  if (idx < ATOM_I_PER_BLOCK) {
+    s_radial_pcounter_i[idx] = 0;
+    s_angular_pcounter_i[idx] = 0;
+    int ii = blockIdx.x * blockDim.y + idx;
+    int num_max = ii < num_atomI ? numJPerI[ii] : 0;
+
+    for (int offset = 16; offset > 0; offset /= 2) {
+      num_max = max(num_max, __shfl_down_sync(0xFFFFFFFF, num_max, offset));
+    }
+    if (idx == 0) {
+      s_num_max = num_max;
+    }
+  }
+  __syncthreads();
+
+  for (int jj = threadIdx.x; jj < s_num_max && jj < jnum; jj += blockDim.x) {
+    float dist = distJ[start_i + jj];
+    if (dist <= Rcr) {
+      int pidx_r = atomicAdd(&s_radial_pcounter_i[ii], 1);
+      int j = atomJ_p[start_i + jj] % max_natoms_per_mol;
+      float3 delta = {-deltaJ[start_i + jj].x, -deltaJ[start_i + jj].y, -deltaJ[start_i + jj].z};
+      radial_atomJ[start_i + pidx_r] = j;
+      radial_distJ[start_i + pidx_r] = dist;
+      radial_deltaJ[start_i + pidx_r] = delta;
+      if (dist <= Rca) {
+        int pidx_a = atomicAdd(&s_angular_pcounter_i[ii], 1);
+        angular_atomJ[start_i + pidx_a] = j;
+        angular_distJ[start_i + pidx_a] = dist;
+        angular_deltaJ[start_i + pidx_a] = delta;
+      }
+    }
+  }
+  __syncthreads();
+
+  gi = idx + blockIdx.x * blockDim.y;
+  if (idx < blockDim.y && gi < num_atomI) {
+    radial_numJPerI[gi] = s_radial_pcounter_i[idx];
+    angular_numJPerI[gi] = s_angular_pcounter_i[idx];
+    int start_i = startIdxPerI[gi];
+    int i = atomI_p[start_i] % max_natoms_per_mol;
+    int mol_idx = atomI_p[start_i] / max_natoms_per_mol;
+    atom_i[gi] = {mol_idx, i};
   }
 }
 
@@ -1113,11 +1201,200 @@ void cuaev_forward_with_nbrlist(
     const Tensor& coordinates_t,
     const Tensor& species_t,
     const Tensor& atomIJ_t,
-    const Tensor& delta_t,
-    const Tensor& dist_t,
+    const Tensor& deltaJ_t,
+    const Tensor& distJ_t,
     const AEVScalarParams& aev_params,
     Result& result) {
-  return;
+  TORCH_CHECK(
+      (species_t.dtype() == torch::kInt32) && (coordinates_t.dtype() == torch::kFloat32), "Unsupported input type");
+  TORCH_CHECK(
+      aev_params.EtaR_t.size(0) == 1 || aev_params.EtaA_t.size(0) == 1 || aev_params.Zeta_t.size(0) == 1,
+      "cuda extension is currently not supported for the specified "
+      "configuration");
+  TORCH_CHECK(atomIJ_t.size(0) == 2, "atomIJ_t's shape should be (2, P)");
+
+  float Rcr = aev_params.Rcr;
+  float Rca = aev_params.Rca;
+  const int n_molecules = species_t.size(0);
+  const int max_natoms_per_mol = species_t.size(1);
+  int aev_length = aev_params.radial_length + aev_params.angular_length;
+  int total_atoms = n_molecules * max_natoms_per_mol;
+  float* coordinates_p = (float*)coordinates_t.data_ptr();
+  TORCH_CHECK(coordinates_t.is_contiguous(), "Coordinate data is not contiguous");
+
+  result.aev_t = torch::zeros({n_molecules, max_natoms_per_mol, aev_length}, coordinates_t.options());
+  if (species_t.numel() == 0) {
+    return;
+  }
+
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  at::globalContext().lazyInitCUDA();
+
+  int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
+  int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
+  auto total_natom_pairs = n_molecules * pairs_per_mol; // TODO clean
+  auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
+
+  int num_atomIJ = atomIJ_t.size(1) * 2; // currently only have IJ, this will be duplicated for JI later
+  // int* atomIJ_p = (int*)atomIJ_t.data_ptr();
+
+  // radial and angular share the same data of atomI, startIdxJ and nI
+  result.atomI_t = torch::empty(total_atoms * 2, d_options.dtype(torch::kInt32));
+  AtomI* atomI_p = (AtomI*)result.atomI_t.data_ptr();
+  result.startIdxJ_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
+  int* startIdxJ_p = (int*)result.startIdxJ_t.data_ptr();
+  // Tensor atomJ_t = torch::empty(total_natom_pairs, d_options.dtype(torch::kInt32));
+  // int* atomJ_p = (int*)atomJ_t.data_ptr();
+
+  // tmp atomI, without mol idx
+  // TODO remove midx in struct atomI?
+  // TODO this is not needed
+  Tensor atomI_tmp_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
+  int* atomI_tmp_p = (int*)atomI_tmp_t.data_ptr();
+  Tensor numJ_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
+  int* numJ_p = (int*)numJ_t.data_ptr();
+
+  // radial and angular numJPerI counter
+  // radial_num_per_atom ranges from 10 - 60
+  result.radialNbr.numJPerI_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
+  int* radialNbr_numJPerI_p = (int*)result.radialNbr.numJPerI_t.data_ptr();
+  result.angularNbr.numJPerI_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
+  int* angularNbr_numJPerI_p = (int*)result.angularNbr.numJPerI_t.data_ptr();
+
+  // generate radial and angular neighborlist
+  result.radialNbr.atomJ_t = torch::empty(num_atomIJ, d_options.dtype(torch::kInt32));
+  int* radialNbr_atomJ_p = (int*)result.radialNbr.atomJ_t.data_ptr();
+  result.radialNbr.distJ_t = torch::empty(num_atomIJ, d_options.dtype(torch::kFloat32));
+  float* radialNbr_distJ_p = (float*)result.radialNbr.distJ_t.data_ptr();
+  result.radialNbr.deltaJ_t = torch::empty(num_atomIJ * 3, d_options.dtype(torch::kFloat32));
+  float3* radialNbr_deltaJ_p = reinterpret_cast<float3*>(result.radialNbr.deltaJ_t.data_ptr());
+
+  result.angularNbr.atomJ_t = torch::empty(num_atomIJ, d_options.dtype(torch::kInt32));
+  int* angularNbr_atomJ_p = (int*)result.angularNbr.atomJ_t.data_ptr();
+  result.angularNbr.distJ_t = torch::empty(num_atomIJ, d_options.dtype(torch::kFloat32));
+  float* angularNbr_distJ_p = (float*)result.angularNbr.distJ_t.data_ptr();
+  result.angularNbr.deltaJ_t = torch::empty(num_atomIJ * 3, d_options.dtype(torch::kFloat32));
+  float3* angularNbr_deltaJ_p = reinterpret_cast<float3*>(result.angularNbr.deltaJ_t.data_ptr());
+
+  // duplicates atomIJ_p
+  Tensor atomJI_t = atomIJ_t.flip(0).view(-1);
+  // sort
+  Tensor atomI, idxs;
+  std::tie(atomI, idxs) = atomIJ_t.flatten().sort();
+  Tensor rev_idxs = idxs % (num_atomIJ / 2);
+  Tensor atomJ = atomJI_t.index_select(0, idxs);
+  Tensor sign = (torch::lt(atomI, atomJ).to(torch::kInt32) - 0.5) * 2;
+  auto deltaJ_t_ = deltaJ_t.index_select(0, rev_idxs) * sign.view({-1, 1});
+  auto distJ_t_ = distJ_t.index_select(0, rev_idxs);
+  auto atomIJ_t_ = torch::cat({atomI, atomJ}, {0}).view({2, -1});
+
+  float3* deltaJ_p = reinterpret_cast<float3*>(deltaJ_t_.data_ptr());
+  float* distJ_p = reinterpret_cast<float*>(distJ_t_.data_ptr());
+  int* atomIJ_p = (int*)atomIJ_t_.data_ptr();
+
+  // The first row in atomIJ_p is atomI index, get numJ for each unique atomI.
+  result.nI = cubEncode(atomIJ_p, atomI_tmp_p, numJ_p, num_atomIJ, stream);
+  cubScan(numJ_p, startIdxJ_p, total_atoms, stream);
+
+  constexpr int ATOM_I_PER_BLOCK = 32;
+  { // postProcessNbrList
+    int ATOM_J_PER_TILE = 32;
+    dim3 block(ATOM_J_PER_TILE, ATOM_I_PER_BLOCK, 1);
+    int blocks = (result.nI + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
+    postProcessExternelNbrList<ATOM_I_PER_BLOCK><<<blocks, block, 0, stream>>>(
+        // inputs
+        atomIJ_p,
+        distJ_p,
+        deltaJ_p,
+        startIdxJ_p,
+        numJ_p,
+        // outputs
+        atomI_p,
+        radialNbr_atomJ_p,
+        radialNbr_distJ_p,
+        radialNbr_deltaJ_p,
+        angularNbr_atomJ_p,
+        angularNbr_distJ_p,
+        angularNbr_deltaJ_p,
+        radialNbr_numJPerI_p,
+        angularNbr_numJPerI_p,
+        // constants
+        Rcr,
+        Rca,
+        result.nI,
+        max_natoms_per_mol,
+        num_atomIJ);
+#ifdef TORCHANI_DEBUG
+    result.radialNbr.nJ = cubSum(radialNbr_numJPerI_p, result.nI, stream);
+    result.angularNbr.nJ = cubSum(angularNbr_numJPerI_p, result.nI, stream);
+    printf("%-35s %'d\n", "nI", result.nI);
+    printf("%-35s %'d\n", "radialNbr  nJ", result.radialNbr.nJ);
+    printf("%-35s %'d\n", "angularNbr nJ", result.angularNbr.nJ);
+#endif
+  }
+
+  { // RadialAEV
+    result.radialNbr.maxNumJPerI = cubMax(radialNbr_numJPerI_p, result.nI, stream);
+    constexpr dim3 block_radial(4, 16, 1);
+    int smem_radial = aev_params.radial_length * sizeof(float) + result.radialNbr.maxNumJPerI * sizeof(float);
+    cuRadialAEVs<int, float><<<result.nI, block_radial, smem_radial, stream>>>(
+        species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+        aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+        aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+        result.aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+        radialNbr_atomJ_p,
+        radialNbr_distJ_p,
+        atomI_p,
+        radialNbr_numJPerI_p,
+        startIdxJ_p,
+        aev_params.Rcr,
+        aev_params.radial_length,
+        aev_params.radial_sublength,
+        result.radialNbr.nJ,
+        result.radialNbr.maxNumJPerI);
+#ifdef TORCHANI_DEBUG
+    printf("%-35s %d\n", "radialNbr  maxNumJPerI", result.radialNbr.maxNumJPerI);
+#endif
+  }
+
+  { // AngularAEV
+    auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
+      int sm_aev = sizeof(float) * aev_params.angular_length;
+      int sxyz = sizeof(float) * max_nbrs * 3;
+      int sRij = sizeof(float) * max_nbrs;
+      int sfc = sizeof(float) * max_nbrs;
+      int sj = sizeof(int) * max_nbrs;
+      return (sm_aev + sxyz + sRij + sfc + sj) * ncatom_per_tpb;
+    };
+
+    result.angularNbr.maxNumJPerI = cubMax(angularNbr_numJPerI_p, result.nI, stream);
+    int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
+    constexpr dim3 block(C10_WARP_SIZE, 4, 1);
+    cuAngularAEVs<block.x, block.y><<<result.nI, block, smem_size, stream>>>(
+        species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+        angularNbr_deltaJ_p,
+        aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+        aev_params.ShfZ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+        aev_params.EtaA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+        aev_params.Zeta_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+        result.aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+        angularNbr_atomJ_p,
+        angularNbr_distJ_p,
+        atomI_p,
+        angularNbr_numJPerI_p,
+        startIdxJ_p,
+        aev_params.Rca,
+        aev_params.angular_length,
+        aev_params.angular_sublength,
+        aev_params.radial_length,
+        aev_params.num_species,
+        result.angularNbr.maxNumJPerI,
+        result.nI);
+#ifdef TORCHANI_DEBUG
+    printf("%-35s %d\n", "angularNbr maxNumJPerI", result.angularNbr.maxNumJPerI);
+    printf("%-35s %'d bytes\n", "forward  angular smem_size", smem_size);
+#endif
+  }
 }
 
 Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_params, const Result& result) {

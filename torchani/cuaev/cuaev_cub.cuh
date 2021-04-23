@@ -51,6 +51,21 @@ void cubDeviceSelectFlagged(const DataT* d_in, DataT* d_out, int num_items, char
   CUB_WRAPPER(cuaev::cub::DeviceSelect::Flagged, d_in, d_flags, d_out, d_num_selected_out, num_items, stream);
 }
 
+template <typename DataT, typename IndexT>
+int cubEncode(const DataT* d_in, DataT* d_unique_out, IndexT* d_counts_out, int num_items, cudaStream_t stream) {
+  auto allocator = c10::cuda::CUDACachingAllocator::get();
+  auto buffer_count = allocator->allocate(sizeof(int));
+  int* d_num_runs_out = (int*)buffer_count.get();
+
+  CUB_WRAPPER(
+      cuaev::cub::DeviceRunLengthEncode::Encode, d_in, d_unique_out, d_counts_out, d_num_runs_out, num_items, stream);
+
+  int num_unique = 0;
+  cudaMemcpyAsync(&num_unique, d_num_runs_out, sizeof(int), cudaMemcpyDefault, stream);
+  cudaStreamSynchronize(stream);
+  return num_unique;
+}
+
 template <typename DataT>
 DataT cubMax(const DataT* d_in, int num_items, cudaStream_t stream) {
   auto allocator = c10::cuda::CUDACachingAllocator::get();

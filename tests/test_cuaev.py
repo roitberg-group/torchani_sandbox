@@ -359,22 +359,53 @@ class TestCUAEV(TestCase):
             self.assertEqual(cu_aev, aev, atol=5e-5, rtol=5e-5)
             self.assertEqual(cuaev_grad, aev_grad, atol=5e-4, rtol=5e-4)
 
-    def testWithNbrList(self):
-        files = ['3NIR.pdb']
+    def testWithNbrList_nopbc(self):
+        files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
         for file in files:
             filepath = os.path.join(path, f'../dataset/pdb/{file}')
             mol = read(filepath)
-            cell = torch.tensor(mol.get_cell(complete=True), dtype=torch.float32, device=self.device)
-            pbc = torch.tensor(mol.get_pbc(), dtype=torch.bool, device=self.device)
             species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
             positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
             speciesPositions = self.ani2x.species_converter((species, positions))
             species, coordinates = speciesPositions
 
-            _, aev = self.aev_computer_2x((species, coordinates), cell, pbc)
-            _, cu_aev = self.cuaev_computer_2x((species, coordinates), cell, pbc, use_cuaev_interface=True)
-            self.assertEqual(cu_aev, aev)
+            coordinates.requires_grad_()
+            _, aev = self.aev_computer_2x((species, coordinates))
+            aev.backward(torch.ones_like(aev))
+            aev_grad = coordinates.grad
 
+            coordinates = coordinates.clone().detach()
+            coordinates.requires_grad_()
+            _, cu_aev = self.cuaev_computer_2x((species, coordinates), use_cuaev_interface=True)
+            cu_aev.backward(torch.ones_like(cu_aev))
+            cuaev_grad = coordinates.grad
+            self.assertEqual(cu_aev, aev)
+            self.assertEqual(cuaev_grad, aev_grad, atol=5e-5, rtol=5e-5)
+
+    def testWithNbrList_pbc(self):
+        files = ['3NIR.pdb']
+        for file in files:
+            filepath = os.path.join(path, f'../dataset/pdb/{file}')
+            mol = read(filepath)
+            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
+            positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
+            cell = torch.tensor(mol.get_cell(complete=True), dtype=torch.float32, device=self.device)
+            pbc = torch.tensor(mol.get_pbc(), dtype=torch.bool, device=self.device)
+            speciesPositions = self.ani2x.species_converter((species, positions))
+            species, coordinates = speciesPositions
+
+            coordinates.requires_grad_()
+            _, aev = self.aev_computer_2x((species, coordinates), cell, pbc)
+            aev.backward(torch.ones_like(aev))
+            aev_grad = coordinates.grad
+
+            coordinates = coordinates.clone().detach()
+            coordinates.requires_grad_()
+            _, cu_aev = self.cuaev_computer_2x((species, coordinates), cell, pbc, use_cuaev_interface=True)
+            cu_aev.backward(torch.ones_like(cu_aev))
+            cuaev_grad = coordinates.grad
+            self.assertEqual(cu_aev, aev)
+            self.assertEqual(cuaev_grad, aev_grad, atol=5e-5, rtol=5e-5)
 
 if __name__ == '__main__':
     unittest.main()

@@ -304,9 +304,11 @@ class AEVComputer(torch.nn.Module):
 
     @jit_unused_if_no_cuaev()
     def _compute_cuaev_with_nbrlist(self, species, coordinates, atom_index12, diff_vector, distances):
+        # TODO could these be int32 by default?
         species_int = species.to(torch.int32)
+        atom_index12_int = atom_index12.to(torch.int32)
         # coordinates will not be used in forward calculation, but it's gradient (force) will still be calculated in cuaev kernel
-        aev = torch.ops.cuaev.run_with_nbrlist(coordinates, species_int, atom_index12, diff_vector, distances, self.cuaev_computer)
+        aev = torch.ops.cuaev.run_with_nbrlist(coordinates, species_int, atom_index12_int, diff_vector, distances, self.cuaev_computer)
         return aev
 
     def _compute_aev(self, species: Tensor,
