@@ -5,6 +5,9 @@ from typing import Tuple, NamedTuple, Optional
 from . import utils
 from .compat import Final
 
+step = 0
+tensorboard = None
+
 
 class SpeciesEnergies(NamedTuple):
     species: Tensor
@@ -88,6 +91,7 @@ class ANIModelLocalMessagePassing(torch.nn.ModuleDict):
 
     size: Final[int]
     internal_size: Final[int]
+    cutoff: Final[float]
     decay_factor: Tensor
     decay_prefactor: Tensor
 
@@ -100,7 +104,7 @@ class ANIModelLocalMessagePassing(torch.nn.ModuleDict):
             od[str(i)] = m
         return od
 
-    def __init__(self, modules):
+    def __init__(self, modules, cutoff_fn, cutoff=5.2):
         super().__init__(self.ensureOrderedDict(modules))
         self.size = 1
         self.internal_size = 96
@@ -108,13 +112,15 @@ class ANIModelLocalMessagePassing(torch.nn.ModuleDict):
         self.register_parameter('decay_prefactor', torch.nn.Parameter(torch.tensor(1.0)))
         second_pass_modules = [torch.nn.Linear(self.internal_size, 1) for _ in range(len(self))]
         self.second_pass = torch.nn.ModuleDict(self.ensureOrderedDict(second_pass_modules))
+        self.cutoff_fn = cutoff_fn
+        self.cutoff = cutoff
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
                 atom_index12: Tensor, distances: Tensor) -> SpeciesEnergies:
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
 
-        atomic_energies = self._atomic_energies((species, aev))
+        atomic_energies = self._atomic_energies((species, aev), atom_index12, distances)
         # shape of atomic energies is (C, A)
         return SpeciesEnergies(species, torch.sum(atomic_energies, dim=1))
 
@@ -125,9 +131,7 @@ class ANIModelLocalMessagePassing(torch.nn.ModuleDict):
         assert species.shape == aev.shape[:-1]
         species_ = species.view(-1)
         aev = aev.view(-1, aev.shape[-1])
-
-        output = aev.new_zeros((species_.shape, self.internal_size))
-
+        output = aev.new_zeros((species_.shape[0], self.internal_size))
         for i, m in enumerate(self.values()):
             midx = (species_ == i).nonzero().view(-1)
             if midx.shape[0] > 0:
@@ -138,9 +142,19 @@ class ANIModelLocalMessagePassing(torch.nn.ModuleDict):
         # I'll add in each position a weighted sum of the aev's of all pairs of
         # each atom, instead of attention I use simple distance weighting
         internal_output = output.clone()
-        decay = self.decay_prefactor * torch.exp(-self.decay_factor * distances)
+        # this should probably be multiplied by a cutoff function
+        decay = (self.decay_prefactor**2) * torch.exp(-(self.decay_factor**2) * distances)
+        decay *= self.cutoff_fn(distances, self.cutoff)
         output = output[atom_index12] * decay.view(1, -1, 1)
-        internal_output.index_add(0, atom_index12.view(-1), output.view(-1, self.internal_size))
+
+        global step
+        global tensorboard
+        if tensorboard is not None:
+            if step % 100 == 1:
+                tensorboard.add_histogram('internal_outputs', internal_output, step)
+                tensorboard.add_histogram('decayed_outputs', output, step)
+
+        internal_output.index_add_(0, atom_index12.view(-1), output.view(-1, self.internal_size))
         # now internal output has shape (A', 96), so now I do an extra NN pass
 
         final_output = internal_output.new_zeros(species_.shape)
@@ -149,8 +163,7 @@ class ANIModelLocalMessagePassing(torch.nn.ModuleDict):
             if midx.shape[0] > 0:
                 input_ = internal_output.index_select(0, midx)
                 final_output.index_add_(0, midx, m(input_).view(-1))
-
-        return output
+        return final_output.view_as(species)
 
 
 class Ensemble(torch.nn.ModuleList):
