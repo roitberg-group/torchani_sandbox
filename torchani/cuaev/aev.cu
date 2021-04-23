@@ -1283,7 +1283,9 @@ void cuaev_forward_with_nbrlist(
   std::tie(atomI, idxs) = atomIJ_t.flatten().sort();
   Tensor rev_idxs = idxs % (num_atomIJ / 2);
   Tensor atomJ = atomJI_t.index_select(0, idxs);
-  Tensor sign = (torch::lt(atomI, atomJ).to(torch::kInt32) - 0.5) * 2;
+  Tensor sign_ = torch::ones({2, num_atomIJ / 2}, d_options.dtype(torch::kFloat32));
+  sign_[1] = -1;
+  Tensor sign = sign_.flatten().index_select(0, idxs);
   auto deltaJ_t_ = deltaJ_t.index_select(0, rev_idxs) * sign.view({-1, 1});
   auto distJ_t_ = distJ_t.index_select(0, rev_idxs);
   auto atomIJ_t_ = torch::cat({atomI, atomJ}, {0}).view({2, -1});
