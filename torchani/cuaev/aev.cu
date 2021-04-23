@@ -1216,8 +1216,6 @@ void cuaev_forward_with_nbrlist(
   AtomI* atomI_p = (AtomI*)result.atomI_t.data_ptr();
   result.startIdxJ_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
   int* startIdxJ_p = (int*)result.startIdxJ_t.data_ptr();
-  // Tensor atomJ_t = torch::empty(total_natom_pairs, d_options.dtype(torch::kInt32));
-  // int* atomJ_p = (int*)atomJ_t.data_ptr();
 
   // tmp atomI, without mol idx
   // TODO remove midx in struct atomI?
@@ -1256,9 +1254,9 @@ void cuaev_forward_with_nbrlist(
   std::tie(atomI, idxs) = atomIJ_t.flatten().sort();
   Tensor rev_idxs = idxs % (num_atomIJ / 2);
   Tensor atomJ = atomJI_t.index_select(0, idxs);
-  Tensor sign_ = torch::ones({2, num_atomIJ / 2}, d_options.dtype(torch::kInt32));
-  sign_[1] = -1;
-  Tensor sign = sign_.flatten().index_select(0, idxs);
+  Tensor sign = torch::ones({2, num_atomIJ / 2}, d_options.dtype(torch::kInt32));
+  sign[1] = -1;
+  sign = sign.flatten().index_select(0, idxs);
   auto deltaJ_t_ = deltaJ_t.index_select(0, rev_idxs) * sign.view({-1, 1});
   auto distJ_t_ = distJ_t.index_select(0, rev_idxs);
   auto atomIJ_t_ = torch::cat({atomI, atomJ}, {0}).view({2, -1});
