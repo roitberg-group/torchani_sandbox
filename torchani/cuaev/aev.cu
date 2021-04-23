@@ -629,7 +629,6 @@ __global__ void cuRadialAEVs(
     float Rcr,
     int radial_length,
     int radial_sublength,
-    int nRadialRij, // TODO remove this
     int max_numPairsPerAtom) {
   extern __shared__ DataT smem[];
 
@@ -700,7 +699,6 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
     float Rcr,
     int radial_length,
     int radial_sublength,
-    int nRadialRij,
     int max_numPairsPerAtom) {
   extern __shared__ DataT smem[];
   DataT* s_grad_dist = &smem[0]; // ddist for backward, dddist for double backward
@@ -829,7 +827,6 @@ __global__ void postProcessNbrList(
     int max_natoms_per_mol,
     int max_numj_per_i_in_Rcr) {
   __shared__ int s_new_pcounter_i[ATOM_I_PER_BLOCK];
-  __shared__ int s_num_max;
   int gi = blockIdx.x * blockDim.y + threadIdx.y;
   if (gi >= num_atomI)
     return;
@@ -845,24 +842,12 @@ __global__ void postProcessNbrList(
   const float3* pos_p_3 = reinterpret_cast<const float3*>(pos_p);
   float3 coord_i = pos_p_3[mol_idx * max_natoms_per_mol + i];
 
-  // TODO why this is needed?
-  // This is wrong that ATOM_I_PER_BLOCK could only be WARP_SIZE
   if (idx < ATOM_I_PER_BLOCK) {
     s_new_pcounter_i[idx] = 0;
-    int ii = blockIdx.x * blockDim.y + idx;
-    int num_max = ii < num_atomI ? radial_numJPerI[ii] : 0;
-
-    for (int offset = 16; offset > 0; offset /= 2) {
-      num_max = max(num_max, __shfl_down_sync(0xFFFFFFFF, num_max, offset));
-    }
-    if (idx == 0) {
-      s_num_max = num_max;
-    }
   }
   __syncthreads();
 
-  // if blockDim.x is not warpsize, there will be control divergence because of different jnum
-  for (int jj = threadIdx.x; jj < s_num_max && jj < jnum; jj += blockDim.x) {
+  for (int jj = threadIdx.x; jj < jnum; jj += blockDim.x) {
     int j = atomJ[pairs_per_mol * mol_idx + i * max_numj_per_i_in_Rcr + jj];
     float dist = distJ[pairs_per_mol * mol_idx + i * max_numj_per_i_in_Rcr + jj];
     radial_atomJ[start_i + jj] = j;
@@ -914,7 +899,6 @@ __global__ void postProcessExternelNbrList(
 
   __shared__ int s_radial_pcounter_i[ATOM_I_PER_BLOCK];
   __shared__ int s_angular_pcounter_i[ATOM_I_PER_BLOCK];
-  __shared__ int s_num_max;
   int gi = blockIdx.x * blockDim.y + threadIdx.y;
   if (gi >= num_atomI)
     return;
@@ -924,23 +908,13 @@ __global__ void postProcessExternelNbrList(
   int ii = threadIdx.y;
   int idx = blockDim.x * threadIdx.y + threadIdx.x;
 
-  // TODO this is only needed if blockDim.x is not WARP_SIZE
   if (idx < ATOM_I_PER_BLOCK) {
     s_radial_pcounter_i[idx] = 0;
     s_angular_pcounter_i[idx] = 0;
-    int ii = blockIdx.x * blockDim.y + idx;
-    int num_max = ii < num_atomI ? numJPerI[ii] : 0;
-
-    for (int offset = 16; offset > 0; offset /= 2) {
-      num_max = max(num_max, __shfl_down_sync(0xFFFFFFFF, num_max, offset));
-    }
-    if (idx == 0) {
-      s_num_max = num_max;
-    }
   }
   __syncthreads();
 
-  for (int jj = threadIdx.x; jj < s_num_max && jj < jnum; jj += blockDim.x) {
+  for (int jj = threadIdx.x; jj < jnum; jj += blockDim.x) {
     float dist = distJ[start_i + jj];
     if (dist <= Rcr) {
       int pidx_r = atomicAdd(&s_radial_pcounter_i[ii], 1);
@@ -1150,7 +1124,6 @@ void cuaev_forward(
         aev_params.Rcr,
         aev_params.radial_length,
         aev_params.radial_sublength,
-        result.radialNbr.nJ,
         result.radialNbr.maxNumJPerI);
 #ifdef TORCHANI_DEBUG
     printf("%-35s %d\n", "radialNbr  maxNumJPerI", result.radialNbr.maxNumJPerI);
@@ -1352,7 +1325,6 @@ void cuaev_forward_with_nbrlist(
         aev_params.Rcr,
         aev_params.radial_length,
         aev_params.radial_sublength,
-        result.radialNbr.nJ,
         result.radialNbr.maxNumJPerI);
 #ifdef TORCHANI_DEBUG
     printf("%-35s %d\n", "radialNbr  maxNumJPerI", result.radialNbr.maxNumJPerI);
@@ -1436,7 +1408,6 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
       aev_params.Rcr,
       aev_params.radial_length,
       aev_params.radial_sublength,
-      result.radialNbr.nJ,
       result.radialNbr.maxNumJPerI);
 
   // angular
@@ -1524,7 +1495,6 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
       aev_params.Rcr,
       aev_params.radial_length,
       aev_params.radial_sublength,
-      result.radialNbr.nJ,
       result.radialNbr.maxNumJPerI);
 
   // angular
