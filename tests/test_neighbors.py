@@ -5,6 +5,7 @@ import torch
 from torchani.aev import AEVComputer, CellList
 from torchani.geometry import tile_into_cube
 import torchani
+from torchani.testing import TestCase
 
 vector_bucket_index_compare = torch.tensor([[[0, 0, 0],
                                        [0, 0, 0],
@@ -62,7 +63,7 @@ vector_bucket_index_compare = torch.tensor([[[0, 0, 0],
                                        [2, 2, 2]]], dtype=torch.long)
 
 
-class TestCellList(unittest.TestCase):
+class TestCellList(TestCase):
     def setUp(self):
         self.device = torch.device('cpu')
         cut = 5.2
@@ -207,7 +208,7 @@ class TestCellList(unittest.TestCase):
         _, aevs_fp = aev_fp((species, coordinates),
                             cell=self.cell,
                             pbc=self.pbc)
-        self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
+        self.assertEqual(aevs_cl, aevs_fp)
 
     def testCellListIsConsistentV1(self):
         cut = self.cut
@@ -274,7 +275,7 @@ class TestCellList(unittest.TestCase):
             self._check_neighborlists_consistency(coordinates, species)
 
 
-class TestCellListEnergies(unittest.TestCase):
+class TestCellListEnergies(TestCase):
     def setUp(self):
         self.device = torch.device('cpu')
         cut = 5.2
@@ -313,9 +314,14 @@ class TestCellListEnergies(unittest.TestCase):
             _, e_fp = self.model_fp((species, coordinates),
                                     cell=self.cell.to(self.device).double(),
                                     pbc=self.pbc.to(self.device))
-            self.assertTrue(torch.isclose(e_cl, e_fp).all())
+            self.assertEqual(e_cl, e_fp)
 
     def testCellListEnergiesRandomFloat(self):
+        # The tolerance of this test is slightly modified because otherwise the
+        # test also fails with AEVComputer FullPairwise ** against itself **.
+        # This is becausse non determinancy in order of operations in cuda
+        # creates small floating point errors that may be larger than the
+        # default threshold
         self.model_cl = self.model_cl.to(self.device).float()
         self.model_fp = self.model_fp.to(self.device).float()
         species = torch.zeros(100).unsqueeze(0).to(torch.long).to(self.device)
@@ -332,7 +338,7 @@ class TestCellListEnergies(unittest.TestCase):
             _, e_j = self.model_fp((species, coordinates),
                                    cell=self.cell.to(self.device).float(),
                                    pbc=self.pbc.to(self.device))
-            self.assertTrue(torch.isclose(e_c, e_j).all())
+            self.assertEqual(e_c, e_j, rtol=1e-4, atol=1e-4)
 
     def testCellListLargeRandom(self):
         aev_cl = self.aev_cl.to(self.device).double()
@@ -351,7 +357,7 @@ class TestCellListEnergies(unittest.TestCase):
             _, aevs_fp = aev_fp((species, coordinates),
                                 cell=self.cell.to(self.device).double(),
                                 pbc=self.pbc.to(self.device))
-            self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
+            self.assertEqual(aevs_cl, aevs_fp)
 
     def testCellListLargeRandomNoPBC(self):
         aev_cl = self.aev_cl.to(self.device).double()
@@ -366,7 +372,7 @@ class TestCellListEnergies(unittest.TestCase):
 
             _, aevs_cl = aev_cl((species, coordinates))
             _, aevs_fp = aev_fp((species, coordinates))
-            self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
+            self.assertEqual(aevs_cl, aevs_fp)
 
     def testCellListLargeRandomJITNoPBC(self):
         # JIT optimizations are avoided to prevent cuda bugs that make first evaluations extremely slow
@@ -387,7 +393,7 @@ class TestCellListEnergies(unittest.TestCase):
 
             _, aevs_cl = aev_cl((species, coordinates))
             _, aevs_fp = aev_fp((species, coordinates))
-            self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
+            self.assertEqual(aevs_cl, aevs_fp)
 
     def testCellListLargeRandomJIT(self):
         # JIT optimizations are avoided to prevent cuda bugs that make first evaluations extremely slow
@@ -412,10 +418,10 @@ class TestCellListEnergies(unittest.TestCase):
             _, aevs_fp = aev_fp((species, coordinates),
                                 cell=self.cell.to(self.device).double(),
                                 pbc=self.pbc.to(self.device))
-            self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
+            self.assertEqual(aevs_cl, aevs_fp)
 
     # TODO: Note that this test fails with single precision!
-    @unittest.skipIf(True, '')
+    #@unittest.skipIf(True, '')
     def testCellListRandomFloat(self):
         aev_cl = self.aev_cl.to(self.device).to(torch.float)
         aev_fp = self.aev_fp.to(self.device).to(torch.float)
@@ -433,7 +439,7 @@ class TestCellListEnergies(unittest.TestCase):
             _, aevs_fp = aev_fp((species, coordinates),
                                 cell=self.cell.to(self.device),
                                 pbc=self.pbc.to(self.device))
-            self.assertTrue(torch.isclose(aevs_cl, aevs_fp).all())
+            self.assertEqual(aevs_cl, aevs_fp, rtol=1e-4, atol=1e-4)
 
 
 @unittest.skipIf(not torch.cuda.is_available(), 'No cuda device found')
