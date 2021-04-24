@@ -392,7 +392,8 @@ class CellList(BaseNeighborlist):
                 pbc: Optional[Tensor] = None) -> Tuple[Tensor, Union[Tensor, None], Tensor, Tensor]:
 
         assert coordinates.shape[0] == 1, "Cell list doesn't support batches"
-        assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
+        if cell is None:
+            assert (pbc is None or not pbc.any())
         # if cell is None then a bounding cell for the molecule is obtained
         # from the coordinates, in this case the coordinates are assumed to be
         # mapped to the central cell, since it is meaningless for the coordinates
@@ -428,6 +429,7 @@ class CellList(BaseNeighborlist):
                 self._cache_values(atom_pairs, shift_indices, coordinates_displaced.detach())
 
         if pbc.any():
+            assert shift_indices is not None
             shift_values = shift_indices.to(cell.dtype) @ cell
             # Before the screening step we map the coordinates to the central cell,
             # same as with a full pairwise calculation
@@ -444,7 +446,7 @@ class CellList(BaseNeighborlist):
         else:
             return self._screen_with_cutoff(self.cutoff, coordinates, atom_pairs, mask=(species == -1))
 
-    def _calculate_cell_list(self, coordinates: Tensor, pbc: Tensor) -> Tuple[Tensor, Tensor]:
+    def _calculate_cell_list(self, coordinates: Tensor, pbc: Tensor) -> Tuple[Tensor, Union[Tensor, None]]:
         # 1) Fractionalize coordinates
         fractional_coordinates = self._fractionalize_coordinates(coordinates)
 
@@ -504,8 +506,6 @@ class CellList(BaseNeighborlist):
                                                                                neighbor_cumcount,
                                                                                max_in_bucket,
                                                                                neighbor_translation_types)
-        between_pairs_shift_indices = self.translation_displacement_indices.index_select(0, between_pairs_translation_types)
-        assert between_pairs_shift_indices.shape[-1] == 3
         neighborhood_count = neighbor_count.sum(-1).squeeze()
         upper = torch.repeat_interleave(imidx_from_atidx.squeeze(), neighborhood_count)
 
@@ -515,20 +515,20 @@ class CellList(BaseNeighborlist):
         if not pbc.any():
             # select only the pairs that don't need any translation
             non_pbc_pairs = (between_pairs_translation_types == 0).nonzero().flatten()
-            between_pairs_shift_indices = between_pairs_shift_indices.index_select(0, non_pbc_pairs)
             between_image_pairs = between_image_pairs.index_select(1, non_pbc_pairs)
-            assert between_pairs_shift_indices.shape[0] == between_image_pairs.shape[1]
-            assert (between_pairs_shift_indices == 0).all(), "No translation must happen for non pbc"
+            shift_indices = None
+        else:
+            between_pairs_shift_indices = self.translation_displacement_indices.index_select(0, between_pairs_translation_types)
+            assert between_pairs_shift_indices.shape[-1] == 3
+            within_pairs_shift_indices = torch.zeros(len(within_image_pairs[0]),
+                                                3,
+                                                device=between_pairs_shift_indices.device, dtype=torch.long)
+            # -1 is necessary to ensure correct shifts
+            shift_indices = -torch.cat((between_pairs_shift_indices, within_pairs_shift_indices), dim=0)
 
         # concatenate within and between
         image_pairs = torch.cat((between_image_pairs, within_image_pairs), dim=1)
         atom_pairs = atidx_from_imidx[image_pairs]
-        within_pairs_shift_indices = torch.zeros(len(within_image_pairs[0]),
-                                                3,
-                                                device=image_pairs.device, dtype=torch.long)
-        # -1 is necessary to ensure correct shifts
-        shift_indices = -torch.cat((between_pairs_shift_indices, within_pairs_shift_indices), dim=0)
-        assert shift_indices.shape[0] == atom_pairs.shape[1]
 
         return atom_pairs, shift_indices
 
@@ -571,7 +571,7 @@ class CellList(BaseNeighborlist):
         # since we can index the array using negative indices!
         vector_idx_to_flat = torch.arange(0, self.total_buckets.item(),
                                           device=current_device)
-        vector_idx_to_flat = vector_idx_to_flat.reshape(
+        vector_idx_to_flat = vector_idx_to_flat.view(
             int(self.shape_buckets_grid[0]),
             int(self.shape_buckets_grid[1]),
             int(self.shape_buckets_grid[2]))
@@ -687,7 +687,7 @@ class CellList(BaseNeighborlist):
         # get all indices and then apply as needed I will call the buckets "main
         # bucket" and "neighboring buckets"
         assert self.shape_buckets_grid is not None, "shape_buckets_grid not computed"
-        out = torch.floor(fractional * (self.shape_buckets_grid).reshape(1, 1, -1))
+        out = torch.floor(fractional * (self.shape_buckets_grid).view(1, 1, -1))
         out = out.to(torch.long)
         return out
 
@@ -772,13 +772,15 @@ class CellList(BaseNeighborlist):
                                             max_in_bucket,
                                             row_for_sorting=1)
         # shape (2, pairs) + shape (withpairs, 1, 1) = shape (withpairs, 2, pairs)
-        padded_pairs = padded_pairs + withpairs_flat_bucket_cumcount.reshape(
+        padded_pairs = padded_pairs + withpairs_flat_bucket_cumcount.view(
             -1, 1, 1)
         # basically this repeats the padded pairs "withpairs" times and adds to all of
         # them the cumulative counts
         # now we unravel all pairs, which remain in the correct order in the
         # second row (the order within same numbers in the first row is actually
         # not essential)
+
+        # this call to reshape is needed due to loss of contiguity by permute
         padded_pairs = padded_pairs.permute(1, 0, 2).reshape(2, -1)
 
         # NOTE this code is very confusing, it could probably use some comments
@@ -790,17 +792,14 @@ class CellList(BaseNeighborlist):
                                         rounding_mode='floor')
         mask = torch.arange(0, int(max_pairs_in_bucket), device=current_device)
         num_buckets_with_pairs = len(withpairs_flat_index[0])
-        mask = mask.repeat(num_buckets_with_pairs, 1)
+        mask = mask.expand(num_buckets_with_pairs, -1)
 
         # NOTE: JIT bug makes it so that we have to add the "one" tensor here
         one = torch.tensor(1, device=current_device, dtype=torch.long)
         withpairs_count_pairs = torch.div(withpairs_flat_bucket_count * (withpairs_flat_bucket_count - one), 2,
                                           rounding_mode='floor')
-        mask = (mask < withpairs_count_pairs.reshape(-1, 1)).reshape(-1)
-
-        upper = torch.masked_select(padded_pairs[0], mask)
-        lower = torch.masked_select(padded_pairs[1], mask)
-        within_image_pairs = torch.stack((upper, lower), dim=0)
+        mask = (mask < withpairs_count_pairs.view(-1, 1)).view(-1)
+        within_image_pairs = padded_pairs.index_select(1, mask.nonzero().flatten())
         return within_image_pairs
 
     def _get_lower_between_image_pairs(
@@ -817,11 +816,13 @@ class CellList(BaseNeighborlist):
         padded_atom_neighbors = torch.arange(0,
                                              int(max_in_bucket),
                                              device=neighbor_count.device)
-        padded_atom_neighbors = padded_atom_neighbors.reshape(1, 1, 1, -1)
+        padded_atom_neighbors = padded_atom_neighbors.view(1, 1, 1, -1)
+        # repeat is needed instead of expand here due to += neighbor_cumcount
         padded_atom_neighbors = padded_atom_neighbors.repeat(
             1, atoms, self.num_neighbors, 1)
 
         # repeat the neighbor translation types to account for all neighboring atoms
+        # repeat is needed instead of expand due to reshaping later
         neighbor_translation_types = neighbor_translation_types.unsqueeze(
             -1).repeat(1, 1, 1, padded_atom_neighbors.shape[-1])
 
@@ -836,8 +837,12 @@ class CellList(BaseNeighborlist):
         # now all that is left is to apply the mask in order to unpad
         assert padded_atom_neighbors.shape == mask.shape
         assert neighbor_translation_types.shape == mask.shape
-        lower = torch.masked_select(padded_atom_neighbors, mask)
-        between_pairs_translation_types = torch.masked_select(neighbor_translation_types, mask)
+        # the following calls are equivalent to masked select but significantly faster,
+        # since masked_select is slow
+        # y = torch.masked_select(x, mask) == y = x.view(-1).index_select(0, mask.view(-1).nonzero().squeeze())
+        lower = padded_atom_neighbors.view(-1).index_select(0, mask.view(-1).nonzero().squeeze())
+        between_pairs_translation_types = neighbor_translation_types.view(-1)\
+                                          .index_select(0, mask.view(-1).nonzero().squeeze())
         return lower, between_pairs_translation_types
 
     def _get_bucket_indices(
@@ -870,7 +875,7 @@ class CellList(BaseNeighborlist):
         neighbor_flat_indices = self.vector_idx_to_flat[
             neighbor_vector_indices[:, 0], neighbor_vector_indices[:, 1],
             neighbor_vector_indices[:, 2]]
-        neighbor_flat_indices = neighbor_flat_indices.reshape(
+        neighbor_flat_indices = neighbor_flat_indices.view(
             1, atoms, neighbors)
         neighbor_vector_indices = neighbor_vector_indices.view(1, atoms, neighbors, 3)
         return neighbor_vector_indices, neighbor_flat_indices
@@ -882,7 +887,7 @@ class CellList(BaseNeighborlist):
         neighbor_translation_types = self.translation_cases[
             neighbor_vector_indices[:, 0], neighbor_vector_indices[:, 1],
             neighbor_vector_indices[:, 2]]
-        neighbor_translation_types = neighbor_translation_types.reshape(
+        neighbor_translation_types = neighbor_translation_types.view(
             1, atoms, neighbors)
         return neighbor_translation_types
 
