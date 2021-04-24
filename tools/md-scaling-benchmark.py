@@ -5,7 +5,7 @@ import pickle
 import ase
 import copy
 import numpy as np
-from typing import Union, List, cast
+from typing import Union, List
 from tqdm import tqdm
 import timeit
 
@@ -384,8 +384,7 @@ if __name__ == "__main__":
             ])
             titles += '\n'
             fc.write(titles)
-            all_trials = cast(np.ndarray, all_trials)
-            all_trials = np.asarray(all_trials)
+            all_trials = np.array(all_trials)
             for times, s in zip(all_trials, sizes):
                 assert isinstance(times, np.ndarray)
                 string = ' '.join(times.astype(str)) + f' {s}\n'
