@@ -5,7 +5,7 @@ import pickle
 import ase
 import copy
 import numpy as np
-from typing import Union
+from typing import Union, List
 from tqdm import tqdm
 import timeit
 
@@ -174,7 +174,7 @@ if __name__ == "__main__":
     parser.add_argument('-s',
                         '--steps',
                         type=int,
-                        default=250,
+                        default=100,
                         help="Timesteps to run in dynamics")
     parser.add_argument('--no-pbc',
                         action='store_true',
@@ -191,7 +191,7 @@ if __name__ == "__main__":
                         help="path to directory with xyz files")
     parser.add_argument('-t',
                         '--trials',
-                        default=5,
+                        default=1,
                         help="Repetitions to calculate std dev")
     parser.add_argument(
         '-b',
@@ -254,7 +254,11 @@ if __name__ == "__main__":
                 num_atoms * torch.arange(4, args.box_repeats + 1)**3).numpy().tolist()
         else:
             assert isinstance(path_to_xyz, Path)
+            sizes: Union[List[int], np.ndarray]
             sizes = []
+
+            xyz_files: Union[List[Path], np.ndarray]
+
             xyz_files = [
                 p for p in path_to_xyz.iterdir() if '.xyz' == p.suffix
             ]
@@ -265,7 +269,7 @@ if __name__ == "__main__":
             xyz_files = np.asarray(xyz_files)
             idx = np.argsort(sizes)
             sizes = sizes[idx]
-            xyz_files = xyz_files[idx]
+            xyz_files = xyz_files[idx].tolist()
 
         print_info(device, args.steps, sizes)
         model = get_model(args.model, args.cell_list, args.model_index,
