@@ -384,8 +384,8 @@ if __name__ == "__main__":
             ])
             titles += '\n'
             fc.write(titles)
-            all_trials = np.array(all_trials)
-            for times, s in zip(all_trials, sizes):
+            all_trials_arr = np.array(all_trials)
+            for times, s in zip(all_trials_arr, sizes):
                 assert isinstance(times, np.ndarray)
                 string = ' '.join(times.astype(str)) + f' {s}\n'
                 fc.write(string)
