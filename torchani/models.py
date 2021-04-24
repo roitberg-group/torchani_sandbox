@@ -32,7 +32,7 @@ import os
 import torch
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple, List
-from .nn import SpeciesConverter, SpeciesEnergies
+from .nn import SpeciesConverter, SpeciesEnergies, Ensemble
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE
 from .aev import AEVComputer
 from .compat import Final
@@ -61,12 +61,28 @@ class BuiltinModel(torch.nn.Module):
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
         self.energy_shifter = energy_shifter
+
         self.species_converter = SpeciesConverter(elements)
         self._species_to_tensor = ChemicalSymbolsToInts(elements)
 
         self.periodic_table_index = periodic_table_index
         numbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
         self.register_buffer('atomic_numbers', numbers)
+
+        # checks are performed to make sure all modules passed support the
+        # correct number of species
+        if energy_shifter.fit_intercept:
+            assert len(energy_shifter.self_energies) == len(self.atomic_numbers + 1)
+        else:
+            assert len(energy_shifter.self_energies) == len(self.atomic_numbers)
+
+        assert len(self.atomic_numbers) == self.aev_computer.num_species
+
+        if isinstance(self.neural_networks, Ensemble):
+            for nnp in self.neural_networks:
+                assert len(nnp) == len(self.atomic_numbers)
+        else:
+            assert len(self.neural_networks) == len(self.atomic_numbers)
 
     @torch.jit.ignore
     def get_chemical_symbols(self) -> List[str]:
