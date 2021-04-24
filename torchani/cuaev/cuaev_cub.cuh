@@ -66,6 +66,29 @@ int cubEncode(const DataT* d_in, DataT* d_unique_out, IndexT* d_counts_out, int 
   return num_unique;
 }
 
+template <typename KeyT, typename ValueT>
+void cubSortPairs(
+    const KeyT* d_keys_in,
+    KeyT* d_keys_out,
+    const ValueT* d_values_in,
+    ValueT* d_values_out,
+    int num_items,
+    float max_key,
+    cudaStream_t stream) {
+  auto allocator = c10::cuda::CUDACachingAllocator::get();
+  int nbits = std::max<int>(0, std::ceil(std::log2(max_key))) + 1;
+  CUB_WRAPPER(
+      cuaev::cub::DeviceRadixSort::SortPairs,
+      d_keys_in,
+      d_keys_out,
+      d_values_in,
+      d_values_out,
+      num_items,
+      0,
+      nbits,
+      stream);
+}
+
 template <typename DataT>
 DataT cubMax(const DataT* d_in, int num_items, cudaStream_t stream) {
   auto allocator = c10::cuda::CUDACachingAllocator::get();

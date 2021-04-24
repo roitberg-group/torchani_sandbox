@@ -873,9 +873,11 @@ __global__ void postProcessNbrList(
 template <int ATOM_I_PER_BLOCK>
 __global__ void postProcessExternelNbrList(
     // inputs
-    const int* __restrict__ atomIJ,
-    const float* __restrict__ distJ,
-    const float3* __restrict__ deltaJ,
+    const int* __restrict__ atomI_unique,
+    const int* __restrict__ atomJ_unsorted, // size 2P, P stands for Pairs, atomJ is duplicated
+    const int* __restrict__ sort_idx, // size 2P
+    const float* __restrict__ distJ_unsorted, // size P, dist is not duplicated
+    const float3* __restrict__ deltaJ_unsorted, // size P, delta is not duplicated
     const int* __restrict__ startIdxPerI,
     const int* __restrict__ numJPerI,
     // outputs
@@ -894,9 +896,6 @@ __global__ void postProcessExternelNbrList(
     int num_atomI,
     int max_natoms_per_mol,
     int num_atomIJ) {
-  auto& atomI_p = atomIJ;
-  const int* atomJ_p = &atomIJ[num_atomIJ];
-
   __shared__ int s_radial_pcounter_i[ATOM_I_PER_BLOCK];
   __shared__ int s_angular_pcounter_i[ATOM_I_PER_BLOCK];
   int gi = blockIdx.x * blockDim.y + threadIdx.y;
@@ -915,11 +914,17 @@ __global__ void postProcessExternelNbrList(
   __syncthreads();
 
   for (int jj = threadIdx.x; jj < jnum; jj += blockDim.x) {
-    float dist = distJ[start_i + jj];
+    int sortidx_2P = sort_idx[start_i + jj];
+    int sortidx_1P = sortidx_2P % (num_atomIJ / 2);
+    float dist = distJ_unsorted[sortidx_1P];
     if (dist <= Rcr) {
       int pidx_r = atomicAdd(&s_radial_pcounter_i[ii], 1);
-      int j = atomJ_p[start_i + jj] % max_natoms_per_mol;
-      float3 delta = {-deltaJ[start_i + jj].x, -deltaJ[start_i + jj].y, -deltaJ[start_i + jj].z};
+      int sign = sortidx_2P < (num_atomIJ / 2) ? -1 : 1;
+      int j = atomJ_unsorted[sortidx_2P] % max_natoms_per_mol;
+      float3 delta = {
+          sign * deltaJ_unsorted[sortidx_1P].x,
+          sign * deltaJ_unsorted[sortidx_1P].y,
+          sign * deltaJ_unsorted[sortidx_1P].z};
       radial_atomJ[start_i + pidx_r] = j;
       radial_distJ[start_i + pidx_r] = dist;
       radial_deltaJ[start_i + pidx_r] = delta;
@@ -937,9 +942,8 @@ __global__ void postProcessExternelNbrList(
   if (idx < blockDim.y && gi < num_atomI) {
     radial_numJPerI[gi] = s_radial_pcounter_i[idx];
     angular_numJPerI[gi] = s_angular_pcounter_i[idx];
-    int start_i = startIdxPerI[gi];
-    int i = atomI_p[start_i] % max_natoms_per_mol;
-    int mol_idx = atomI_p[start_i] / max_natoms_per_mol;
+    int i = atomI_unique[gi] % max_natoms_per_mol;
+    int mol_idx = atomI_unique[gi] / max_natoms_per_mol;
     atom_i[gi] = {mol_idx, i};
   }
 }
@@ -1203,13 +1207,7 @@ void cuaev_forward_with_nbrlist(
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   at::globalContext().lazyInitCUDA();
 
-  int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
-  int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
-  auto total_natom_pairs = n_molecules * pairs_per_mol; // TODO clean
   auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
-
-  int num_atomIJ = atomIJ_t.size(1) * 2; // currently only have IJ, this will be duplicated for JI later
-  // int* atomIJ_p = (int*)atomIJ_t.data_ptr();
 
   // radial and angular share the same data of atomI, startIdxJ and nI
   result.atomI_t = torch::empty(total_atoms * 2, d_options.dtype(torch::kInt32));
@@ -1217,20 +1215,15 @@ void cuaev_forward_with_nbrlist(
   result.startIdxJ_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
   int* startIdxJ_p = (int*)result.startIdxJ_t.data_ptr();
 
-  // tmp atomI, without mol idx
-  // TODO remove midx in struct atomI?
-  // TODO this is not needed
-  Tensor atomI_tmp_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
-  int* atomI_tmp_p = (int*)atomI_tmp_t.data_ptr();
-  Tensor numJ_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
-  int* numJ_p = (int*)numJ_t.data_ptr();
-
   // radial and angular numJPerI counter
   // radial_num_per_atom ranges from 10 - 60
   result.radialNbr.numJPerI_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
   int* radialNbr_numJPerI_p = (int*)result.radialNbr.numJPerI_t.data_ptr();
   result.angularNbr.numJPerI_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
   int* angularNbr_numJPerI_p = (int*)result.angularNbr.numJPerI_t.data_ptr();
+
+  // The passed atomIJ_t currently only have IJ, which will be duplicated for JI later
+  int num_atomIJ = atomIJ_t.size(1) * 2;
 
   // generate radial and angular neighborlist
   result.radialNbr.atomJ_t = torch::empty(num_atomIJ, d_options.dtype(torch::kInt32));
@@ -1247,27 +1240,32 @@ void cuaev_forward_with_nbrlist(
   result.angularNbr.deltaJ_t = torch::empty(num_atomIJ * 3, d_options.dtype(torch::kFloat32));
   float3* angularNbr_deltaJ_p = reinterpret_cast<float3*>(result.angularNbr.deltaJ_t.data_ptr());
 
-  // duplicates atomIJ_p
-  Tensor atomJI_t = atomIJ_t.flip(0).view(-1);
-  // sort
-  Tensor atomI, idxs;
-  std::tie(atomI, idxs) = atomIJ_t.flatten().sort();
-  Tensor rev_idxs = idxs % (num_atomIJ / 2);
-  Tensor atomJ = atomJI_t.index_select(0, idxs);
-  Tensor sign = torch::ones({2, num_atomIJ / 2}, d_options.dtype(torch::kInt32));
-  sign[1] = -1;
-  sign = sign.flatten().index_select(0, idxs);
-  auto deltaJ_t_ = deltaJ_t.index_select(0, rev_idxs) * sign.view({-1, 1});
-  auto distJ_t_ = distJ_t.index_select(0, rev_idxs);
-  auto atomIJ_t_ = torch::cat({atomI, atomJ}, {0}).view({2, -1});
+  // Duplicate for atomJ
+  Tensor atomJ_unsorted_t = atomIJ_t.flip(0).view(-1);
+  int* atomI_unsorted_p = (int*)atomIJ_t.data_ptr();
 
-  float3* deltaJ_p = reinterpret_cast<float3*>(deltaJ_t_.data_ptr());
-  float* distJ_p = reinterpret_cast<float*>(distJ_t_.data_ptr());
-  int* atomIJ_p = (int*)atomIJ_t_.data_ptr();
+  // Sort atomI and get sort_idx.
+  // sort_idx will be used later for atomJ_unsorted_p, distJ_unsorted_p, deltaJ_unsorted_p in the kernel
+  Tensor sort_idx_input_t = torch::arange(num_atomIJ, d_options.dtype(torch::kInt32));
+  int* sort_idx_input_p = (int*)sort_idx_input_t.data_ptr();
+  Tensor sort_idx_t = torch::empty(num_atomIJ, d_options.dtype(torch::kInt32));
+  int* sort_idx_p = (int*)sort_idx_t.data_ptr();
+  Tensor atomI_sorted_t = torch::empty(num_atomIJ, d_options.dtype(torch::kInt32));
+  int* atomI_sorted_p = (int*)atomI_sorted_t.data_ptr();
+  // invoke sort kernel
+  cubSortPairs(atomI_unsorted_p, atomI_sorted_p, sort_idx_input_p, sort_idx_p, num_atomIJ, max_natoms_per_mol, stream);
 
-  // The first row in atomIJ_p is atomI index, get numJ for each unique atomI.
-  result.nI = cubEncode(atomIJ_p, atomI_tmp_p, numJ_p, num_atomIJ, stream);
-  cubScan(numJ_p, startIdxJ_p, total_atoms, stream);
+  // Run cubEncode to get numJPerI and atomI_unique
+  Tensor atomI_unique_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
+  int* atomI_unique_p = (int*)atomI_unique_t.data_ptr();
+  Tensor numJPerI_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
+  int* numJPerI_p = (int*)numJPerI_t.data_ptr();
+  result.nI = cubEncode(atomI_sorted_p, atomI_unique_p, numJPerI_p, num_atomIJ, stream);
+  cubScan(numJPerI_p, startIdxJ_p, total_atoms, stream);
+
+  int* atomJ_unsorted_p = (int*)atomJ_unsorted_t.data_ptr();
+  float3* deltaJ_unsorted_p = reinterpret_cast<float3*>(deltaJ_t.data_ptr());
+  float* distJ_unsorted_p = reinterpret_cast<float*>(distJ_t.data_ptr());
 
   constexpr int ATOM_I_PER_BLOCK = 32;
   { // postProcessNbrList
@@ -1276,11 +1274,13 @@ void cuaev_forward_with_nbrlist(
     int blocks = (result.nI + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
     postProcessExternelNbrList<ATOM_I_PER_BLOCK><<<blocks, block, 0, stream>>>(
         // inputs
-        atomIJ_p,
-        distJ_p,
-        deltaJ_p,
+        atomI_unique_p,
+        atomJ_unsorted_p,
+        sort_idx_p,
+        distJ_unsorted_p,
+        deltaJ_unsorted_p,
         startIdxJ_p,
-        numJ_p,
+        numJPerI_p,
         // outputs
         atomI_p,
         radialNbr_atomJ_p,
