@@ -5,7 +5,7 @@ import pickle
 import ase
 import copy
 import numpy as np
-from typing import Union, List, Any
+from typing import Union, List, cast
 from tqdm import tqdm
 import timeit
 
@@ -302,7 +302,7 @@ if __name__ == "__main__":
             model.forward = time_func('forward', model.forward)  # type: ignore
             torchani.ase.Calculator._get_ani_forces = time_func(  # type: ignore
                 'backward', torchani.ase.Calculator._get_ani_forces)
-        all_trials: Union[List[List[Any]], np.ndarray] = []
+        all_trials = []
         timers_list = []
         raw_trials = []
         for j in range(args.trials):
@@ -384,6 +384,7 @@ if __name__ == "__main__":
             ])
             titles += '\n'
             fc.write(titles)
+            all_trials = cast(np.ndarray, all_trials)
             all_trials = np.asarray(all_trials)
             for times, s in zip(all_trials, sizes):
                 assert isinstance(times, np.ndarray)
