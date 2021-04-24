@@ -326,7 +326,7 @@ class TestCellListEnergies(TestCase):
         torch._C._jit_set_profiling_mode(False)  # this also has an effect
         torch._C._jit_override_can_fuse_on_cpu(False)
         torch._C._jit_set_texpr_fuser_enabled(False)  # this has an effect
-        if torch.cuda.is_avaliable():
+        if torch.cuda.is_available():
             torch._C._jit_set_nvfuser_enabled(False)
         aev_cl = torch.jit.script(self.aev_cl).to(self.device).double()
         aev_fp = torch.jit.script(self.aev_fp).to(self.device).double()
@@ -348,7 +348,7 @@ class TestCellListEnergies(TestCase):
         torch._C._jit_set_profiling_mode(False)  # this also has an effect
         torch._C._jit_override_can_fuse_on_cpu(False)
         torch._C._jit_set_texpr_fuser_enabled(False)  # this has an effect
-        if torch.cuda.is_avaliable():
+        if torch.cuda.is_available():
             torch._C._jit_set_nvfuser_enabled(False)
         aev_cl = torch.jit.script(self.aev_cl).to(self.device).double()
         aev_fp = torch.jit.script(self.aev_fp).to(self.device).double()
