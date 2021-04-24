@@ -5,7 +5,7 @@ import pickle
 import ase
 import copy
 import numpy as np
-from typing import Union, List
+from typing import Union, List, Any
 from tqdm import tqdm
 import timeit
 
@@ -248,13 +248,13 @@ if __name__ == "__main__":
             plot_many(args.path_to_files, comment, show)
     else:
         device = torch.device(args.device)
+        sizes: Union[List[int], np.ndarray]
         if not path_to_xyz:
             num_atoms = 3  # for water
             sizes = (
                 num_atoms * torch.arange(4, args.box_repeats + 1)**3).numpy().tolist()
         else:
             assert isinstance(path_to_xyz, Path)
-            sizes: Union[List[int], np.ndarray]
             sizes = []
 
             xyz_files: Union[List[Path], np.ndarray]
@@ -302,8 +302,7 @@ if __name__ == "__main__":
             model.forward = time_func('forward', model.forward)  # type: ignore
             torchani.ase.Calculator._get_ani_forces = time_func(  # type: ignore
                 'backward', torchani.ase.Calculator._get_ani_forces)
-
-        all_trials = []
+        all_trials: Union[List[List[Any]], np.ndarray] = []
         timers_list = []
         raw_trials = []
         for j in range(args.trials):
