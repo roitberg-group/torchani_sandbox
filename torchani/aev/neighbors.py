@@ -403,9 +403,9 @@ class CellList(BaseNeighborlist):
 
         if cell is None:
             # displaced coordinates are only used for computation if pbc is not required
-            coordinates_displaced, cell = self._compute_bounding_cell(coordinates, eps=1e-3)
+            coordinates_displaced, cell = self._compute_bounding_cell(coordinates.detach(), eps=1e-3)
         else:
-            coordinates_displaced = coordinates
+            coordinates_displaced = coordinates.detach()
 
         if (not self.constant_volume) or (not self.cell_variables_are_set):
             # Cell parameters need to be set only once for constant V simulations,
@@ -453,8 +453,7 @@ class CellList(BaseNeighborlist):
         # 2) Get vector indices and flattened indices for atoms in unit cell
         # shape C x A x 3 this gives \vb{g}(a), the vector bucket idx
         # shape C x A this gives f(a), the flat bucket idx for atom a
-        atom_vector_index, atom_flat_index =\
-                self._get_bucket_indices(fractional_coordinates)
+        atom_vector_index, atom_flat_index = self._get_bucket_indices(fractional_coordinates)
         # 3) get image_indices -> atom_indices and inverse mapping
         # NOTE: there is not necessarily a requirement to do this here
         # both shape (A,); a(i) and i(a)
@@ -472,13 +471,11 @@ class CellList(BaseNeighborlist):
         # this gives A*, A(f) , "A(f' <= f)" = Ac(f) (cumulative) f being the
         # flat bucket index, A being the number of atoms for that bucket,
         # and Ac being the cumulative number of atoms up to that bucket
-        flat_bucket_count, flat_bucket_cumcount, max_in_bucket =\
-            self._get_atoms_in_flat_bucket_counts(atom_flat_index)
+        flat_bucket_count, flat_bucket_cumcount, max_in_bucket = self._get_atoms_in_flat_bucket_counts(atom_flat_index)
 
         # 2) this are indices WITHIN the central buckets
-        within_image_pairs =\
-            self._get_within_image_pairs(flat_bucket_count,
-                flat_bucket_cumcount, max_in_bucket)
+        within_image_pairs = self._get_within_image_pairs(flat_bucket_count,
+                                            flat_bucket_cumcount, max_in_bucket)
 
         # NOW WE WANT "BETWEEN" IMAGE PAIRS
         # 1) Get the vector indices of all (pure) neighbors of each atom
@@ -665,8 +662,8 @@ class CellList(BaseNeighborlist):
         # which amber does, in order to calculate diffusion coefficients, etc
         fractional_coordinates -= fractional_coordinates.floor()
         # fractional_coordinates should be in the range [0, 1.0)
-        fractional_coordinates[fractional_coordinates >= 1.0] -= 1.0
-        fractional_coordinates[fractional_coordinates < 0.0] += 1.0
+        fractional_coordinates[fractional_coordinates >= 1.0].add_(-1.0)
+        fractional_coordinates[fractional_coordinates < 0.0].add_(1.0)
 
         assert not torch.isnan(fractional_coordinates).any(),\
                 "Some fractional coordinates are NaN."
@@ -892,11 +889,12 @@ class CellList(BaseNeighborlist):
         return neighbor_translation_types
 
     def _cache_values(self, atom_pairs: Tensor,
-                            shift_indices: Tensor,
+                            shift_indices: Union[Tensor, None],
                             coordinates: Tensor):
 
         self.old_atom_pairs = atom_pairs.detach()
-        self.old_shift_indices = shift_indices.detach()
+        if shift_indices is not None:
+            self.old_shift_indices = shift_indices.detach()
         self.old_coordinates = coordinates.detach()
         self.old_cell_diagonal = self.cell_diagonal.detach()
         self.old_values_are_cached = torch.tensor(True, dtype=torch.bool, device=coordinates.device)
@@ -909,7 +907,9 @@ class CellList(BaseNeighborlist):
                            torch.zeros(1, dtype=dtype, device=device))
         self.old_values_are_cached = torch.tensor(False, dtype=torch.bool, device=device)
 
-    def _need_new_list(self, coordinates: Tensor):
+    def _need_new_list(self, coordinates: Tensor) -> bool:
+        if not self.verlet:
+            return True
         # Check if any coordinate exceedes half the skin depth,
         # if a coordinate exceedes this then the cell list has to be rebuilt
         box_scaling = self.cell_diagonal / self.old_cell_diagonal
