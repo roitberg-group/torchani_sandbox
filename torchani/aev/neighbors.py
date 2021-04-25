@@ -461,8 +461,7 @@ class CellList(BaseNeighborlist):
         # atidx_from_imidx[something] will not be the correct order
         # since what we want is the pairs this is fine, pairs are agnostic to
         # species.
-        imidx_from_atidx, atidx_from_imidx = self._get_imidx_converters(
-            atom_flat_index)
+        imidx_from_atidx, atidx_from_imidx = self._get_imidx_converters(atom_flat_index)
 
         # FIRST WE WANT "WITHIN" IMAGE PAIRS
         # 1) Get the number of atoms in each bucket (as indexed with f idx)
@@ -472,8 +471,7 @@ class CellList(BaseNeighborlist):
         flat_bucket_count, flat_bucket_cumcount, max_in_bucket = self._get_atoms_in_flat_bucket_counts(atom_flat_index)
 
         # 2) this are indices WITHIN the central buckets
-        within_image_pairs = self._get_within_image_pairs(flat_bucket_count,
-                                            flat_bucket_cumcount, max_in_bucket)
+        within_image_pairs = self._get_within_image_pairs(flat_bucket_count, flat_bucket_cumcount, max_in_bucket)
 
         # NOW WE WANT "BETWEEN" IMAGE PAIRS
         # 1) Get the vector indices of all (pure) neighbors of each atom
@@ -671,8 +669,7 @@ class CellList(BaseNeighborlist):
             f"Some coordinates are too small {fractional_coordinates.masked_select(fractional_coordinates < 0.)}"
         return fractional_coordinates
 
-    def _fractional_to_vector_bucket_indices(self,
-                                             fractional: Tensor) -> Tensor:
+    def _fractional_to_vector_bucket_indices(self, fractional: Tensor) -> Tensor:
         # transforms a tensor of fractional coordinates (shape (..., 3))
         # into a tensor of vector bucket indices (same shape)
         # Since the number of indices to iterate over is a cartesian product of 3
