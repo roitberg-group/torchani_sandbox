@@ -414,15 +414,14 @@ class CellList(BaseNeighborlist):
 
         if self.verlet and self.old_values_are_cached and (not self._need_new_list(coordinates_displaced.detach())):
             # If a new cell list is not needed use the old cached values
-            # IMPORTANT: here cached values should NOT be updated if they are
-            # updated the cache moves to the new step, which is incorrect
+            # IMPORTANT: here cached values should NOT be updated, moving cache
+            # to the new step is incorrect
             atom_pairs = self.old_atom_pairs
             shift_indices = self.old_shift_indices
         else:
             # The cell list is calculated with a skin here. Since coordinates are
             # fractionalized before cell calculation, it is not needed for them to
-            # be imaged to the central cell, they can lie outside the cell, so
-            # they don't need to be mapped to the central cell in this step
+            # be imaged to the central cell, they can lie outside the cell.
             atom_pairs, shift_indices = self._calculate_cell_list(coordinates_displaced.detach(), pbc)
             # 'Verlet' prevent unnecessary rebuilds of the neighborlist
             if self.verlet:
@@ -435,13 +434,12 @@ class CellList(BaseNeighborlist):
             # same as with a full pairwise calculation
             coordinates = map_to_central(coordinates, cell.detach(), pbc)
             # The final screening does not use the skin, the skin is only used
-            # internally to prevent neighborlist recalculation.
-            # We must screen even
-            # if the list is not rebuilt, since two atoms may have moved a long
+            # internally to prevent neighborlist recalculation.  We must screen
+            # even if the list is not rebuilt, two atoms may have moved a long
             # enough distance that they are not neighbors anymore, but a short
-            # enough distance that the neighborlist is not rebuilt. Rebuilds happen
-            # only if it can't be guaranteed that the cached neighborlist holds at least
-            # all atom pairs, but it may hold more.
+            # enough distance that the neighborlist is not rebuilt. Rebuilds
+            # happen only if it can't be guaranteed that the cached
+            # neighborlist holds at least all atom pairs, but it may hold more.
             return self._screen_with_cutoff(self.cutoff, coordinates, atom_pairs, shift_values, (species == -1))
         else:
             return self._screen_with_cutoff(self.cutoff, coordinates, atom_pairs, mask=(species == -1))
@@ -454,10 +452,10 @@ class CellList(BaseNeighborlist):
         # shape C x A x 3 this gives \vb{g}(a), the vector bucket idx
         # shape C x A this gives f(a), the flat bucket idx for atom a
         atom_vector_index, atom_flat_index = self._get_bucket_indices(fractional_coordinates)
+
         # 3) get image_indices -> atom_indices and inverse mapping
         # NOTE: there is not necessarily a requirement to do this here
         # both shape (A,); a(i) and i(a)
-
         # NOTE: watch out, since sorting is not stable this may scramble the atoms
         # in the same box, so that the atidx you get after applying
         # atidx_from_imidx[something] will not be the correct order
@@ -481,7 +479,6 @@ class CellList(BaseNeighborlist):
         # 1) Get the vector indices of all (pure) neighbors of each atom
         # this gives \vb{g}(a, n) and f(a, n)
         # shapes 1 x A x Eta x 3 and 1 x A x Eta respectively
-        #
         neighbor_vector_indices, neighbor_flat_indices = self._get_neighbor_indices(atom_vector_index)
 
         # 2) Upper and lower part of the external pairlist this is the
@@ -505,7 +502,6 @@ class CellList(BaseNeighborlist):
                                                                                neighbor_translation_types)
         neighborhood_count = neighbor_count.sum(-1).squeeze()
         upper = torch.repeat_interleave(imidx_from_atidx.squeeze(), neighborhood_count)
-
         assert lower.shape == upper.shape
         between_image_pairs = torch.stack((upper, lower), dim=0)
 
@@ -726,28 +722,6 @@ class CellList(BaseNeighborlist):
         max_in_bucket = flat_bucket_count.max()
         return flat_bucket_count, flat_bucket_cumcount, max_in_bucket
 
-    @staticmethod
-    def _sort_along_row(x: Tensor,
-                        max_value: Tensor,
-                        row_for_sorting: int = 1) -> Tensor:
-        # reorder padded pairs by ordering according to lower part instead of upper
-        # based on https://discuss.pytorch.org/t/sorting-2d-tensor-by-pairs-not-columnwise/59465
-        assert row_for_sorting == 1, "Due to JIT issues can only sort along row 1"
-        assert x.dim() == 2, "The input must have 2 dimensions"
-        assert x.shape[0] == 2, "The inut must be shape (2, ?)"
-        assert row_for_sorting == 1 or row_for_sorting == 0
-        # NOTE: This code fails due to some JIT error, which prevents sorting along
-        # row 0
-        # if row_for_sorting == 1:
-        # aug = x[0, :] + x[1, :] * max_value
-        # elif row_for_sorting == 0:
-        #    aug = x[0, :] * max_value + x[1, :]
-        aug = x[0, :] + x[1, :] * max_value
-        # x = x.index_select(1, stable_sort(aug)[0]) # 0 - indices, 1 - values
-        x = x.index_select(1,
-                           torch.sort(aug).indices)  # 0 - indices, 1 - values
-        return x
-
     def _get_within_image_pairs(self, flat_bucket_count: Tensor,
                                 flat_bucket_cumcount: Tensor,
                                 max_in_bucket: Tensor) -> Tensor:
@@ -757,28 +731,24 @@ class CellList(BaseNeighborlist):
         # get all indices f that have pairs inside
         # these are A(w) and Ac(w), and withpairs_flat_index is actually f(w)
         # NOTE: workaround since nonzero(as_tuple=True) is not JITable
-        withpairs_flat_index = (flat_bucket_count > 1).nonzero().t().unbind(0)
-        withpairs_flat_bucket_count = flat_bucket_count[withpairs_flat_index[0]]
-        withpairs_flat_bucket_cumcount = flat_bucket_cumcount[withpairs_flat_index[0]]
+        withpairs_flat_index = (flat_bucket_count > 1).nonzero().squeeze()
+        withpairs_flat_bucket_count = flat_bucket_count.index_select(0, withpairs_flat_index)
+        withpairs_flat_bucket_cumcount = flat_bucket_cumcount.index_select(0, withpairs_flat_index)
 
         padded_pairs = torch.triu_indices(int(max_in_bucket),
                                           int(max_in_bucket),
                                           offset=1,
                                           device=current_device)
-        padded_pairs = self._sort_along_row(padded_pairs,
-                                            max_in_bucket,
-                                            row_for_sorting=1)
+        # sort along first row
+        padded_pairs = padded_pairs.index_select(1, torch.argsort(padded_pairs[1]))
         # shape (2, pairs) + shape (withpairs, 1, 1) = shape (withpairs, 2, pairs)
-        padded_pairs = padded_pairs + withpairs_flat_bucket_cumcount.view(
-            -1, 1, 1)
-        # basically this repeats the padded pairs "withpairs" times and adds to all of
-        # them the cumulative counts
-        # now we unravel all pairs, which remain in the correct order in the
-        # second row (the order within same numbers in the first row is actually
-        # not essential)
 
-        # this call to reshape is needed due to loss of contiguity by permute
-        padded_pairs = padded_pairs.permute(1, 0, 2).reshape(2, -1)
+        # basically this repeats the padded pairs "withpairs" times and adds to
+        # all of them the cumulative counts, then we unravel all pairs, which
+        # remain in the correct order in the second row (the order within same
+        # numbers in the first row is actually not essential)
+        padded_pairs = padded_pairs.view(2, 1, -1) + withpairs_flat_bucket_cumcount.view(1, -1, 1)
+        padded_pairs = padded_pairs.view(2, -1)
 
         # NOTE this code is very confusing, it could probably use some comments
         # / simplification
@@ -788,8 +758,7 @@ class CellList(BaseNeighborlist):
                                         2,
                                         rounding_mode='floor')
         mask = torch.arange(0, int(max_pairs_in_bucket), device=current_device)
-        num_buckets_with_pairs = len(withpairs_flat_index[0])
-        mask = mask.expand(num_buckets_with_pairs, -1)
+        mask = mask.expand(withpairs_flat_index.numel(), -1)
 
         # NOTE: JIT bug makes it so that we have to add the "one" tensor here
         one = torch.tensor(1, device=current_device, dtype=torch.long)
@@ -842,8 +811,7 @@ class CellList(BaseNeighborlist):
                                           .index_select(0, mask.view(-1).nonzero().squeeze())
         return lower, between_pairs_translation_types
 
-    def _get_bucket_indices(
-            self, fractional_coordinates: Tensor) -> Tuple[Tensor, Tensor]:
+    def _get_bucket_indices(self, fractional_coordinates: Tensor) -> Tuple[Tensor, Tensor]:
         atom_vector_index = self._fractional_to_vector_bucket_indices(fractional_coordinates)
         atom_flat_index = self._to_flat_index(atom_vector_index)
         return atom_vector_index, atom_flat_index
