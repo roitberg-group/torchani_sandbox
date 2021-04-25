@@ -725,15 +725,16 @@ class CellList(BaseNeighborlist):
     def _get_within_image_pairs(self, flat_bucket_count: Tensor,
                                 flat_bucket_cumcount: Tensor,
                                 max_in_bucket: Tensor) -> Tensor:
+        # note: in this function wpairs == "with_pairs"
         # max_in_bucket = maximum number of atoms contained in any bucket
         current_device = flat_bucket_count.device
 
         # get all indices f that have pairs inside
-        # these are A(w) and Ac(w), and withpairs_flat_index is actually f(w)
+        # these are A(w) and Ac(w), and wpairs_flat_index is actually f(w)
         # NOTE: workaround since nonzero(as_tuple=True) is not JITable
-        withpairs_flat_index = (flat_bucket_count > 1).nonzero().squeeze()
-        withpairs_flat_bucket_count = flat_bucket_count.index_select(0, withpairs_flat_index)
-        withpairs_flat_bucket_cumcount = flat_bucket_cumcount.index_select(0, withpairs_flat_index)
+        wpairs_flat_index = (flat_bucket_count > 1).nonzero().squeeze()
+        wpairs_flat_bucket_count = flat_bucket_count.index_select(0, wpairs_flat_index)
+        wpairs_flat_bucket_cumcount = flat_bucket_cumcount.index_select(0, wpairs_flat_index)
 
         padded_pairs = torch.triu_indices(int(max_in_bucket),
                                           int(max_in_bucket),
@@ -741,31 +742,25 @@ class CellList(BaseNeighborlist):
                                           device=current_device)
         # sort along first row
         padded_pairs = padded_pairs.index_select(1, torch.argsort(padded_pairs[1]))
-        # shape (2, pairs) + shape (withpairs, 1, 1) = shape (withpairs, 2, pairs)
+        # shape (2, pairs) + shape (wpairs, 1, 1) = shape (wpairs, 2, pairs)
 
-        # basically this repeats the padded pairs "withpairs" times and adds to
+        # basically this repeats the padded pairs "wpairs" times and adds to
         # all of them the cumulative counts, then we unravel all pairs, which
         # remain in the correct order in the second row (the order within same
         # numbers in the first row is actually not essential)
-        padded_pairs = padded_pairs.view(2, 1, -1) + withpairs_flat_bucket_cumcount.view(1, -1, 1)
+        padded_pairs = padded_pairs.view(2, 1, -1) + wpairs_flat_bucket_cumcount.view(1, -1, 1)
         padded_pairs = padded_pairs.view(2, -1)
 
-        # NOTE this code is very confusing, it could probably use some comments
-        # / simplification
+        # NOTE this code is very confusing, it could probably use some comments / simplification
         # NOTE: JIT bug makes it so that we have to add the "one" tensor here
         one = torch.tensor(1, device=current_device, dtype=torch.long)
-        max_pairs_in_bucket = torch.div(max_in_bucket * (max_in_bucket - one),
-                                        2,
-                                        rounding_mode='floor')
-        mask = torch.arange(0, int(max_pairs_in_bucket), device=current_device)
-        mask = mask.expand(withpairs_flat_index.numel(), -1)
+        max_pairs_in_bucket = (max_in_bucket * (max_in_bucket - one)).div_(2, rounding_mode='floor')
+        wpairs_count_pairs = (wpairs_flat_bucket_count * (wpairs_flat_bucket_count - one)).div_(2, rounding_mode='floor')
 
-        # NOTE: JIT bug makes it so that we have to add the "one" tensor here
-        one = torch.tensor(1, device=current_device, dtype=torch.long)
-        withpairs_count_pairs = torch.div(withpairs_flat_bucket_count * (withpairs_flat_bucket_count - one), 2,
-                                          rounding_mode='floor')
-        mask = (mask < withpairs_count_pairs.view(-1, 1)).view(-1)
-        within_image_pairs = padded_pairs.index_select(1, mask.nonzero().flatten())
+        mask = torch.arange(0, int(max_pairs_in_bucket), device=current_device)
+        mask = mask.expand(wpairs_flat_index.numel(), -1)
+        mask = (mask < wpairs_count_pairs.view(-1, 1)).view(-1)
+        within_image_pairs = padded_pairs.index_select(1, mask.nonzero().squeeze())
         return within_image_pairs
 
     def _get_lower_between_image_pairs(
@@ -798,7 +793,7 @@ class CellList(BaseNeighborlist):
         # both counting schemes, but first I create the mask to unpad
         # and then I shift to the correct indices
         mask = (padded_atom_neighbors < neighbor_count.unsqueeze(-1))
-        padded_atom_neighbors += neighbor_cumcount.unsqueeze(-1)
+        padded_atom_neighbors.add_(neighbor_cumcount.unsqueeze(-1))
         # the mask should have the same shape as padded_atom_neighbors, and
         # now all that is left is to apply the mask in order to unpad
         assert padded_atom_neighbors.shape == mask.shape
@@ -818,6 +813,7 @@ class CellList(BaseNeighborlist):
 
     def _get_neighbor_indices(
             self, atom_vector_index: Tensor) -> Tuple[Tensor, Tensor]:
+        current_device = atom_vector_index.device
         # This is actually pure neighbors, so it doesn't have
         # "the bucket itself"
         # These are
@@ -832,14 +828,14 @@ class CellList(BaseNeighborlist):
 
         atoms = neighbor_vector_indices.shape[1]
         neighbors = neighbor_vector_indices.shape[2]
-        neighbor_vector_indices += torch.ones(1,
-                                              dtype=torch.long,
-                                              device=atom_vector_index.device)
+
+        neighbor_vector_indices.add_(torch.ones(1, dtype=torch.long, device=current_device))
         neighbor_vector_indices = neighbor_vector_indices.view(-1, 3)
         # NOTE: This is needed instead of unbind due to torchscript bug
         neighbor_flat_indices = self.vector_idx_to_flat[
             neighbor_vector_indices[:, 0], neighbor_vector_indices[:, 1],
             neighbor_vector_indices[:, 2]]
+
         neighbor_flat_indices = neighbor_flat_indices.view(
             1, atoms, neighbors)
         neighbor_vector_indices = neighbor_vector_indices.view(1, atoms, neighbors, 3)
