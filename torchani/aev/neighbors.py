@@ -728,7 +728,6 @@ class CellList(BaseNeighborlist):
 
         # get all indices f that have pairs inside
         # these are A(w) and Ac(w), and wpairs_flat_index is actually f(w)
-        # NOTE: workaround since nonzero(as_tuple=True) is not JITable
         wpairs_flat_index = (flat_bucket_count > 1).nonzero().squeeze()
         wpairs_flat_bucket_count = flat_bucket_count.index_select(0, wpairs_flat_index)
         wpairs_flat_bucket_cumcount = flat_bucket_cumcount.index_select(0, wpairs_flat_index)
