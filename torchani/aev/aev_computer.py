@@ -136,6 +136,13 @@ class AEVComputer(torch.nn.Module):
         # all tensors are in GPU once it is initialized.
         self.register_buffer('cuaev_is_initialized', torch.tensor(False))
 
+    def reshape_aev(self, aev):
+        radial, angular = torch.split(aev, (self.radial_length, self.angular_length), dim=-1)
+        radial = radial.view(-1, radial.shape[1], self.num_species, self.radial_terms.sublength)
+        angular = angular.view(-1, angular.shape[1], self.num_species_pairs,
+                                   self.angular_terms.ShfA.numel(), self.angular_terms.ShfZ.numel())
+        return radial, angular
+
     def _validate_cutoffs_init(self):
         # validate cutoffs and emit warnings for strange configurations
         if self.neighborlist.cutoff > self.radial_terms.cutoff:
