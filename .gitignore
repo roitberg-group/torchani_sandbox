@@ -1,4 +1,5 @@
 *.prof
+examples/detail/
 /tools/benchmark/*
 __pycache__
 nohup.out
