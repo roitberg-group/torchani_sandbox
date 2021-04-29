@@ -22,6 +22,15 @@
     AT_CUDA_CHECK(cudaGetLastError());                           \
   } while (false)
 
+inline int get_num_bits(uint64_t max_key) {
+  int num_bits = 1;
+  while (max_key > 1) {
+    max_key >>= 1;
+    num_bits++;
+  }
+  return num_bits;
+}
+
 template <typename DataT>
 void cubScan(const DataT* d_in, DataT* d_out, int num_items, cudaStream_t stream) {
   auto allocator = c10::cuda::CUDACachingAllocator::get();
@@ -73,10 +82,10 @@ void cubSortPairs(
     const ValueT* d_values_in,
     ValueT* d_values_out,
     int num_items,
-    float max_key,
+    int max_key,
     cudaStream_t stream) {
   auto allocator = c10::cuda::CUDACachingAllocator::get();
-  int nbits = std::max<int>(0, std::ceil(std::log2(max_key))) + 1;
+  int nbits = get_num_bits(max_key);
   CUB_WRAPPER(
       cuaev::cub::DeviceRadixSort::SortPairs,
       d_keys_in,
