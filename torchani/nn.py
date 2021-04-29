@@ -5,9 +5,6 @@ from typing import Tuple, NamedTuple, Optional
 from . import utils
 from .compat import Final
 
-step = 0
-tensorboard = None
-
 
 class SpeciesEnergies(NamedTuple):
     species: Tensor
@@ -104,16 +101,17 @@ class ANIModelLocalMessagePassing(torch.nn.ModuleDict):
             od[str(i)] = m
         return od
 
-    def __init__(self, modules, cutoff_fn, cutoff=5.2):
+    def __init__(self, modules, cutoff_fn, second_pass_modules, transforms, cutoff=5.2, internal_size=96):
         super().__init__(self.ensureOrderedDict(modules))
         self.size = 1
-        self.internal_size = 96
+        self.internal_size = internal_size
         self.register_parameter('decay_factor', torch.nn.Parameter(torch.tensor(1.0)))
         self.register_parameter('decay_prefactor', torch.nn.Parameter(torch.tensor(1.0)))
-        second_pass_modules = [torch.nn.Linear(self.internal_size, 1) for _ in range(len(self))]
+
         self.second_pass = torch.nn.ModuleDict(self.ensureOrderedDict(second_pass_modules))
         self.cutoff_fn = cutoff_fn
         self.cutoff = cutoff
+        self.transforms = transforms
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
                 atom_index12: Tensor, distances: Tensor) -> SpeciesEnergies:
@@ -131,37 +129,40 @@ class ANIModelLocalMessagePassing(torch.nn.ModuleDict):
         assert species.shape == aev.shape[:-1]
         species_ = species.view(-1)
         aev = aev.view(-1, aev.shape[-1])
-        output = aev.new_zeros((species_.shape[0], self.internal_size))
+        internal_rep = aev.new_zeros((species_.shape[0], self.internal_size))
         for i, m in enumerate(self.values()):
             midx = (species_ == i).nonzero().view(-1)
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
-                output.index_add_(0, midx, m(input_).view(-1, self.internal_size))
+                internal_rep.index_add_(0, midx, m(input_).view(-1, self.internal_size))
         # at this point output has a shape A', G
         # I want first to duplicate this and then
         # I'll add in each position a weighted sum of the aev's of all pairs of
         # each atom, instead of attention I use simple distance weighting
-        internal_output = output.clone()
+        neighbor_rep = internal_rep.new_zeros(size=(internal_rep.shape[0], self.internal_size // 2))
+        neighbor_merged_rep = internal_rep.new_zeros(size=(internal_rep.shape[0], self.internal_size // 2))
         # this should probably be multiplied by a cutoff function
         decay = (self.decay_prefactor**2) * torch.exp(-(self.decay_factor**2) * distances)
         decay *= self.cutoff_fn(distances, self.cutoff)
-        output = output[atom_index12] * decay.view(1, -1, 1)
 
-        global step
-        global tensorboard
-        if tensorboard is not None:
-            if step % 100 == 1:
-                tensorboard.add_histogram('internal_outputs', internal_output, step)
-                tensorboard.add_histogram('decayed_outputs', output, step)
+        # there is a different transform for each atom type
+        for i, m in enumerate(self.transforms):
+            midx = (species_ == i).nonzero().view(-1)
+            if midx.shape[0] > 0:
+                input_ = internal_rep.index_select(0, midx)
+                neighbor_rep.index_add_(0, midx, m(input_).view(-1, self.internal_size // 2))
 
-        internal_output.index_add_(0, atom_index12.view(-1), output.view(-1, self.internal_size))
+        neighbor_rep = neighbor_rep[atom_index12] * decay.view(1, -1, 1)
+        # output has shape (P, 96)
+        neighbor_merged_rep.index_add_(0, atom_index12.view(-1), neighbor_rep.view(-1, self.internal_size // 2))
+        combined_rep = torch.cat((internal_rep, neighbor_merged_rep), dim=-1)
         # now internal output has shape (A', 96), so now I do an extra NN pass
 
-        final_output = internal_output.new_zeros(species_.shape)
+        final_output = combined_rep.new_zeros(species_.shape)
         for i, m in enumerate(self.second_pass.values()):
             midx = (species_ == i).nonzero().view(-1)
             if midx.shape[0] > 0:
-                input_ = internal_output.index_select(0, midx)
+                input_ = combined_rep.index_select(0, midx)
                 final_output.index_add_(0, midx, m(input_).view(-1))
         return final_output.view_as(species)
 
