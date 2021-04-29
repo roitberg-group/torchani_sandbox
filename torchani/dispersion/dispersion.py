@@ -177,6 +177,29 @@ class DispersionD3(torch.nn.Module):
         charge_ab = torch.outer(sqrt_empirical_charge, sqrt_empirical_charge)
         self.register_buffer('sqrt_charge_ab', charge_ab[supported_znumbers, :][:, supported_znumbers])
 
+    def _get_coordnums_direct(self, species: Tensor,
+                       atom_index12: Tensor, distances: Tensor) -> Tensor:
+        # fine for batches
+        species12 = species.flatten()[atom_index12]
+
+        covalent_radii_sum = self.covalent_radii[species12[0]]
+        covalent_radii_sum += self.covalent_radii[species12[1]]
+        # for coordination numbers covalent radii are used, not cutoff radii
+        k1 = 16
+        k2 = 4 / 3
+        # fine for batches
+        denom = 1 + torch.exp(-k1 * (k2 * covalent_radii_sum / distances - 1))
+        counting_function = 1 / denom
+
+        # add terms corresponding to all neighbors
+        coordnums = torch.zeros((species.shape[0] * species.shape[1]),
+                                device=distances.device,
+                                dtype=distances.dtype)
+        coordnums.index_add_(0, atom_index12[0], counting_function)
+        coordnums.index_add_(0, atom_index12[1], counting_function)
+        # coordination nums shape is (A,), there is one per atom
+        return coordnums
+
     def _get_coordnums(self, num_molecules: int, num_atoms: int, species12: Tensor,
                        atom_index12: Tensor, distances: Tensor) -> Tensor:
         # fine for batches
