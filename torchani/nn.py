@@ -1,4 +1,5 @@
 import torch
+import math
 from collections import OrderedDict
 from torch import Tensor
 from typing import Tuple, NamedTuple, Optional
@@ -212,6 +213,13 @@ class Gaussian(torch.nn.Module):
     """Gaussian activation"""
     def forward(self, x: Tensor) -> Tensor:
         return torch.exp(- x * x)
+
+
+class SSP(torch.nn.Module):
+    # shifted softplus activation
+
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.nn.functional.softplus(x) - math.log(2)
 
 
 class FittedSoftplus(torch.nn.Module):

@@ -37,6 +37,7 @@ from . import neurochem
 from . import models
 from . import units
 from . import repulsion
+from . import physnet
 from pkg_resources import get_distribution, DistributionNotFound
 import warnings
 
