@@ -51,6 +51,10 @@ class ANIModel(torch.nn.ModuleDict):
 
     def __init__(self, modules):
         super().__init__(self.ensureOrderedDict(modules))
+        # only used for single molecule
+        self.idx_list = None
+        self.stream_list = None
+        self.last_species_data_ptr = None
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
                 cell: Optional[Tensor] = None,
@@ -58,23 +62,72 @@ class ANIModel(torch.nn.ModuleDict):
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
 
-        atomic_energies = self._atomic_energies((species, aev))
-        # shape of atomic energies is (C, A)
-        return SpeciesEnergies(species, torch.sum(atomic_energies, dim=1))
+        num_mol = species.shape[0]
+        # single molecule
+        if num_mol == 1:
+        # if num_mol == 3:
+            print('run single mode')
+            mol_energies = self._single_mol_energies((species, aev))
+        else:
+            # shape of atomic energies is (C, A)
+            print('run batch mode')
+            atomic_energies = self._atomic_energies((species, aev))
+            mol_energies = torch.sum(atomic_energies, dim=1)
+        # print(mol_energies)
+        return SpeciesEnergies(species, mol_energies)
+
+    @torch.jit.export
+    # @snoop()
+    def _single_mol_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
+        species, aev = species_aev
+        species_ = species.flatten()
+        aev = aev.flatten(0, 1)
+        num_network = len(self.keys())
+
+        # not initialized or not the same species
+        if self.last_species_data_ptr is None or self.last_species_data_ptr != species.data_ptr():
+            with torch.no_grad():
+                self.last_species_data_ptr = species.data_ptr()
+                print('----- init spe_list ----')
+                self.idx_list = [None] * num_network
+                self.stream_list = [None] * num_network
+                for i in range(num_network):
+                    s = torch.cuda.Stream()
+                    self.stream_list[i] = s
+                    mask = (species_ == i)
+                    midx = mask.nonzero().flatten()
+                    if midx.shape[0] > 0:
+                        self.idx_list[i] = midx
+
+        energy_list = torch.zeros(num_network, dtype=aev.dtype, device=species.device)
+
+        for i, net in enumerate(self.values()):
+            if self.idx_list[i] is not None:
+                torch.cuda.nvtx.mark(f'species = {i}')
+                with torch.cuda.stream(self.stream_list[i]):
+                    input_ = aev.index_select(0, self.idx_list[i])
+                    # torch.sum(net(input_).flatten(), dim=0, out=energy_list[i])
+                    energy_list[i] = torch.sum(net(input_).flatten())
+        torch.cuda.synchronize()
+
+        output = torch.sum(energy_list).view(1, 1)
+        return output
 
     @torch.jit.export
     def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
         # Obtain the atomic energies associated with a given tensor of AEV's
         species, aev = species_aev
-        assert species.shape == aev.shape[:-1]
         species_ = species.flatten()
         aev = aev.flatten(0, 1)
 
         output = aev.new_zeros(species_.shape)
 
         for i, m in enumerate(self.values()):
+            torch.cuda.synchronize()
+            torch.cuda.nvtx.mark(f'species = {i}')
             mask = (species_ == i)
             midx = mask.nonzero().flatten()
+            input_ = aev.index_select(0, midx)
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
                 output.masked_scatter_(mask, m(input_).flatten())

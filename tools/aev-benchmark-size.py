@@ -25,7 +25,7 @@ def getGpuName(device=None):
 
 
 def synchronize(flag=False):
-    if flag:
+    if True:
         torch.cuda.synchronize()
 
 
@@ -100,6 +100,17 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
         forward_start = time.time()
         try:
             _, aev = aev_comp((species, coordinates))
+            if args.run_energy:
+                torch.cuda.nvtx.range_push('Network')
+                if args.single_nn:
+                    species_energies = neural_networks[0]((species, aev))
+                else:
+                    species_energies = neural_networks((species, aev))
+                torch.cuda.nvtx.range_pop()
+                # torch.cuda.nvtx.range_push('Energy shifter')
+                # _, energies = energy_shifter(species_energies)
+                # torch.cuda.nvtx.range_pop()
+                energies = species_energies[1]
         except Exception as e:
             alert(f"  AEV faild: {str(e)[:50]}...")
             addSummaryLine(items)
@@ -111,7 +122,10 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
         if runbackward:  # backward
             force_start = time.time()
             try:
-                force = -torch.autograd.grad(aev.sum(), coordinates, create_graph=True, retain_graph=True)[0]
+                if args.run_energy:
+                    force = -torch.autograd.grad(energies.sum(), coordinates, create_graph=True, retain_graph=True)[0]
+                else:
+                    force = -torch.autograd.grad(aev.sum(), coordinates, create_graph=True, retain_graph=True)[0]
             except Exception as e:
                 alert(f" Force faild: {str(e)[:50]}...")
                 addSummaryLine(items)
@@ -316,10 +330,18 @@ if __name__ == "__main__":
     parser.add_argument('-p', '--plot',
                         action='store_true',
                         help='plot benchmark result')
+    parser.add_argument('-e', '--run_energy',
+                        action='store_true',
+                        help='Run NN to predict energy')
+    parser.add_argument('--single_nn',
+                        action='store_true',
+                        help='Only Run single NN to predict energy, instead of an ensemble')
     parser.add_argument('-n', '--N',
                         help='Number of Repeat',
                         default=200, type=int)
     parser.set_defaults(backward=0)
+    parser.set_defaults(run_energy=0)
+    parser.set_defaults(single_nn=0)
     parser.set_defaults(plot=0)
     args = parser.parse_args()
     path = os.path.dirname(os.path.realpath(__file__))
@@ -331,6 +353,9 @@ if __name__ == "__main__":
     nnp_cuaev = torchani.models.ANI2x(periodic_table_index=True, model_index=None).to(device)
     nnp_cuaev.aev_computer.use_cuda_extension = True
     maxatoms = [6000, 10000]
+
+    neural_networks = nnp_ref.neural_networks
+    energy_shifter = nnp_ref.energy_shifter
 
     if args.nsight:
         N = 5
