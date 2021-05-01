@@ -65,7 +65,7 @@ class ANIModel(torch.nn.ModuleDict):
         num_mol = species.shape[0]
         # single molecule
         if num_mol == 1:
-        # if num_mol == 3:
+        # if False:
             print('run single mode')
             mol_energies = self._single_mol_energies((species, aev))
         else:
