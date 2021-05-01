@@ -1,5 +1,7 @@
 *.prof
 __pycache__
+/examples/nohup.out
+/tools/benchmark/*
 /data
 a.out
 /test.py
