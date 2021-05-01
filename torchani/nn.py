@@ -127,7 +127,6 @@ class ANIModel(torch.nn.ModuleDict):
             torch.cuda.nvtx.mark(f'species = {i}')
             mask = (species_ == i)
             midx = mask.nonzero().flatten()
-            input_ = aev.index_select(0, midx)
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
                 output.masked_scatter_(mask, m(input_).flatten())
