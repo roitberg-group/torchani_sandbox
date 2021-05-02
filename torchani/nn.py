@@ -184,3 +184,14 @@ class SpeciesConverter(torch.nn.Module):
             raise ValueError(f'Unknown species found in {species}')
 
         return SpeciesCoordinates(converted_species.to(species.device), coordinates)
+
+
+def _parse_activation(activation):
+    # currently only cosine, smooth and custom cutoffs are supported
+    if activation == 'fitted_sp':
+        activation = FittedSoftplus()
+    elif activation == 'shifted_sp':
+        activation = ShiftedSoftplus()
+    else:
+        assert isinstance(activation, torch.nn.Module)
+    return activation
