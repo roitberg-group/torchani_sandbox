@@ -12,6 +12,8 @@ def _parse_cutoff_fn(cutoff_fn):
         cutoff_fn = CutoffSmooth()
     elif cutoff_fn == 'physnet':
         cutoff_fn = CutoffPhysNet()
+    elif cutoff_fn == 'hip':
+        cutoff_fn = CutoffHIP()
     elif cutoff_fn is None:
         cutoff_fn = CutoffDummy()
     else:
@@ -27,6 +29,16 @@ class CutoffCosine(torch.nn.Module):
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
         # assuming all elements in distances are smaller than cutoff
         return 0.5 * torch.cos(distances * (math.pi / cutoff)) + 0.5
+
+
+class CutoffHIP(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, distances: Tensor, cutoff: float) -> Tensor:
+        # assuming all elements in distances are smaller than cutoff
+        return torch.cos((math.pi / 2) * (distances / cutoff)) ** 2
 
 
 class CutoffPhysNet(torch.nn.Module):
