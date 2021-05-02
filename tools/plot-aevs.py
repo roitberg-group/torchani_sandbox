@@ -4,9 +4,34 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # noqa
 from matplotlib import cm
 from torchani.aev.aev_terms import StandardAngular, StandardRadial, PhysNetRadial, HIPRadial
+from torchani.units import angstrom2bohr
 
 if __name__ == '__main__':
     device = torch.device('cuda')
+
+    # plot HIP-NN radial AEV, this reproduces figure 2 from their paper
+    radial_terms = HIPRadial().to(device)
+    print(radial_terms.Sigma)
+    print(radial_terms.Mu)
+    for p in radial_terms.parameters():
+        p.requires_grad_(False)
+    size_radial_r = 3000
+    distances = torch.linspace(0, radial_terms.cutoff, size_radial_r, device=device)
+    radial_aev = radial_terms(distances).permute(1, 0)
+    cutoff_envelope = radial_terms.cutoff_fn(distances, radial_terms.cutoff)
+
+    fig1, ax = plt.subplots()
+    max_values_radial = []
+    for term in radial_aev:
+        ax.plot(angstrom2bohr(distances.cpu()), term.cpu())
+        ax.set_xlabel(r'Distance ($Bohr$)')
+        ax.set_ylabel(r'AEV term intensity')
+        ax.set_title('HIP-NN radial aevs')
+        max_values_radial.append(term.max().item())
+    ax.plot(angstrom2bohr(distances.cpu()), cutoff_envelope.cpu(), color='k', linestyle='dashed')
+    plt.show()
+
+    exit()
 
     angular_terms = StandardAngular.like_1x().to(device)
 
@@ -38,7 +63,7 @@ if __name__ == '__main__':
     ax.set_title('ANI 1x angular upper aev')
     ax.set_xlim(-angular_terms.cutoff, angular_terms.cutoff)
     ax.set_ylim(-angular_terms.cutoff, angular_terms.cutoff)
-    plt.show()
+    plt.show(block=False)
 
     # plot standard ani1x radial AEV
     radial_terms = StandardRadial.like_1x().to(device)
@@ -80,26 +105,3 @@ if __name__ == '__main__':
         max_values_radial.append(term.max().item())
     ax.plot(distances.cpu(), cutoff_envelope.cpu(), color='k', linestyle='dashed')
     plt.show(block=False)
-
-    # plot HIP-NN radial AEV, this reproduces figure 2 from their paper
-    radial_terms = HIPRadial().to(device)
-    print(radial_terms.Sigma)
-    print(radial_terms.Mu)
-    exit()
-    for p in radial_terms.parameters():
-        p.requires_grad_(False)
-    size_radial_r = 1000
-    distances = torch.linspace(0, radial_terms.cutoff, size_radial_r, device=device)
-    radial_aev = radial_terms(distances).permute(1, 0)
-    cutoff_envelope = radial_terms.cutoff_fn(distances, radial_terms.cutoff)
-
-    fig1, ax = plt.subplots()
-    max_values_radial = []
-    for term in radial_aev:
-        ax.plot(distances.cpu(), term.cpu())
-        ax.set_xlabel(r'Distance ($\AA$)')
-        ax.set_ylabel(r'AEV term intensity')
-        ax.set_title('PhysNet radial aevs')
-        max_values_radial.append(term.max().item())
-    ax.plot(distances.cpu(), cutoff_envelope.cpu(), color='k', linestyle='dashed')
-    plt.show()

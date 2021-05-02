@@ -5,6 +5,7 @@ from typing import Optional, Union
 from torch import Tensor
 from .cutoffs import _parse_cutoff_fn
 from ..compat import Final
+from ..units import bohr2angstrom
 
 
 def _warn_parameters():
@@ -20,11 +21,11 @@ class HIPRadial(torch.nn.Module):
 
     def __init__(self, Sigma: Optional[Tensor] = None,
                        Mu: Optional[Tensor] = None,
-                       cutoff: float = 15.0,  # HIP-NN has a large cutoff by default
+                       cutoff: float = bohr2angstrom(15.0),  # HIP-NN has a large cutoff by default
                        cutoff_fn: Optional[Union[str, torch.nn.Module]] = 'hip',
                        sublength: Optional[int] = None,
-                       start: float = 1.7,
-                       end: float = 10.0):
+                       start: float = bohr2angstrom(1.7),
+                       end: float = bohr2angstrom(10.0)):
         # note that Sigma and Mu are analogous to Eta and ShfR in ANI respectively
         super().__init__()
         self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
@@ -38,27 +39,29 @@ class HIPRadial(torch.nn.Module):
 
         # Default way in which HIP-NN initializes Sigma and Mu
         if Sigma is None:
-            Sigma = torch.full(size=(sublength,), fill_value=2 * sublength * end).float()
+            Sigma = torch.full(size=(sublength,), fill_value=2 * sublength * start).float()
             assert Sigma.shape[0] == sublength
         if Mu is None:
-            Mu = torch.linspace(1 / start, 1 / end, sublength).float()
-            assert Mu.shape[0] == sublength
+            # this is actually what is done to initialize this,
+            # the paper is ambiguous, but this reproduces their plot
+            inverse_Mu = torch.linspace(1 / end, 1 / start, sublength).float()
 
         # Sigma and Mu are learnable for HIP-NN
         self.register_parameter('Sigma', torch.nn.Parameter(Sigma))
-        self.register_parameter('Mu', torch.nn.Parameter(Mu))
+        self.register_parameter('Mu', torch.nn.Parameter(1 / inverse_Mu))
         self.sublength = sublength
 
         # check correct dimensions
-        assert Mu.shape[0] == Sigma.shape[0]
-        assert Mu.dim() == 1
-        assert Sigma.dim() == 1
+        assert self.Mu.shape[0] == sublength
+        assert self.Mu.shape[0] == self.Sigma.shape[0]
+        assert self.Mu.dim() == 1
+        assert self.Sigma.dim() == 1
 
     def forward(self, distances: Tensor) -> Tensor:
         # output will be of shape (A', K),
         distances = distances.view(-1, 1)
         fc = self.cutoff_fn(distances, self.cutoff)
-        exp_factor = self.Sigma * (1 / distances.view(-1, 1) - 1 / self.Mu)
+        exp_factor = self.Sigma * ((1 / distances.view(-1, 1)) - (1 / self.Mu))
         out = torch.exp(- 0.5 * exp_factor ** 2) * fc
         return out
 
