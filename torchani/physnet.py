@@ -15,6 +15,9 @@ from .compat import Final
 
 class HierarchicalModel(torch.nn.Module):
 
+    atomic_energy_scale: torch.nn.Parameter
+    atomic_energy_bias: torch.nn.Parameter
+
     def __init__(self,
                  modules=None,
                  num_modules: Optional[int] = None,
@@ -71,17 +74,17 @@ class HierarchicalModel(torch.nn.Module):
         features = self.embedding(species.view(-1) + 1)
         # features is (C * A = A', num_features)
 
-        atomic_energy_hierarchy = []
+        atomic_energy_hierarchy_list = []
         for m in self.phys_modules:
             # shape of radial_aev is (P, sublength), shape of atom_index12 is (2, P)
             # but shape of features is (A', num_features), with A' = A * C
             atomic_energies, features = m(species, features, radial_aev, atom_index12)
             # energies is shape (A',)
-            atomic_energy_hierarchy.append(atomic_energies.unsqueeze(-1))
+            atomic_energy_hierarchy_list.append(atomic_energies.unsqueeze(-1))
 
         # last dim is dim m in the PhysNet paper, which indexes the module.
         # Energies are actually atomic energies at this point.
-        atomic_energy_hierarchy = torch.cat(atomic_energy_hierarchy, dim=-1)
+        atomic_energy_hierarchy = torch.cat(atomic_energy_hierarchy_list, dim=-1)
 
         # atomic energies are scaled by an element specific weight and bias
         # which is learnable
@@ -134,6 +137,9 @@ class HierarchicalModel(torch.nn.Module):
 
 
 class PhysNetModule(torch.nn.Module):
+
+    gating_vector: torch.nn.Parameter
+
     def __init__(self,
                  num_interaction_res: int = 3,
                  num_atomic_res: int = 2,
@@ -165,9 +171,7 @@ class PhysNetModule(torch.nn.Module):
         # for now I only predict energies
         self.output_linear = torch.nn.Linear(num_features, 1)
         # Gating linear is matrix G in the PhysNet paper, initialized as zero (!)
-        self.gating_linear = torch.nn.Linear(radial_sublength,
-                                             num_features,
-                                             bias=False)
+        self.gating_linear = torch.nn.Linear(radial_sublength, num_features, bias=False)
         self.a = _parse_activation(activation)
 
     def forward(self, species: Tensor, features: Tensor, radial_aev: Tensor,
@@ -254,7 +258,7 @@ class PhysNetModule(torch.nn.Module):
         return out_energies.view(species.shape[0], species.shape[1]), out_features
 
     @staticmethod
-    def _make_residual(num: int, num_features: int, activation: Optional[torch.nn.Module] = None):
+    def _make_residual(num: int, num_features: int, activation: Union[str, torch.nn.Module] = 'shifted_sp'):
         return OrderedDict([(f'res{j}',
                              PhysNetResidual(num_features,
                                              activation=activation))
