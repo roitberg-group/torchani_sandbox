@@ -1,4 +1,5 @@
 import torch
+import math
 from collections import OrderedDict
 from torch import Tensor
 from typing import Tuple, NamedTuple, Optional
@@ -137,6 +138,16 @@ class FittedSoftplus(torch.nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return torch.nn.functional.softplus(x + self.alpha, beta=self.beta) - self.alpha
+
+
+class ShiftedSoftplus(torch.nn.Module):
+    # activation function used by PhysNet and SchNet
+    # shifted softplus activation
+    # Note that in all my tests this performs significantly worse than
+    # FittedSoftplus
+
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.nn.functional.softplus(x) - math.log(2)
 
 
 class SpeciesConverter(torch.nn.Module):
