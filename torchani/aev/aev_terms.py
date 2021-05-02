@@ -1,7 +1,7 @@
 import torch
 import warnings
 import math
-from typing import Optional
+from typing import Optional, Union
 from torch import Tensor
 from .cutoffs import _parse_cutoff_fn
 from ..compat import Final
@@ -18,7 +18,11 @@ class PhysNetRadial(torch.nn.Module):
     Beta: Tensor
     Mu: Tensor
 
-    def __init__(self, Beta: Optional[Tensor] = None, Mu: Optional[Tensor] = None, cutoff: float = 10.0, cutoff_fn='physnet', sublength=None):
+    def __init__(self, Beta: Optional[Tensor] = None,
+                       Mu: Optional[Tensor] = None,
+                       cutoff: float = 10.0,
+                       cutoff_fn: Union[str, torch.nn.Module] = 'physnet',
+                       sublength: Optional[int] = None):
         # note that Beta and Mu are analogous to ShfR and Eta in ANI respectively
         super().__init__()
         self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
