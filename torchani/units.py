@@ -39,6 +39,7 @@ import math
 
 # the codata value for hartree in units of eV can be obtained from
 # m_e * e^3 / ( 16 * pi^2 * eps_0^2 hbar^2 )
+ANGSTROM_TO_BOHR = 1.8897261258369282
 HARTREE_TO_EV = 27.211386024367243  # equal to ase.units.Hartree
 EV_TO_JOULE = 1.6021766208e-19  # equal to ase.units._e (electron charge)
 JOULE_TO_KCAL = 1 / 4184.  # exact
@@ -104,6 +105,16 @@ def mhessian2fconst(x):
     return x * MHESSIAN_TO_FCONST
 
 
+def angstrom2bohr(x):
+    r"""Angstrom to Bohr conversion factor from 2014 CODATA"""
+    return x * ANGSTROM_TO_BOHR
+
+
+def bohr2angstrom(x):
+    r"""Bohr to Angstrom conversion factor from 2014 CODATA"""
+    return x / ANGSTROM_TO_BOHR
+
+
 def hartree2ev(x):
     r"""Hartree to eV conversion factor from 2014 CODATA"""
     return x * HARTREE_TO_EV
@@ -130,6 +141,8 @@ def hartree2kcalmol(x):
 
 
 # Add actual values to docstrings on import
+angstrom2bohr.__doc__ = str(angstrom2bohr.__doc__) + f'\n\n1 Angstrom = {angstrom2bohr(1)} Bohr'
+bohr2angstrom.__doc__ = str(bohr2angstrom.__doc__) + f'\n\n1 Bohr = {bohr2angstrom(1)} Angstrom'
 hartree2ev.__doc__ = str(hartree2ev.__doc__) + f'\n\n1 Hartree = {hartree2ev(1)} eV'
 hartree2kcalmol.__doc__ = str(hartree2kcalmol.__doc__) + f'\n\n1 Hartree = {hartree2kcalmol(1)} kcal/mol'
 hartree2kjoulemol.__doc__ = str(hartree2kjoulemol) + f'\n\n1 Hartree = {hartree2kjoulemol(1)} kJ/mol'
