@@ -1,6 +1,6 @@
 import torch
 import math
-from typing import Tuple
+from typing import Tuple, Optional, Union
 from torch import Tensor
 from collections import OrderedDict
 from .nn import SSP
@@ -9,20 +9,20 @@ from .aev.aev_terms import _parse_radial_terms
 from .compat import Final
 # Note that I will combine all their modules in one for simplicity, there isn't
 # much reusability in the way PhysNet divides its modules in my opinion, so
-# this is just one monolithic "module", a hierarchical model that encompasses the
-# modules, and a residual block
+# this is just one monolithic "module", a hierarchical model that encompasses
+# the modules, and a residual block
 
 
 class HierarchicalModel(torch.nn.Module):
 
     def __init__(self,
                  modules=None,
-                 num_modules=None,
-                 neighborlist='full_pairwise',
-                 cutoff=10,
-                 radial_terms='physnet',
-                 num_species=4,
-                 in_features=128):
+                 num_modules: Optional[int] = None,
+                 neighborlist: Union[str, torch.nn.Module] = 'full_pairwise',
+                 cutoff: float = 10.0,
+                 radial_terms: Union[str, torch.nn.Module] = 'physnet',
+                 num_species: int = 4,
+                 in_features: int = 128):
         super().__init__()
 
         if modules is None:
@@ -38,7 +38,6 @@ class HierarchicalModel(torch.nn.Module):
 
         self.neighborlist = _parse_neighborlist(neighborlist, cutoff)
         self.radial_terms = _parse_radial_terms(radial_terms, 'physnet', None, None, None, cutoff)
-        # set the radial cutoff to be equal to the NL cutoff
         assert self.radial_terms.cutoff == self.neighborlist.cutoff
         # num_species + 1 is needed to make room for the padding index (which
         # can't be -1)
@@ -136,12 +135,12 @@ class HierarchicalModel(torch.nn.Module):
 
 class PhysNetModule(torch.nn.Module):
     def __init__(self,
-                 num_interaction_res=3,
-                 num_atomic_res=2,
-                 num_output_res=1,
-                 in_features=128,
-                 activation=None,
-                 radial_sublength=64):
+                 num_interaction_res: int = 3,
+                 num_atomic_res: int = 2,
+                 num_output_res: int = 1,
+                 in_features: int = 128,
+                 activation: Optional[torch.nn.Module] = None,
+                 radial_sublength: int = 64):
         super().__init__()
 
         self.interaction_res = torch.nn.Sequential(
@@ -255,7 +254,7 @@ class PhysNetModule(torch.nn.Module):
         return out_energies.view(species.shape[0], species.shape[1]), out_features
 
     @staticmethod
-    def _make_residual(num, in_features, activation=None):
+    def _make_residual(num: int, in_features: int, activation: Optional[torch.nn.Module] = None):
         return OrderedDict([(f'res{j}',
                              PhysNetResidual(in_features,
                                              activation=activation))
@@ -263,7 +262,7 @@ class PhysNetModule(torch.nn.Module):
 
 
 class PhysNetResidual(torch.nn.Module):
-    def __init__(self, in_features=128, activation=None):
+    def __init__(self, in_features: int = 128, activation: Optional[torch.nn.Module] = None):
         super().__init__()
 
         self.res_linear1 = torch.nn.Linear(in_features, in_features)
@@ -286,7 +285,7 @@ class HierarchicalLoss(torch.nn.Module):
     # HIP-NN
     eps: Final[float]
 
-    def __init__(self, eps=1e-7):
+    def __init__(self, eps: float = 1e-7):
         super().__init__()
         self.eps = eps
 
