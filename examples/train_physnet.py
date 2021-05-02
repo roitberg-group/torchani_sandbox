@@ -20,7 +20,8 @@ def _copy(self, target):
 
 Path.copy = _copy
 
-hparams = {'batch_size': 1280}
+# PhysNet trains with a very small batch size of 32 molecules
+hparams = {'batch_size': 32}
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # ## setup all paths #####
@@ -53,7 +54,6 @@ if current_file.as_posix() != dest.as_posix():
 # set tensorboard outs
 tb = torch.utils.tensorboard.SummaryWriter(tensorboard_path)
 tb_detail = torch.utils.tensorboard.SummaryWriter(tensorboard_detail_path)
-
 ##########################
 
 # ### Load dataset ####
@@ -91,62 +91,43 @@ model = HierarchicalModel().float().to(device)
 print(model)
 ################
 
-
-# all detail printing is false by default ##
-def log_act_detail(x, module_name, act_name):
-    global act_detail
-    global tb_detail
-    global step
-    if act_detail:
-        with torch.no_grad():
-            if len(x) > 100:
-                tb_detail.add_histogram(f'act/{module_name}/{act_name}', x[0:100], step)
-                tb_detail.add_scalar(f'act_mean/{module_name}/{act_name}', x[0:100].mean(), step)
-            else:
-                tb_detail.add_histogram(f'act/{module_name}/{act_name}', x, step)
-                tb_detail.add_scalar(f'act_mean/{module_name}/{act_name}', x.mean(), step)
-
-
-swa_model = None
-swa = False
-detail = False
-batch_detail = False
-act_detail = False
-bailout = False
-# in the PhysNet paper they always train with forces
+# In the PhysNet paper they always train with forces ON
 train_forces = False
 #############################################
 
 max_epochs = 1000
-# physnet trains with AMSGrad
-# although in the paper they don't say so, they seem to clip gradients if norm > 1000.0, (by default)
-# they don't seem to use L2 regularization but they have the option,
-# and they use dropout with keep_prob = 1.0 (this means a rate of 1 - 1 = 0, so
-# no dropout), at least for the SN2 reactions ds they also seem to use learning
-# rate decay, with 10 000 000 steps and a decay rate of 0.1 (exponential) their
-# parameters for force, dipole and charge are very different from the ones in
+# Although in the paper they don't say so, they seem to clip gradients if norm
+# > 1000.0 in their training code (by default)
+clip_norm = True
 max_norm_for_clipping = 1000.0
-# the paper
+
+# They don't seem to use L2 regularization but they have the option, and they
+# have the option to use dropout but by default with keep_prob = 1.0 (this
+# means a rate of 1 - 1 = 0, so no dropout),
+
+# at least for the SN2 reactions dataset they also seem to use learning
+# rate decay, with 10 000 000 steps and a decay rate of 0.1 (exponential)
+# their parameters for force, dipole and charge in the code are very different
+# from the ones in the paper
 # they are:
 # --force_weight=52.91772105638412
 # --charge_weight=14.399645351950548
 # --dipole_weight=27.211386024367243
-# they also train with D3, and use fixed D3 parameters (not learned)
+# they also train with D3, and use fixed D3 parameters (not learned) by
+# default, but they have the possibility to learn the parameters
+
+# physnet trains with AMSGrad (in my tests this performs significantly worse
+# for ANI)
 opt = torch.optim.Adam(model.parameters(), amsgrad=True)
 # scheduler is only here to keep track of epochs
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=max_epochs, factor=0.5)
-swa_start = 0
 
 mae = torch.nn.L1Loss(reduction='none')  # this is MAE
 hloss = HierarchicalLoss()
 
 
-def validate(model, validation, epoch, swa=False):
+def validate(model, validation, epoch):
     # run validation
-    global act_detail
-    saved_act_detail = act_detail
-    act_detail = False
-
     mse_sum = torch.nn.MSELoss(reduction='sum')
     total_mse = 0.0
     count = 0
@@ -156,19 +137,17 @@ def validate(model, validation, epoch, swa=False):
             species = properties['species'].to(device)
             coordinates = properties['coordinates'].to(device).float()
             true_energies = properties['energies'].to(device).float()
-            # physnet also outputs hierarchical energies
+            # Physnet also outputs hierarchical energies, but these are
+            # not used for validation
             _, predicted_energies, _ = model((species, coordinates))
             total_mse += mse_sum(predicted_energies, true_energies).item()
             count += predicted_energies.shape[0]
     model.train(True)
     rmse = hartree2kcalmol(math.sqrt(total_mse / count))
-    print(f'Validation RMSE: {rmse} at epoch {epoch} swa: {swa}', flush=True)
-
-    act_detail = saved_act_detail
+    print(f'Validation RMSE: {rmse} at epoch {epoch}', flush=True)
     return rmse
 
 
-step = 0
 best_validation_rmse = math.inf
 if os.path.isfile(latest_checkpoint):
     checkpoint = torch.load(latest_checkpoint)
@@ -176,13 +155,11 @@ if os.path.isfile(latest_checkpoint):
     opt.load_state_dict(checkpoint['opt'])
     scheduler.load_state_dict(checkpoint['scheduler'])
     best_validation_rmse = checkpoint['best_validation_rmse']
-    step = checkpoint['step']
-
 
 print('Num model parameters:', sum([p.numel() for p in model.parameters()]))
 print("Training starting from epoch:", scheduler.last_epoch)
 
-if step == 0:
+if scheduler.last_epoch <= 0:
     rmse = validate(model, validation, scheduler.last_epoch)
     tb.add_scalar('validation_rmse_kcalmol', rmse, scheduler.last_epoch)
     tb.add_scalar('best_validation_rmse_kcalmol', best_validation_rmse, scheduler.last_epoch)
@@ -220,28 +197,9 @@ for _ in range(max_epochs):
             loss += 100 * (mae(predicted_forces, true_forces) / (3 * non_dummy_atoms)).sum(1, 2).mean()
 
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm_for_clipping)
+        if clip_norm:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm_for_clipping)
         opt.step()
-
-        if batch_detail:
-            with torch.no_grad():
-                for name, p in model.named_parameters():
-                    if p.data is not None:
-                        tb_detail.add_histogram(f'batch_params/{name.replace(".", "/")}', p.data.cpu(), step)
-                        cached_p = cached_params.get(name, None)
-                        if cached_p is not None:
-                            tb_detail.add_histogram(f'batch_param_updates/{name.replace(".","/")}',
-                                    torch.abs(p.data - cached_p.data), step)
-                        cached_params[name] = p.data.detach().clone()
-
-                    if p.grad is not None:
-                        tb_detail.add_histogram(f'batch_grad_mags/{name.replace(".", "/")}', torch.abs(p.grad), step)
-                        tb_detail.add_histogram(f'batch_grad_mean_mag/{name.replace(".", "/")}',
-                                torch.abs(p.grad).mean(), step)
-        step += 1
-
-    if swa and (scheduler.last_epoch > swa_start):
-        swa_model.update_parameters(model)
 
     training = training.shuffle()
     rmse = validate(model, validation, scheduler.last_epoch)
@@ -260,14 +218,6 @@ for _ in range(max_epochs):
     tb.add_scalar('best_validation_rmse_kcalmol', best_validation_rmse, scheduler.last_epoch)
     tb.add_scalar('learning_rate', opt.param_groups[0]['lr'], scheduler.last_epoch)
     tb.add_scalar('training_loss', loss.item(), scheduler.last_epoch)
-    tb.add_scalar('training_rmse_kcalmol', loss.item(), scheduler.last_epoch)
-
-    if detail:
-        for name, p in model.named_parameters():
-            if p.data is not None:
-                tb_detail.add_histogram(f'epoch_params/{name.replace(".", "/")}', p.data.cpu().numpy(), scheduler.last_epoch)
-            if p.grad is not None:
-                tb_detail.add_histogram(f'epoch_grads/{name.replace(".", "/")}', p.grad.cpu().numpy(), scheduler.last_epoch)
 
     # epoch checkpoint
     torch.save({
@@ -275,15 +225,9 @@ for _ in range(max_epochs):
         'opt': opt.state_dict(),
         'scheduler': scheduler.state_dict(),
         'best_validation_rmse': best_validation_rmse,
-        'step': step
     }, latest_checkpoint)
 
     # log epoch time
     end = time()
     tb.add_scalar('epoch_time_s', end - start, scheduler.last_epoch)
     print("Epoch time: ", end - start, flush=True)
-    if bailout:
-        break
-
-if swa:
-    validate(swa_model, validation, scheduler.last_epoch)
