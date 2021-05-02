@@ -1,6 +1,7 @@
 import torch
 import warnings
 import math
+from typing import Optional
 from torch import Tensor
 from .cutoffs import _parse_cutoff_fn
 from ..compat import Final
@@ -8,6 +9,48 @@ from ..compat import Final
 
 def _warn_parameters():
     warnings.warn('Generated parameters may differ from published model to 1e-7')
+
+
+class PhysNetRadial(torch.nn.Module):
+
+    cutoff: Final[float]
+    sublength: Final[int]
+    Beta: Tensor
+    Mu: Tensor
+
+    def __init__(self, Beta: Optional[Tensor] = None, Mu: Optional[Tensor] = None, cutoff: float = 10.0, cutoff_fn='physnet', sublength=None):
+        # note that Beta and Mu are analogous to ShfR and Eta in ANI respectively
+        super().__init__()
+        self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
+        self.cutoff = cutoff
+        if sublength is not None:
+            assert (Beta is None) or (Mu is None)
+
+        if sublength is None:
+            sublength = 64
+
+        # Default way in which PhysNet creates Beta and Mu
+        exp_cut = math.exp(-self.cutoff)
+        if Beta is None:
+            Beta = torch.tensor([(2.0 * (1 - exp_cut) * sublength**-1)**-2]).float()
+        if Mu is None:
+            Mu = torch.linspace(exp_cut, 1.0, sublength).float()
+            assert Mu.shape[0] == sublength
+
+        self.register_buffer('Beta', Beta)
+        self.register_buffer('Mu', Mu)
+        self.sublength = sublength
+        # check correct dimensions
+        assert Beta.shape[0] == 1 and Beta.dim() == 1, "Beta must be a 1 element 1 dim tensor"
+        assert Mu.dim() == 1, "Mu must be a 1 dim tensor"
+
+    def forward(self, distances: Tensor) -> Tensor:
+        # output will be of shape (A', K),
+        distances = distances.view(-1, 1)
+        fc = self.cutoff_fn(distances, self.cutoff)
+        factor = (torch.exp(-distances.view(-1, 1)) - self.Mu)
+        out = torch.exp(-self.Beta * factor ** 2) * fc
+        return out
 
 
 class StandardRadial(torch.nn.Module):
@@ -208,7 +251,7 @@ def _parse_angular_terms(angular_terms, cutoff_fn, EtaA, Zeta, ShfA, ShfZ, Rca):
     return angular_terms
 
 
-def _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr):
+def _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr, cutoff=None):
 
     # legacy input
     if radial_terms == 'standard':
@@ -219,7 +262,9 @@ def _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr):
     assert EtaR is None
     assert ShfR is None
     assert Rcr is None
-    if radial_terms == 'ani1x':
+    if radial_terms == 'physnet':
+        radial_terms = PhysNetRadial(cutoff_fn=cutoff_fn, cutoff=cutoff)
+    elif radial_terms == 'ani1x':
         radial_terms = StandardRadial.like_1x(cutoff_fn=cutoff_fn)
     elif radial_terms == 'ani2x':
         radial_terms = StandardRadial.like_2x(cutoff_fn=cutoff_fn)
