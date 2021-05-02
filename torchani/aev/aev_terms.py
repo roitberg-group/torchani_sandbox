@@ -11,6 +11,58 @@ def _warn_parameters():
     warnings.warn('Generated parameters may differ from published model to 1e-7')
 
 
+class HIPRadial(torch.nn.Module):
+
+    cutoff: Final[float]
+    sublength: Final[int]
+    Sigma: Tensor
+    Mu: Tensor
+
+    def __init__(self, Sigma: Optional[Tensor] = None,
+                       Mu: Optional[Tensor] = None,
+                       cutoff: float = 15.0,  # HIP-NN has a large cutoff by default
+                       cutoff_fn: Optional[Union[str, torch.nn.Module]] = 'hip',
+                       sublength: Optional[int] = None,
+                       start: float = 1.7,
+                       end: float = 10.0):
+        # note that Sigma and Mu are analogous to Eta and ShfR in ANI respectively
+        super().__init__()
+        self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
+        self.cutoff = cutoff
+
+        if sublength is not None:
+            assert (Sigma is None) or (Mu is None)
+
+        if sublength is None:
+            sublength = 20
+
+        # Default way in which HIP-NN initializes Sigma and Mu
+        if Sigma is None:
+            Sigma = torch.full(size=(sublength,), fill_value=2 * sublength * end).float()
+            assert Sigma.shape[0] == sublength
+        if Mu is None:
+            Mu = torch.linspace(1 / start, 1 / end, sublength).float()
+            assert Mu.shape[0] == sublength
+
+        # Sigma and Mu are learnable for HIP-NN
+        self.register_parameter('Sigma', torch.nn.Parameter(Sigma))
+        self.register_parameter('Mu', torch.nn.Parameter(Mu))
+        self.sublength = sublength
+
+        # check correct dimensions
+        assert Mu.shape[0] == Sigma.shape[0]
+        assert Mu.dim() == 1
+        assert Sigma.dim() == 1
+
+    def forward(self, distances: Tensor) -> Tensor:
+        # output will be of shape (A', K),
+        distances = distances.view(-1, 1)
+        fc = self.cutoff_fn(distances, self.cutoff)
+        exp_factor = self.Sigma * (1 / distances.view(-1, 1) - 1 / self.Mu)
+        out = torch.exp(- 0.5 * exp_factor ** 2) * fc
+        return out
+
+
 class PhysNetRadial(torch.nn.Module):
 
     cutoff: Final[float]
@@ -268,6 +320,8 @@ def _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr, cutoff=None):
     assert Rcr is None
     if radial_terms == 'physnet':
         radial_terms = PhysNetRadial(cutoff_fn=cutoff_fn, cutoff=cutoff)
+    elif radial_terms == 'hip':
+        radial_terms = HIPRadial(cutoff_fn=cutoff_fn, cutoff=cutoff)
     elif radial_terms == 'ani1x':
         radial_terms = StandardRadial.like_1x(cutoff_fn=cutoff_fn)
     elif radial_terms == 'ani2x':
