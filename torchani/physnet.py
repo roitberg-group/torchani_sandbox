@@ -3,7 +3,7 @@ import math
 from typing import Tuple, Optional, Union
 from torch import Tensor
 from collections import OrderedDict
-from .nn import SSP
+from .nn import _parse_activation
 from .aev.neighbors import _parse_neighborlist
 from .aev.aev_terms import _parse_radial_terms
 from .compat import Final
@@ -22,14 +22,14 @@ class HierarchicalModel(torch.nn.Module):
                  cutoff: float = 10.0,
                  radial_terms: Union[str, torch.nn.Module] = 'physnet',
                  num_species: int = 4,
-                 in_features: int = 128):
+                 num_features: int = 128):
         super().__init__()
 
         if modules is None:
             if num_modules is None:
                 num_modules = 5
             self.phys_modules = torch.nn.ModuleList([
-                PhysNetModule(in_features=in_features)
+                PhysNetModule(num_features=num_features)
                 for _ in range(num_modules)
             ])
         else:
@@ -42,7 +42,7 @@ class HierarchicalModel(torch.nn.Module):
         # num_species + 1 is needed to make room for the padding index (which
         # can't be -1)
         self.embedding = torch.nn.Embedding(num_embeddings=num_species + 1,
-                                            embedding_dim=in_features,
+                                            embedding_dim=num_features,
                                             padding_idx=0)
 
         # element specific scales, I'm not sure how they initialize these for
@@ -69,12 +69,12 @@ class HierarchicalModel(torch.nn.Module):
         # for the embedding 0 is a padding index and -1 is invalid, so we add 1
         # to all indices for the purposes of embedding
         features = self.embedding(species.view(-1) + 1)
-        # features is (C * A = A', in_features)
+        # features is (C * A = A', num_features)
 
         atomic_energy_hierarchy = []
         for m in self.phys_modules:
             # shape of radial_aev is (P, sublength), shape of atom_index12 is (2, P)
-            # but shape of features is (A', in_features), with A' = A * C
+            # but shape of features is (A', num_features), with A' = A * C
             atomic_energies, features = m(species, features, radial_aev, atom_index12)
             # energies is shape (A',)
             atomic_energy_hierarchy.append(atomic_energies.unsqueeze(-1))
@@ -138,37 +138,37 @@ class PhysNetModule(torch.nn.Module):
                  num_interaction_res: int = 3,
                  num_atomic_res: int = 2,
                  num_output_res: int = 1,
-                 in_features: int = 128,
-                 activation: Optional[torch.nn.Module] = None,
+                 num_features: int = 128,
+                 activation: Union[str, torch.nn.Module] = 'shifted_sp',
                  radial_sublength: int = 64):
         super().__init__()
 
         self.interaction_res = torch.nn.Sequential(
             self._make_residual(num_interaction_res,
-                                in_features,
+                                num_features,
                                 activation=activation))
         self.atomic_res = torch.nn.Sequential(
             self._make_residual(num_atomic_res,
-                                in_features,
+                                num_features,
                                 activation=activation))
         self.output_res = torch.nn.Sequential(
             self._make_residual(num_output_res,
-                                in_features,
+                                num_features,
                                 activation=activation))
 
         # PhysNet initialization for the gating vector is just ones
-        self.register_parameter('gating_vector', torch.nn.Parameter(torch.ones(in_features, dtype=torch.float)))
-        self.interaction_linear = torch.nn.Linear(in_features, in_features)
-        self.linearI = torch.nn.Linear(in_features, in_features)
-        self.linearJ = torch.nn.Linear(in_features, in_features)
+        self.register_parameter('gating_vector', torch.nn.Parameter(torch.ones(num_features, dtype=torch.float)))
+        self.interaction_linear = torch.nn.Linear(num_features, num_features)
+        self.linearI = torch.nn.Linear(num_features, num_features)
+        self.linearJ = torch.nn.Linear(num_features, num_features)
         # output_linear has matrix Wout in PhysNet paper, initialized as zero (!)
-        self.output_linear = torch.nn.Linear(
-            in_features, 1)  # for now I only predict energies
+        # for now I only predict energies
+        self.output_linear = torch.nn.Linear(num_features, 1)
         # Gating linear is matrix G in the PhysNet paper, initialized as zero (!)
         self.gating_linear = torch.nn.Linear(radial_sublength,
-                                             in_features,
+                                             num_features,
                                              bias=False)
-        self.a = SSP()
+        self.a = _parse_activation(activation)
 
     def forward(self, species: Tensor, features: Tensor, radial_aev: Tensor,
                 atom_index12: Tensor) -> Tuple[Tensor, Tensor]:
@@ -254,24 +254,20 @@ class PhysNetModule(torch.nn.Module):
         return out_energies.view(species.shape[0], species.shape[1]), out_features
 
     @staticmethod
-    def _make_residual(num: int, in_features: int, activation: Optional[torch.nn.Module] = None):
+    def _make_residual(num: int, num_features: int, activation: Optional[torch.nn.Module] = None):
         return OrderedDict([(f'res{j}',
-                             PhysNetResidual(in_features,
+                             PhysNetResidual(num_features,
                                              activation=activation))
                             for j in range(num)])
 
 
 class PhysNetResidual(torch.nn.Module):
-    def __init__(self, in_features: int = 128, activation: Optional[torch.nn.Module] = None):
+    def __init__(self, features: int = 128, activation: Union[str, torch.nn.Module] = 'shifted_sp'):
         super().__init__()
 
-        self.res_linear1 = torch.nn.Linear(in_features, in_features)
-        self.res_linear2 = torch.nn.Linear(in_features, in_features)
-        if activation is None:
-            self.a = SSP()
-        else:
-            assert isinstance(activation, torch.nn.Module)
-            self.a = activation
+        self.res_linear1 = torch.nn.Linear(features, features)
+        self.res_linear2 = torch.nn.Linear(features, features)
+        self.a = _parse_activation(activation)
 
     def forward(self, x: Tensor) -> Tensor:
         out = self.res_linear1(self.a(x))
