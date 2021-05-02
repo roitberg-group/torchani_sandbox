@@ -21,7 +21,7 @@ class PhysNetRadial(torch.nn.Module):
     def __init__(self, Beta: Optional[Tensor] = None,
                        Mu: Optional[Tensor] = None,
                        cutoff: float = 10.0,
-                       cutoff_fn: Union[str, torch.nn.Module] = 'physnet',
+                       cutoff_fn: Optional[Union[str, torch.nn.Module]] = 'physnet',
                        sublength: Optional[int] = None):
         # note that Beta and Mu are analogous to ShfR and Eta in ANI respectively
         super().__init__()
