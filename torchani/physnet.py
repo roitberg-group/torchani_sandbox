@@ -9,8 +9,8 @@ from .aev.aev_terms import _parse_radial_terms
 from .compat import Final
 # Note that I will combine all their modules in one for simplicity, there isn't
 # much reusability in the way PhysNet divides its modules in my opinion, so
-# this is just one monolithic "module", a hierarchical model that encompasses
-# the modules, and a residual block
+# this is just one monolithic "interaction module", a hierarchical model that
+# encompasses the modules, and a residual block
 
 
 class HierarchicalModel(torch.nn.Module):
@@ -174,88 +174,102 @@ class PhysNetModule(torch.nn.Module):
         self.gating_linear = torch.nn.Linear(radial_sublength, num_features, bias=False)
         self.a = _parse_activation(activation)
 
-    def forward(self, species: Tensor, features: Tensor, radial_aev: Tensor,
-                atom_index12: Tensor) -> Tuple[Tensor, Tensor]:
+    def _interaction_pass(self, features: Tensor,
+                                non_dummy_indexes: Tensor,
+                                radial_aev: Tensor,
+                                atom_index12: Tensor) -> Tuple[Tensor, Tensor]:
+        # This function has the most laborious construction, the interaction
         num_features = features.shape[1]
         num_pairs = atom_index12.shape[1]
-        # unfortunately here the features have some padded stuff with zeros
-        # that makes not sense to calculate on, so we get rid of that, and then
-        # we use index_add_ to insert the result of the operations back on
-        # padded tensors whenever we need it. For simplicity this is done once
-        # every module, but this could potentially be made more performant by
-        # doing it much less I believe
-        non_dummy_indexes = (species != -1).view(-1).nonzero().contiguous().view(-1)
         num_non_dummy = non_dummy_indexes.shape[0]
-
         non_dummy_features = features.index_select(0, non_dummy_indexes)
-        assert non_dummy_features.size() == torch.Size((num_non_dummy,
-                                                       num_features))
+        assert non_dummy_features.size() == torch.Size((num_non_dummy, num_features))
 
-        # This is the most laborious construction, the interaction message
-        # proto message is of shape (A', num_features), but then it is reduced to
-        # shape (A'nd, num_features) for further preprocessing
-        # where nd stands for non dummy
-        # the proto message is made with two pieces, a "no_interaction" part,
-        # and an "interaction" part that includes an interaction with the
-        # radial aev term
+        # We build the proto message which is of shape (A', num_features)
+        # it is made with a SELF and an OTHERS part
+
+        # (1) SELF part of the proto messange
+        proto_message_self = self.a(self.linearI(self.a(non_dummy_features)))
+        assert proto_message_self.size() == torch.Size((num_non_dummy, num_features))
+
+        # (2) OTHERS part, composed of AEV and FEATURES parts
+        # This can be performed with the features that have "dummy" atoms
+        # on them, since atom_index12 gets rid of them automatically,
+        aev_others_term = self.gating_linear(radial_aev).unsqueeze(0)
+        assert aev_others_term.size() == torch.Size((1, num_pairs, num_features))
+        features_others_term = self.a(self.linearJ(self.a(features[atom_index12])))
+        assert features_others_term.size() == torch.Size((2, num_pairs, num_features))
+        # here PhysNet uses hadamard (elementwise) product to combine AEV and FEATURES
+        proto_message_others = aev_others_term * features_others_term
+        assert proto_message_others.size() == torch.Size((2, num_pairs, num_features))
+
+        # (3) now that we have SELF and OTHERS we add them into the proto_message
         proto_message = torch.zeros_like(features)
-
-        proto_message_no_interaction = self.a(
-            self.linearI(self.a(non_dummy_features)))
-        assert proto_message_no_interaction.size() == torch.Size((
-            num_non_dummy, num_features))
-
-        # This part can be performed with the features that have "dummy" atoms
-        # on them, since atom_index12 gets rid of them automatically
-
-        features12 = features[atom_index12]
-        assert features12.size() == torch.Size((2, num_pairs, num_features))
-        aev_message_term = self.gating_linear(radial_aev).unsqueeze(0)
-        assert aev_message_term.size() == torch.Size((1, num_pairs,
-                                                     num_features))
-        features_message_term = self.a(self.linearJ(self.a(features12)))
-        assert features_message_term.size() == torch.Size((
-            2, num_pairs, num_features))
-
-        # here PhysNet uses hadamard (elementwise) product to combine these two terms
-        proto_message_interaction = aev_message_term * features_message_term
-        assert proto_message_interaction.size() == torch.Size((
-            2, num_pairs, num_features))
-
-        proto_message.index_add_(
-            0, atom_index12.view(-1),
-            proto_message_interaction.view(-1, features.shape[1]))
-        proto_message.index_add_(0, non_dummy_indexes,
-                                 proto_message_no_interaction)
+        proto_message.index_add_(0, atom_index12.view(-1), proto_message_others.view(-1, features.shape[1]))
+        proto_message.index_add_(0, non_dummy_indexes, proto_message_self)
         # at this point proto message is of shape (A', num_features) but once
-        # again I extract only non dummy indexes
-        proto_message = proto_message.index_select(0, non_dummy_indexes)
+        # again I extract only non dummy indexes before refinement
+        non_dummy_proto_message = proto_message.index_select(0, non_dummy_indexes)
 
         # message refinement
-        message = self.interaction_res(proto_message)
-        assert message.size() == torch.Size((num_non_dummy, num_features))
+        non_dummy_message = self.interaction_res(non_dummy_proto_message)
+        assert non_dummy_message.size() == torch.Size((num_non_dummy, num_features))
 
+        # Interaction happens here
         # features interact with local environment through a message
-        non_dummy_features = non_dummy_features * self.gating_vector.view(
-            1, -1) + self.interaction_linear(self.a(message))
+        non_dummy_features = non_dummy_features * self.gating_vector.view(1, -1)
+        non_dummy_features += self.interaction_linear(self.a(non_dummy_message))
         assert non_dummy_features.size() == torch.Size((num_non_dummy, num_features))
 
-        # features "atomic" refinement
-        non_dummy_features = self.atomic_res(non_dummy_features)
-        assert non_dummy_features.size() == torch.Size((num_non_dummy, num_features))
+        return non_dummy_features
 
-        # energies refinement
-        non_dummy_energies = self.output_linear(
-            self.a(self.output_res(non_dummy_features))).squeeze(-1)
+    def _energies_from_features(self, non_dummy_features: Tensor) -> Tensor:
+        num_non_dummy = non_dummy_features.shape[0]
+        non_dummy_energies = self.output_linear(self.a(self.output_res(non_dummy_features))).squeeze(-1)
         assert non_dummy_energies.size() == torch.Size((num_non_dummy,))
+        return non_dummy_energies
 
-        out_energies = features.new_zeros(size=(features.shape[0],))
-        out_features = torch.zeros_like(features)
+    def _pad_for_output(self, non_dummy_energies: Tensor,
+                              non_dummy_features: Tensor,
+                              non_dummy_indexes: Tensor,
+                              num_molecules: int, num_atoms: int) -> Tuple[Tensor, Tensor]:
 
+        out_energies = torch.zeros(size=(num_atoms * num_molecules), device=non_dummy_energies.device,
+            dtype=non_dummy_energies.dtype)
+        out_features = torch.zeros(size=(num_atoms * num_molecules,
+            non_dummy_features.shape[-1]), device=non_dummy_energies.device,
+            dtype=non_dummy_energies.dtype)
         out_energies.index_add_(0, non_dummy_indexes, non_dummy_energies)
         out_features.index_add_(0, non_dummy_indexes, non_dummy_features)
+        out_energies.view(num_molecules, num_atoms)
+        return out_energies, out_features
 
-        return out_energies.view(species.shape[0], species.shape[1]), out_features
+    def forward(self, species: Tensor, features: Tensor, radial_aev: Tensor, atom_index12: Tensor) -> Tuple[Tensor, Tensor]:
+        # The features have some padded stuff with zeros
+        # that makes not sense to calculate on, so we get rid of that, and then
+        # we use index_add_ to insert the result of the operations back on
+        # padded tensors whenever we need it.
+        #
+        # For simplicity this is done once every module, but this could
+        # potentially be made more performant by doing it much less
+        non_dummy_indexes = (species != -1).view(-1).nonzero().contiguous().view(-1)
+        num_non_dummy = non_dummy_indexes.shape[0]
+        num_features = features.shape[1]
+
+        non_dummy_features = self._interaction_pass(features, non_dummy_indexes, radial_aev, atom_index12)
+
+        # features "atomic" or "on-site" refinement
+        non_dummy_features = self.atomic_res(non_dummy_features)
+        assert non_dummy_features.size() == torch.Size((num_non_dummy, num_features))
+        # energies refinement
+        non_dummy_energies = self._energies_from_features(non_dummy_features)
+        assert non_dummy_energies.size() == torch.Size((num_non_dummy,))
+
+        out_energies, out_features = self._pad_for_output(non_dummy_energies,
+                                                         non_dummy_features,
+                                                         non_dummy_indexes,
+                                                         species.shape[0], species.shape[1])
+        return out_energies, out_features
 
     @staticmethod
     def _make_residual(num: int, num_features: int, activation: Union[str, torch.nn.Module] = 'shifted_sp'):
