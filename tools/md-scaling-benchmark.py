@@ -5,7 +5,7 @@ import pickle
 import ase
 import copy
 import numpy as np
-from typing import Union
+from typing import Union, List
 from tqdm import tqdm
 import timeit
 
@@ -174,7 +174,7 @@ if __name__ == "__main__":
     parser.add_argument('-s',
                         '--steps',
                         type=int,
-                        default=250,
+                        default=100,
                         help="Timesteps to run in dynamics")
     parser.add_argument('--no-pbc',
                         action='store_true',
@@ -191,7 +191,7 @@ if __name__ == "__main__":
                         help="path to directory with xyz files")
     parser.add_argument('-t',
                         '--trials',
-                        default=5,
+                        default=1,
                         help="Repetitions to calculate std dev")
     parser.add_argument(
         '-b',
@@ -247,6 +247,7 @@ if __name__ == "__main__":
             plot_many(args.path_to_files, comment, show)
     else:
         device = torch.device(args.device)
+        sizes: Union[List[int], np.ndarray]
         if not path_to_xyz:
             num_atoms = 3  # for water
             sizes = (
@@ -254,6 +255,9 @@ if __name__ == "__main__":
         else:
             assert isinstance(path_to_xyz, Path)
             sizes = []
+
+            xyz_files: Union[List[Path], np.ndarray]
+
             xyz_files = [
                 p for p in path_to_xyz.iterdir() if '.xyz' == p.suffix
             ]
@@ -264,7 +268,7 @@ if __name__ == "__main__":
             xyz_files = np.asarray(xyz_files)
             idx = np.argsort(sizes)
             sizes = sizes[idx]
-            xyz_files = xyz_files[idx]
+            xyz_files = xyz_files[idx].tolist()
 
         print_info(device, args.steps, sizes)
         model = get_model(args.model, args.cell_list, args.model_index,
@@ -297,7 +301,6 @@ if __name__ == "__main__":
             model.forward = time_func('forward', model.forward)  # type: ignore
             torchani.ase.Calculator._get_ani_forces = time_func(  # type: ignore
                 'backward', torchani.ase.Calculator._get_ani_forces)
-
         all_trials = []
         timers_list = []
         raw_trials = []
@@ -380,8 +383,8 @@ if __name__ == "__main__":
             ])
             titles += '\n'
             fc.write(titles)
-            all_trials = np.asarray(all_trials)
-            for times, s in zip(all_trials, sizes):
+            all_trials_arr = np.array(all_trials)
+            for times, s in zip(all_trials_arr, sizes):
                 assert isinstance(times, np.ndarray)
                 string = ' '.join(times.astype(str)) + f' {s}\n'
                 fc.write(string)
