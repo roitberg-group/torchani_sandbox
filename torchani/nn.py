@@ -6,6 +6,9 @@ from . import utils
 from .compat import Final
 from apex.mlp import MLP
 
+import torchsnooper
+import snoop
+torchsnooper.register_snoop(verbose=True)
 
 class SpeciesEnergies(NamedTuple):
     species: Tensor
@@ -15,6 +18,101 @@ class SpeciesEnergies(NamedTuple):
 class SpeciesCoordinates(NamedTuple):
     species: Tensor
     coordinates: Tensor
+
+
+class MultiNetFunction(torch.autograd.Function):
+    @staticmethod
+    # @snoop
+    def forward(ctx, aev, num_network, idx_list, net_list, stream_list):
+        # run network to predict energy
+        energy_list = torch.zeros(num_network, dtype=aev.dtype, device=aev.device)
+        event_list = [torch.cuda.Event() for i in range(num_network)]
+        current_stream = torch.cuda.current_stream()
+        start_event = torch.cuda.Event()
+        start_event.record(current_stream)
+        # for i, net in enumerate(reversed(self.values())):
+        # torch.cuda.synchronize()
+        # for i, net in reversed(list(enumerate(net_list))):
+        # input_list = [torch.empty(0)] * num_network
+        input_list = [None] * num_network
+        output_list = [None] * num_network
+        for i, net in enumerate(net_list):
+            # print(i)
+            if idx_list[i] is not None:
+                torch.cuda.nvtx.mark(f'species = {i}')
+                stream_list[i].wait_event(start_event)
+                with torch.cuda.stream(stream_list[i]):
+                # if True:
+                    input_ = aev.index_select(0, idx_list[i]).requires_grad_()
+                    with torch.enable_grad():
+                        # torch.sum(net(input_).flatten(), dim=0, out=energy_list[i])
+                        output = net(input_).flatten()
+                    input_list[i] = input_
+                    output_list[i] = output
+                    energy_list[i] = torch.sum(output)
+                    # print(torch.sum(energy))
+                event_list[i].record(stream_list[i])
+            else:
+                event_list[i] = None
+
+        # sync default stream with events on different streams
+        for event in event_list:
+            if event is not None:
+                current_stream.wait_event(event)
+
+        ctx.num_network = num_network
+        ctx.energy_list = energy_list
+        # ctx.save_for_backward([aev])
+        ctx.stream_list = stream_list
+        ctx.output_list = output_list
+        ctx.input_list = input_list
+        ctx.idx_list = idx_list
+        ctx.aev = aev
+        # ctx.save_for_backward(*args)
+        # ctx.outputs = output
+        # ctx.bias = bias
+        # ctx.activation = activation
+        # return output[0]
+        output = torch.sum(energy_list).view(1, 1)
+        return output
+
+    @staticmethod
+    # @snoop
+    def backward(ctx, grad_o):
+        num_network = ctx.num_network
+        # saved_tensors = ctx.saved_tensors
+        # input_list = saved_tensors[:num_network]
+        # idx_list = saved_tensors[num_network:2 * num_network]
+        stream_list = ctx.stream_list
+        output_list = ctx.output_list
+        input_list = ctx.input_list
+        idx_list = ctx.idx_list
+        aev = ctx.aev
+        aev_grad = torch.zeros_like(aev)
+
+        current_stream = torch.cuda.current_stream()
+        start_event = torch.cuda.Event()
+        start_event.record(current_stream)
+        event_list = [torch.cuda.Event() for i in range(num_network)]
+
+        for i, output in enumerate(output_list):
+            if output is not None:
+                torch.cuda.nvtx.mark(f'backward species = {i}')
+                stream_list[i].wait_event(start_event)
+                with torch.cuda.stream(stream_list[i]):
+                    grad_tmp = torch.autograd.grad(output, input_list[i], grad_o.flatten().expand_as(output))[0]
+                    aev_grad[idx_list[i]] = grad_tmp
+                event_list[i].record(stream_list[i])
+            else:
+                event_list[i] = None
+
+        # sync default stream with events on different streams
+        for event in event_list:
+            if event is not None:
+                current_stream.wait_event(event)
+
+        # del ctx.outputs
+        return aev_grad, None, None, None, None
 
 
 class ANIModel(torch.nn.ModuleDict):
@@ -71,8 +169,8 @@ class ANIModel(torch.nn.ModuleDict):
 
         num_mol = species.shape[0]
         # single molecule
-        if num_mol == 1:
-        # if False:
+        # if num_mol == 1:
+        if False:
             # print('run single mode')
             mol_energies = self._single_mol_energies((species, aev))
         else:
@@ -108,40 +206,10 @@ class ANIModel(torch.nn.ModuleDict):
                     if midx.shape[0] > 0:
                         self.idx_list[i] = midx
 
-        # run network to predict energy
-        energy_list = torch.zeros(num_network, dtype=aev.dtype, device=species.device)
-        net_list = list(self.values())
-        event_list = [torch.cuda.Event() for i in range(num_network)]
-
-        current_stream = torch.cuda.current_stream()
-        start_event = torch.cuda.Event()
-        start_event.record(current_stream)
-        # for i, net in reversed(list(enumerate(net_list))):
-        for i, net in enumerate(net_list):
-            # print(i)
-            if self.idx_list[i] is not None:
-                torch.cuda.nvtx.mark(f'species = {i}')
-                self.stream_list[i].wait_event(start_event)
-                with torch.cuda.stream(self.stream_list[i]):
-                # if True:
-                    input_ = aev.index_select(0, self.idx_list[i])
-                    # torch.sum(net(input_).flatten(), dim=0, out=energy_list[i])
-                    if self.use_mlp:
-                        energy = self.mlp_networks[i](input_).flatten()
-                    else:
-                        energy = net(input_).flatten()
-                    energy_list[i] = torch.sum(energy)
-                    # print(torch.sum(energy))
-                event_list[i].record(self.stream_list[i])
-            else:
-                event_list[i] = None
-
-        # sync default stream with events on different streams
-        for event in event_list:
-            if event is not None:
-                current_stream.wait_event(event)
-
-        output = torch.sum(energy_list).view(1, 1)
+        net_list = list(self.values()) if self.use_mlp else self.mlp_networks
+        output = MultiNetFunction.apply(aev, num_network, self.idx_list, net_list, self.stream_list)
+        # torch.cuda.synchronize()
+        # print(output)
         return output
 
     @torch.jit.export
