@@ -17,6 +17,8 @@ class HierarchicalModel(torch.nn.Module):
 
     atomic_energy_scale: torch.nn.Parameter
     atomic_energy_bias: torch.nn.Parameter
+    per_module_radial_terms: Final[bool]
+    embed_as_one_hot: Final[bool]
 
     def __init__(self,
                  modules=None,
@@ -25,38 +27,61 @@ class HierarchicalModel(torch.nn.Module):
                  cutoff: float = 10.0,
                  radial_terms: Union[str, torch.nn.Module] = 'physnet',
                  num_species: int = 4,
-                 num_features: int = 128):
+                 num_features: int = 128,
+                 per_module_radial_terms: bool = False,
+                 embed_as_one_hot: bool = False):
         super().__init__()
+
+        self.per_module_radial_terms = per_module_radial_terms
 
         if modules is None:
             if num_modules is None:
                 num_modules = 5
-            self.phys_modules = torch.nn.ModuleList([
+            self.interaction_modules = torch.nn.ModuleList([
                 PhysNetModule(num_features=num_features)
                 for _ in range(num_modules)
             ])
         else:
             assert num_modules is None
-            self.phys_modules = modules
+            self.interaction_modules = modules
 
         self.neighborlist = _parse_neighborlist(neighborlist, cutoff)
-        self.radial_terms = _parse_radial_terms(radial_terms, 'physnet', None, None, None, cutoff)
-        assert self.radial_terms.cutoff == self.neighborlist.cutoff
+        if self.per_module_radial_terms:
+            self.radial_terms = torch.nn.ModuleList([_parse_radial_terms(radial_terms, 'hip', None, None, None, cutoff)])
+            assert self.radial_terms[0].cutoff == self.neighborlist.cutoff
+        else:
+            self.radial_terms = _parse_radial_terms(radial_terms, 'physnet', None, None, None, cutoff)
+            assert self.radial_terms.cutoff == self.neighborlist.cutoff
         # num_species + 1 is needed to make room for the padding index (which
         # can't be -1)
-        self.embedding = torch.nn.Embedding(num_embeddings=num_species + 1,
+        if self.embed_as_one_hot:
+            self.embedding = torch.nn.Embedding(num_embeddings=num_species + 1,
                                             embedding_dim=num_features,
                                             padding_idx=0)
+        else:
+            self.embedding = OneHotEmbedding(num_embeddings=num_species + 1,
+                                            padding_idx=0)
 
-        # element specific scales, I'm not sure how they initialize these for
-        # the paper results, they don't really say in the paper, but in their
-        # code they do it this way with zeros and ones
+        # element specific scales for PhysNet, I'm not sure how they initialize
+        # these for the paper results, they don't really say in the paper, but
+        # in their code they do it this way with zeros and ones
         self.register_parameter('atomic_energy_scale', torch.nn.Parameter(torch.ones(num_species, dtype=torch.float)))
         self.register_parameter('atomic_energy_bias', torch.nn.Parameter(torch.zeros(num_species, dtype=torch.float)))
         self._init()
 
+    @classmethod
+    def like_hip(cls, *args, **kwargs):
+        # this parameter they keep fixed
+        num_modules = 2
+        # default is what they use for QM9: 80 features and 3 onsite layers
+        num_features = 80
+        num_onsite = 3
+        interaction_modules = torch.nn.ModuleList([HIPModule(num_features=num_features, num_onsite=num_onsite)
+                                                   for _ in range(num_modules)])
+        return cls(radial_terms='hip', modules=interaction_modules)
+
     def forward(self, species_coordinates: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
-        # PhysNet does not need the difference vector, since it does not
+        # PhysNet / HIP-NN do not need the difference vector, since they do not
         # have a 3-body term
         species, coordinates = species_coordinates
         atom_index12, _, _, distances = self.neighborlist(
@@ -64,9 +89,13 @@ class HierarchicalModel(torch.nn.Module):
         assert distances.dim() == 1
         assert distances.shape[0] == atom_index12.shape[1]
 
-        radial_aev = self.radial_terms(distances)
-        assert radial_aev.dim() == 2
-        assert radial_aev.shape[0] == atom_index12.shape[1]
+        if self.per_module_radial_terms:
+            # each interaction layer has its own AEV
+            radial_aevs = torch.cat([m(distances) for m in self.radial_terms], dim=-1)
+        else:
+            radial_aev = self.radial_terms(distances)
+            assert radial_aev.dim() == 2
+            assert radial_aev.shape[0] == atom_index12.shape[1]
 
         # here for the species -1 is a padding index and 0 is a valid one, but
         # for the embedding 0 is a padding index and -1 is invalid, so we add 1
@@ -75,7 +104,9 @@ class HierarchicalModel(torch.nn.Module):
         # features is (C * A = A', num_features)
 
         atomic_energy_hierarchy_list = []
-        for m in self.phys_modules:
+        for j, m in enumerate(self.interaction_modules):
+            if self.per_module_radial_terms:
+                radial_aev = radial_aevs[j]
             # shape of radial_aev is (P, sublength), shape of atom_index12 is (2, P)
             # but shape of features is (A', num_features), with A' = A * C
             atomic_energies, features = m(species, features, radial_aev, atom_index12)
@@ -98,7 +129,7 @@ class HierarchicalModel(torch.nn.Module):
         return species, energies, atomic_energy_hierarchy
 
     def _init(self):
-        # physnet initializes all G matrices to 0, W_out to 0 (these
+        # PhysNet initializes all G matrices to 0, W_out to 0 (these
         # initializations are kind of strange!) and all biases to 0
         #
         # gating vector is initialized to 1 (this does make sense)
@@ -108,7 +139,7 @@ class HierarchicalModel(torch.nn.Module):
         # and also the initial embedding transformation, and final
         # species-specific scaling
         torch.nn.init.uniform_(self.embedding.weight, a=-math.sqrt(3), b=math.sqrt(3))
-        for m in self.phys_modules:
+        for m in self.interaction_modules:
             torch.nn.init.zeros_(m.output_linear.weight)
             torch.nn.init.zeros_(m.gating_linear.weight)
             torch.nn.init.ones_(m.gating_vector)
@@ -134,6 +165,115 @@ class HierarchicalModel(torch.nn.Module):
                     torch.nn.init.orthogonal_(p, gain=glorot_gain)
                     with torch.no_grad():
                         p *= p.std()
+
+
+class OneHotEmbedding(torch.nn.Module):
+
+    def __init__(self):
+        pass
+
+    def forward(x):
+        return x
+
+
+class HIPModule(torch.nn.Module):
+
+    def __init__(self,
+                 num_onsite_res: int = 3,
+                 num_features: int = 80,
+                 activation: Union[str, torch.nn.Module] = torch.nn.Softplus(),
+                 radial_sublength: int = 20):
+        super().__init__()
+
+        self.onsite_res = torch.nn.Sequential(
+            _make_residual(num_onsite_res,
+                                num_features,
+                                activation=activation, residual_fn='hip'))
+
+        self.a = _parse_activation(activation)
+
+    def forward(self, species: Tensor, features: Tensor, radial_aev: Tensor,
+                atom_index12: Tensor) -> Tuple[Tensor, Tensor]:
+        num_features = features.shape[1]
+        num_pairs = atom_index12.shape[1]
+        # unfortunately here the features have some padded stuff with zeros
+        # that makes not sense to calculate on, so we get rid of that, and then
+        # we use index_add_ to insert the result of the operations back on
+        # padded tensors whenever we need it. For simplicity this is done once
+        # every module, but this could potentially be made more performant by
+        # doing it much less I believe
+        non_dummy_indexes = (species != -1).view(-1).nonzero().contiguous().view(-1)
+        num_non_dummy = non_dummy_indexes.shape[0]
+
+        non_dummy_features = features.index_select(0, non_dummy_indexes)
+        assert non_dummy_features.size() == torch.Size((num_non_dummy,
+                                                       num_features))
+
+        # This is the most laborious construction, the interaction message
+        # proto message is of shape (A', num_features), but then it is reduced to
+        # shape (A'nd, num_features) for further preprocessing
+        # where nd stands for non dummy
+        # the proto message is made with two pieces, a "no_interaction" part,
+        # and an "interaction" part that includes an interaction with the
+        # radial aev term
+        proto_message = torch.zeros_like(features)
+
+        proto_message_no_interaction = self.a(
+            self.linearI(self.a(non_dummy_features)))
+        assert proto_message_no_interaction.size() == torch.Size((
+            num_non_dummy, num_features))
+
+        # This part can be performed with the features that have "dummy" atoms
+        # on them, since atom_index12 gets rid of them automatically
+
+        features12 = features[atom_index12]
+        assert features12.size() == torch.Size((2, num_pairs, num_features))
+        aev_message_term = self.gating_linear(radial_aev).unsqueeze(0)
+        assert aev_message_term.size() == torch.Size((1, num_pairs,
+                                                     num_features))
+        features_message_term = self.a(self.linearJ(self.a(features12)))
+        assert features_message_term.size() == torch.Size((
+            2, num_pairs, num_features))
+
+        # here PhysNet uses hadamard (elementwise) product to combine these two terms
+        proto_message_interaction = aev_message_term * features_message_term
+        assert proto_message_interaction.size() == torch.Size((
+            2, num_pairs, num_features))
+
+        proto_message.index_add_(
+            0, atom_index12.view(-1),
+            proto_message_interaction.view(-1, features.shape[1]))
+        proto_message.index_add_(0, non_dummy_indexes,
+                                 proto_message_no_interaction)
+        # at this point proto message is of shape (A', num_features) but once
+        # again I extract only non dummy indexes
+        proto_message = proto_message.index_select(0, non_dummy_indexes)
+
+        # message refinement
+        message = self.interaction_res(proto_message)
+        assert message.size() == torch.Size((num_non_dummy, num_features))
+
+        # features interact with local environment through a message
+        non_dummy_features = non_dummy_features * self.gating_vector.view(
+            1, -1) + self.interaction_linear(self.a(message))
+        assert non_dummy_features.size() == torch.Size((num_non_dummy, num_features))
+
+        # features "atomic" refinement
+        non_dummy_features = self.atomic_res(non_dummy_features)
+        assert non_dummy_features.size() == torch.Size((num_non_dummy, num_features))
+
+        # energies refinement
+        non_dummy_energies = self.output_linear(
+            self.a(self.output_res(non_dummy_features))).squeeze(-1)
+        assert non_dummy_energies.size() == torch.Size((num_non_dummy,))
+
+        out_energies = features.new_zeros(size=(features.shape[0],))
+        out_features = torch.zeros_like(features)
+
+        out_energies.index_add_(0, non_dummy_indexes, non_dummy_energies)
+        out_features.index_add_(0, non_dummy_indexes, non_dummy_features)
+
+        return out_energies.view(species.shape[0], species.shape[1]), out_features
 
 
 class PhysNetModule(torch.nn.Module):
@@ -265,6 +405,43 @@ class PhysNetModule(torch.nn.Module):
                             for j in range(num)])
 
 
+def _make_residual(num: int, num_features: int, activation: Union[str, torch.nn.Module] = 'shifted_sp', residual_fn='hip'):
+    if residual_fn == 'hip':
+        residual = HIPResidual(num_features, activation)
+    elif residual_fn == 'physnet':
+        residual = PhysNetResidual(num_features, activation)
+    else:
+        assert isinstance(residual_fn, torch.nn.Module)
+        residual = residual_fn
+
+    return OrderedDict([(f'res{j}',
+                         residual(num_features,
+                                         activation=activation))
+                        for j in range(num)])
+
+
+class HIPResidual(torch.nn.Module):
+    def __init__(self, features: int = 128, activation: Union[str, torch.nn.Module] = torch.nn.Softplus()):
+        super().__init__()
+
+        self.res_linear1 = torch.nn.Linear(features, features)
+        self.res_linear2 = torch.nn.Linear(features, features)
+        self.a = _parse_activation(activation)
+
+    def forward(self, x: Tensor) -> Tensor:
+        # note that in the paper they state that they could in principle use an
+        # extra matrix here to match the dimensions of x but in practice they
+        # fix all features in the model to be equal
+        out = self.a(self.res_linear1(x))
+        # I assume there is an extra activation here they are not putting in the paper?
+        # without extra activation:
+        # out = self.linear2(out) + x
+        # with extra activation:
+        out = self.a(self.linear2(out) + x)
+        # otherwise consecutive linear layers would collapse
+        return out
+
+
 class PhysNetResidual(torch.nn.Module):
     def __init__(self, features: int = 128, activation: Union[str, torch.nn.Module] = 'shifted_sp'):
         super().__init__()
@@ -274,6 +451,8 @@ class PhysNetResidual(torch.nn.Module):
         self.a = _parse_activation(activation)
 
     def forward(self, x: Tensor) -> Tensor:
+        # physnet residual is strange, doesn't follow normal pattern of
+        # residual layers
         out = self.res_linear1(self.a(x))
         out = self.res_linear2(self.a(out)) + x
         return out

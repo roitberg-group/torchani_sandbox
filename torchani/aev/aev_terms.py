@@ -46,7 +46,8 @@ class HIPRadial(torch.nn.Module):
             # the paper is ambiguous, but this reproduces their plot
             inverse_Mu = torch.linspace(1 / end, 1 / start, sublength).float()
 
-        # Sigma and Mu are learnable for HIP-NN
+        # Sigma and Mu are learnable for HIP-NN I assume that they learn Sigma
+        # and Mu as they say in the paper, and not e.g. 1/Mu and 1/Sigma ** 2
         self.register_parameter('Sigma', torch.nn.Parameter(Sigma))
         self.register_parameter('Mu', torch.nn.Parameter(1 / inverse_Mu))
         self.sublength = sublength
