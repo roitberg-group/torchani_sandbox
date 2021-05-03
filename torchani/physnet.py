@@ -168,11 +168,14 @@ class HierarchicalModel(torch.nn.Module):
 
 
 class OneHotEmbedding(torch.nn.Module):
+    # takes in a tensor of species and transforms it into a one-hot embedding
+    # used in HIP-NN, but this is probably worse than embedding
+    num_species: Final[int]
 
-    def __init__(self):
-        pass
+    def __init__(self, num_species=4, padding_idx=0):
+        self.num_species = num_species
 
-    def forward(x):
+    def forward(x: Tensor) -> Tensor:
         return x
 
 
@@ -218,10 +221,8 @@ class HIPModule(torch.nn.Module):
         # radial aev term
         proto_message = torch.zeros_like(features)
 
-        proto_message_no_interaction = self.a(
-            self.linearI(self.a(non_dummy_features)))
-        assert proto_message_no_interaction.size() == torch.Size((
-            num_non_dummy, num_features))
+        proto_message_no_interaction = self.linearI(non_dummy_features)
+        assert proto_message_no_interaction.size() == torch.Size((num_non_dummy, num_features))
 
         # This part can be performed with the features that have "dummy" atoms
         # on them, since atom_index12 gets rid of them automatically
