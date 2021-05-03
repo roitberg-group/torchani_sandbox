@@ -4,6 +4,7 @@ from torch import Tensor
 from typing import Tuple, NamedTuple, Optional
 from . import utils
 from .compat import Final
+from apex.mlp import MLP
 
 
 class SpeciesEnergies(NamedTuple):
@@ -49,12 +50,18 @@ class ANIModel(torch.nn.ModuleDict):
             od[str(i)] = m
         return od
 
-    def __init__(self, modules):
+    def __init__(self, modules, use_mlp=True):
         super().__init__(self.ensureOrderedDict(modules))
         # only used for single molecule
         self.idx_list = None
         self.stream_list = None
         self.last_species_data_ptr = None
+        self.use_mlp = False
+        if use_mlp:
+            self.mlp_networks = self._load_as_mlp_networks()
+            self.use_mlp = use_mlp
+            print("using mlp")
+            # TODO assert mlp is installed
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
                 cell: Optional[Tensor] = None,
@@ -66,7 +73,7 @@ class ANIModel(torch.nn.ModuleDict):
         # single molecule
         if num_mol == 1:
         # if False:
-            print('run single mode')
+            # print('run single mode')
             mol_energies = self._single_mol_energies((species, aev))
         else:
             # shape of atomic energies is (C, A)
@@ -87,7 +94,8 @@ class ANIModel(torch.nn.ModuleDict):
         # initialize stream
         if self.last_species_data_ptr is None:
             self.stream_list = [torch.cuda.Stream() for i in range(num_network)]
-        # initialize index if it has not been initialized or the species has changed
+        # initialize each species index if it has not been initialized
+        # or the species has changed
         if self.last_species_data_ptr is None or self.last_species_data_ptr != species.data_ptr():
             with torch.no_grad():
                 print('----- init spe_list ----')
@@ -96,19 +104,42 @@ class ANIModel(torch.nn.ModuleDict):
                 for i in range(num_network):
                     mask = (species_ == i)
                     midx = mask.nonzero().flatten()
+                    print(i, midx.shape[0])
                     if midx.shape[0] > 0:
                         self.idx_list[i] = midx
 
+        # run network to predict energy
         energy_list = torch.zeros(num_network, dtype=aev.dtype, device=species.device)
+        net_list = list(self.values())
+        event_list = [torch.cuda.Event() for i in range(num_network)]
 
-        for i, net in enumerate(self.values()):
+        current_stream = torch.cuda.current_stream()
+        start_event = torch.cuda.Event()
+        start_event.record(current_stream)
+        # for i, net in reversed(list(enumerate(net_list))):
+        for i, net in enumerate(net_list):
+            # print(i)
             if self.idx_list[i] is not None:
                 torch.cuda.nvtx.mark(f'species = {i}')
+                self.stream_list[i].wait_event(start_event)
                 with torch.cuda.stream(self.stream_list[i]):
+                # if True:
                     input_ = aev.index_select(0, self.idx_list[i])
                     # torch.sum(net(input_).flatten(), dim=0, out=energy_list[i])
-                    energy_list[i] = torch.sum(net(input_).flatten())
-        torch.cuda.synchronize()
+                    if self.use_mlp:
+                        energy = self.mlp_networks[i](input_).flatten()
+                    else:
+                        energy = net(input_).flatten()
+                    energy_list[i] = torch.sum(energy)
+                    # print(torch.sum(energy))
+                event_list[i].record(self.stream_list[i])
+            else:
+                event_list[i] = None
+
+        # sync default stream with events on different streams
+        for event in event_list:
+            if event is not None:
+                current_stream.wait_event(event)
 
         output = torch.sum(energy_list).view(1, 1)
         return output
@@ -132,6 +163,37 @@ class ANIModel(torch.nn.ModuleDict):
                 output.masked_scatter_(mask, m(input_).flatten())
         output = output.view_as(species)
         return output
+
+    @torch.jit.export
+    def _load_as_mlp_networks(self):
+        num_network = len(self.keys())
+        mlp_networks = [None] * num_network
+        for i, network in enumerate(self.values()):
+            mlp_networks[i] = self._load_one_mlp_network(network)
+        return mlp_networks
+
+    def _load_one_mlp_network(self, network):
+        # intilize mlp network
+        mlp_sizes = []
+        bias_on = network[-1].bias is not None
+        for layer in network:
+            if isinstance(layer, torch.nn.Linear):
+                mlp_sizes.append(layer.in_features)
+                assert (layer.bias is not None) == bias_on, "All layers' bias must be all ON or OFF"
+            else:
+                assert isinstance(layer, torch.nn.CELU), "Currently only support CELU as activation function"
+        # TODO CELU alpha
+        alpha_celu = network[-2].alpha
+        mlp_sizes.append(network[-1].out_features)
+        mlp = MLP(mlp_sizes, bias=bias_on, activation="relu").cuda()
+        # load parameters
+        i_linear = 0
+        for layer in network:
+            if isinstance(layer, torch.nn.Linear):
+                mlp.weights[i_linear].data.copy_(layer.weight)
+                mlp.biases[i_linear].data.copy_(layer.bias)
+                i_linear += 1
+        return mlp
 
 
 class Ensemble(torch.nn.ModuleList):

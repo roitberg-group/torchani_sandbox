@@ -25,7 +25,7 @@ def getGpuName(device=None):
 
 
 def synchronize(flag=False):
-    if True:
+    if flag:
         torch.cuda.synchronize()
 
 
@@ -86,7 +86,8 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
     force_time = 0
     torch.cuda.empty_cache()
     gc.collect()
-    synchronize(not args.nsight)
+    # synchronize(not args.nsight)
+    torch.cuda.synchronize()
     start = time.time()
 
     aev = None
@@ -137,7 +138,8 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
         if i == 2 and verbose:
             gpumem = checkgpu()
 
-    synchronize(not args.nsight)
+    # synchronize(not args.nsight)
+    torch.cuda.synchronize()
     total_time = (time.time() - start) / N
     force_time = force_time / N
     forward_time = forward_time / N
@@ -358,6 +360,7 @@ if __name__ == "__main__":
     energy_shifter = nnp_ref.energy_shifter
 
     if args.nsight:
+        # N = 1000
         N = 5
         torch.cuda.profiler.start()
         maxatoms = [10000]
