@@ -177,7 +177,7 @@ class PhysNetModule(torch.nn.Module):
     def _interaction_pass(self, features: Tensor,
                                 non_dummy_indexes: Tensor,
                                 radial_aev: Tensor,
-                                atom_index12: Tensor) -> Tuple[Tensor, Tensor]:
+                                atom_index12: Tensor) -> Tensor:
         # This function has the most laborious construction, the interaction
         num_features = features.shape[1]
         num_pairs = atom_index12.shape[1]
@@ -234,14 +234,14 @@ class PhysNetModule(torch.nn.Module):
                               non_dummy_indexes: Tensor,
                               num_molecules: int, num_atoms: int) -> Tuple[Tensor, Tensor]:
 
-        out_energies = torch.zeros(size=(num_atoms * num_molecules), device=non_dummy_energies.device,
+        out_energies = torch.zeros(size=(num_atoms * num_molecules,), device=non_dummy_energies.device,
             dtype=non_dummy_energies.dtype)
         out_features = torch.zeros(size=(num_atoms * num_molecules,
             non_dummy_features.shape[-1]), device=non_dummy_energies.device,
             dtype=non_dummy_energies.dtype)
         out_energies.index_add_(0, non_dummy_indexes, non_dummy_energies)
         out_features.index_add_(0, non_dummy_indexes, non_dummy_features)
-        out_energies.view(num_molecules, num_atoms)
+        out_energies = out_energies.view(num_molecules, num_atoms)
         return out_energies, out_features
 
     def forward(self, species: Tensor, features: Tensor, radial_aev: Tensor, atom_index12: Tensor) -> Tuple[Tensor, Tensor]:
