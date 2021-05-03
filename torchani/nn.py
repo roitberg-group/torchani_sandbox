@@ -84,16 +84,16 @@ class ANIModel(torch.nn.ModuleDict):
         aev = aev.flatten(0, 1)
         num_network = len(self.keys())
 
-        # not initialized or not the same species
+        # initialize stream
+        if self.last_species_data_ptr is None:
+            self.stream_list = [torch.cuda.Stream() for i in range(num_network)]
+        # initialize index if it has not been initialized or the species has changed
         if self.last_species_data_ptr is None or self.last_species_data_ptr != species.data_ptr():
             with torch.no_grad():
-                self.last_species_data_ptr = species.data_ptr()
                 print('----- init spe_list ----')
+                self.last_species_data_ptr = species.data_ptr()
                 self.idx_list = [None] * num_network
-                self.stream_list = [None] * num_network
                 for i in range(num_network):
-                    s = torch.cuda.Stream()
-                    self.stream_list[i] = s
                     mask = (species_ == i)
                     midx = mask.nonzero().flatten()
                     if midx.shape[0] > 0:
