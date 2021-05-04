@@ -206,7 +206,7 @@ class ANIModel(torch.nn.ModuleDict):
                     if midx.shape[0] > 0:
                         self.idx_list[i] = midx
 
-        net_list = list(self.values()) if self.use_mlp else self.mlp_networks
+        net_list = list(self.values()) if not self.use_mlp else self.mlp_networks
         output = MultiNetFunction.apply(aev, num_network, self.idx_list, net_list, self.stream_list)
         # torch.cuda.synchronize()
         # print(output)
