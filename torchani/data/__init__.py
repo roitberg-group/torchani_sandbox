@@ -98,7 +98,7 @@ with multiprocessing to achieve comparable performance with less memory usage:
 from os.path import join, isfile, isdir
 import os
 from ._pyanitools import anidataloader
-from .dataset import H5Dataset, ANIBatchedDataset
+from .dataset import H5Dataset, ANIBatchedDataset, save_batched_dataset
 from .. import utils
 import importlib
 import functools
@@ -389,4 +389,4 @@ def load(path, additional_properties=(), legacy=False):
     return TransformableIterable(IterableAdapter(lambda: conformations()))
 
 
-__all__ = ['load', 'collate_fn']
+__all__ = ['load', 'collate_fn', 'H5Dataset', 'ANIBatchedDataset', 'save_batched_dataset']
