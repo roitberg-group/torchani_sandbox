@@ -1,4 +1,5 @@
 from pathlib import Path
+import pickle
 import torch
 import h5py
 from typing import Union, Optional, List
@@ -9,7 +10,7 @@ from functools import partial
 
 class ANIBatchedDataset(torch.utils.data.Dataset):
 
-    def __init__(self, store_dir: Union[str, Path]):
+    def __init__(self, store_dir: Union[str, Path], file_format: Optional[str] = None):
         if isinstance(store_dir, str):
             store_dir = Path(store_dir).resolve()
         assert isinstance(store_dir, Path)
@@ -19,11 +20,30 @@ class ANIBatchedDataset(torch.utils.data.Dataset):
         self.batch_paths = []
         for f in self.store_dir.iterdir():
             assert f.is_file(), "Wrong dataset format, ANIBatchedDataset expects a directory with batch files inside"
-            self.batch_paths.append(f.as_posix())
+
+            self.batch_paths.append(f)
+
+        suffix = self.batch_paths[0].suffix
+        assert all([f.suffix == suffix for f in self.batch_paths])
+
+        def numpy_extractor(idx, paths):
+            return {k: torch.as_tensor(v) for k, v in np.load(paths[idx]).items()}
+
+        def pickle_extractor(idx, paths):
+            with open(paths[idx], 'rb') as f:
+                return {k: torch.as_tensor(v) for k, v in pickle.load(f).items()}
+
+        if suffix == '.npz' or file_format == 'numpy':
+            self.extractor = numpy_extractor
+        elif suffix == '.pkl' or file_format == 'pickle':
+            self.extractor = pickle_extractor
+        else:
+            msg = f'Format for file with extension {suffix} could not be infered, please specify explicitly'
+            raise RuntimeError(msg)
 
     def __getitem__(self, idx: int):
         # integral indices must be provided for compatibility with pytorch
-        return {k: torch.as_tensor(v) for k, v in np.load(self.batch_paths[idx]).items()}
+        return self.extractor(idx, self.batch_paths)
 
     def __len__(self):
         return len(self.batch_paths)
