@@ -40,8 +40,10 @@ validation = ANIBatchedDataset(path_to_batched, split='validation')
 # This batched dataset can be directly iterated upon, but it is more practical
 # to wrap it with a torch dataloader to obtain automatic shuffling evey epoch,
 # multiprocessing and memory pinning
-training = torch.utils.data.DataLoader(training, num_workers=0, pin_memory=True, shuffle=True)
-validation = torch.utils.data.DataLoader(validation, num_workers=0, pin_memory=True, shuffle=True)
+# Note: it is very important here to pass batch_size = None since the dataset is
+# already batched!
+training = torch.utils.data.DataLoader(training, num_workers=0, pin_memory=True, shuffle=True, bath_size=None)
+validation = torch.utils.data.DataLoader(validation, num_workers=0, pin_memory=True, shuffle=True, batch_size=None)
 
 # The batched dataset lives in disk, not in memory, so iterating is a bit
 # slower than holding all the dataset in memory since reads from disk are
@@ -51,8 +53,8 @@ validation = torch.utils.data.DataLoader(validation, num_workers=0, pin_memory=T
 # If you want some extra speedup you can cache the dataset before passing it to
 # the dataloader, so that it will live in memory, but this may occupy a lot of
 # memory, so be careful!!!, this would be done with:
-# training = torch.utils.data.DataLoader(training.cache(), num_workers=0, pin_memory=True, shuffle=True)
-# validation = torch.utils.data.DataLoader(validation.cache(), num_workers=0, pin_memory=True, shuffle=True)
+# training = torch.utils.data.DataLoader(training.cache(), num_workers=0, pin_memory=True, shuffle=True, batch_size=None)
+# validation = torch.utils.data.DataLoader(validation.cache(), num_workers=0, pin_memory=True, shuffle=True, batch_size=None)
 
 for batch in training:
     species = batch['species'].long().to(device)
