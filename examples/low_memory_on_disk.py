@@ -34,7 +34,7 @@ if not path_to_batched.exists():
 path_to_batched = Path('./batched_dataset_npz').resolve()
 # Once we have created the batched dataset we instance it using the class
 # ANIBatchedDataset, which subclasses torch.utils.data.Dataset
-training = ANIBatchedDataset(path_to_batched, split='training'),
+training = ANIBatchedDataset(path_to_batched, split='training')
 validation = ANIBatchedDataset(path_to_batched, split='validation')
 
 # This batched dataset can be directly iterated upon, but it is more practical
@@ -42,8 +42,8 @@ validation = ANIBatchedDataset(path_to_batched, split='validation')
 # multiprocessing and memory pinning
 # Note: it is very important here to pass batch_size = None since the dataset is
 # already batched!
-training = torch.utils.data.DataLoader(training, num_workers=0, pin_memory=True, shuffle=True, batch_size=None)
-validation = torch.utils.data.DataLoader(validation, num_workers=0, pin_memory=True, shuffle=True, batch_size=None)
+training = torch.utils.data.DataLoader(training, num_workers=1, prefetch_factor=2, pin_memory=True, shuffle=True, batch_size=None)
+validation = torch.utils.data.DataLoader(validation, num_workers=1, prefetch_factor=2, pin_memory=True, shuffle=True, batch_size=None)
 
 # The batched dataset lives in disk, not in memory, so iterating is a bit
 # slower than holding all the dataset in memory since reads from disk are
