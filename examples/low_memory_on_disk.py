@@ -44,6 +44,7 @@ validation = ANIBatchedDataset(path_to_batched, split='validation')
 training_loader = torch.utils.data.DataLoader(training, num_workers=2, prefetch_factor=2, pin_memory=True, shuffle=True, batch_size=None)
 validation_loader = torch.utils.data.DataLoader(validation, num_workers=2, prefetch_factor=2, pin_memory=True, shuffle=True, batch_size=None)
 
+print("non cached")
 progbar = pkbar.Kbar(target=len(training_loader) - 1, width=8)
 for i, batch in enumerate(training_loader):
     species = batch['species'].long().to(device, non_blocking=True)
@@ -63,6 +64,7 @@ for i, batch in enumerate(training_loader):
 training = training.cache()
 validation = validation.cache()
 
+print("cached")
 progbar = pkbar.Kbar(target=len(training) - 1, width=8)
 for i, batch in enumerate(training):
     species = batch['species'].long().to(device, non_blocking=True)
