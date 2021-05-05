@@ -224,5 +224,5 @@ class H5Dataset(Mapping):
     @staticmethod
     def _parse_species(v: np.ndarray):
         if v.dtype == np.bytes_ or v.dtype == np.str_ or v.dtype.name == 'bytes8':
-            v_list = [s.decode('ascii') for s in v]
-        return v_list
+            v = [s.decode('ascii') for s in v]  # type: ignore
+        return v
