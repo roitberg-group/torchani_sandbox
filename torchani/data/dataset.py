@@ -1,5 +1,6 @@
 from pathlib import Path
 import pickle
+import warnings
 import torch
 import h5py
 from typing import Union, Optional, List
@@ -13,18 +14,13 @@ class ANIBatchedDataset(torch.utils.data.Dataset):
     def __init__(self, store_dir: Union[str, Path], file_format: Optional[str] = None):
         if isinstance(store_dir, str):
             store_dir = Path(store_dir).resolve()
-        assert isinstance(store_dir, Path)
-        if not store_dir.is_dir():
-            raise RuntimeError(f"The directory {store_dir.as_posix()} could not be found")
+        assert store_dir.is_dir(), f"The directory {store_dir.as_posix()} could not be found"
         self.store_dir = store_dir
-        self.batch_paths = []
-        for f in self.store_dir.iterdir():
-            assert f.is_file(), "Wrong dataset format, ANIBatchedDataset expects a directory with batch files inside"
-
-            self.batch_paths.append(f)
-
+        self.batch_paths = [f for f in self.store_dir.iterdir()]
+        assert self.batch_paths, "The path provided has no files"
+        assert all([f.is_file() for f in self.batch_paths]), "Subdirectories in path not supported"
         suffix = self.batch_paths[0].suffix
-        assert all([f.suffix == suffix for f in self.batch_paths])
+        assert all([f.suffix == suffix for f in self.batch_paths]), "Different file extensions in same path not supported"
 
         def numpy_extractor(idx, paths):
             return {k: torch.as_tensor(v) for k, v in np.load(paths[idx]).items()}
@@ -34,16 +30,26 @@ class ANIBatchedDataset(torch.utils.data.Dataset):
                 return {k: torch.as_tensor(v) for k, v in pickle.load(f).items()}
 
         if suffix == '.npz' or file_format == 'numpy':
-            self.extractor = numpy_extractor
+            self.extractor = partial(numpy_extractor, paths=self.batch_paths)
         elif suffix == '.pkl' or file_format == 'pickle':
-            self.extractor = pickle_extractor
+            self.extractor = partial(pickle_extractor, paths=self.batch_paths)
         else:
             msg = f'Format for file with extension {suffix} could not be infered, please specify explicitly'
             raise RuntimeError(msg)
 
+    def cache(self):
+        warnings.warn("Caching the dataset may a lot of memory, be careful")
+
+        def memory_extractor(idx, ds):
+            return ds._data[idx]
+
+        self._data = [self.extractor(idx) for idx in range(len(self))]
+        self.extractor = partial(memory_extractor, ds=self)
+
     def __getitem__(self, idx: int):
         # integral indices must be provided for compatibility with pytorch
-        return self.extractor(idx, self.batch_paths)
+        # dataloader API
+        return self.extractor(idx)
 
     def __len__(self):
         return len(self.batch_paths)
@@ -151,13 +157,16 @@ class H5Dataset(Mapping):
                 molecules = {k: self._parse_species(v[()]) for k, v in f[key].items()}
         else:
             if strict:
-                assert all([p in f[key].keys() for p in include_properties]), f"Some of the requested properties could not be found in group {key}"
+                msg = f"Some of the requested properties could not be found in group {key}"
+                assert all([p in f[key].keys() for p in include_properties]), msg
             with h5py.File(self._store_file, 'r') as f:
                 molecules = {k: self._parse_species(v[()]) for k, v in f[key].items() if k in include_properties}
         return molecules
 
     @staticmethod
-    def _extract_from_molecule_group(molecule_group, idx: Optional[Union[int, np.ndarray]], element_keys=('smiles', 'species', 'numbers', 'atomic_numbers')):
+    def _extract_from_molecule_group(molecule_group,
+                                     idx: Optional[Union[int, np.ndarray]],
+                                     element_keys=('smiles', 'species', 'numbers', 'atomic_numbers')):
         # this extraction procedure will fail if there are other keys in the
         # dataset besides "species", "numbers" and "atomic_numbers" that don't
         # have group_size as the 0th shape, in this case those keys have to be
