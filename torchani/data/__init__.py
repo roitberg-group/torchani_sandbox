@@ -98,6 +98,7 @@ with multiprocessing to achieve comparable performance with less memory usage:
 from os.path import join, isfile, isdir
 import os
 from ._pyanitools import anidataloader
+from .dataset import H5Dataset, ANIBatchedDataset
 from .. import utils
 import importlib
 import functools
@@ -344,7 +345,7 @@ class TransformableIterable:
         return len(self.wrapped_iterable)
 
 
-def load(path, additional_properties=()):
+def load(path, additional_properties=(), legacy=False):
     properties = PROPERTIES + additional_properties
 
     def h5_files(path):
@@ -358,12 +359,18 @@ def load(path, additional_properties=()):
 
     def molecules():
         for f in h5_files(path):
-            anidata = anidataloader(f)
-            anidata_size = anidata.group_size()
+            if legacy:
+                anidata = anidataloader(f)
+                anidata_size = anidata.group_size()
+                iterator = enumerate(anidata)
+            else:
+                anidata = H5Dataset(f)
+                anidata_size = len(anidata)
+                iterator = enumerate(anidata.values())
             use_pbar = PKBAR_INSTALLED and verbose
             if use_pbar:
                 pbar = pkbar.Pbar('=> loading {}, total molecules: {}'.format(f, anidata_size), anidata_size)
-            for i, m in enumerate(anidata):
+            for i, m in iterator:
                 yield m
                 if use_pbar:
                     pbar.update(i)
