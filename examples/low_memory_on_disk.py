@@ -2,6 +2,7 @@ from pathlib import Path
 
 import torch
 import torchani
+import pkbar
 from torchani.data.dataset import ANIBatchedDataset, save_batched_dataset
 
 # Explanation of the Batched Dataset API for ANI, which is a dataset that
@@ -30,8 +31,6 @@ if not path_to_batched.exists():
     save_batched_dataset(training, path_to_batched, file_format='numpy', split='training')
     save_batched_dataset(validation, path_to_batched, file_format='numpy', split='validation')
 
-
-path_to_batched = Path('./batched_dataset_npz').resolve()
 # Once we have created the batched dataset we instance it using the class
 # ANIBatchedDataset, which subclasses torch.utils.data.Dataset
 training = ANIBatchedDataset(path_to_batched, split='training')
@@ -42,8 +41,16 @@ validation = ANIBatchedDataset(path_to_batched, split='validation')
 # multiprocessing and memory pinning
 # Note: it is very important here to pass batch_size = None since the dataset is
 # already batched!
-training = torch.utils.data.DataLoader(training, num_workers=1, prefetch_factor=2, pin_memory=True, shuffle=True, batch_size=None)
-validation = torch.utils.data.DataLoader(validation, num_workers=1, prefetch_factor=2, pin_memory=True, shuffle=True, batch_size=None)
+training_loader = torch.utils.data.DataLoader(training, num_workers=2, prefetch_factor=2, pin_memory=True, shuffle=True, batch_size=None)
+validation_loader = torch.utils.data.DataLoader(validation, num_workers=2, prefetch_factor=2, pin_memory=True, shuffle=True, batch_size=None)
+
+progbar = pkbar.Kbar(target=len(training_loader) - 1, width=8)
+for i, batch in enumerate(training_loader):
+    species = batch['species'].long().to(device, non_blocking=True)
+    coordinates = batch['coordinates'].float().to(device, non_blocking=True)
+    energies = batch['energies'].float().to(device, non_blocking=True)
+    progbar.update(i)
+    torch.cuda.synchronize()  # only needed for timing measurement
 
 # The batched dataset lives in disk, not in memory, so iterating is a bit
 # slower than holding all the dataset in memory since reads from disk are
@@ -53,11 +60,13 @@ validation = torch.utils.data.DataLoader(validation, num_workers=1, prefetch_fac
 # If you want some extra speedup you can cache the dataset before passing it to
 # the dataloader, so that it will live in memory, but this may occupy a lot of
 # memory, so be careful!!!, this would be done with:
-# training = torch.utils.data.DataLoader(training.cache(), num_workers=0, pin_memory=True, shuffle=True, batch_size=None)
-# validation = torch.utils.data.DataLoader(validation.cache(), num_workers=0, pin_memory=True, shuffle=True, batch_size=None)
+training = training.cache()
+validation = validation.cache()
 
-for batch in training:
-    species = batch['species'].long().to(device)
-    coordinates = batch['coordinates'].float().to(device)
-    energies = batch['energies'].float().to(device)
-    print(energies)
+progbar = pkbar.Kbar(target=len(training) - 1, width=8)
+for i, batch in enumerate(training):
+    species = batch['species'].long().to(device, non_blocking=True)
+    coordinates = batch['coordinates'].float().to(device, non_blocking=True)
+    energies = batch['energies'].float().to(device, non_blocking=True)
+    progbar.update(i)
+    torch.cuda.synchronize()  # only needed for timing measurement
