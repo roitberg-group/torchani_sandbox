@@ -1,4 +1,3 @@
-import time
 from pathlib import Path
 
 import torch
@@ -10,8 +9,7 @@ from torchani.data.dataset import ANIBatchedDataset, save_batched_dataset
 # the fly
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# dspath = Path('../dataset/ani1-up_to_gdb4/ani_gdb_s01.h5').resolve()
-dspath = Path('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
+dspath = Path('../dataset/ani1-up_to_gdb4/ani_gdb_s01.h5').resolve()
 batch_size = 2560
 
 # We are going to load a "batched dataset" which is a directory
@@ -56,20 +54,8 @@ validation = torch.utils.data.DataLoader(validation, num_workers=0, pin_memory=T
 # training = torch.utils.data.DataLoader(training.cache(), num_workers=0, pin_memory=True, shuffle=True)
 # validation = torch.utils.data.DataLoader(validation.cache(), num_workers=0, pin_memory=True, shuffle=True)
 
-start = time.time()
-overhead = 0.0
 for batch in training:
-    start_overhead = time.time()
-    torch.cuda.synchronize()
     species = batch['species'].long().to(device)
     coordinates = batch['coordinates'].float().to(device)
     energies = batch['energies'].float().to(device)
-    torch.cuda.synchronize()
-    end_overhead = time.time()
-    overhead += end_overhead - start_overhead
-end = time.time()
-total = end - start
-
-print('total:', total)
-print('casting overhead:', overhead)
-print('loading from disk', total - overhead)
+    print(energies)
