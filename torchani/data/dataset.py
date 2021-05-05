@@ -3,19 +3,56 @@ import pickle
 import warnings
 import torch
 import h5py
+import importlib
 from typing import Union, Optional, List
 import numpy as np
 from collections.abc import Mapping
 from functools import partial
 
 
+PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None  # type: ignore
+if PKBAR_INSTALLED:
+    import pkbar
+
+
+def save_batched_dataset(dataset, path: Union[str, Path], file_format='numpy', verbose=False, split='training'):
+    if isinstance(path, str):
+        path = Path(path).resolve()
+    path = path.joinpath(split)
+    if path.is_dir():
+        subdirs = [d for d in path.iterdir()]
+        assert not subdirs, "The path provided already has files or directories, please provide a different path"
+    else:
+        assert not path.is_file(), "The path provided is a file, not a directory"
+        path.mkdir(parents=True)
+
+    use_pbar = PKBAR_INSTALLED and verbose
+    pbar = pkbar.Pbar(f'=> saving dataset to {path}, in format {file_format}, total molecules: {len(dataset)}', len(dataset))
+    for j, batch in enumerate(dataset):
+        if file_format == 'pickle':
+            with open(path.joinpath(f'batch{j}.pkl'), 'wb') as batch_file:
+                pickle.dump({'species': batch['species'].numpy(),
+                        'coordinates': batch['coordinates'].numpy(),
+                        'energies': batch['energies'].numpy()}, batch_file)
+        elif file_format == 'numpy':
+            np.savez(path.joinpath(f'batch{j}'),
+                    species=batch['species'].numpy(),
+                    coordinates=batch['coordinates'].numpy(),
+                    energies=batch['energies'].numpy())
+        if use_pbar:
+            pbar.update(j)
+
+
 class ANIBatchedDataset(torch.utils.data.Dataset):
 
-    def __init__(self, store_dir: Union[str, Path], file_format: Optional[str] = None):
+    def __init__(self, store_dir: Union[str, Path], file_format: Optional[str] = None, split: str = 'training'):
         if isinstance(store_dir, str):
             store_dir = Path(store_dir).resolve()
         assert store_dir.is_dir(), f"The directory {store_dir.as_posix()} could not be found"
-        self.store_dir = store_dir
+        self.split = split
+        self.store_dir = store_dir.joinpath(split)
+        msg = f"The directory {store_dir.as_posix()} exists, but the split {split} could not be found"
+        assert self.store_dir.is_dir(), msg
         self.batch_paths = [f for f in self.store_dir.iterdir()]
         assert self.batch_paths, "The path provided has no files"
         assert all([f.is_file() for f in self.batch_paths]), "Subdirectories in path not supported"
@@ -190,62 +227,3 @@ class H5Dataset(Mapping):
         if v.dtype == np.bytes_ or v.dtype == np.str or v.dtype.name == 'bytes8':
             v = [s.decode('ascii') for s in v]
         return v
-
-
-if __name__ == '__main__':
-    dataset = H5Dataset('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
-
-    # ############## Conformer groups:  ###########################
-    # To access groups of conformers we can just use the dataset as a dictionary
-    group = dataset['C10H10']
-    print(group)
-
-    # items(), values() and keys() work as expected for groups of conformers
-    for k, v in dataset.items():
-        print(k, v)
-
-    for k in dataset.keys():
-        print(k)
-
-    for v in dataset.values():
-        print(v)
-
-    # to get the number of groups of conformers we can use len(), or num_conformer_groups
-    num_groups = len(dataset)
-    print(num_groups)
-    num_groups = dataset.num_conformer_groups
-    print(num_groups)
-
-    # ############## Conformers:  ###########################
-    # To access individual conformers or subsets of conformers we use *_conformer methods, get_conformers and iter_conformers
-    conformer = dataset.get_conformers('C10H10', 0)
-    print(conformer)
-    conformer = dataset.get_conformers('C10H10', 1)
-    print(conformer)
-
-    # a numpy array can also be passed for indexing, to fetch multiple conformers
-    # from the same group, which is faster. Since I copy the data for simplicity,
-    # this allows all of numpy fancy indexing operations (directly indexing using
-    # h5py does not
-    conformers = dataset.get_conformers('C10H10', np.array([0, 1]))
-    print(conformers)
-
-    # We can also access all the group if we don't pass an index
-    conformer = dataset.get_conformers('C10H10')
-    print(conformer)
-
-    # finally, it is possible to specify which properties we want using include_properties
-    conformer = dataset.get_conformers('C10H10', include_properties=('species', 'energies'))
-    print(conformer)
-
-    conformer = dataset.get_conformers('C10H10', np.array([0, 3]), include_properties=('species', 'energies'))
-    print(conformer)
-
-    # we can iterate over all conformers sequentially by calling iter_conformer,
-    # this is faster than doing it manually since it caches each conformer group
-    # previous to starting the iteration
-    for c in dataset.iter_conformers():
-        print(c)
-
-    # to get the number of conformers we can use num_conformers
-    num_conformers = dataset.num_conformers
