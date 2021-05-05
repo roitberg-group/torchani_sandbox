@@ -210,7 +210,6 @@ class H5Dataset(Mapping):
         # specified
 
         if isinstance(idx, np.ndarray):
-            assert idx.dtype == np.int, "The index has to be an integer"
             assert idx.ndim == 1, "Only vector indices are supported"
 
         conformer = {k: v[idx] for k, v in molecule_group.items() if k not in element_keys}
@@ -224,6 +223,6 @@ class H5Dataset(Mapping):
 
     @staticmethod
     def _parse_species(v: np.ndarray):
-        if v.dtype == np.bytes_ or v.dtype == np.str or v.dtype.name == 'bytes8':
-            v = [s.decode('ascii') for s in v]
-        return v
+        if v.dtype == np.bytes_ or v.dtype == np.str_ or v.dtype.name == 'bytes8':
+            v_list = [s.decode('ascii') for s in v]
+        return v_list
