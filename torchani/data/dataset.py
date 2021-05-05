@@ -4,7 +4,7 @@ import warnings
 import torch
 import h5py
 import importlib
-from typing import Union, Optional, List
+from typing import Union, Optional, List, Dict, Any
 import numpy as np
 from collections.abc import Mapping
 from functools import partial
@@ -105,7 +105,7 @@ class H5Dataset(Mapping):
         # flag key is used to infer size of molecule groups
         # when iterating over the dataset
         self._flag_key = flag_key
-        self._groups = dict()
+        self._groups: Dict[str, Any] = dict()
         self._cache_group_paths_and_sizes()
         self.num_conformers = sum(self._groups.values())
         self.num_conformer_groups = len(self._groups.keys())
