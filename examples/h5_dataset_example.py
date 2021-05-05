@@ -21,11 +21,9 @@ for k in dataset.keys():
 for v in dataset.values():
     print(v)
 
-# To get the number of groups of conformers we can use len(), or
-# num_conformer_groups
-num_groups_len = len(dataset)
-num_groups = dataset.num_conformer_groups
-assert num_groups_len == num_groups
+# To get the number of groups of conformers we can use len(), or also
+# dataset.num_conformer_groups
+num_groups = len(dataset)
 print(num_groups)
 
 # ############## Conformers:  ###########################

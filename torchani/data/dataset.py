@@ -139,7 +139,7 @@ class H5Dataset(Mapping):
         include_properties = kwargs.pop('include_properties', None)
         strict = kwargs.pop('strict', False)
         for k, size in self._groups.items():
-            conformer_group = self.get_group(k, include_properties, strict)
+            conformer_group = self._get_group(k, include_properties, strict)
             for j in range(size):
                 yield self._extract_from_molecule_group(conformer_group, j, **kwargs)
     # end API
