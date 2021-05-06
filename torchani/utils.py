@@ -62,7 +62,7 @@ def pad_atomic_properties(properties, padding_values=defaultdict(lambda: 0.0, sp
     total_num_molecules = sum(num_molecules)
     output = {}
     for k in scalars:
-        output[k] = torch.stack([x[k] for x in properties])
+        output[k] = torch.cat([x[k] for x in properties])
     for k in vectors:
         tensor = properties[0][k]
         shape = list(tensor.shape)
