@@ -167,7 +167,7 @@ class H5Dataset(Mapping):
                            padding: Optional[Dict[str, Any]] = None,
                            splits: Optional[Dict[str, float]] = None,
                            verbose: bool = True,
-                           max_batches_per_packet: int = 300,
+                           max_batches_per_packet: int = 350,
                            elements=('H', 'C', 'N', 'O')):
         # NOTE: all the tensor manipulation in this function is handled in CPU
         # temporary hack #
@@ -194,8 +194,8 @@ class H5Dataset(Mapping):
             splits = {'training': 0.8, 'validation': 0.2}
         else:
             assert isinstance(splits, dict)
-            if not torch.isclose(torch.tensor(sum(list(splits.values()))), 1.0):
-                raise ValueError("The sum of the split fractions has to add up to one")
+        if not torch.isclose(torch.tensor(sum(list(splits.values()))), torch.tensor(1.0)):
+            raise ValueError("The sum of the split fractions has to add up to one")
 
         split_sizes = OrderedDict([(k, int(self.num_conformers * v)) for k, v in splits.items()])
         split_paths = OrderedDict([(k, path.joinpath(k)) for k in split_sizes.keys()])
@@ -272,6 +272,7 @@ class H5Dataset(Mapping):
                                         for j in range(0, len(all_batch_indices), max_batches_per_packet)]
             num_batch_indices_packets = len(all_batch_indices_packets)
 
+            overall_batch_idx = 0
             with h5py.File(self._store_file, 'r') as hdf5_file:
                 for j, batch_indices_packet in enumerate(all_batch_indices_packets):
                     num_batches_in_packet = len(batch_indices_packet)
@@ -294,10 +295,8 @@ class H5Dataset(Mapping):
 
                     all_conformers = []
                     if use_pbar:
-                        pbar = pkbar.Pbar(f"""=> Saving batch packet {j + 1} of
-                                          {num_batch_indices_packets} into
-                                          {split_paths[split_key].as_posix()}, in format
-                                          {file_format}""",
+                        pbar = pkbar.Pbar(f"""=> Saving batch packet {j + 1} of {num_batch_indices_packets} into
+                                          {split_paths[split_key].as_posix()}, in format {file_format}""",
                                           len(counts_cat))
                     for step, (group_idx, count, start_index) in enumerate(zip(uniqued_idxs_cat, counts_cat, cumcounts_cat)):
                         group = hdf5_file[list(self._groups.keys())[group_idx.item()]]
@@ -328,9 +327,10 @@ class H5Dataset(Mapping):
                     # The format of this is {'species': (batch1, batch2, ...), 'coordinates': (batch1, batch2, ...)}
                     batch_packet_dict = {k: torch.split(t[indices_to_unsort_batch_cat], batch_sizes)
                                for k, t in batches_cat.items()}
-                    for batch_idx in range(num_batches_in_packet):
-                        batch = {k: v[batch_idx] for k, v in batch_packet_dict.items()}
-                        _save_batch(split_paths[split_key], batch_idx, batch, file_format)
+                    for packet_batch_idx in range(num_batches_in_packet):
+                        batch = {k: v[packet_batch_idx] for k, v in batch_packet_dict.items()}
+                        _save_batch(split_paths[split_key], overall_batch_idx, batch, file_format)
+                        overall_batch_idx += 1
 
     def get_conformers(self, key: str, idx: Optional[Union[int, np.ndarray]] = None, **kwargs):
         # fetching a conformer actually copies all the group into memory first,
