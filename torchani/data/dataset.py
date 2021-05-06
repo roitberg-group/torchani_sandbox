@@ -438,9 +438,3 @@ class H5Dataset(Mapping):
         if v.dtype == np.bytes_ or v.dtype == np.str_ or v.dtype.name == 'bytes8':
             v = [s.decode('ascii') for s in v]  # type: ignore
         return v
-
-
-if __name__ == '__main__':
-
-    ds = H5Dataset('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
-    ds.to_batched_dataset('./1x_batched_ds', file_format='pytorch')
