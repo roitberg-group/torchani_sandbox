@@ -78,12 +78,18 @@ class ANIBatchedDataset(torch.utils.data.Dataset):
         suffix = self.batch_paths[0].suffix
         assert all([f.suffix == suffix for f in self.batch_paths]), "Different file extensions in same path not supported"
 
-        def numpy_extractor(idx, paths):
-            return {k: torch.as_tensor(v) for k, v in np.load(paths[idx]).items()}
+        def numpy_extractor(idx, paths, pin_memory=False):
+            return {
+                k: torch.as_tensor(v).pin_memory() if pin_memory else torch.as_tensor(v)
+                for k, v in np.load(paths[idx]).items()
+            }
 
-        def pickle_extractor(idx, paths):
+        def pickle_extractor(idx, paths, pin_memory=False):
             with open(paths[idx], 'rb') as f:
-                return {k: torch.as_tensor(v) for k, v in pickle.load(f).items()}
+                return {
+                    k: torch.as_tensor(v).pin_memory if pin_memory else torch.as_tensor(v)
+                    for k, v in pickle.load(f).items()
+                }
 
         # We use pickle or numpy since saving in
         # pytorch format is extremely slow
@@ -101,8 +107,9 @@ class ANIBatchedDataset(torch.utils.data.Dataset):
         def memory_extractor(idx, ds):
             return ds._data[idx]
 
-        self._data = [self.extractor(idx) for idx in range(len(self))]
+        self._data = [self.extractor(idx, pin_memory=True) for idx in range(len(self))]
         self.extractor = partial(memory_extractor, ds=self)
+        return self
 
     def __getitem__(self, idx: int):
         # integral indices must be provided for compatibility with pytorch
