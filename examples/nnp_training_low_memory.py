@@ -23,9 +23,12 @@ from torchani.units import hartree2kcalmol
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # --Starting here this is different from the usual nnp_training.py--
-cache = False
 h5_path = '/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5'
 batched_dataset_path = './batched_dataset_1x'
+
+elements = ('H', 'C', 'N', 'O')
+self_energies = [-0.57, -0.0045, -0.0035, -0.008]
+transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
 
 # We prebatch the dataset to train with memory efficiency, and comparable
 # performance.
@@ -45,39 +48,42 @@ if not Path(batched_dataset_path).resolve().is_dir():
 # will modify the dataset and may introduce hard to track discrepancies between
 # datasets and reproducibility issues
 
-elements = ('H', 'C', 'N', 'O')
-self_energies = [-0.57, -0.0045, -0.0035, -0.008]
-transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
-
 training = AniBatchedDataset(batched_dataset_path, transform=transform, split='training')
 validation = AniBatchedDataset(batched_dataset_path, transform=transform, split='validation')
 
-# This batched dataset can be directly iterated upon, but it is more practical
+# This batched dataset can be directly iterated upon, but it may be more practical
 # to wrap it with a torch DataLoader
+cache = True
 if not cache:
     # If we decide not to cache the dataset it is a good idea to use
     # multiprocessing.  here we use some normally useful arguments
-    # num_workers=2 (3 cores) and prefetch_factor=2 (each worker buffers two
-    # batches), but you should probably experiment depending on your batch size
+    # for num_workers (extra cores for training) and prefetch_factor (data units each worker buffers two),
+    # but you should probably experiment depending on your batch size and system
     # to get the best performance. Performance is in general almost the same as
-    # what you get caching the dataset if you use more than one core.
+    # what you get caching the dataset for pure python, but a bit slower if
+    # using cuaev (as long as you use more than one core).
+    #
     # We also use shuffle=True, to shuffle batches every epoch (takes no time at all)
     # and pin_memory=True, to speed up transfer to the GPU.
     #
+    # If you can afford it in terms of memory you can sometimes get a bit of a
+    # speedup if you cache the validation set and set persistent_workers = True
+    # for the training set, if you can't you can use the same settings as the
+    # training set
+    #
     # Note: it is very important here to pass batch_size = None since the dataset is
     # already batched!
-    training = torch.utils.data.DataLoader(training.cache(),
+    training = torch.utils.data.DataLoader(training,
                                            shuffle=True,
-                                           num_workers=2,
+                                           num_workers=1,
                                            prefetch_factor=2,
                                            pin_memory=True,
                                            batch_size=None)
 
-    validation = torch.utils.data.DataLoader(validation.cache(),
-                                             shuffle=True,
-                                             num_workers=2,
+    validation = torch.utils.data.DataLoader(validation,
+                                             shuffle=False,
+                                             num_workers=1,
                                              prefetch_factor=2,
-                                             pin_memory=True,
                                              batch_size=None)
 elif cache:
     # If need some extra speedup you can cache the dataset before passing it to
@@ -91,12 +97,12 @@ elif cache:
                                            batch_size=None)
 
     validation = torch.utils.data.DataLoader(validation.cache(),
-                                             shuffle=True,
+                                             shuffle=False,
                                              batch_size=None)
 # --Differences end here--
 ###############################################################################
 # First lets define an aev computer like the one in the 1x model
-aev_computer = torchani.AEVComputer.like_1x()
+aev_computer = torchani.AEVComputer.like_1x(use_cuda_extension=True)
 # Now let's define atomic neural networks.
 aev_dim = aev_computer.aev_length
 
@@ -290,7 +296,7 @@ tensorboard = torch.utils.tensorboard.SummaryWriter()
 mse = torch.nn.MSELoss(reduction='none')
 
 print("training starting from epoch", AdamW_scheduler.last_epoch + 1)
-max_epochs = 10
+max_epochs = 100
 early_stopping_learning_rate = 1.0E-5
 best_model_checkpoint = 'best.pt'
 
