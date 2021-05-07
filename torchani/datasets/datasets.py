@@ -246,7 +246,7 @@ class AniH5Dataset(Mapping):
             v = [s.decode('ascii') for s in v]  # type: ignore
         return v
 
-@profile
+
 def _save_batch(path, idx, batch, file_format):
     # We use pickle or numpy since saving in
     # pytorch format is extremely slow
@@ -261,7 +261,7 @@ def _save_batch(path, idx, batch, file_format):
                 coordinates=batch['coordinates'].numpy(),
                 energies=batch['energies'].numpy())
 
-@profile
+
 def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
                            dest_path: Optional[Union[str, Path]] = None,
                            shuffle: bool = True,
