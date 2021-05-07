@@ -1,128 +1,98 @@
-# -*- coding: utf-8 -*-
 # type: ignore
-"""
-.. _training-example:
-
-Train Your Own Neural Network Potential
-=======================================
-
-This example shows how to use TorchANI to train a neural network potential
-with the setup identical to NeuroChem. We will use the same configuration as
-specified in `inputtrain.ipt`_
-
-.. _`inputtrain.ipt`:
-    https://github.com/aiqm/torchani/blob/master/torchani/resources/ani-1x_8x/inputtrain.ipt
-
-.. note::
-    TorchANI provide tools to run NeuroChem training config file `inputtrain.ipt`.
-    See: :ref:`neurochem-training`.
-
-.. warning::
-    The training setup used in this file is configured to reproduce the original research
-    at `Less is more: Sampling chemical space with active learning`_ as much as possible.
-    That research was done on a different platform called NeuroChem which has many default
-    options and technical details different from PyTorch. Some decisions made here
-    (such as, using NeuroChem's initialization instead of PyTorch's default initialization)
-    is not because it gives better result, but solely based on reproducing the original
-    research. This file should not be interpreted as a suggestions to the readers on how
-    they should setup their models.
-
-.. _`Less is more: Sampling chemical space with active learning`:
-    https://aip.scitation.org/doi/full/10.1063/1.5023802
-"""
-
-###############################################################################
-# To begin with, let's first import the modules and setup devices we will use:
 
 import torch
 import torchani
 import os
 import math
-import torch.utils.tensorboard
-import tqdm
-from torchani.datasets import AniH5Dataset, AniBatchedDataset
-from torchani.transforms import AtomicNumbersToIndices, SubtractSAE
 from pathlib import Path
 
-# helper function to convert energy unit from Hartree to kcal/mol
+import torch.utils.tensorboard
+import tqdm
+
+from torchani.datasets import AniBatchedDataset, create_batched_dataset
+from torchani.transforms import AtomicNumbersToIndices, SubtractSAE
 from torchani.units import hartree2kcalmol
+
+# This example is meant for internal use of Roitberg's Group
 
 # device to run the training
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-###############################################################################
-# Now let's setup constants and construct an AEV computer. For simplicity we build
-# an AEVComputer equal to 1x's
-# The atomic self energies given in `sae_linfit.dat`_ are computed from ANI-1x
-# dataset. These constants can be calculated for any given dataset if ``None``
-# is provided as an argument to the object of :class:`EnergyShifter` class.
-#
-# .. note::
-#
-#   Besides defining these hyperparameters programmatically,
-#   :mod:`torchani.neurochem` provide tools to read them from file.
-#
-# .. _rHCNO-5.2R_16-3.5A_a4-8.params:
-#   https://github.com/aiqm/torchani/blob/master/torchani/resources/ani-1x_8x/rHCNO-5.2R_16-3.5A_a4-8.params
-# .. _sae_linfit.dat:
-#   https://github.com/aiqm/torchani/blob/master/torchani/resources/ani-1x_8x/sae_linfit.dat
+# --Starting here this is different from the usual nnp_training.py--
+cache = False
+h5_path = '/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5'
+batched_dataset_path = './batched_dataset_1x'
 
-aev_computer = torchani.AEVComputer.like_1x()
-energy_shifter = torchani.utils.EnergyShifter(None)
-
-###############################################################################
-# Now let's setup datasets. These paths assumes the user run this script under
-# the ``examples`` directory of TorchANI's repository. If you download this
-# script, you should manually set the path of these files in your system before
-# this script can run successfully.
-#
-# Also note that we need to subtracting energies by the self energies of all
-# atoms for each molecule. This makes the range of energies in a reasonable
-# range. The second argument defines how to convert species as a list of string
-# to tensor, that is, for all supported chemical symbols, which is correspond to
-# ``0``, which correspond to ``1``, etc.
-
-try:
-    path = os.path.dirname(os.path.realpath(__file__))
-except NameError:
-    path = os.getcwd()
-dspath = '/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5'
-batch_size = 2560
-
-batched_dataset_path = './batched_1x'
-
-# We prebatch the dataset after loading to train with memory efficiency, and
-# comparable performance
+# We prebatch the dataset to train with memory efficiency, and comparable
+# performance.
 if not Path(batched_dataset_path).resolve().is_dir():
-    h5_dataset = AniH5Dataset('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
-    h5_dataset.to_batched_dataset(batched_dataset_path,
-                                  file_format='numpy',
-                                  shuffle=True,
-                                  batch_size=2560,
-                                  splits={'training': 0.8, 'validation': 0.2})
+    create_batched_dataset(h5_path,
+                           dest_path=batched_dataset_path,
+                           file_format='numpy',
+                           shuffle=True,
+                           batch_size=2560,
+                           splits={'training': 0.8, 'validation': 0.2})
 
+# We pass a transform to the dataset to perform transformations on the fly
+# while training.
+# Alternatively a transform can be passed to
+# create_batched_dataset using the argument "inplace_transform", but this is
+# only really recommended if your transforms takes a lot of time, since this
+# will modify the dataset and may introduce hard to track discrepancies between
+# datasets and reproducibility issues
 
-self_energies = [-0.57, -0.0045, -0.0035, -0.008]
 elements = ('H', 'C', 'N', 'O')
+self_energies = [-0.57, -0.0045, -0.0035, -0.008]
 transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
 
 training = AniBatchedDataset(batched_dataset_path, transform=transform, split='training')
 validation = AniBatchedDataset(batched_dataset_path, transform=transform, split='validation')
 
-training = torch.utils.data.DataLoader(training.cache(),
-                                       num_workers=0,
-                                       shuffle=True,
-                                       batch_size=None)
+# This batched dataset can be directly iterated upon, but it is more practical
+# to wrap it with a torch DataLoader
+if not cache:
+    # If we decide not to cache the dataset it is a good idea to use
+    # multiprocessing.  here we use some normally useful arguments
+    # num_workers=2 (3 cores) and prefetch_factor=2 (each worker buffers two
+    # batches), but you should probably experiment depending on your batch size
+    # to get the best performance. Performance is in general almost the same as
+    # what you get caching the dataset if you use more than one core.
+    # We also use shuffle=True, to shuffle batches every epoch (takes no time at all)
+    # and pin_memory=True, to speed up transfer to the GPU.
+    #
+    # Note: it is very important here to pass batch_size = None since the dataset is
+    # already batched!
+    training = torch.utils.data.DataLoader(training.cache(),
+                                           shuffle=True,
+                                           num_workers=2,
+                                           prefetch_factor=2,
+                                           pin_memory=True,
+                                           batch_size=None)
 
-validation = torch.utils.data.DataLoader(validation.cache(),
-                                         num_workers=0,
-                                         shuffle=True,
-                                         batch_size=None)
+    validation = torch.utils.data.DataLoader(validation.cache(),
+                                             shuffle=True,
+                                             num_workers=2,
+                                             prefetch_factor=2,
+                                             pin_memory=True,
+                                             batch_size=None)
+elif cache:
+    # If need some extra speedup you can cache the dataset before passing it to
+    # the DataLoader or iterating on it, but this may occupy a lot of memory,
+    # so be careful!!!
+    #
+    # Note: it is very important to **not** pass pin_memory=True here, since
+    # cacheing automatically pins the memory of the whole dataset
+    training = torch.utils.data.DataLoader(training.cache(),
+                                           shuffle=True,
+                                           batch_size=None)
 
+    validation = torch.utils.data.DataLoader(validation.cache(),
+                                             shuffle=True,
+                                             batch_size=None)
+# --Differences end here--
 ###############################################################################
-# When iterating the dataset, we will get a dict of name->property mapping
-#
-###############################################################################
+# First lets define an aev computer like the one in the 1x model
+aev_computer = torchani.AEVComputer.like_1x()
 # Now let's define atomic neural networks.
 aev_dim = aev_computer.aev_length
 
