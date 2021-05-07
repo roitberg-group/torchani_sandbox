@@ -64,18 +64,19 @@ class AtomicNumbersToIndices(torch.nn.Module):
         return properties
 
 
-# This code is copied from torchvision, we could probably directly use torchvision's Compose
-class Compose:
-    """Composes several transforms together. This transform does not support torchscript.
+# This code is copied from torchvision, but made JIT scriptable
+class Compose(torch.nn.Module):
+    """Composes several transforms together.
 
     Args:
         transforms (list of ``Transform`` objects): list of transforms to compose.
     """
 
-    def __init__(self, transforms):
-        self.transforms = transforms
+    def __init__(self, transforms: Sequence[torch.nn.Module]):
+        super().__init__()
+        self.transforms = torch.nn.ModuleList(transforms)
 
-    def __call__(self, properties):
+    def forward(self, properties: Dict[str, Tensor]) -> Dict[str, Tensor]:
         for t in self.transforms:
             properties = t(properties)
         return properties
