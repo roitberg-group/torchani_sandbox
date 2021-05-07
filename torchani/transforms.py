@@ -50,12 +50,17 @@ class AtomicNumbersToIndices(torch.nn.Module):
 
     def __init__(self, elements: Union[Sequence[str], Sequence[int]]):
         super().__init__()
-        all_ints = all([isinstance(e, int) for e in elements])
-        all_strings = all([isinstance(e, str) for e in elements])
-        assert all_ints or all_strings, "Input sequence must consist of chemical symbols or atomic numbers"
-        if all_ints:
-            assert [e > 0 for e in elements], f"Encountered an atomic number that is <= 0 {elements}"
-            elements = [PERIODIC_TABLE[e] for e in elements]
+        symbols = []
+
+        if isinstance(elements[0], int):
+            for e in elements:
+                assert isinstance(e, int) and e > 0, f"Encountered an atomic number that is <= 0 {elements}"
+                symbols.append(PERIODIC_TABLE[e])
+        else:
+            for e in elements:
+                assert isinstance(e, str), "Input sequence must consist of chemical symbols or atomic numbers"
+                symbols.append(e)
+
         self.converter = SpeciesConverter(elements)
 
     def forward(self, properties: Dict[str, Tensor]) -> Dict[str, Tensor]:

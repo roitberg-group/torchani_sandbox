@@ -296,27 +296,25 @@ def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
         dest_path = Path(f'./batched_dataset_{file_format}').resolve()
     dest_path = Path(dest_path).resolve()
 
-    if isinstance(h5_path, str):
+    if isinstance(h5_path, (str, Path)):
         h5_path = Path(h5_path).resolve()
-
-    if h5_path.is_dir():
-        h5_paths = [p for p in h5_path.iterdir() if p.suffix == '.h5']
-    elif h5_path.is_file():
-        h5_paths = [h5_path]
+        assert isinstance(h5_path, Path)
+        if h5_path.is_dir():
+            h5_paths = [p for p in h5_path.iterdir() if p.suffix == '.h5']
+        elif h5_path.is_file():
+            h5_paths = [h5_path]
     else:
-        # assume we received an iterable of paths or strings
         try:
             h5_paths = [Path(p).resolve() for p in h5_path]
         except TypeError:
-            raise ValueError("Expected a path to a directory with h5 files, or a path for a file, or an iterable of paths to files")
+            raise TypeError("Expected a path to an h5 file or a dir containing h5 files, or a list of h5 file paths")
 
     h5_datasets = [AniH5Dataset(p) for p in h5_paths]
 
     total_num_conformers = sum([h5ds.num_conformers for h5ds in h5_datasets])
     # get all group sizes for all datasets concatenated in a row, in the same
     # order as h5_datasets
-    group_sizes = [torch.tensor(list(h5ds._groups.values()), dtype=torch.long) for h5ds in h5_datasets]
-    group_sizes = torch.cat(group_sizes)
+    group_sizes = torch.cat([torch.tensor(list(h5ds._groups.values()), dtype=torch.long) for h5ds in h5_datasets])
     # get all group keys concatenated in a row, with the associated file indexes
     file_idxs_and_group_keys = [{'idx': j, 'key': k}
                   for j, h5ds in enumerate(h5_datasets)
@@ -353,10 +351,9 @@ def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
     # These are pairs of indices that index first the group and then the
     # specific conformer, it is possible to just use one index for
     # everything but this is simpler at the cost of slightly more memory
-    conformer_indices = [torch.stack((torch.full(size=(s,), fill_value=j),
-                                     (torch.arange(0, s))), dim=-1)
-                                     for j, s in enumerate(group_sizes)]
-    conformer_indices = torch.cat(conformer_indices)
+    conformer_indices = torch.cat([torch.stack((torch.full(size=(s.item(),), fill_value=j),
+                                     (torch.arange(0, s.item()))), dim=-1)
+                                     for j, s in enumerate(group_sizes)])
     if shuffle:
         shuffle_indices = torch.randperm(total_num_conformers)
         conformer_indices = conformer_indices[shuffle_indices]
@@ -364,10 +361,11 @@ def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
     # (2) Split shuffled indices according to requested dataset splits
     leftover = total_num_conformers - sum(split_sizes.values())
     if leftover != 0:
-        # We slightly modify the max section if the fractions don't split
+        # We slightly modify a random section if the fractions don't split
         # the dataset perfectly. This also automatically takes care of the
         # cases leftover > 0 and leftover < 0
-        split_sizes[max(split_sizes, key=split_sizes.get)] += leftover
+        any_key = list(split_sizes.keys())[0]
+        split_sizes[any_key] += leftover
         assert sum(split_sizes.values()) == total_num_conformers
     conformer_splits = torch.split(conformer_indices, list(split_sizes.values()))
     assert len(conformer_splits) == len(split_sizes.values())
