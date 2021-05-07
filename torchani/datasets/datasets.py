@@ -197,8 +197,11 @@ class AniH5Dataset(Mapping):
                            collate_fn: Optional[Callable] = None,
                            padding: Optional[Dict[str, Any]] = None,
                            splits: Optional[Dict[str, float]] = None,
+                           inplace_transform: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda x: x,
                            verbose: bool = True):
         # NOTE: all the tensor manipulation in this function is handled in CPU
+        # NOTE: an inplace transform can be applied to the dataset if the transform is
+        # very costly to perform on the fly when training
 
         # Properties that are ELEMENT_KEYS have to be treated differently because
         # they don't have a batch dimension, so we separate them here
@@ -366,6 +369,7 @@ class AniH5Dataset(Mapping):
 
                     for packet_batch_idx in range(num_batches_in_packet):
                         batch = {k: v[packet_batch_idx] for k, v in batch_packet_dict.items()}
+                        batch = inplace_transform(batch)
                         _save_batch(split_paths[split_key], overall_batch_idx, batch, file_format)
                         overall_batch_idx += 1
 
