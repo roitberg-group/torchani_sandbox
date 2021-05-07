@@ -99,7 +99,7 @@ from os.path import join, isfile, isdir
 import os
 from ._pyanitools import anidataloader
 from .. import utils
-from ..datasets import H5Dataset
+from ..datasets import AniH5Dataset
 import importlib
 import functools
 import math
@@ -364,7 +364,7 @@ def load(path, additional_properties=(), legacy=False):
                 anidata_size = anidata.group_size()
                 iterator = enumerate(anidata)
             else:
-                anidata = H5Dataset(f)
+                anidata = AniH5Dataset(f)
                 anidata_size = len(anidata)
                 iterator = enumerate(anidata.values())
             use_pbar = PKBAR_INSTALLED and verbose

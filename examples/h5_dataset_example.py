@@ -1,10 +1,10 @@
-from torchani.datasets import H5Dataset
+from torchani.datasets import AniH5Dataset
 import numpy as np
 
-# Example usage of the H5Dataset class, which supersedes the obsolete
+# Example usage of the AniH5Dataset class, which supersedes the obsolete
 # anidataloader
 
-dataset = H5Dataset('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
+dataset = AniH5Dataset('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
 
 # ############## Conformer groups:  ###########################
 # To access groups of conformers we can just use the dataset as a dictionary

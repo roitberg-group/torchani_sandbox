@@ -60,7 +60,7 @@ def _save_batch(path, idx, batch, file_format):
                 energies=batch['energies'].numpy())
 
 
-class ANIBatchedDataset(torch.utils.data.Dataset):
+class AniBatchedDataset(torch.utils.data.Dataset):
 
     def __init__(self, store_dir: Union[str, Path], file_format: Optional[str] = None, split: str = 'training'):
         if isinstance(store_dir, str):
@@ -118,7 +118,7 @@ class ANIBatchedDataset(torch.utils.data.Dataset):
         return len(self.batch_paths)
 
 
-class H5Dataset(Mapping):
+class AniH5Dataset(Mapping):
 
     def __init__(self, store_file: Union[str, Path], flag_key: Optional[str] = None):
         if isinstance(store_file, str):
@@ -362,7 +362,7 @@ class H5Dataset(Mapping):
         # cache paths of all molecule groups into a list
         self.group_sizes = []
 
-        def visitor_fn(name, object_, ds: H5Dataset):
+        def visitor_fn(name, object_, ds: AniH5Dataset):
             # validate format of the dataset
             if isinstance(object_, h5py.Dataset):
                 molecule_group = object_.parent

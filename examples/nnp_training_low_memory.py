@@ -40,7 +40,7 @@ import os
 import math
 import torch.utils.tensorboard
 import tqdm
-from torchani.datasets import H5Dataset, ANIBatchedDataset
+from torchani.datasets import AniH5Dataset, AniBatchedDataset
 from pathlib import Path
 
 # helper function to convert energy unit from Hartree to kcal/mol
@@ -93,15 +93,15 @@ batched_dataset_path = './batched_1x'
 # We prebatch the dataset after loading to train with memory efficiency, and
 # comparable performance
 if not Path(batched_dataset_path).resolve().is_dir():
-    h5_dataset = H5Dataset('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
+    h5_dataset = AniH5Dataset('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
     h5_dataset.to_batched_dataset(batched_dataset_path,
                                   file_format='numpy',
                                   shuffle=True,
                                   batch_size=2560,
                                   splits={'training': 0.8, 'validation': 0.2})
 
-training = ANIBatchedDataset(batched_dataset_path, split='training')
-validation = ANIBatchedDataset(batched_dataset_path, split='validation')
+training = AniBatchedDataset(batched_dataset_path, split='training')
+validation = AniBatchedDataset(batched_dataset_path, split='validation')
 
 training = torch.utils.data.DataLoader(training,
                                        num_workers=1,

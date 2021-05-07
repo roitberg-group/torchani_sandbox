@@ -6,7 +6,7 @@ import torchani
 import unittest
 import tempfile
 from torchani.testing import TestCase
-from torchani.datasets import H5Dataset
+from torchani.datasets import AniH5Dataset
 
 path = os.path.dirname(os.path.realpath(__file__))
 dataset_path = os.path.join(path, '../dataset/ani-1x/sample.h5')
@@ -14,7 +14,7 @@ batch_size = 256
 ani1x_sae_dict = {'H': -0.60095298, 'C': -38.08316124, 'N': -54.7077577, 'O': -75.19446356}
 
 
-class TestH5Dataset(TestCase):
+class TestAniH5Dataset(TestCase):
 
     def setUp(self):
         # create two dummy HDF5 databases, one with 3 groups and one with one
@@ -64,19 +64,19 @@ class TestH5Dataset(TestCase):
                 f3['HCHHH'].create_dataset(k, data=v)
 
     def testSizesOneGroup(self):
-        ds = H5Dataset(self.tf_one_group.name)
+        ds = AniH5Dataset(self.tf_one_group.name)
         self.assertEqual(ds.num_conformers, self.num_conformers1)
         self.assertEqual(ds.num_conformer_groups, 1)
         self.assertEqual(len(ds), ds.num_conformer_groups)
 
     def testSizesThreeGroups(self):
-        ds = H5Dataset(self.tf_three_groups.name)
+        ds = AniH5Dataset(self.tf_three_groups.name)
         self.assertEqual(ds.num_conformers, self.num_conformers1 + self.num_conformers2 + self.num_conformers3)
         self.assertEqual(ds.num_conformer_groups, 3)
         self.assertEqual(len(ds), ds.num_conformer_groups)
 
     def testKeys(self):
-        ds = H5Dataset(self.tf_three_groups.name)
+        ds = AniH5Dataset(self.tf_three_groups.name)
         keys = set()
         for k in ds.keys():
             keys.update({k})
@@ -84,7 +84,7 @@ class TestH5Dataset(TestCase):
         self.assertEqual(len(ds.keys()), 3)
 
     def testValues(self):
-        ds = H5Dataset(self.tf_three_groups.name)
+        ds = AniH5Dataset(self.tf_three_groups.name)
         for d in ds.values():
             self.assertTrue('species' in d.keys())
             self.assertTrue('coordinates' in d.keys())
@@ -94,7 +94,7 @@ class TestH5Dataset(TestCase):
         self.assertEqual(len(ds.values()), 3)
 
     def testItems(self):
-        ds = H5Dataset(self.tf_three_groups.name)
+        ds = AniH5Dataset(self.tf_three_groups.name)
         for k, v in ds.items():
             self.assertTrue(isinstance(k, str))
             self.assertTrue(isinstance(v, dict))
@@ -104,7 +104,7 @@ class TestH5Dataset(TestCase):
         self.assertEqual(len(ds.items()), 3)
 
     def testGetConformers(self):
-        ds = H5Dataset(self.tf_three_groups.name)
+        ds = AniH5Dataset(self.tf_three_groups.name)
 
         self.assertEqual(ds.get_conformers('HOO')['coordinates'], ds['HOO']['coordinates'])
         self.assertEqual(ds.get_conformers('HOO', 0)['coordinates'], ds['HOO']['coordinates'][0])
@@ -122,7 +122,7 @@ class TestH5Dataset(TestCase):
         self.assertTrue(conformers124.get('coordinates', None) is None)
 
     def testIterConformers(self):
-        ds = H5Dataset(self.tf_three_groups.name)
+        ds = AniH5Dataset(self.tf_three_groups.name)
         confs = []
         for c in ds.iter_conformers():
             self.assertTrue(isinstance(c, dict))

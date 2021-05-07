@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 import torchani
 import pkbar
-from torchani.datasets import ANIBatchedDataset, save_batched_dataset
+from torchani.datasets import AniBatchedDataset, save_batched_dataset
 
 # Explanation of the Batched Dataset API for ANI, which is a dataset that
 # consumes minimal memory since it lives on disk, and batches are fetched on
@@ -32,9 +32,9 @@ if not path_to_batched.exists():
     save_batched_dataset(validation, path_to_batched, file_format='numpy', split='validation')
 
 # Once we have created the batched dataset we instance it using the class
-# ANIBatchedDataset, which subclasses torch.utils.data.Dataset
-training = ANIBatchedDataset(path_to_batched, split='training')
-validation = ANIBatchedDataset(path_to_batched, split='validation')
+# AniBatchedDataset, which subclasses torch.utils.data.Dataset
+training = AniBatchedDataset(path_to_batched, split='training')
+validation = AniBatchedDataset(path_to_batched, split='validation')
 
 # This batched dataset can be directly iterated upon, but it is more practical
 # to wrap it with a torch dataloader to obtain automatic shuffling evey epoch,
