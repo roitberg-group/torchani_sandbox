@@ -41,6 +41,7 @@ import math
 import torch.utils.tensorboard
 import tqdm
 from torchani.datasets import AniH5Dataset, AniBatchedDataset
+from torchani.transforms import AtomicNumbersToIndices, SubtractSAE
 from pathlib import Path
 
 # helper function to convert energy unit from Hartree to kcal/mol
@@ -100,21 +101,24 @@ if not Path(batched_dataset_path).resolve().is_dir():
                                   batch_size=2560,
                                   splits={'training': 0.8, 'validation': 0.2})
 
-training = AniBatchedDataset(batched_dataset_path, split='training')
-validation = AniBatchedDataset(batched_dataset_path, split='validation')
 
-training = torch.utils.data.DataLoader(training,
-                                       num_workers=1,
-                                       prefetch_factor=2,
-                                       pin_memory=True,
+self_energies = [-0.57, -0.0045, -0.0035, -0.008]
+elements = ('H', 'C', 'N', 'O')
+transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
+
+training = AniBatchedDataset(batched_dataset_path, transform=transform, split='training')
+validation = AniBatchedDataset(batched_dataset_path, transform=transform, split='validation')
+
+training = torch.utils.data.DataLoader(training.cache(),
+                                       num_workers=0,
                                        shuffle=True,
                                        batch_size=None)
-validation = torch.utils.data.DataLoader(validation,
-                                         num_workers=1,
-                                         prefetch_factor=2,
-                                         pin_memory=True,
+
+validation = torch.utils.data.DataLoader(validation.cache(),
+                                         num_workers=0,
                                          shuffle=True,
                                          batch_size=None)
+
 ###############################################################################
 # When iterating the dataset, we will get a dict of name->property mapping
 #

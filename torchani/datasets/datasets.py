@@ -11,7 +11,7 @@ import torch
 import h5py
 import numpy as np
 
-from torchani.utils import pad_atomic_properties, ChemicalSymbolsToInts, cumsum_from_zero
+from torchani.utils import pad_atomic_properties, ChemicalSymbolsToAtomicNumbers, cumsum_from_zero
 
 PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None  # type: ignore
 if PKBAR_INSTALLED:
@@ -23,6 +23,9 @@ PADDING = {
     'forces': 0.0,
     'energies': 0.0
 }
+
+# These keys are treated differently because they don't have a batch dimension
+ELEMENT_KEYS = ('species', 'numbers', 'atomic_numbers')
 
 
 def save_batched_dataset(dataset, path: Union[str, Path], file_format='numpy', verbose=False, split='training'):
@@ -62,7 +65,7 @@ def _save_batch(path, idx, batch, file_format):
 
 class AniBatchedDataset(torch.utils.data.Dataset):
 
-    def __init__(self, store_dir: Union[str, Path], file_format: Optional[str] = None, split: str = 'training'):
+    def __init__(self, store_dir: Union[str, Path], file_format: Optional[str] = None, split: str = 'training', transform: Callable = lambda x: x):
         if isinstance(store_dir, str):
             store_dir = Path(store_dir).resolve()
         assert store_dir.is_dir(), f"The directory {store_dir.as_posix()} could not be found"
@@ -75,17 +78,18 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         assert all([f.is_file() for f in self.batch_paths]), "Subdirectories in path not supported"
         suffix = self.batch_paths[0].suffix
         assert all([f.suffix == suffix for f in self.batch_paths]), "Different file extensions in same path not supported"
+        self.transform = transform
 
-        def numpy_extractor(idx, paths, pin_memory=False):
+        def numpy_extractor(idx, paths):
             return {
-                k: torch.as_tensor(v).pin_memory() if pin_memory else torch.as_tensor(v)
+                k: torch.as_tensor(v)
                 for k, v in np.load(paths[idx]).items()
             }
 
-        def pickle_extractor(idx, paths, pin_memory=False):
+        def pickle_extractor(idx, paths):
             with open(paths[idx], 'rb') as f:
                 return {
-                    k: torch.as_tensor(v).pin_memory if pin_memory else torch.as_tensor(v)
+                    k: torch.as_tensor(v)
                     for k, v in pickle.load(f).items()
                 }
 
@@ -99,20 +103,41 @@ class AniBatchedDataset(torch.utils.data.Dataset):
             msg = f'Format for file with extension {suffix} could not be infered, please specify explicitly'
             raise RuntimeError(msg)
 
-    def cache(self):
-        warnings.warn("Caching the dataset may a lot of memory, be careful")
+    def cache(self, pin_memory=True, verbose=True, apply_transform=True):
+        if verbose:
+            print("Cacheing dataset, this may take some time...")
+            print("Cacheing the dataset may use a lot of memory, be careful!")
 
         def memory_extractor(idx, ds):
             return ds._data[idx]
 
-        self._data = [self.extractor(idx, pin_memory=True) for idx in range(len(self))]
+        self._data = [self.extractor(idx) for idx in range(len(self))]
+
+        if apply_transform:
+            if verbose:
+                print("Transformations will be applied once during cacheing and then discarded.")
+            with torch.no_grad():
+                self._data = [self.transform(properties) for properties in self._data]
+            # discard transform after aplication
+            self.transform = lambda x: x
+
+        # When the dataset is cached memory pinning is done here. When the
+        # dataset is not cached memory pinning is done by the torch DataLoader.
+        if pin_memory:
+            if verbose:
+                print("Cacheing pins memory automatically, do **not** use pin_memory=True in torch.utils.data.DataLoader")
+            self._data = [{k: v.pin_memory() for k, v in properties.items()} for properties in self._data]
+
         self.extractor = partial(memory_extractor, ds=self)
         return self
 
     def __getitem__(self, idx: int):
         # integral indices must be provided for compatibility with pytorch
-        # dataloader API
-        return self.extractor(idx)
+        # DataLoader API
+        properties = self.extractor(idx)
+        with torch.no_grad():
+            properties = self.transform(properties)
+        return properties
 
     def __len__(self):
         return len(self.batch_paths)
@@ -156,7 +181,7 @@ class AniH5Dataset(Mapping):
     #
     # maybe transformation objects should be:
     # IncludeProperties(ppties), Batch(batch_size, collate_fn, padding, num_batches_per_packet),
-    # Split(splits), Shuffle(), ConvertSpecies(elements)
+    # Split(splits), ConvertSpecies(elements)
     #
     # and signature would be:
     # to_batched_dataset(path, transforms, verbose, file_format)
@@ -168,20 +193,23 @@ class AniH5Dataset(Mapping):
                            file_format: str = 'numpy',
                            include_properties=('species', 'coordinates', 'energies'),
                            batch_size: int = 2560,
+                           max_batches_per_packet: int = 350,
                            collate_fn: Optional[Callable] = None,
                            padding: Optional[Dict[str, Any]] = None,
                            splits: Optional[Dict[str, float]] = None,
-                           verbose: bool = True,
-                           max_batches_per_packet: int = 350,
-                           elements=('H', 'C', 'N', 'O')):
+                           verbose: bool = True):
         # NOTE: all the tensor manipulation in this function is handled in CPU
-        # temporary hack #
-        element_keys = ('species', 'numbers', 'atomic_numbers')
-        element_keys = tuple((k for k in include_properties if k in element_keys))
-        include_properties = tuple((k for k in include_properties if k not in element_keys))
-        # ################
 
-        chemical_symbols_to_ints = ChemicalSymbolsToInts(elements)
+        # Properties that are ELEMENT_KEYS have to be treated differently because
+        # they don't have a batch dimension, so we separate them here
+        include_element_keys = tuple((k for k in include_properties if k in ELEMENT_KEYS))
+        include_properties = tuple((k for k in include_properties if k not in ELEMENT_KEYS))
+
+        # Important: to prevent possible bugs / errors, that may happen due to
+        # incorrect conversion to indices, species is **always** converted to
+        # atomic numbers when saving the batched dataset.
+        symbols_to_atomic_numbers = ChemicalSymbolsToAtomicNumbers()
+
         use_pbar = PKBAR_INSTALLED and verbose
 
         if not shuffle:
@@ -236,8 +264,8 @@ class AniH5Dataset(Mapping):
             assert sum(split_sizes.values()) == self.num_conformers
         conformer_splits = torch.split(conformer_indices, list(split_sizes.values()))
         assert len(conformer_splits) == len(split_sizes.values())
-        print(f"""Splits have number of conformers: {dict(split_sizes)}.
-                  The requested percentages were: {splits}""")
+        print(f'Splits have number of conformers: {dict(split_sizes)}.'
+              f' The requested percentages were: {splits}')
 
         # (3) Compute the batch indices for each split and save the conformers to disk
         for split_key, indices_of_split in zip(split_sizes.keys(), conformer_splits):
@@ -300,9 +328,9 @@ class AniH5Dataset(Mapping):
 
                     all_conformers = []
                     if use_pbar:
-                        pbar = pkbar.Pbar(f"""=> Saving batch packet {j + 1} of {num_batch_indices_packets} into
-                                          {split_paths[split_key].as_posix()}, in format {file_format}""",
-                                          len(counts_cat))
+                        pbar = pkbar.Pbar(f'=> Saving batch packet {j + 1} of {num_batch_indices_packets}'
+                                          f' of split {split_paths[split_key].name},'
+                                          f' in format {file_format}', len(counts_cat))
                     for step, (group_idx, count, start_index) in enumerate(zip(uniqued_idxs_cat, counts_cat, cumcounts_cat)):
                         group = hdf5_file[list(self._groups.keys())[group_idx.item()]]
                         end_index = start_index + count
@@ -314,24 +342,28 @@ class AniH5Dataset(Mapping):
                         conformers = {k: np.copy(group[k]) for k in include_properties}
                         conformers = {k: v[selected_indices.cpu().numpy()] for k, v in conformers.items()}
                         element_keys = ('species',)
-                        conformers.update({k: np.copy(group[k]).astype(str).tolist() for k in element_keys})
+                        conformers.update({k: np.copy(group[k]).astype(str) for k in include_element_keys})
 
                         if 'species' in element_keys:
-                            converted_species = chemical_symbols_to_ints(conformers['species'])
-                            converted_species = converted_species.view(1, -1).repeat(count, 1)
+                            converted_species = symbols_to_atomic_numbers(conformers['species'])
                             conformers['species'] = converted_species
+
+                        for k in element_keys:
+                            conformers[k] = conformers[k].view(1, -1).repeat(count, 1)
 
                         conformers = {k: torch.as_tensor(v) for k, v in conformers.items()}
                         all_conformers.append(conformers)
                         if use_pbar:
                             pbar.update(step)
+
                     batches_cat = collate_fn(all_conformers, padding)
                     # Now we need to reassign the conformers to the specified
                     # batches. Since to get here we cat'ed and sorted, to
                     # reassign we need to unsort and split.
                     # The format of this is {'species': (batch1, batch2, ...), 'coordinates': (batch1, batch2, ...)}
                     batch_packet_dict = {k: torch.split(t[indices_to_unsort_batch_cat], batch_sizes)
-                               for k, t in batches_cat.items()}
+                                         for k, t in batches_cat.items()}
+
                     for packet_batch_idx in range(num_batches_in_packet):
                         batch = {k: v[packet_batch_idx] for k, v in batch_packet_dict.items()}
                         _save_batch(split_paths[split_key], overall_batch_idx, batch, file_format)

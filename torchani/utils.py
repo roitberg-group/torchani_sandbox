@@ -1,9 +1,10 @@
 import torch
+import numpy as np
 from torch import Tensor
 import torch.utils.data
 import math
 from collections import defaultdict
-from typing import Tuple, NamedTuple, Optional
+from typing import Tuple, NamedTuple, Optional, List, Union
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
 
@@ -196,6 +197,26 @@ class EnergyShifter(torch.nn.Module):
         species, energies = species_energies
         sae = self.sae(species)
         return SpeciesEnergies(species, energies + sae)
+
+
+class ChemicalSymbolsToAtomicNumbers:
+    r"""Converts a sequence of chemical symbols into a tensor of atomic numbers, of :class:`torch.long`
+
+    .. code-block:: python
+
+       # We have a species list which we want to convert to atomic numbers
+       symbols_to_numbers = ChemicalSymbolsToAtomicNumbers()
+       atomic_numbers = symbols_to_numbers(['H', 'C', 'H', 'H', 'C', 'Cl', 'Fe'])
+
+       # atomic_numbers is now torch.tensor([1, 6, 1, 1, 6, 17, 26])
+    """
+
+    def __init__(self):
+        self.converter = np.vectorize(lambda s: ATOMIC_NUMBERS[s])
+
+    def __call__(self, symbols: Union[np.ndarray, List[str]]) -> Tensor:
+        atomic_numbers = self.converter(np.asarray(symbols))
+        return torch.as_tensor(atomic_numbers).to(torch.long)
 
 
 class ChemicalSymbolsToInts:
@@ -431,6 +452,8 @@ PERIODIC_TABLE = ['Dummy'] + """
     Cs  Ba  La  Ce  Pr  Nd  Pm  Sm  Eu  Gd  Tb  Dy  Ho  Er  Tm  Yb  Lu  Hf  Ta  W   Re  Os  Ir  Pt  Au  Hg  Tl  Pb  Bi  Po  At  Rn
     Fr  Ra  Ac  Th  Pa  U   Np  Pu  Am  Cm  Bk  Cf  Es  Fm  Md  No  Lr  Rf  Db  Sg  Bh  Hs  Mt  Ds  Rg  Cn  Nh  Fl  Mc  Lv  Ts  Og
     """.strip().split()
+
+ATOMIC_NUMBERS = {symbol: z for z, symbol in enumerate(PERIODIC_TABLE)}
 
 
 __all__ = ['pad_atomic_properties', 'present_species', 'hessian',
