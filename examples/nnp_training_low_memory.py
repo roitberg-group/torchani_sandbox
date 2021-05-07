@@ -26,9 +26,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 h5_path = '/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5'
 batched_dataset_path = './batched_dataset_1x'
 
-elements = ('H', 'C', 'N', 'O')
-self_energies = [-0.57, -0.0045, -0.0035, -0.008]
-transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
 
 # We prebatch the dataset to train with memory efficiency, and comparable
 # performance.
@@ -40,39 +37,48 @@ if not Path(batched_dataset_path).resolve().is_dir():
                            batch_size=2560,
                            splits={'training': 0.8, 'validation': 0.2})
 
-# We pass a transform to the dataset to perform transformations on the fly
-# while training.
+elements = ('H', 'C', 'N', 'O')
+self_energies = [-0.57, -0.0045, -0.0035, -0.008]
+transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
+
+# We pass a transform to the dataset to perform transformations on the fly, the
+# API for transforms is very similar to torchvision https://pytorch.org/vision/stable/transforms.html
+# with the difference that the transforms are applied to both target and inputs in all cases
+#
 # Alternatively a transform can be passed to
 # create_batched_dataset using the argument "inplace_transform", but this is
 # only really recommended if your transforms takes a lot of time, since this
-# will modify the dataset and may introduce hard to track discrepancies between
-# datasets and reproducibility issues
+# will modify the dataset and may introduce hard to track discrepancies and
+# reproducibility issues
 
 training = AniBatchedDataset(batched_dataset_path, transform=transform, split='training')
 validation = AniBatchedDataset(batched_dataset_path, transform=transform, split='validation')
 
 # This batched dataset can be directly iterated upon, but it may be more practical
 # to wrap it with a torch DataLoader
-cache = True
+cache = False
 if not cache:
     # If we decide not to cache the dataset it is a good idea to use
-    # multiprocessing.  here we use some normally useful arguments
-    # for num_workers (extra cores for training) and prefetch_factor (data units each worker buffers two),
-    # but you should probably experiment depending on your batch size and system
-    # to get the best performance. Performance is in general almost the same as
-    # what you get caching the dataset for pure python, but a bit slower if
-    # using cuaev (as long as you use more than one core).
+    # multiprocessing. Here we use some default useful arguments for
+    # num_workers (extra cores for training) and prefetch_factor (data units
+    # each worker buffers), but you should probably experiment depending on
+    # your batch size and system to get the best performance. Performance can
+    # be made in general almost the same as what you get caching the dataset
+    # for pure python, but it is a bit slower than cacheing if using cuaev
+    # (this is because cuaev is very fast).
     #
     # We also use shuffle=True, to shuffle batches every epoch (takes no time at all)
-    # and pin_memory=True, to speed up transfer to the GPU.
+    # and pin_memory=True, to speed up transfer of memory to the GPU.
     #
     # If you can afford it in terms of memory you can sometimes get a bit of a
-    # speedup if you cache the validation set and set persistent_workers = True
-    # for the training set, if you can't you can use the same settings as the
-    # training set
+    # speedup by cacheing the validation set and setting persistent_workers = True
+    # for the training set.
     #
-    # Note: it is very important here to pass batch_size = None since the dataset is
+    # NOTE: it is very important here to pass batch_size = None since the dataset is
     # already batched!
+    #
+    # NOTE: for more info about the DataLoader and multiprocessing read
+    # https://pytorch.org/docs/stable/data.html
     training = torch.utils.data.DataLoader(training,
                                            shuffle=True,
                                            num_workers=1,
