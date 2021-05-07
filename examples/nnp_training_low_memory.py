@@ -32,7 +32,7 @@ batched_dataset_path = './batched_dataset_1x'
 if not Path(batched_dataset_path).resolve().is_dir():
     create_batched_dataset(h5_path,
                            dest_path=batched_dataset_path,
-                           file_format='numpy',
+                           file_format='hdf5',
                            batch_size=2560,
                            splits={'training': 0.8, 'validation': 0.2})
 

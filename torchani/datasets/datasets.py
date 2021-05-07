@@ -58,12 +58,18 @@ class AniBatchedDataset(torch.utils.data.Dataset):
                     for k, v in pickle.load(f).items()
                 }
 
+        def hdf5_extractor(idx, paths):
+            with h5py.File(paths[idx], 'r') as f:
+                return {k: torch.as_tensor(v[()]) for k, v in f['/'].items()}
+
         # We use pickle or numpy since saving in
         # pytorch format is extremely slow
         if suffix == '.npz' or file_format == 'numpy':
             self.extractor = partial(numpy_extractor, paths=self.batch_paths)
         elif suffix == '.pkl' or file_format == 'pickle':
             self.extractor = partial(pickle_extractor, paths=self.batch_paths)
+        elif suffix == '.h5' or file_format == 'hdf5':
+            self.extractor = partial(hdf5_extractor, paths=self.batch_paths)
         else:
             msg = f'Format for file with extension {suffix} could not be infered, please specify explicitly'
             raise RuntimeError(msg)
@@ -250,22 +256,22 @@ class AniH5Dataset(Mapping):
 def _save_batch(path, idx, batch, file_format):
     # We use pickle or numpy since saving in
     # pytorch format is extremely slow
+    batch = {k: v.numpy() for k, v in batch.items()}
     if file_format == 'pickle':
         with open(path.joinpath(f'batch{idx}.pkl'), 'wb') as batch_file:
-            pickle.dump({'species': batch['species'].numpy(),
-                    'coordinates': batch['coordinates'].numpy(),
-                    'energies': batch['energies'].numpy()}, batch_file)
+            pickle.dump(batch, batch_file)
     elif file_format == 'numpy':
-        np.savez(path.joinpath(f'batch{idx}'),
-                species=batch['species'].numpy(),
-                coordinates=batch['coordinates'].numpy(),
-                energies=batch['energies'].numpy())
+        np.savez(path.joinpath(f'batch{idx}'), **batch)
+    elif file_format == 'hdf5':
+        with h5py.File(path.joinpath(f'batch{idx}.h5'), 'r+') as f:
+            for k, v in batch.items():
+                f.create_dataset(k, data=v)
 
 
 def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
                            dest_path: Optional[Union[str, Path]] = None,
                            shuffle: bool = True,
-                           file_format: str = 'numpy',
+                           file_format: str = 'hdf5',
                            include_properties=('species', 'coordinates', 'energies'),
                            batch_size: int = 2560,
                            max_batches_per_packet: int = 350,
