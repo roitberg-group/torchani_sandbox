@@ -148,7 +148,7 @@ class ANIModel(torch.nn.ModuleDict):
             od[str(i)] = m
         return od
 
-    def __init__(self, modules, use_mlp=True):
+    def __init__(self, modules, use_mlp=False):
         super().__init__(self.ensureOrderedDict(modules))
         # only used for single molecule
         self.idx_list = None
@@ -175,7 +175,7 @@ class ANIModel(torch.nn.ModuleDict):
             mol_energies = self._single_mol_energies((species, aev))
         else:
             # shape of atomic energies is (C, A)
-            print('run batch mode')
+            # print('run batch mode')
             atomic_energies = self._atomic_energies((species, aev))
             mol_energies = torch.sum(atomic_energies, dim=1)
         # print(mol_energies)
@@ -279,6 +279,108 @@ class Ensemble(torch.nn.ModuleList):
             sum_ += x(species_input)[1]
         species, _ = species_input
         return SpeciesEnergies(species, sum_ / self.size)
+
+
+class BmmEnsemble(torch.nn.Module):
+    """
+    Fuse all same networks of an ensemble into BmmNetworks, for example 8 same H networks will be 1 BmmNetwork.
+    BmmNetwork is composed of BatchLinear layers, which will perform Batch Matmul (bmm) instead of normal matmul
+    to reduce kernel calls.
+    """
+    # @snoop
+    def __init__(self, models):
+        super(BmmEnsemble, self).__init__()
+        # assert all models have the same networks as model[0]
+        # and each network should have same architecture
+        bmm_networks = []
+        for net_key, network in models[0].items():
+            bmm_networks.append(BmmNetwork([model[net_key] for model in models]))
+        self.bmm_networks = torch.nn.ModuleList(bmm_networks)
+        self.idx_list = None
+        num_network = len(self.bmm_networks)
+        self.stream_list = [torch.cuda.Stream() for i in range(num_network)]
+        self.last_species_data_ptr = None
+
+    def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
+                cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        species, aev = species_aev
+        assert species.shape == aev.shape[:-1]
+        num_mol = species.shape[0]
+        assert num_mol == 1, "BmmEnsemble Only support inference for single molecule"
+        mol_energies = self._single_mol_energies((species, aev))
+        return SpeciesEnergies(species, mol_energies)
+
+    def _single_mol_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
+        species, aev = species_aev
+        species_ = species.flatten()
+        aev = aev.flatten(0, 1)
+        num_network = len(self.bmm_networks)
+
+        # initialize each species index if it has not been initialized
+        # or the species has changed
+        if self.last_species_data_ptr is None or self.last_species_data_ptr != species.data_ptr():
+            with torch.no_grad():
+                print('----- init spe_list ----')
+                self.last_species_data_ptr = species.data_ptr()
+                self.idx_list = [None] * num_network
+                for i in range(num_network):
+                    mask = (species_ == i)
+                    midx = mask.nonzero().flatten()
+                    print(i, midx.shape[0])
+                    if midx.shape[0] > 0:
+                        self.idx_list[i] = midx
+
+        output = MultiNetFunction.apply(aev, num_network, self.idx_list, self.bmm_networks, self.stream_list)
+        # print(output)
+        return output
+
+
+class BmmNetwork(torch.nn.Module):
+    """
+    Multiple BatchLinear layers with activation function
+    """
+    def __init__(self, networks):
+        super(BmmNetwork, self).__init__()
+        batchlinear_layers = []
+        self.batch = len(networks)
+        for layer_idx, layer in enumerate(networks[0]):
+            if isinstance(layer, torch.nn.Linear):
+                batchlinear_layers.append(BatchLinear([net[layer_idx] for net in networks]))
+            else:
+                assert isinstance(layer, torch.nn.CELU), "Currently only support CELU as activation function"
+                batchlinear_layers.append(layer)
+        self.batchlinear_layers = torch.nn.ModuleList(batchlinear_layers)
+
+    # @snoop
+    def forward(self, input_):
+        input_ = input_.expand(self.batch, -1, -1)
+        for layer in self.batchlinear_layers:
+            input_ = layer(input_)
+        return input_.mean(0)
+
+
+class BatchLinear(torch.nn.Module):
+    """
+    Batch Linear layer that fuse multiple Linear layers that have same architecture and same input.
+    input : (b x n x m)
+    weight: (b x m x p)
+    bias  : (b x 1 x p)
+    out   : (b x n x p)
+    """
+    def __init__(self, linear_layers):
+        super(BatchLinear, self).__init__()
+        # assert each layer has same architecture
+        weights = [layer.weight.unsqueeze(0).clone().detach() for layer in linear_layers]
+        bias = [layer.bias.view(1, 1, -1).clone().detach() for layer in linear_layers]
+        self.weights = torch.nn.Parameter(torch.cat(weights).transpose(1, 2))
+        self.bias = torch.nn.Parameter(torch.cat(bias))
+
+    def forward(self, input_):
+        return torch.baddbmm(self.bias, input_, self.weights)
+
+    def extra_repr(self):
+        return f"batch={self.weights.shape[0]}, in_features={self.weights.shape[1]}, out_features={self.weights.shape[2]}, bias={self.bias is not None}"
 
 
 class Sequential(torch.nn.ModuleList):
