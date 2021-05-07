@@ -1,4 +1,4 @@
-from torchani.data import H5Dataset
+from torchani.datasets import H5Dataset
 import numpy as np
 
 # Example usage of the H5Dataset class, which supersedes the obsolete

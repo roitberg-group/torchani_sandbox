@@ -1,19 +1,17 @@
 from pathlib import Path
+from functools import partial
 import pickle
 import warnings
-import torch
-import h5py
 import importlib
 from typing import Union, Optional, List, Dict, Any, Callable
-import numpy as np
 from collections import OrderedDict
 from collections.abc import Mapping
-from functools import partial
-from torchani.utils import pad_atomic_properties
-from torchani.utils import ChemicalSymbolsToInts
-from torchani.utils import cumsum_from_zero
-# from torchani.nn import SpeciesConverter
 
+import torch
+import h5py
+import numpy as np
+
+from torchani.utils import pad_atomic_properties, ChemicalSymbolsToInts, cumsum_from_zero
 
 PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None  # type: ignore
 if PKBAR_INSTALLED:

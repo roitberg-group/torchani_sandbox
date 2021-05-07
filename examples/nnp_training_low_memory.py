@@ -40,7 +40,7 @@ import os
 import math
 import torch.utils.tensorboard
 import tqdm
-from torchani.data import H5Dataset, ANIBatchedDataset
+from torchani.datasets import H5Dataset, ANIBatchedDataset
 from pathlib import Path
 
 # helper function to convert energy unit from Hartree to kcal/mol

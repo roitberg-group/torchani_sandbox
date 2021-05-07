@@ -6,7 +6,7 @@ import torchani
 import unittest
 import tempfile
 from torchani.testing import TestCase
-from torchani.data import H5Dataset
+from torchani.datasets import H5Dataset
 
 path = os.path.dirname(os.path.realpath(__file__))
 dataset_path = os.path.join(path, '../dataset/ani-1x/sample.h5')

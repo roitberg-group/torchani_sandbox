@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 import torchani
 import pkbar
-from torchani.data.dataset import ANIBatchedDataset, save_batched_dataset
+from torchani.datasets import ANIBatchedDataset, save_batched_dataset
 
 # Explanation of the Batched Dataset API for ANI, which is a dataset that
 # consumes minimal memory since it lives on disk, and batches are fetched on
