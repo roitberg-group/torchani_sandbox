@@ -8,11 +8,15 @@ from pathlib import Path
 
 import torch.utils.tensorboard
 import tqdm
+import pkbar  # noqa
 
 from torchani.datasets import AniBatchedDataset, create_batched_dataset
 from torchani.transforms import AtomicNumbersToIndices, SubtractSAE
 from torchani.units import hartree2kcalmol
 
+# Explanation of the Batched Dataset API for ANI, which is a dataset that
+# consumes minimal memory since it lives on disk, and batches are fetched on
+# the fly
 # This example is meant for internal use of Roitberg's Group
 
 # device to run the training
@@ -263,9 +267,9 @@ def validate():
     model.train(False)
     with torch.no_grad():
         for properties in validation:
-            species = properties['species'].to(device)
-            coordinates = properties['coordinates'].to(device).float()
-            true_energies = properties['energies'].to(device).float()
+            species = properties['species'].to(device, non_blocking=True)
+            coordinates = properties['coordinates'].to(device, non_blocking=True).float()
+            true_energies = properties['energies'].to(device, non_blocking=True).float()
             _, predicted_energies = model((species, coordinates))
             total_mse += mse_sum(predicted_energies, true_energies).item()
             count += predicted_energies.shape[0]
@@ -315,9 +319,9 @@ for _ in range(AdamW_scheduler.last_epoch + 1, max_epochs):
         total=len(training),
         desc="epoch {}".format(AdamW_scheduler.last_epoch)
     ):
-        species = properties['species'].to(device)
-        coordinates = properties['coordinates'].to(device).float()
-        true_energies = properties['energies'].to(device).float()
+        species = properties['species'].to(device, non_blocking=True)
+        coordinates = properties['coordinates'].to(device, non_blocking=True).float()
+        true_energies = properties['energies'].to(device, non_blocking=True).float()
         num_atoms = (species >= 0).sum(dim=1, dtype=true_energies.dtype)
         _, predicted_energies = model((species, coordinates))
 
