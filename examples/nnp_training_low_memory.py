@@ -1,5 +1,4 @@
 # type: ignore
-
 import torch
 import torchani
 import os
@@ -10,7 +9,6 @@ import torch.utils.tensorboard
 import tqdm
 import pkbar  # noqa
 
-from torchani.datasets import AniBatchedDataset, create_batched_dataset
 from torchani.transforms import AtomicNumbersToIndices, SubtractSAE
 from torchani.units import hartree2kcalmol
 
@@ -27,14 +25,12 @@ h5_path = '/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5'
 batched_dataset_path = './batched_dataset_1x'
 
 
-# We prebatch the dataset to train with memory efficiency, and comparable
-# performance.
+# We prebatch the dataset to train with memory efficiency, keeping a good performance.
 if not Path(batched_dataset_path).resolve().is_dir():
-    create_batched_dataset(h5_path,
-                           dest_path=batched_dataset_path,
-                           file_format='hdf5',
-                           batch_size=2560,
-                           splits={'training': 0.8, 'validation': 0.2})
+    torchani.datasets.create_batched_dataset(h5_path,
+                                             dest_path=batched_dataset_path,
+                                             batch_size=2560,
+                                             splits={'training': 0.8, 'validation': 0.2})
 
 # We pass a transform to the dataset to perform transformations on the fly, the
 # API for transforms is very similar to torchvision https://pytorch.org/vision/stable/transforms.html
@@ -43,18 +39,22 @@ elements = ('H', 'C', 'N', 'O')
 self_energies = [-0.57, -0.0045, -0.0035, -0.008]
 transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
 
-training = AniBatchedDataset(batched_dataset_path, transform=transform, split='training')
-validation = AniBatchedDataset(batched_dataset_path, transform=transform, split='validation')
+training = torchani.datasets.AniBatchedDataset(batched_dataset_path,
+                                               transform=transform,
+                                               split='training')
+
+validation = torchani.datasets.AniBatchedDataset(batched_dataset_path,
+                                                 transform=transform,
+                                                 split='validation')
 
 # Alternatively a transform can be passed to
 # create_batched_dataset using the argument "inplace_transform", but this is
-# only really recommended if your transforms takes a lot of time, since this
+# only really recommended if your transforms take a lot of time, since this
 # will modify the dataset and may introduce hard to track discrepancies and
 # reproducibility issues
 
-
-# This batched dataset can be directly iterated upon, but it may be more practical
-# to wrap it with a torch DataLoader
+# This batched dataset can be directly iterated upon, but it may be more
+# practical to wrap it with a torch DataLoader
 cache = False
 if not cache:
     # If we decide not to cache the dataset it is a good idea to use
