@@ -307,6 +307,7 @@ class BmmEnsemble(torch.nn.Module):
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
         num_mol = species.shape[0]
+        # TODO BmmEnsemble is not specifically for single molecule
         assert num_mol == 1, "BmmEnsemble Only support inference for single molecule"
         mol_energies = self._single_mol_energies((species, aev))
         return SpeciesEnergies(species, mol_energies)
@@ -362,7 +363,7 @@ class BmmNetwork(torch.nn.Module):
 
 class BatchLinear(torch.nn.Module):
     """
-    Batch Linear layer that fuse multiple Linear layers that have same architecture and same input.
+    Batch Linear layer fuses multiple Linear layers that have same architecture and same input.
     input : (b x n x m)
     weight: (b x m x p)
     bias  : (b x 1 x p)
