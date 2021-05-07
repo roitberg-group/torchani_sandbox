@@ -62,14 +62,28 @@ class AniBatchedDataset(torch.utils.data.Dataset):
             with h5py.File(paths[idx], 'r') as f:
                 return {k: torch.as_tensor(v[()]) for k, v in f['/'].items()}
 
-        # We use pickle or numpy since saving in
+        def single_hdf5_extractor(idx, group_keys, path):
+            k = group_keys[idx]
+            with h5py.File(path, 'r') as f:
+                return {k: torch.as_tensor(v[()]) for k, v in f[k].items()}
+
+        # We use pickle or numpy or hdf5 since saving in
         # pytorch format is extremely slow
+        self._len = len(self.batch_paths)
         if suffix == '.npz' or file_format == 'numpy':
             self.extractor = partial(numpy_extractor, paths=self.batch_paths)
         elif suffix == '.pkl' or file_format == 'pickle':
             self.extractor = partial(pickle_extractor, paths=self.batch_paths)
-        elif suffix == '.h5' or file_format == 'hdf5':
-            self.extractor = partial(hdf5_extractor, paths=self.batch_paths)
+        elif suffix == '.h5' or 'hdf5' in file_format:
+            if ('single' not in self.batch_paths[0].name) or file_format == 'hdf5':
+                self.extractor = partial(hdf5_extractor, paths=self.batch_paths)
+            elif ('single' in self.batch_paths[0].name) or file_format == 'single_hdf5':
+                warnings.warn('Depending on the implementation, a single HDF5 file may not support parallel reads, so using num_workers > 1'
+                              ' may have a detrimental effect on performance')
+                with h5py.File(self.batch_paths[0], 'r') as f:
+                    keys = list(f.keys())
+                    self._len = len(keys)
+                    self.extractor = partial(single_hdf5_extractor, group_keys=keys, path=self.batch_paths[0])
         else:
             msg = f'Format for file with extension {suffix} could not be infered, please specify explicitly'
             raise RuntimeError(msg)
@@ -111,7 +125,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         return properties
 
     def __len__(self):
-        return len(self.batch_paths)
+        return self._len
 
 
 class AniH5Dataset(Mapping):
@@ -263,9 +277,15 @@ def _save_batch(path, idx, batch, file_format):
     elif file_format == 'numpy':
         np.savez(path.joinpath(f'batch{idx}'), **batch)
     elif file_format == 'hdf5':
-        with h5py.File(path.joinpath(f'batch{idx}.h5'), 'r+') as f:
+        with h5py.File(path.joinpath(f'batch{idx}.h5'), 'w-') as f:
             for k, v in batch.items():
                 f.create_dataset(k, data=v)
+    elif file_format == 'single_hdf5':
+        with h5py.File(path.joinpath(f'{path.name}_single.h5'), 'a') as f:
+            f.create_group(f'batch{idx}')
+            g = f[f'batch{idx}']
+            for k, v in batch.items():
+                g.create_dataset(k, data=v)
 
 
 def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
@@ -280,6 +300,11 @@ def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
                            splits: Optional[Dict[str, float]] = None,
                            inplace_transform: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda x: x,
                            verbose: bool = True):
+    if file_format == 'single_hdf5':
+        warnings.warn('Depending on the implementation, a single HDF5 file may'
+                      'not support parallel reads, so using num_workers > 1 may'
+                      'have a detrimental effect on performance, its probably better'
+                      'to save in many hdf5 files with file_format=hdf5')
     # NOTE: all the tensor manipulation in this function is handled in CPU
     # NOTE: an inplace transform can be applied to the dataset if the transform
     # is very costly to perform on the fly when training

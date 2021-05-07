@@ -81,14 +81,14 @@ if not cache:
     training = torch.utils.data.DataLoader(training,
                                            shuffle=True,
                                            num_workers=1,
-                                           prefetch_factor=2,
+                                           prefetch_factor=5,
                                            pin_memory=True,
                                            batch_size=None)
 
     validation = torch.utils.data.DataLoader(validation,
                                              shuffle=False,
                                              num_workers=1,
-                                             prefetch_factor=2,
+                                             prefetch_factor=5,
                                              batch_size=None)
 elif cache:
     # If need some extra speedup you can cache the dataset before passing it to
