@@ -246,7 +246,7 @@ class AniH5Dataset(Mapping):
             v = [s.decode('ascii') for s in v]  # type: ignore
         return v
 
-
+@profile
 def _save_batch(path, idx, batch, file_format):
     # We use pickle or numpy since saving in
     # pytorch format is extremely slow
@@ -261,8 +261,8 @@ def _save_batch(path, idx, batch, file_format):
                 coordinates=batch['coordinates'].numpy(),
                 energies=batch['energies'].numpy())
 
-
-def create_batched_dataset(h5ds: Union[str, Path, AniH5Dataset],
+@profile
+def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
                            dest_path: Optional[Union[str, Path]] = None,
                            shuffle: bool = True,
                            file_format: str = 'numpy',
@@ -275,8 +275,8 @@ def create_batched_dataset(h5ds: Union[str, Path, AniH5Dataset],
                            inplace_transform: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda x: x,
                            verbose: bool = True):
     # NOTE: all the tensor manipulation in this function is handled in CPU
-    # NOTE: an inplace transform can be applied to the dataset if the transform is
-    # very costly to perform on the fly when training
+    # NOTE: an inplace transform can be applied to the dataset if the transform
+    # is very costly to perform on the fly when training
 
     # Properties that are ELEMENT_KEYS have to be treated differently because
     # they don't have a batch dimension, so we separate them here
@@ -294,13 +294,35 @@ def create_batched_dataset(h5ds: Union[str, Path, AniH5Dataset],
 
     if dest_path is None:
         dest_path = Path(f'./batched_dataset_{file_format}').resolve()
-    elif isinstance(dest_path, str):
-        dest_path = Path(dest_path).resolve()
+    dest_path = Path(dest_path).resolve()
 
-    if not isinstance(h5ds, AniH5Dataset):
-        h5ds = AniH5Dataset(h5ds)
+    if isinstance(h5_path, str):
+        h5_path = Path(h5_path).resolve()
 
-    # I do this here so thet split_sizes and split_paths are synchronized
+    if h5_path.is_dir():
+        h5_paths = [p for p in h5_path.iterdir() if p.suffix == '.h5']
+    elif h5_path.is_file():
+        h5_paths = [h5_path]
+    else:
+        # assume we received an iterable of paths or strings
+        try:
+            h5_paths = [Path(p).resolve() for p in h5_path]
+        except TypeError:
+            raise ValueError("Expected a path to a directory with h5 files, or a path for a file, or an iterable of paths to files")
+
+    h5_datasets = [AniH5Dataset(p) for p in h5_paths]
+
+    total_num_conformers = sum([h5ds.num_conformers for h5ds in h5_datasets])
+    # get all group sizes for all datasets concatenated in a row, in the same
+    # order as h5_datasets
+    group_sizes = [torch.tensor(list(h5ds._groups.values()), dtype=torch.long) for h5ds in h5_datasets]
+    group_sizes = torch.cat(group_sizes)
+    # get all group keys concatenated in a row, with the associated file indexes
+    file_idxs_and_group_keys = [{'idx': j, 'key': k}
+                  for j, h5ds in enumerate(h5_datasets)
+                  for k in h5ds._groups.keys()]
+
+    # I do this here so thet split_sizes and split_paths are synchronized.
     # splits is a dictionary with "split_name" "split_percentage"
     if splits is None:
         splits = {'training': 0.8, 'validation': 0.2}
@@ -309,15 +331,15 @@ def create_batched_dataset(h5ds: Union[str, Path, AniH5Dataset],
     if not torch.isclose(torch.tensor(sum(list(splits.values()))), torch.tensor(1.0)):
         raise ValueError("The sum of the split fractions has to add up to one")
 
-    split_sizes = OrderedDict([(k, int(h5ds.num_conformers * v)) for k, v in splits.items()])
+    split_sizes = OrderedDict([(k, int(total_num_conformers * v)) for k, v in splits.items()])
     split_paths = OrderedDict([(k, dest_path.joinpath(k)) for k in split_sizes.keys()])
 
     for p in split_paths.values():
         if p.is_dir():
             subdirs = [d for d in p.iterdir()]
-            assert not subdirs, "The path provided already has files or directories, please provide a different path"
+            assert not subdirs, "The dest_path provided already has files or directories, please provide a different path"
         else:
-            assert not p.is_file(), "The path provided is a file, not a directory"
+            assert not p.is_file(), "The dest_path provided is a file, not a directory"
             p.mkdir(parents=True)
 
     # Important: to prevent possible bugs / errors, that may happen due to
@@ -328,7 +350,6 @@ def create_batched_dataset(h5ds: Union[str, Path, AniH5Dataset],
     use_pbar = PKBAR_INSTALLED and verbose
 
     # (1) Get all indices and shuffle them if needed
-    group_sizes = torch.tensor(list(h5ds._groups.values()), dtype=torch.long)
     # These are pairs of indices that index first the group and then the
     # specific conformer, it is possible to just use one index for
     # everything but this is simpler at the cost of slightly more memory
@@ -337,17 +358,17 @@ def create_batched_dataset(h5ds: Union[str, Path, AniH5Dataset],
                                      for j, s in enumerate(group_sizes)]
     conformer_indices = torch.cat(conformer_indices)
     if shuffle:
-        shuffle_indices = torch.randperm(h5ds.num_conformers)
+        shuffle_indices = torch.randperm(total_num_conformers)
         conformer_indices = conformer_indices[shuffle_indices]
 
     # (2) Split shuffled indices according to requested dataset splits
-    leftover = h5ds.num_conformers - sum(split_sizes.values())
+    leftover = total_num_conformers - sum(split_sizes.values())
     if leftover != 0:
         # We slightly modify the max section if the fractions don't split
         # the dataset perfectly. This also automatically takes care of the
         # cases leftover > 0 and leftover < 0
         split_sizes[max(split_sizes, key=split_sizes.get)] += leftover
-        assert sum(split_sizes.values()) == h5ds.num_conformers
+        assert sum(split_sizes.values()) == total_num_conformers
     conformer_splits = torch.split(conformer_indices, list(split_sizes.values()))
     assert len(conformer_splits) == len(split_sizes.values())
     print(f'Splits have number of conformers: {dict(split_sizes)}.'
@@ -392,66 +413,74 @@ def create_batched_dataset(h5ds: Union[str, Path, AniH5Dataset],
         num_batch_indices_packets = len(all_batch_indices_packets)
 
         overall_batch_idx = 0
-        with h5py.File(h5ds._store_file, 'r') as hdf5_file:
-            for j, batch_indices_packet in enumerate(all_batch_indices_packets):
-                num_batches_in_packet = len(batch_indices_packet)
-                # Now first we cat and sort according to the first index in order to
-                # fetch all conformers of the same group simultaneously
-                batch_indices_cat = torch.cat(batch_indices_packet, 0)
-                indices_to_sort_batch_indices_cat = torch.argsort(batch_indices_cat[:, 0])
-                sorted_batch_indices_cat = batch_indices_cat[indices_to_sort_batch_indices_cat]
-                uniqued_idxs_cat, counts_cat = torch.unique_consecutive(sorted_batch_indices_cat[:, 0], return_counts=True)
-                cumcounts_cat = cumsum_from_zero(counts_cat)
-                assert len(uniqued_idxs_cat) == len(counts_cat)
-                assert len(counts_cat) == len(cumcounts_cat)
+        for j, batch_indices_packet in enumerate(all_batch_indices_packets):
+            num_batches_in_packet = len(batch_indices_packet)
+            # Now first we cat and sort according to the first index in order to
+            # fetch all conformers of the same group simultaneously
+            batch_indices_cat = torch.cat(batch_indices_packet, 0)
+            indices_to_sort_batch_indices_cat = torch.argsort(batch_indices_cat[:, 0])
+            sorted_batch_indices_cat = batch_indices_cat[indices_to_sort_batch_indices_cat]
+            uniqued_idxs_cat, counts_cat = torch.unique_consecutive(sorted_batch_indices_cat[:, 0], return_counts=True)
+            cumcounts_cat = cumsum_from_zero(counts_cat)
+            assert len(uniqued_idxs_cat) == len(counts_cat)
+            assert len(counts_cat) == len(cumcounts_cat)
 
-                # batch_sizes and indices_to_unsort are needed for the
-                # reverse operation once the conformers have been
-                # extracted
-                batch_sizes = [len(batch_indices) for batch_indices in batch_indices_packet]
-                indices_to_unsort_batch_cat = torch.argsort(indices_to_sort_batch_indices_cat)
-                assert len(batch_sizes) <= max_batches_per_packet
+            # batch_sizes and indices_to_unsort are needed for the
+            # reverse operation once the conformers have been
+            # extracted
+            batch_sizes = [len(batch_indices) for batch_indices in batch_indices_packet]
+            indices_to_unsort_batch_cat = torch.argsort(indices_to_sort_batch_indices_cat)
+            assert len(batch_sizes) <= max_batches_per_packet
 
-                all_conformers = []
+            all_conformers = []
+            if use_pbar:
+                pbar = pkbar.Pbar(f'=> Saving batch packet {j + 1} of {num_batch_indices_packets}'
+                                  f' of split {split_paths[split_key].name},'
+                                  f' in format {file_format}', len(counts_cat))
+
+            # no need to wrap this file opening code in a try/except block for now, since an
+            # exception during this should abort immediatly anyways
+            h5_files = [h5py.File(h5ds._store_file, 'r') for h5ds in h5_datasets]
+            for step, (group_idx, count, start_index) in enumerate(zip(uniqued_idxs_cat, counts_cat, cumcounts_cat)):
+                # select the group from the whole list of files
+                idx_and_key = file_idxs_and_group_keys[group_idx.item()]
+                group = h5_files[idx_and_key['idx']][idx_and_key['key']]
+
+                end_index = start_index + count
+                # get a slice with the indices to extract the necessary
+                # conformers from the group for all batches in pack.
+                selected_indices = sorted_batch_indices_cat[start_index:end_index, 1]
+                # copying this avoids directly indexing the HDF5
+                # dataset, which is extremely expensive
+                conformers = {k: np.copy(group[k]) for k in include_properties}
+                conformers = {k: v[selected_indices.cpu().numpy()] for k, v in conformers.items()}
+                element_keys = ('species',)
+                conformers.update({k: np.copy(group[k]).astype(str) for k in include_element_keys})
+
+                if 'species' in element_keys:
+                    converted_species = symbols_to_atomic_numbers(conformers['species'])
+                    conformers['species'] = converted_species
+
+                for k in element_keys:
+                    conformers[k] = conformers[k].view(1, -1).repeat(count, 1)
+
+                conformers = {k: torch.as_tensor(v) for k, v in conformers.items()}
+                all_conformers.append(conformers)
                 if use_pbar:
-                    pbar = pkbar.Pbar(f'=> Saving batch packet {j + 1} of {num_batch_indices_packets}'
-                                      f' of split {split_paths[split_key].name},'
-                                      f' in format {file_format}', len(counts_cat))
-                for step, (group_idx, count, start_index) in enumerate(zip(uniqued_idxs_cat, counts_cat, cumcounts_cat)):
-                    group = hdf5_file[list(h5ds._groups.keys())[group_idx.item()]]
-                    end_index = start_index + count
-                    # get a slice with the indices to extract the necessary
-                    # conformers from the group for all batches in pack.
-                    selected_indices = sorted_batch_indices_cat[start_index:end_index, 1]
-                    # copying this avoids directly indexing the HDF5
-                    # dataset, which is extremely expensive
-                    conformers = {k: np.copy(group[k]) for k in include_properties}
-                    conformers = {k: v[selected_indices.cpu().numpy()] for k, v in conformers.items()}
-                    element_keys = ('species',)
-                    conformers.update({k: np.copy(group[k]).astype(str) for k in include_element_keys})
+                    pbar.update(step)
+            for f in h5_files:
+                f.close()
 
-                    if 'species' in element_keys:
-                        converted_species = symbols_to_atomic_numbers(conformers['species'])
-                        conformers['species'] = converted_species
+            batches_cat = collate_fn(all_conformers, padding)
+            # Now we need to reassign the conformers to the specified
+            # batches. Since to get here we cat'ed and sorted, to
+            # reassign we need to unsort and split.
+            # The format of this is {'species': (batch1, batch2, ...), 'coordinates': (batch1, batch2, ...)}
+            batch_packet_dict = {k: torch.split(t[indices_to_unsort_batch_cat], batch_sizes)
+                                 for k, t in batches_cat.items()}
 
-                    for k in element_keys:
-                        conformers[k] = conformers[k].view(1, -1).repeat(count, 1)
-
-                    conformers = {k: torch.as_tensor(v) for k, v in conformers.items()}
-                    all_conformers.append(conformers)
-                    if use_pbar:
-                        pbar.update(step)
-
-                batches_cat = collate_fn(all_conformers, padding)
-                # Now we need to reassign the conformers to the specified
-                # batches. Since to get here we cat'ed and sorted, to
-                # reassign we need to unsort and split.
-                # The format of this is {'species': (batch1, batch2, ...), 'coordinates': (batch1, batch2, ...)}
-                batch_packet_dict = {k: torch.split(t[indices_to_unsort_batch_cat], batch_sizes)
-                                     for k, t in batches_cat.items()}
-
-                for packet_batch_idx in range(num_batches_in_packet):
-                    batch = {k: v[packet_batch_idx] for k, v in batch_packet_dict.items()}
-                    batch = inplace_transform(batch)
-                    _save_batch(split_paths[split_key], overall_batch_idx, batch, file_format)
-                    overall_batch_idx += 1
+            for packet_batch_idx in range(num_batches_in_packet):
+                batch = {k: v[packet_batch_idx] for k, v in batch_packet_dict.items()}
+                batch = inplace_transform(batch)
+                _save_batch(split_paths[split_key], overall_batch_idx, batch, file_format)
+                overall_batch_idx += 1
