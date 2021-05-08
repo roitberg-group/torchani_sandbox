@@ -201,7 +201,7 @@ class AniH5Dataset(Mapping):
             return molecule_group
         return self._extract_from_molecule_group(molecule_group, idx, **kwargs)
 
-    def iter_conformers(self, **kwargs) -> Generator[Dict[str, Any]]:
+    def iter_conformers(self, **kwargs) -> Generator[Dict[str, Any], None, None]:
         # Iterating sequentially over conformers is also supported
         include_properties = kwargs.pop('include_properties', None)
         strict = kwargs.pop('strict', False)
