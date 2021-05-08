@@ -124,8 +124,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         self.extractor = partial(memory_extractor, ds=self)
         return self
 
-    # mypy thinks this has to be the same as the superclass
-    def __getitem__(self, idx: int) -> Dict[str, Any]:  # type: ignore
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
         # integral indices must be provided for compatibility with pytorch
         # DataLoader API
         properties = self.extractor(idx)
