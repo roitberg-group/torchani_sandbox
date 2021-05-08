@@ -3,7 +3,7 @@ from functools import partial
 import pickle
 import warnings
 import importlib
-from typing import Union, Optional, List, Dict, Any, Callable
+from typing import Union, Optional, List, Dict, Any, Callable, Generator
 from collections import OrderedDict
 from collections.abc import Mapping
 
@@ -30,7 +30,11 @@ ELEMENT_KEYS = ('species', 'numbers', 'atomic_numbers')
 
 class AniBatchedDataset(torch.utils.data.Dataset):
 
-    def __init__(self, store_dir: Union[str, Path], file_format: Optional[str] = None, split: str = 'training', transform: Callable = lambda x: x):
+    def __init__(self, store_dir: Union[str, Path],
+                       file_format: Optional[str] = None,
+                       split: str = 'training',
+                       transform: Callable = lambda x: x):
+
         if isinstance(store_dir, str):
             store_dir = Path(store_dir).resolve()
         assert store_dir.is_dir(), f"The directory {store_dir.as_posix()} could not be found"
@@ -132,7 +136,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
             properties = self.transform(properties)
         return properties
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[Dict[str, Any], None, None]:
         j = 0
         try:
             while True:

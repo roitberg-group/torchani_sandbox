@@ -24,7 +24,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 h5_path = '/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5'
 batched_dataset_path = './batched_dataset_1x'
 
-
 # We prebatch the dataset to train with memory efficiency, keeping a good performance.
 if not Path(batched_dataset_path).resolve().is_dir():
     torchani.datasets.create_batched_dataset(h5_path,
@@ -57,7 +56,7 @@ elements = ('H', 'C', 'N', 'O')
 self_energies = [-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000]
 transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
 
-cache = True
+cache = False
 if not cache:
     # This batched datasets can be directly iterated upon, but it may be more
     # practical to wrap it with a torch DataLoader
@@ -89,15 +88,16 @@ if not cache:
     # https://pytorch.org/docs/stable/data.html
     training = torch.utils.data.DataLoader(training,
                                            shuffle=True,
-                                           num_workers=1,
+                                           num_workers=2,
                                            prefetch_factor=5,
                                            pin_memory=True,
                                            batch_size=None)
 
     validation = torch.utils.data.DataLoader(validation,
                                              shuffle=False,
-                                             num_workers=1,
+                                             num_workers=2,
                                              prefetch_factor=5,
+                                             pin_memory=True,
                                              batch_size=None)
 elif cache:
     training = torchani.datasets.AniBatchedDataset(batched_dataset_path,
@@ -121,10 +121,11 @@ elif cache:
                                              shuffle=False,
                                              batch_size=None)
 
-# NOTE: Take into account that in general now we are training with GSAEs
-# instead of SAEs, so the step that follows is largely not necessary
 estimate_saes = False
 if estimate_saes:
+    # NOTE: Take into account that in general now we are training with GSAEs
+    # instead of SAEs, so the step that follows is largely not necessary
+    #
     # If you would like to use SAEs in place of GSAEs you have the option to
     # estimate SAEs using SGD over the whole training set (it is important not
     # to include the validation set since the model never has to see it).
@@ -134,28 +135,18 @@ if estimate_saes:
     # doesn't matter what transform your dataset had, this function doesn't
     # take the transform into account, and works well unless you performed some
     # inplace operations in your dataset
-    from torchani.transforms import estimate_saes_sgd  # noqa
-    saes, _ = estimate_saes_sgd(training, elements)
+    from torchani.transforms import calculate_saes  # noqa
+    saes, _ = calculate_saes(training, elements, mode='sgd')
     print(saes)
     # now we rebuild the transform using the new self energies
     transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(saes)])
     if cache:
         training.transform = transform
         validation.transform = transform
-
-
-exact_saes = False
-if exact_saes:
-    #
-    # If we really want to, we can also calculate the saes exactly:
-    from torchani.transforms import calculate_saes_exact  # noqa
-    saes, _ = calculate_saes_exact(training, elements)
-    print(saes)
-    # but this will take up a lot of memory because it uses the whole dataset
-    # we can also pass a fraction of the dataset, 1% already gives a pretty
-    # good estimate
-    saes, _ = calculate_saes_exact(training, elements, fraction=0.05)
-    print(saes)
+    # If we really want to, we can also calculate the saes exactly by passing
+    # mode = exact, but this will take up a lot of memory because it uses the
+    # whole dataset We can also pass a fraction of the dataset, for example
+    # with fraction=0.01, 1% already gives a pretty good estimate
     # my tests:
     # all batches of 1x training:
     # tensor([ -0.6013, -38.0832, -54.7081, -75.1927])
@@ -163,12 +154,9 @@ if exact_saes:
     # tensor([ -0.5997, -38.0840, -54.7085, -75.1936])
     # 5% of 1x training:
     # tensor([ -0.5999, -38.0838, -54.7085, -75.1938])
-    transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(saes)])
-    if cache:
-        training.transform = transform
-        validation.transform = transform
 
-transform = transform.to(device)
+if not cache:
+    transform = transform.to(device)
 
 # --Differences largely end here, besides application of transform in training/validation loops--
 ###############################################################################
