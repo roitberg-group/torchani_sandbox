@@ -14,7 +14,7 @@ transform = torchani.transforms.Compose([AtomicNumbersToIndices(('H', 'C', 'N'),
 training = AniBatchedDataset(path='/path/to/database/', transform=transform, split='training')
 validation = AniBatchedDataset(path='/path/to/database/', transform=transform, split='validation')
 """
-from typing import Dict, Sequence, Union, Tuple, Optional, Any
+from typing import Dict, Sequence, Union, Tuple, Optional, Any, List
 import math
 import warnings
 
@@ -54,7 +54,7 @@ class AtomicNumbersToIndices(torch.nn.Module):
 
     def __init__(self, elements: Union[Sequence[str], Sequence[int]]):
         super().__init__()
-        symbols = []
+        symbols: List[str] = []
 
         if isinstance(elements[0], int):
             for e in elements:
@@ -64,7 +64,6 @@ class AtomicNumbersToIndices(torch.nn.Module):
             for e in elements:
                 assert isinstance(e, str), "Input sequence must consist of chemical symbols or atomic numbers"
                 symbols.append(e)
-
         self.converter = SpeciesConverter(elements)
 
     def forward(self, properties: Dict[str, Tensor]) -> Dict[str, Tensor]:
@@ -73,13 +72,13 @@ class AtomicNumbersToIndices(torch.nn.Module):
         return properties
 
 
-# This code is copied from torchvision, but made JIT scriptable
 class Compose(torch.nn.Module):
     """Composes several transforms together.
 
     Args:
         transforms (list of ``Transform`` objects): list of transforms to compose.
     """
+    # This code is copied from torchvision, but made JIT scriptable
 
     def __init__(self, transforms: Sequence[torch.nn.Module]):
         super().__init__()
@@ -125,8 +124,10 @@ def calculate_saes(dataset: Union[DataLoader, AniBatchedDataset],
     print(f'Using {num_batches_to_use} of a total of {len(dataset)} batches to estimate SAE')
 
     if mode == 'exact':
+        print('Calculating SAE using exact OLS method...')
         m_out, b_out = _calculate_saes_exact(dataset, num_species, num_batches_to_use, **kwargs)
     elif mode == 'sgd':
+        print("Estimating SAE using stochastic gradient descent...")
         m_out, b_out = _calculate_saes_sgd(dataset, num_species, num_batches_to_use, **kwargs)
 
     if isinstance(dataset, DataLoader):
@@ -143,12 +144,13 @@ def _calculate_saes_sgd(dataset, num_species: int, num_batches_to_use: int,
                         fit_intercept: bool = False,
                         max_epochs: int = 1,
                         lr: float = 0.01) -> Tuple[Tensor, Optional[Tensor]]:
+
     class LinearModel(torch.nn.Module):
 
         m: torch.nn.Parameter
         b: Optional[torch.nn.Parameter]
 
-        def __init__(self, num_species, fit_intercept: bool = False):
+        def __init__(self, num_species: int, fit_intercept: bool = False):
             super().__init__()
             self.register_parameter('m', torch.nn.Parameter(torch.ones(num_species, dtype=torch.float)))
             if fit_intercept:
@@ -164,7 +166,6 @@ def _calculate_saes_sgd(dataset, num_species: int, num_batches_to_use: int,
 
     model = LinearModel(num_species, fit_intercept).to(device)
     opt = torch.optim.SGD(model.parameters(), lr=lr)
-    print("Estimating SAE using stochastic gradient descent...")
     for _ in range(max_epochs):
         for j, properties in enumerate(dataset):
             if j == num_batches_to_use:
@@ -199,7 +200,6 @@ def _calculate_saes_exact(dataset, num_species: int, num_batches_to_use: int,
         warnings.warn("Using all batches to estimate SAE, this may take up a lot of memory.")
     list_species_counts = []
     list_true_energies = []
-    print('Calculating SAE using exact OLS method')
     for j, properties in enumerate(dataset):
         if j == num_batches_to_use:
             break

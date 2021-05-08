@@ -3,7 +3,7 @@ from functools import partial
 import pickle
 import warnings
 import importlib
-from typing import Union, Optional, List, Dict, Any, Callable, Generator, Sequence, Iterator
+from typing import Union, Optional, Dict, Any, Callable, Generator, Sequence, Iterator
 from collections import OrderedDict
 from collections.abc import Mapping
 
@@ -274,7 +274,7 @@ class AniH5Dataset(Mapping):
 
     @staticmethod
     def _extract_from_molecule_group(molecule_group,
-                                     idx: Optional[Union[int, np.ndarray]],
+                                     idx: Union[int, np.ndarray],
                                      element_keys: Optional[Sequence[str]] = None) -> Dict[str, Any]:
         # this extraction procedure will fail if there are other keys in the
         # dataset besides "species", "numbers" and "atomic_numbers" and
@@ -323,7 +323,7 @@ def _save_batch(path: Path, idx: int, batch: Dict[str, Tensor], file_format: str
                 g.create_dataset(k, data=v)
 
 
-def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
+def create_batched_dataset(h5_path: Union[str, Path, Sequence[Union[str, Path]]],
                            dest_path: Optional[Union[str, Path]] = None,
                            shuffle: bool = True,
                            shuffle_seed: Optional[int] = None,
@@ -331,7 +331,7 @@ def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
                            include_properties=('species', 'coordinates', 'energies'),
                            batch_size: int = 2560,
                            max_batches_per_packet: int = 350,
-                           collate_fn: Optional[Callable] = None,
+                           collate_fn: Callable = pad_atomic_properties,
                            padding: Optional[Dict[str, Any]] = None,
                            splits: Optional[Dict[str, float]] = None,
                            inplace_transform: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda x: x,
@@ -355,9 +355,6 @@ def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
 
     if padding is None:
         padding = PADDING
-
-    if collate_fn is None:
-        collate_fn = pad_atomic_properties
 
     if dest_path is None:
         dest_path = Path(f'./batched_dataset_{file_format}').resolve()
