@@ -69,21 +69,29 @@ class AniBatchedDataset(torch.utils.data.Dataset):
 
         # We use pickle or numpy or hdf5 since saving in
         # pytorch format is extremely slow
+        format_suffix_map = {'numpy': '.npz', 'pickle': '.pkl', 'hdf5': '.h5'}
         self._len = len(self.batch_paths)
-        if suffix == '.npz' or file_format == 'numpy':
+
+        if file_format is None:
+            file_format = format_suffix_map[suffix]
+            if file_format == 'hdf5' and ('single' in self.batch_paths[0].name):
+                file_format = 'single_hdf5'
+
+        assert file_format is not None
+        if file_format == 'numpy':
             self.extractor = partial(numpy_extractor, paths=self.batch_paths)
-        elif suffix == '.pkl' or file_format == 'pickle':
+        elif file_format == 'pickle':
             self.extractor = partial(pickle_extractor, paths=self.batch_paths)
-        elif suffix == '.h5' or 'hdf5' in file_format:
-            if ('single' not in self.batch_paths[0].name) or file_format == 'hdf5':
-                self.extractor = partial(hdf5_extractor, paths=self.batch_paths)
-            elif ('single' in self.batch_paths[0].name) or file_format == 'single_hdf5':
-                warnings.warn('Depending on the implementation, a single HDF5 file may not support parallel reads, so using num_workers > 1'
-                              ' may have a detrimental effect on performance')
-                with h5py.File(self.batch_paths[0], 'r') as f:
-                    keys = list(f.keys())
-                    self._len = len(keys)
-                    self.extractor = partial(single_hdf5_extractor, group_keys=keys, path=self.batch_paths[0])
+        elif file_format == 'hdf5':
+            self.extractor = partial(hdf5_extractor, paths=self.batch_paths)
+        elif file_format == 'single_hdf5':
+            warnings.warn('Depending on the implementation, a single HDF5 file'
+                          ' may not support parallel reads, so using num_workers > 1'
+                          ' may have a detrimental effect on performance')
+            with h5py.File(self.batch_paths[0], 'r') as f:
+                keys = list(f.keys())
+                self._len = len(keys)
+                self.extractor = partial(single_hdf5_extractor, group_keys=keys, path=self.batch_paths[0])
         else:
             msg = f'Format for file with extension {suffix} could not be infered, please specify explicitly'
             raise RuntimeError(msg)
