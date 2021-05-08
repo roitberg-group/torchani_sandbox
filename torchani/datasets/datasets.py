@@ -124,13 +124,23 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         self.extractor = partial(memory_extractor, ds=self)
         return self
 
-    def __getitem__(self, idx: int):
+    # mypy thinks this has to be the same as the superclass
+    def __getitem__(self, idx: int) -> Dict[str, Any]:  # type: ignore
         # integral indices must be provided for compatibility with pytorch
         # DataLoader API
         properties = self.extractor(idx)
         with torch.no_grad():
             properties = self.transform(properties)
         return properties
+
+    def __iter__(self):
+        j = 0
+        try:
+            while True:
+                yield self[j]
+                j += 1
+        except IndexError:
+            return
 
     def __len__(self):
         return self._len
