@@ -1,17 +1,135 @@
 import os
+from pathlib import Path
 import h5py
 import numpy as np
 import torch
 import torchani
 import unittest
 import tempfile
+import shutil
+from copy import deepcopy
 from torchani.testing import TestCase
-from torchani.datasets import AniH5Dataset
+from torchani.datasets import AniH5Dataset, AniBatchedDataset, create_batched_dataset
 
 path = os.path.dirname(os.path.realpath(__file__))
 dataset_path = os.path.join(path, '../dataset/ani-1x/sample.h5')
 batch_size = 256
 ani1x_sae_dict = {'H': -0.60095298, 'C': -38.08316124, 'N': -54.7077577, 'O': -75.19446356}
+
+
+class TestAniBatchedDataset(TestCase):
+
+    def setUp(self):
+        self.batched_path = Path('./tmp_dataset').resolve()
+        self.batched_path2 = Path('./tmp_dataset2').resolve()
+        self.batched_path_shuffled = Path('./tmp_dataset_shuffled').resolve()
+        create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path, shuffle=False,
+                splits={'training': 0.5, 'validation': 0.5})
+        self.train = AniBatchedDataset(self.batched_path, split='training')
+        self.valid = AniBatchedDataset(self.batched_path, split='validation')
+
+    def testInit(self):
+        self.assertTrue(self.train.split == 'training')
+        self.assertTrue(self.valid.split == 'validation')
+        self.assertEqual(len(self.train), 3)
+        self.assertEqual(len(self.valid), 3)
+        # transform does nothing if no transform was passed
+        self.assertTrue(self.train.transform(None) is None)
+
+    def testKeys(self):
+        for batch in self.train:
+            self.assertTrue(set(batch.keys()) == {'species', 'coordinates', 'energies'})
+        for batch in self.valid:
+            self.assertTrue(set(batch.keys()) == {'species', 'coordinates', 'energies'})
+
+    def testNumConformers(self):
+        # check that the number of conformers is consistent
+        h5 = AniH5Dataset(dataset_path)
+        num_conformers_batched = [len(b['species']) for b in self.train] + [len(b['species']) for b in self.valid]
+        num_conformers_batched = sum(num_conformers_batched)
+        self.assertEqual(h5.num_conformers, num_conformers_batched)
+
+    def testShuffle(self):
+        # thest that shuffling at creation time mixes up conformers a lot
+        create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path_shuffled, shuffle=True,
+                shuffle_seed=12345,
+                splits={'training': 0.5, 'validation': 0.5})
+        train = AniBatchedDataset(self.batched_path_shuffled, split='training')
+        valid = AniBatchedDataset(self.batched_path_shuffled, split='validation')
+        # shuffling mixes the conformers a lot, so all batches have pads with -1
+        for batch in train:
+            self.assertTrue((batch['species'] == -1).any())
+        for batch in valid:
+            self.assertTrue((batch['species'] == -1).any())
+
+        for batch_ref, batch in zip(self.train, train):
+            # as long as the mixing is good enough this should be true
+            self.assertTrue(batch_ref['coordinates'].shape != batch['coordinates'].shape)
+            self.assertTrue(batch_ref['species'].shape != batch['species'].shape)
+            # as long as the permutation is not the identity this should be true
+            self.assertTrue((batch_ref['energies'] != batch['energies']).any())
+        shutil.rmtree(self.batched_path_shuffled)
+
+    def testDataLoader(self):
+        # check that yielding from the dataloader is equal
+        train_dataloader = torch.utils.data.DataLoader(self.train, shuffle=False, batch_size=None)
+        for batch_ref, batch in zip(self.train, train_dataloader):
+            for k_ref in batch_ref:
+                self.assertEqual(batch_ref[k_ref], batch[k_ref])
+
+    def testCache(self):
+        # check that yielding from the cache is equal to non cache
+        train_non_cache = torch.utils.data.DataLoader(self.train,
+                                                      shuffle=False,
+                                                      batch_size=None)
+        train_cache = torch.utils.data.DataLoader(deepcopy(self.train).cache(pin_memory=False),
+                                                  shuffle=False,
+                                                  batch_size=None)
+        for batch_ref, batch in zip(train_non_cache, train_cache):
+            for k_ref in batch_ref:
+                self.assertEqual(batch_ref[k_ref], batch[k_ref])
+
+    def testDataLoaderShuffle(self):
+        # check that shuffling with dataloader mixes batches
+        generator = torch.manual_seed(5521)
+        train_dataloader = torch.utils.data.DataLoader(self.train, shuffle=True, batch_size=None, generator=generator)
+        different_batches = 0
+        for batch_ref, batch in zip(self.train, train_dataloader):
+            for k_ref in batch_ref:
+                if batch_ref['energies'].shape == batch['energies'].shape:
+                    if (batch_ref['energies'] != batch['energies']).any():
+                        different_batches += 1
+                else:
+                    different_batches += 1
+        self.assertTrue(different_batches > 0)
+
+    def testFileFormats(self):
+        # check that batches created with all file formats are equal
+        for ff in AniBatchedDataset.SUPPORTED_FILE_FORMATS:
+            create_batched_dataset(h5_path=dataset_path,
+                    dest_path=self.batched_path2, shuffle=False,
+                    splits={'training': 0.5, 'validation': 0.5})
+            train = AniBatchedDataset(self.batched_path2, split='training')
+            valid = AniBatchedDataset(self.batched_path2, split='validation')
+            for batch_ref, batch in zip(self.train, train):
+                for k_ref in batch_ref:
+                    self.assertEqual(batch_ref[k_ref], batch[k_ref])
+
+            for batch_ref, batch in zip(self.valid, valid):
+                for k_ref in batch_ref:
+                    self.assertEqual(batch_ref[k_ref], batch[k_ref])
+            shutil.rmtree(self.batched_path2)
+
+    def tearDown(self):
+        shutil.rmtree(self.batched_path)
+        try:
+            shutil.rmtree(self.batched_path2)
+        except FileNotFoundError:
+            pass
+        try:
+            shutil.rmtree(self.batched_path_shuffled)
+        except FileNotFoundError:
+            pass
 
 
 class TestAniH5Dataset(TestCase):

@@ -19,6 +19,8 @@ if PKBAR_INSTALLED:
 
 PADDING = {
     'species': -1,
+    'numbers': -1,
+    'atomic_numbers': -1,
     'coordinates': 0.0,
     'forces': 0.0,
     'energies': 0.0
