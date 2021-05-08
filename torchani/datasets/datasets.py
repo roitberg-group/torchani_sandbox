@@ -3,11 +3,12 @@ from functools import partial
 import pickle
 import warnings
 import importlib
-from typing import Union, Optional, List, Dict, Any, Callable, Generator
+from typing import Union, Optional, List, Dict, Any, Callable, Generator, Sequence, Iterator
 from collections import OrderedDict
 from collections.abc import Mapping
 
 import torch
+from torch import Tensor
 import h5py
 import numpy as np
 
@@ -27,7 +28,7 @@ PADDING = {
 }
 
 # These keys are treated differently because they don't have a batch dimension
-ELEMENT_KEYS = ('species', 'numbers', 'atomic_numbers')
+ELEMENT_KEYS = ('species', 'numbers', 'atomic_numbers', 'smiles')
 
 
 class AniBatchedDataset(torch.utils.data.Dataset):
@@ -105,10 +106,10 @@ class AniBatchedDataset(torch.utils.data.Dataset):
             msg = f'Format for file with extension {suffix} could not be infered, please specify explicitly'
             raise RuntimeError(msg)
 
-    def cache(self, pin_memory=True, verbose=True, apply_transform=True):
+    def cache(self, pin_memory: bool = True, verbose: bool = True, apply_transform: bool = True):
         if verbose:
-            print("Cacheing dataset, this may take some time...")
-            print("Cacheing the dataset may use a lot of memory, be careful!")
+            print(f"Cacheing split {self.split} of dataset, this may take some time...")
+            print("Important: Cacheing the dataset may use a lot of memory, be careful!")
 
         def memory_extractor(idx, ds):
             return ds._data[idx]
@@ -117,7 +118,9 @@ class AniBatchedDataset(torch.utils.data.Dataset):
 
         if apply_transform:
             if verbose:
-                print("Transformations will be applied once during cacheing and then discarded.")
+                print("Applying transforms...")
+                print("Important: Transformations will be applied once during cacheing and then discarded.")
+                print("If you want a different behavior pass apply_transform=False")
             with torch.no_grad():
                 self._data = [self.transform(properties) for properties in self._data]
             # discard transform after aplication
@@ -127,7 +130,9 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         # dataset is not cached memory pinning is done by the torch DataLoader.
         if pin_memory:
             if verbose:
-                print("Cacheing pins memory automatically, do **not** use pin_memory=True in torch.utils.data.DataLoader")
+                print("Pinning memory...")
+                print("Important: Cacheing pins memory automatically.")
+                print("Do **not** use pin_memory=True in torch.utils.data.DataLoader")
             self._data = [{k: v.pin_memory() for k, v in properties.items()} for properties in self._data]
 
         self.extractor = partial(memory_extractor, ds=self)
@@ -150,7 +155,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         except IndexError:
             return
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self._len
 
 
@@ -176,16 +181,16 @@ class AniH5Dataset(Mapping):
     def __getitem__(self, key: str):
         return self._get_group(key, include_properties=None)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.num_conformer_groups
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator:
         # Iterating over groups and yield the associated molecule groups as
         # dictionaries of numpy arrays (except for species, which is a list of
         # strings)
         return iter(self._groups.keys())
 
-    def get_conformers(self, key: str, idx: Optional[Union[int, np.ndarray]] = None, **kwargs):
+    def get_conformers(self, key: str, idx: Optional[Union[int, np.ndarray]] = None, **kwargs) -> Dict[str, Any]:
         # fetching a conformer actually copies all the group into memory first,
         # so it is faster to fetch all the indices we need at the same time
         # using an array for indexing
@@ -196,7 +201,7 @@ class AniH5Dataset(Mapping):
             return molecule_group
         return self._extract_from_molecule_group(molecule_group, idx, **kwargs)
 
-    def iter_conformers(self, **kwargs):
+    def iter_conformers(self, **kwargs) -> Generator[Dict[str, Any]]:
         # Iterating sequentially over conformers is also supported
         include_properties = kwargs.pop('include_properties', None)
         strict = kwargs.pop('strict', False)
@@ -228,7 +233,7 @@ class AniH5Dataset(Mapping):
             f.visititems(partial(visitor_fn, ds=self))
         self._groups = OrderedDict(self.group_sizes)
 
-    def _get_group_size(self, molecule_group):
+    def _get_group_size(self, molecule_group) -> int:
         if self._flag_key is not None:
             try:
                 size = len(molecule_group[self._flag_key])
@@ -251,7 +256,9 @@ class AniH5Dataset(Mapping):
                 raise RuntimeError(msg)
         return size
 
-    def _get_group(self, key: str, include_properties: Optional[List[str]] = None, strict: bool = False):
+    def _get_group(self, key: str,
+                         include_properties: Optional[Sequence[str]] = None,
+                         strict: bool = False) -> Dict[str, Any]:
         # note that if include_properties are not found then this returns an
         # empty dict silently, unless strict is passed
         if include_properties is None:
@@ -268,11 +275,13 @@ class AniH5Dataset(Mapping):
     @staticmethod
     def _extract_from_molecule_group(molecule_group,
                                      idx: Optional[Union[int, np.ndarray]],
-                                     element_keys=('smiles', 'species', 'numbers', 'atomic_numbers')):
+                                     element_keys: Optional[Sequence[str]] = None) -> Dict[str, Any]:
         # this extraction procedure will fail if there are other keys in the
-        # dataset besides "species", "numbers" and "atomic_numbers" that don't
-        # have group_size as the 0th shape, in this case those keys have to be
-        # specified
+        # dataset besides "species", "numbers" and "atomic_numbers" and
+        # "smiles" that don't have group_size as the 0th shape, in this case
+        # those keys have to be specified
+        if element_keys is None:
+            element_keys = ELEMENT_KEYS
 
         if isinstance(idx, np.ndarray):
             assert idx.ndim == 1, "Only vector indices are supported"
@@ -293,7 +302,7 @@ class AniH5Dataset(Mapping):
         return v
 
 
-def _save_batch(path, idx, batch, file_format):
+def _save_batch(path: Path, idx: int, batch: Dict[str, Tensor], file_format: str):
     # We use pickle or numpy since saving in
     # pytorch format is extremely slow
     batch = {k: v.numpy() for k, v in batch.items()}
@@ -514,14 +523,13 @@ def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
                 # dataset, which is extremely expensive
                 conformers = {k: np.copy(group[k]) for k in include_properties}
                 conformers = {k: v[selected_indices.cpu().numpy()] for k, v in conformers.items()}
-                element_keys = ('species',)
                 conformers.update({k: np.copy(group[k]).astype(str) for k in include_element_keys})
 
-                if 'species' in element_keys:
+                if 'species' in include_element_keys:
                     converted_species = symbols_to_atomic_numbers(conformers['species'])
                     conformers['species'] = converted_species
 
-                for k in element_keys:
+                for k in include_element_keys:
                     conformers[k] = conformers[k].view(1, -1).repeat(count, 1)
 
                 conformers = {k: torch.as_tensor(v) for k, v in conformers.items()}
