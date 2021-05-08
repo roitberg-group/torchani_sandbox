@@ -69,7 +69,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
 
         # We use pickle or numpy or hdf5 since saving in
         # pytorch format is extremely slow
-        format_suffix_map = {'numpy': '.npz', 'pickle': '.pkl', 'hdf5': '.h5'}
+        format_suffix_map = {'.npz': 'numpy', '.pkl': 'pickle', '.h5': 'hdf5'}
         self._len = len(self.batch_paths)
 
         if file_format is None:

@@ -53,10 +53,11 @@ if not Path(batched_dataset_path).resolve().is_dir():
 # reproducibility issues
 #
 elements = ('H', 'C', 'N', 'O')
-self_energies = [-0.57, -0.0045, -0.0035, -0.008]
+# here we use the GSAEs for self energies
+self_energies = [-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000]
 transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
 
-cache = False
+cache = True
 if not cache:
     # This batched datasets can be directly iterated upon, but it may be more
     # practical to wrap it with a torch DataLoader
