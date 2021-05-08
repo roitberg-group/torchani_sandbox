@@ -7,12 +7,12 @@ default, so if you want to convert atomic numbers to indices and then subtract
 the self atomic energies (SAE) when iterating from a batched dataset you can
 call
 
-from torchani.transforms import AtomicNumbersToIndices, SubtractSAE
+from torchani.transforms import AtomicNumbersToIndices, SubtractSAE, Compose
 from torchani.datasets import AniBatchedDataset
 
-transform = torchani.transforms.Compose([AtomicNumbersToIndices(('H', 'C', 'N'), SubtractSAE([-0.57, -0.0045, -0.0035])])
-training = AniBatchedDataset(path='/path/to/database/', transform=transform, split='training')
-validation = AniBatchedDataset(path='/path/to/database/', transform=transform, split='validation')
+transform = Compose([AtomicNumbersToIndices(('H', 'C', 'N'), SubtractSAE([-0.57, -0.0045, -0.0035])])
+training = AniBatchedDataset('/path/to/database/', transform=transform, split='training')
+validation = AniBatchedDataset('/path/to/database/', transform=transform, split='validation')
 """
 from typing import Dict, Sequence, Union, Tuple, Optional, Any, List
 import math
@@ -39,9 +39,9 @@ class SubtractRepulsion(torch.nn.Module):
 
 class SubtractSAE(torch.nn.Module):
 
-    def __init__(self, self_energies: Union[Tensor, Sequence[float]]):
+    def __init__(self, self_energies: Sequence[float]):
         super().__init__()
-        self.energy_shifter = EnergyShifter(torch.as_tensor(self_energies))
+        self.energy_shifter = EnergyShifter(self_energies)
 
     def forward(self, properties: Dict[str, Tensor]) -> Dict[str, Tensor]:
         energies = properties['energies']
