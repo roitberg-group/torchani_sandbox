@@ -4,7 +4,7 @@ from torch import Tensor
 import torch.utils.data
 import math
 from collections import defaultdict
-from typing import Tuple, NamedTuple, Optional, List, Union
+from typing import Tuple, NamedTuple, Optional, List, Union, Dict
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
 
@@ -46,7 +46,8 @@ def broadcast_first_dim(properties):
     return properties
 
 
-def pad_atomic_properties(properties, padding_values=defaultdict(lambda: 0.0, species=-1)):
+def pad_atomic_properties(properties: List[Dict[str, Tensor]],
+                          padding_values: Optional[Dict[str, float]] = None) -> Dict[str, Tensor]:
     """Put a sequence of atomic properties together into single tensor.
 
     Inputs are `[{'species': ..., ...}, {'species': ..., ...}, ...]` and the outputs
@@ -56,6 +57,9 @@ def pad_atomic_properties(properties, padding_values=defaultdict(lambda: 0.0, sp
         properties (:class:`collections.abc.Sequence`): sequence of properties.
         padding_values (dict): the value to fill to pad tensors to same size
     """
+    if padding_values is None:
+        padding_values = defaultdict(lambda: 0.0, species=-1)
+
     vectors = [k for k in properties[0].keys() if properties[0][k].dim() > 1]
     scalars = [k for k in properties[0].keys() if properties[0][k].dim() == 1]
     padded_sizes = {k: max(x[k].shape[1] for x in properties) for k in vectors}
