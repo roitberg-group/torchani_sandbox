@@ -30,6 +30,8 @@ ELEMENT_KEYS = ('species', 'numbers', 'atomic_numbers')
 
 class AniBatchedDataset(torch.utils.data.Dataset):
 
+    SUPPORTED_FILE_FORMATS = ('numpy', 'hdf5', 'single_hdf5', 'pickle')
+
     def __init__(self, store_dir: Union[str, Path],
                        file_format: Optional[str] = None,
                        split: str = 'training',
@@ -82,6 +84,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
                 file_format = 'single_hdf5'
 
         assert file_format is not None
+        assert file_format in self.SUPPORTED_FILE_FORMATS
         if file_format == 'numpy':
             self.extractor = partial(numpy_extractor, paths=self.batch_paths)
         elif file_format == 'pickle':
@@ -312,6 +315,7 @@ def _save_batch(path, idx, batch, file_format):
 def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
                            dest_path: Optional[Union[str, Path]] = None,
                            shuffle: bool = True,
+                           shuffle_seed: Optional[int] = None,
                            file_format: str = 'hdf5',
                            include_properties=('species', 'coordinates', 'energies'),
                            batch_size: int = 2560,
@@ -407,7 +411,11 @@ def create_batched_dataset(h5_path: Union[str, Path, List[Union[str, Path]]],
                                      (torch.arange(0, s.item()))), dim=-1)
                                      for j, s in enumerate(group_sizes)])
     if shuffle:
-        shuffle_indices = torch.randperm(total_num_conformers)
+        if shuffle_seed is None:
+            shuffle_indices = torch.randperm(total_num_conformers)
+        else:
+            generator = torch.manual_seed(shuffle_seed)
+            shuffle_indices = torch.randperm(total_num_conformers, generator=generator)
         conformer_indices = conformer_indices[shuffle_indices]
 
     # (2) Split shuffled indices according to requested dataset splits
