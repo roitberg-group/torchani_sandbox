@@ -104,6 +104,9 @@ elif cache:
     validation = torch.utils.data.DataLoader(validation.cache(),
                                              shuffle=False,
                                              batch_size=None)
+
+# NOTE: take into account that in general now we are training with GSAEs
+# instead of SAEs, so this step is largely not necessary
 estimate_saes = False
 if estimate_saes:
     # If you would like to use SAEs in place of GSAEs you have the option to
@@ -116,12 +119,31 @@ if estimate_saes:
     # take the transform into account, and works well unless you performed some
     # inplace operations in your dataset
     from torchani.transforms import estimate_saes_sgd  # noqa
-    m, b = estimate_saes_sgd(training, elements)
-    print(m)
+    saes, _ = estimate_saes_sgd(training, elements)
+    print(saes)
     # now we reassign the transform using the new self energies
-    transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(m)])
-    # NOTE: take into account that in general now we are training with GSAEs
-    # instead of SAEs, so this step is largely not necessary
+    transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(saes)])
+
+exact_saes = False
+if exact_saes:
+    #
+    # If we really want to, we can also calculate the saes exactly:
+    from torchani.transforms import calculate_saes_exact  # noqa
+    saes, _ = calculate_saes_exact(training, elements)
+    print(saes)
+    # but this will take up a lot of memory because it uses the whole dataset
+    # we can also pass a fraction of the dataset, 1% already gives a pretty
+    # good estimate
+    saes, _ = calculate_saes_exact(training, elements, fraction=0.05)
+    print(saes)
+    # my tests:
+    # all batches of 1x training:
+    # tensor([ -0.6013, -38.0832, -54.7081, -75.1927])
+    # 1% of 1x training:
+    # tensor([ -0.5997, -38.0840, -54.7085, -75.1936])
+    # 5% of 1x training:
+    # tensor([ -0.5999, -38.0838, -54.7085, -75.1938])
+
 
 # --Differences end here--
 ###############################################################################
