@@ -104,6 +104,25 @@ elif cache:
     validation = torch.utils.data.DataLoader(validation.cache(),
                                              shuffle=False,
                                              batch_size=None)
+estimate_saes = False
+if estimate_saes:
+    # If you would like to use SAEs in place of GSAEs you have the option to
+    # estimate SAEs using SGD over the whole training set (it is important not
+    # to include the validation set since the model never has to see it).
+    #
+    # This allows calculating the linear fit without loading the whole dataset
+    # into memory, it is accurate, and it is very fast, even in CPU. Also, it
+    # doesn't matter what transform your dataset had, this function doesn't
+    # take the transform into account, and works well unless you performed some
+    # inplace operations in your dataset
+    from torchani.transforms import estimate_saes_sgd  # noqa
+    m, b = estimate_saes_sgd(training, elements)
+    print(m)
+    # now we reassign the transform using the new self energies
+    transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(m)])
+    # NOTE: take into account that in general now we are training with GSAEs
+    # instead of SAEs, so this step is largely not necessary
+
 # --Differences end here--
 ###############################################################################
 # First lets define an aev computer like the one in the 1x model
