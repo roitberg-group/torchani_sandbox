@@ -32,31 +32,39 @@ if not Path(batched_dataset_path).resolve().is_dir():
                                              batch_size=2560,
                                              splits={'training': 0.8, 'validation': 0.2})
 
-# We pass a transform to the dataset to perform transformations on the fly, the
-# API for transforms is very similar to torchvision https://pytorch.org/vision/stable/transforms.html
-# with the difference that the transforms are applied to both target and inputs in all cases
-elements = ('H', 'C', 'N', 'O')
-self_energies = [-0.57, -0.0045, -0.0035, -0.008]
-transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
-
-training = torchani.datasets.AniBatchedDataset(batched_dataset_path,
-                                               transform=transform,
-                                               split='training')
-
-validation = torchani.datasets.AniBatchedDataset(batched_dataset_path,
-                                                 transform=transform,
-                                                 split='validation')
-
+# We use a transform on the dataset to perform transformations on the fly, the
+# API for transforms is very similar to torchvision
+# https://pytorch.org/vision/stable/transforms.html with the difference that
+# the transforms are applied to both target and inputs in all cases.
+#
+# A transform can be passed to the "transform" argument of AniBatchedDataset to
+# perform the transforms on CPU after fetching the batches. We will do this in
+# the cache'd version of this example, since the tranform is only applied once
+# in the beginning in this case.
+#
+# Another option is to apply the transform directly during traiing. We will do
+# this in the example, for the non cached version, since it allows us to cast
+# the transform to GPU, which is faster
+#
 # Alternatively a transform can be passed to
 # create_batched_dataset using the argument "inplace_transform", but this is
 # only really recommended if your transforms take a lot of time, since this
 # will modify the dataset and may introduce hard to track discrepancies and
 # reproducibility issues
+#
+elements = ('H', 'C', 'N', 'O')
+self_energies = [-0.57, -0.0045, -0.0035, -0.008]
+transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
 
-# This batched dataset can be directly iterated upon, but it may be more
-# practical to wrap it with a torch DataLoader
 cache = False
 if not cache:
+    # This batched datasets can be directly iterated upon, but it may be more
+    # practical to wrap it with a torch DataLoader
+    training = torchani.datasets.AniBatchedDataset(batched_dataset_path,
+                                                   split='training')
+
+    validation = torchani.datasets.AniBatchedDataset(batched_dataset_path,
+                                                     split='validation')
     # If we decide not to cache the dataset it is a good idea to use
     # multiprocessing. Here we use some default useful arguments for
     # num_workers (extra cores for training) and prefetch_factor (data units
@@ -91,6 +99,13 @@ if not cache:
                                              prefetch_factor=5,
                                              batch_size=None)
 elif cache:
+    training = torchani.datasets.AniBatchedDataset(batched_dataset_path,
+                                                   transform=transform,
+                                                   split='training')
+
+    validation = torchani.datasets.AniBatchedDataset(batched_dataset_path,
+                                                     transform=transform,
+                                                     split='validation')
     # If need some extra speedup you can cache the dataset before passing it to
     # the DataLoader or iterating on it, but this may occupy a lot of memory,
     # so be careful!!!
@@ -105,8 +120,8 @@ elif cache:
                                              shuffle=False,
                                              batch_size=None)
 
-# NOTE: take into account that in general now we are training with GSAEs
-# instead of SAEs, so this step is largely not necessary
+# NOTE: Take into account that in general now we are training with GSAEs
+# instead of SAEs, so the step that follows is largely not necessary
 estimate_saes = False
 if estimate_saes:
     # If you would like to use SAEs in place of GSAEs you have the option to
@@ -121,8 +136,12 @@ if estimate_saes:
     from torchani.transforms import estimate_saes_sgd  # noqa
     saes, _ = estimate_saes_sgd(training, elements)
     print(saes)
-    # now we reassign the transform using the new self energies
+    # now we rebuild the transform using the new self energies
     transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(saes)])
+    if cache:
+        training.transform = transform
+        validation.transform = transform
+
 
 exact_saes = False
 if exact_saes:
@@ -143,9 +162,14 @@ if exact_saes:
     # tensor([ -0.5997, -38.0840, -54.7085, -75.1936])
     # 5% of 1x training:
     # tensor([ -0.5999, -38.0838, -54.7085, -75.1938])
+    transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(saes)])
+    if cache:
+        training.transform = transform
+        validation.transform = transform
 
+transform = transform.to(device)
 
-# --Differences end here--
+# --Differences largely end here, besides application of transform in training/validation loops--
 ###############################################################################
 # First lets define an aev computer like the one in the 1x model
 aev_computer = torchani.AEVComputer.like_1x(use_cuda_extension=True)
@@ -319,9 +343,12 @@ def validate():
     model.train(False)
     with torch.no_grad():
         for properties in validation:
-            species = properties['species'].to(device, non_blocking=True)
-            coordinates = properties['coordinates'].to(device, non_blocking=True).float()
-            true_energies = properties['energies'].to(device, non_blocking=True).float()
+            properties = {k: v.to(device, non_blocking=True) for k, v in properties.items()}
+            if not cache:
+                properties = transform(properties)
+            species = properties['species']
+            coordinates = properties['coordinates'].float()
+            true_energies = properties['energies'].float()
             _, predicted_energies = model((species, coordinates))
             total_mse += mse_sum(predicted_energies, true_energies).item()
             count += predicted_energies.shape[0]
@@ -371,9 +398,12 @@ for _ in range(AdamW_scheduler.last_epoch + 1, max_epochs):
         total=len(training),
         desc="epoch {}".format(AdamW_scheduler.last_epoch)
     ):
-        species = properties['species'].to(device, non_blocking=True)
-        coordinates = properties['coordinates'].to(device, non_blocking=True).float()
-        true_energies = properties['energies'].to(device, non_blocking=True).float()
+        properties = {k: v.to(device, non_blocking=True) for k, v in properties.items()}
+        if not cache:
+            properties = transform(properties)
+        species = properties['species']
+        coordinates = properties['coordinates'].float()
+        true_energies = properties['energies'].float()
         num_atoms = (species >= 0).sum(dim=1, dtype=true_energies.dtype)
         _, predicted_energies = model((species, coordinates))
 
