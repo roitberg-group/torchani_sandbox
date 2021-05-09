@@ -155,8 +155,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
 class AniH5Dataset(Mapping):
 
     def __init__(self, store_file: Union[str, Path], flag_key: Optional[str] = None):
-        if isinstance(store_file, str):
-            store_file = Path(store_file).resolve()
+        store_file = Path(store_file).resolve()
         assert isinstance(store_file, Path)
         if not store_file.is_file():
             raise RuntimeError(f"The h5 file in {store_file.as_posix()} could not be found")
@@ -165,7 +164,7 @@ class AniH5Dataset(Mapping):
         # flag key is used to infer size of molecule groups
         # when iterating over the dataset
         self._flag_key = flag_key
-        self.group_sizes: Dict[str, Any] = OrderedDict()
+        self.group_sizes: Dict[str, int] = OrderedDict()
         self._cache_group_paths_and_sizes()
         self.num_conformers = sum(self.group_sizes.values())
         self.num_conformer_groups = len(self.group_sizes.keys())
