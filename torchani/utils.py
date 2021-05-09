@@ -8,6 +8,15 @@ from typing import Tuple, NamedTuple, Optional, List, Union, Dict
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
 
+PADDING = {
+    'species': -1,
+    'numbers': -1,
+    'atomic_numbers': -1,
+    'coordinates': 0.0,
+    'forces': 0.0,
+    'energies': 0.0
+}
+
 
 def cumsum_from_zero(input_: Tensor) -> Tensor:
     r"""Cumulative sum just like pytorch's cumsum, but with the first element of
@@ -58,7 +67,7 @@ def pad_atomic_properties(properties: List[Dict[str, Tensor]],
         padding_values (dict): the value to fill to pad tensors to same size
     """
     if padding_values is None:
-        padding_values = defaultdict(lambda: 0.0, species=-1)
+        padding_values = PADDING
 
     vectors = [k for k in properties[0].keys() if properties[0][k].dim() > 1]
     scalars = [k for k in properties[0].keys() if properties[0][k].dim() == 1]
@@ -75,7 +84,7 @@ def pad_atomic_properties(properties: List[Dict[str, Tensor]],
         dtype = tensor.dtype
         shape[0] = total_num_molecules
         shape[1] = padded_sizes[k]
-        output[k] = torch.full(shape, padding_values[k], device=device, dtype=dtype)
+        output[k] = torch.full(shape, padding_values.get(k, 0.0), device=device, dtype=dtype)
         index0 = 0
         for n, x in zip(num_molecules, properties):
             original_size = x[k].shape[1]
