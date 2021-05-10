@@ -62,7 +62,9 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
           to_save.push_back(input_);
         }
 
-        energy_list[i] = at::sum(input_.view(-1)).view(-1)[0];
+        // sum out without cudaMemcpyAsync
+        auto tmp_energy = energy_list[i];
+        at::sum_out(tmp_energy, input_.view(-1), 0, /* keepdim */ false);
 #ifdef USE_STREAMS
         cudaEventRecord(event_list[i], c10::cuda::CUDAStream(stream_list[i]));
 #endif
