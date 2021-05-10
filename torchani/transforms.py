@@ -21,7 +21,7 @@ import warnings
 import torch
 from torch import Tensor
 
-from .utils import EnergyShifter, PERIODIC_TABLE
+from .utils import EnergyShifter, PERIODIC_TABLE, ATOMIC_NUMBERS
 from .nn import SpeciesConverter
 from .datasets import AniBatchedDataset
 from torch.utils.data import DataLoader
@@ -39,31 +39,27 @@ class SubtractRepulsion(torch.nn.Module):
 
 class SubtractSAE(torch.nn.Module):
 
-    def __init__(self, self_energies: Sequence[float]):
+    def __init__(self, elements: Union[Sequence[str], Sequence[int]], self_energies: Sequence[float]):
         super().__init__()
-        self.energy_shifter = EnergyShifter(self_energies)
+        symbols, atomic_numbers = _parse_elements(elements)
+
+        self.register_buffer('supported_atomic_numbers', torch.tensor(atomic_numbers, dtype=torch.long))
+        self.energy_shifter = EnergyShifter(self_energies).float()
 
     def forward(self, properties: Dict[str, Tensor]) -> Dict[str, Tensor]:
-        energies = properties['energies']
-        energies = energies - self.energy_shifter((properties['species'], energies)).energies
-        properties['energies'] = energies
+        properties['energies'] -= self.energy_shifter.sae(properties['species'])
         return properties
 
 
 class AtomicNumbersToIndices(torch.nn.Module):
 
+    atomic_numbers: Tensor
+
     def __init__(self, elements: Union[Sequence[str], Sequence[int]]):
         super().__init__()
-        symbols: List[str] = []
+        symbols, atomic_numbers = _parse_elements(elements)
 
-        if isinstance(elements[0], int):
-            for e in elements:
-                assert isinstance(e, int) and e > 0, f"Encountered an atomic number that is <= 0 {elements}"
-                symbols.append(PERIODIC_TABLE[e])
-        else:
-            for e in elements:
-                assert isinstance(e, str), "Input sequence must consist of chemical symbols or atomic numbers"
-                symbols.append(e)
+        self.register_buffer('supported_atomic_numbers', torch.tensor(atomic_numbers, dtype=torch.long))
         self.converter = SpeciesConverter(elements)
 
     def forward(self, properties: Dict[str, Tensor]) -> Dict[str, Tensor]:
@@ -72,16 +68,48 @@ class AtomicNumbersToIndices(torch.nn.Module):
         return properties
 
 
+def _parse_elements(elements: Union[Sequence[str], Sequence[int]]) -> Tuple[Sequence[str], Sequence[int]]:
+    symbols: List[str] = []
+    atomic_numbers: List[int] = []
+    if isinstance(elements[0], int):
+        for e in elements:
+            assert isinstance(e, int) and e > 0, f"Encountered an atomic number that is <= 0 {elements}"
+            symbols.append(PERIODIC_TABLE[e])
+            atomic_numbers.append(e)
+    else:
+        for e in elements:
+            assert isinstance(e, str), "Input sequence must consist of chemical symbols or atomic numbers"
+            symbols.append(e)
+            atomic_numbers.append(ATOMIC_NUMBERS[e])
+    return symbols, atomic_numbers
+
+
 class Compose(torch.nn.Module):
     """Composes several transforms together.
 
     Args:
         transforms (list of ``Transform`` objects): list of transforms to compose.
     """
-    # This code is copied from torchvision, but made JIT scriptable
+    # This code is mostly copied from torchvision, but made JIT scriptable
 
     def __init__(self, transforms: Sequence[torch.nn.Module]):
         super().__init__()
+        if not isinstance(transforms[0], AtomicNumbersToIndices):
+            warnings.warn("The first transform in your pipeline is not AtomicNumbersToIndices, make sure that this is your intent")
+        transform_names = [type(t).__name__ for t in transforms]
+
+        if len(transform_names) != len(set(transform_names)):
+            warnings.warn("Your transform pipeline seems to have duplicate transforms, make sure that this is your intent")
+
+        all_atomic_numbers: List[Tensor] = []
+        for t in transforms:
+            if hasattr(t, 'atomic_numbers'):
+                all_atomic_numbers.append(t.atomic_numbers)
+
+        for z in all_atomic_numbers:
+            if not z == all_atomic_numbers[0]:
+                raise ValueError("Two or more of your transforms use different atomic numbers, this is incorrect")
+
         self.transforms = torch.nn.ModuleList(transforms)
 
     def forward(self, properties: Dict[str, Tensor]) -> Dict[str, Tensor]:

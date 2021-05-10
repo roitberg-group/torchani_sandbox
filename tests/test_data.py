@@ -8,6 +8,7 @@ import unittest
 import tempfile
 import shutil
 from copy import deepcopy
+from torchani.transforms import AtomicNumbersToIndices, SubtractSAE, Compose
 from torchani.testing import TestCase
 from torchani.datasets import AniH5Dataset, AniBatchedDataset, create_batched_dataset
 
@@ -15,6 +16,52 @@ path = os.path.dirname(os.path.realpath(__file__))
 dataset_path = os.path.join(path, '../dataset/ani-1x/sample.h5')
 batch_size = 256
 ani1x_sae_dict = {'H': -0.60095298, 'C': -38.08316124, 'N': -54.7077577, 'O': -75.19446356}
+
+
+class TestTransforms(TestCase):
+
+    def setUp(self):
+        self.elements = ('H', 'C', 'N', 'O')
+        self.batched_path = Path('./tmp_dataset').resolve()
+        create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path, shuffle=False,
+                splits={'training': 0.5, 'validation': 0.5})
+        coordinates = torch.randn((2, 7, 3), dtype=torch.float)
+        self.input_ = {'species': torch.tensor([[-1, 1, 1, 6, 1, 7, 8], [1, 1, 1, 1, 1, 1, 6]], dtype=torch.long),
+                       'energies': torch.tensor([0.0, 1.0], dtype=torch.float),
+                       'coordinates': coordinates}
+        self.train = AniBatchedDataset(self.batched_path, split='training')
+
+    def testAtomicNumbersToIndices(self):
+        numbers_to_indices = AtomicNumbersToIndices(self.elements)
+        expect = {k: v.clone() for k, v in self.input_.items()}
+        expect['species'] = torch.tensor([[-1, 0, 0, 1, 0, 2, 3], [0, 0, 0, 0, 0, 0, 1]], dtype=torch.long)
+        out = numbers_to_indices(self.input_)
+        for k, v in out.items():
+            self.assertEqual(v, expect[k])
+
+    def testSubtractSAE(self):
+        subtract_sae = SubtractSAE(self.elements, [0.0, 1.0, 0.0, 1.0])
+        expect = {k: v.clone() for k, v in self.input_.items()}
+        self.input_['species'] = torch.tensor([[-1, 0, 0, 1, 0, 2, 3], [0, 0, 0, 0, 0, 0, 1]], dtype=torch.long)
+        expect['energies'] = torch.tensor([-2.0, 0.0], dtype=torch.float)
+        expect['species'] = torch.tensor([[-1, 0, 0, 1, 0, 2, 3], [0, 0, 0, 0, 0, 0, 1]], dtype=torch.long)
+        out = subtract_sae(self.input_)
+        for k, v in out.items():
+            self.assertEqual(v, expect[k])
+
+    def testCompose(self):
+        subtract_sae = SubtractSAE(self.elements, [0.0, 1.0, 0.0, 1.0])
+        numbers_to_indices = AtomicNumbersToIndices(self.elements)
+        compose = Compose([numbers_to_indices, subtract_sae])
+        expect = {k: v.clone() for k, v in self.input_.items()}
+        expect['energies'] = torch.tensor([-2.0, 0.0], dtype=torch.float)
+        expect['species'] = torch.tensor([[-1, 0, 0, 1, 0, 2, 3], [0, 0, 0, 0, 0, 0, 1]], dtype=torch.long)
+        out = compose(self.input_)
+        for k, v in out.items():
+            self.assertEqual(v, expect[k])
+
+    def tearDown(self):
+        shutil.rmtree(self.batched_path)
 
 
 class TestAniBatchedDataset(TestCase):
