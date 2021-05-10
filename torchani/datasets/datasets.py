@@ -205,17 +205,14 @@ class AniH5Dataset(Mapping):
         element_keys, non_element_keys = self._properties_into_keys(include_properties)
         # fetching a conformer actually copies all the group into memory first,
         # because indexing directly into hdf5 is much slower.
-        molecule_group = self._get_group(key, element_keys, non_element_keys, strict)
-        if idx is None:
-            return molecule_group
-        conformers = self._extract_from_group(molecule_group, idx, element_keys, non_element_keys)
+        conformers = self._get_group(key, non_element_keys, element_keys, idx, strict)
         if raw_output:
             return conformers
         else:
             # here we convert species to atomic numbers and repeat along the
             # batch dimension all element_keys
             if 'species' in element_keys:
-                tensor_species = self.symbols_to_atomic_numbers(conformers['species'].astype(str))
+                tensor_species = self.symbols_to_atomic_numbers(conformers['species'])
                 conformers['species'] = tensor_species.cpu().numpy()
             if not isinstance(idx, int):
                 for k in element_keys:
@@ -231,9 +228,11 @@ class AniH5Dataset(Mapping):
         # Iterate sequentially over conformers also copies all the group
         # into memory first, so it is also fast
         for k, size in self.group_sizes.items():
-            conformer_group = self._get_group(k, element_keys, non_element_keys, strict)
+            conformer_group = self._get_group(k, non_element_keys, element_keys, None, strict)
             for idx in range(size):
-                yield self._extract_from_group(conformer_group, idx, element_keys, non_element_keys)
+                out_conformer_group = {k: conformer_group[k] for k in element_keys}
+                out_conformer_group.update({k: conformer_group[k][idx] for k in non_element_keys})
+                yield out_conformer_group
     # end API
 
     def _properties_into_keys(self,
@@ -245,7 +244,6 @@ class AniH5Dataset(Mapping):
             element_keys = tuple((k for k in properties if k in self._supported_element_keys))
             non_element_keys = tuple((k for k in properties if k not in self._supported_element_keys))
         else:
-            breakpoint()
             raise ValueError(f"Some of the properties demanded {properties} are not "
                              f"in the dataset, which has properties {self.supported_properties}")
         return element_keys, non_element_keys
@@ -315,31 +313,27 @@ class AniH5Dataset(Mapping):
                    key: str,
                    non_element_keys: Tuple[str, ...],
                    element_keys: Tuple[str, ...],
+                   idx: Optional[Union[int, ndarray]] = None,
                    strict: bool = False) -> Dict[str, ndarray]:
 
         # NOTE: If some keys are not found then
         # this returns a partial result with the keys that are found, (maybe
         # even empty) unless strict is passed.
         with h5py.File(self._store_file, 'r') as f:
-            if strict and not all([p in f[key].keys() for p in element_keys + non_element_keys]):
+            group = f[key]
+            if strict and not all([p in group.keys() for p in element_keys + non_element_keys]):
                 raise RuntimeError('Some of the requested properties could not '
                                   f'be found in group {key}')
-            molecules = {k: np.copy(v) for k, v in f[key].items() if k in non_element_keys}
-            molecules.update({k: np.copy(f[key][k]) for k in element_keys})
+
+            molecules = {k: np.copy(group[k]) for k in element_keys}
+            if idx is None:
+                molecules.update({k: np.copy(group[k]) for k in non_element_keys})
+            else:
+                molecules.update({k: np.copy(group[k])[idx] for k in non_element_keys})
+
             if 'species' in element_keys:
                 molecules['species'] = molecules['species'].astype(str)
         return molecules
-
-    @staticmethod
-    def _extract_from_group(molecule_group: Dict[str, ndarray],
-                            idx: Union[int, ndarray],
-                            element_keys: Sequence[str],
-                            non_element_keys: Sequence[str]) -> Dict[str, ndarray]:
-
-        # only one of these "element_keys" per molecule group exists
-        conformer = {k: v for k, v in molecule_group.items() if k in element_keys}
-        conformer.update({k: v[idx] for k, v in molecule_group.items() if k in non_element_keys})
-        return conformer
 
 
 def _save_batch(path: Path, idx: int, batch: Dict[str, Tensor], file_format: str) -> None:
