@@ -5,7 +5,7 @@ import pickle
 import warnings
 import importlib
 from typing import Union, Optional, Dict, Generator, Sequence, Iterator, Tuple, List, Set, Callable
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 from collections.abc import Mapping
 
 import h5py
@@ -31,7 +31,9 @@ class AniBatchedDataset(torch.utils.data.Dataset):
     def __init__(self, store_dir: Union[str, Path],
                        file_format: Optional[str] = None,
                        split: str = 'training',
-                       transform: Transform = lambda x: x):
+                       transform: Transform = lambda x: x,
+                       flag_property: Optional[str] = None,
+                       drop_last: bool = False):
         self.split = split
         self.store_dir = Path(store_dir).resolve().joinpath(self.split)
         if not self.store_dir.is_dir():
@@ -66,8 +68,6 @@ class AniBatchedDataset(torch.utils.data.Dataset):
             with h5py.File(path, 'r') as f:
                 return {k: torch.as_tensor(v[()]) for k, v in f[k].items()}
 
-        self._len = len(self.batch_paths)
-
         # We use pickle or numpy or hdf5 since saving in
         # pytorch format is extremely slow
         if file_format is None:
@@ -76,7 +76,10 @@ class AniBatchedDataset(torch.utils.data.Dataset):
             if file_format == 'hdf5' and ('single' in self.batch_paths[0].name):
                 file_format = 'single_hdf5'
 
-        assert file_format in self.SUPPORTED_FILE_FORMATS
+        if file_format not in self.SUPPORTED_FILE_FORMATS:
+            raise ValueError(f"The file format {file_format} is not in the"
+                             f"supported formats {self.SUPPORTED_FILE_FORMATS}")
+
         if file_format == 'numpy':
             self.extractor = partial(numpy_extractor, paths=self.batch_paths)
         elif file_format == 'pickle':
@@ -95,6 +98,25 @@ class AniBatchedDataset(torch.utils.data.Dataset):
             raise RuntimeError(f'Format for file with extension {suffix} '
                                 'could not be inferred, please specify explicitly')
 
+        self._flag_property = flag_property
+        batch_sizes = {path: _get_properties_size(b, self._flag_property, set(b.keys()))
+                           for b, path in zip(self, self.batch_paths)}
+        different_sizes = Counter(batch_sizes.values())
+        # in case that there are more than one batch sizes, self.batch_size
+        # holds the most common one
+        self.batch_size = different_sizes.most_common(1)[0][0]
+
+        if drop_last:
+            # we drop the batch with the smallest size, if there is only one of
+            # them, otherwise this errors out
+            assert len(different_sizes) in [1, 2], "More than two different batch lengths found"
+            if len(different_sizes) == 2:
+                smallest = min(batch_sizes.items(), key=lambda x: x[1])
+                assert different_sizes[smallest[1]] == 1, "There is more than one small batch"
+                self.batch_paths.remove(smallest[0])
+
+        self._len = len(self.batch_paths)
+
     def cache(self, pin_memory: bool = True,
                     verbose: bool = True,
                     apply_transform: bool = True) -> 'AniBatchedDataset':
@@ -110,7 +132,8 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         if apply_transform:
             if verbose:
                 print("Applying transforms...")
-                print("Important: Transformations will be applied once during cacheing and then discarded.")
+                print("Important: Transformations, if there are any present,"
+                      " will be applied once during cacheing and then discarded.")
                 print("If you want a different behavior pass apply_transform=False")
             with torch.no_grad():
                 self._data = [self.transform(properties) for properties in self._data]
@@ -179,7 +202,6 @@ class AniH5Dataset(Mapping):
 
         self.symbols_to_atomic_numbers = ChemicalSymbolsToAtomicNumbers()
 
-    # API
     def __getitem__(self, key: str) -> Dict[str, ndarray]:
         # this is a simple extraction that just fetches everything
         return self._get_group(key, self._supported_non_element_keys, self._supported_element_keys)
@@ -235,7 +257,6 @@ class AniH5Dataset(Mapping):
                 out_conformer_group = {k: conformer_group[k] for k in element_keys}
                 out_conformer_group.update({k: conformer_group[k][idx] for k in non_element_keys})
                 yield out_conformer_group
-    # end API
 
     def _properties_into_keys(self,
                               properties: Optional[Sequence[str]] = None) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
@@ -255,61 +276,47 @@ class AniH5Dataset(Mapping):
         # and all supported properties into a set
         def visitor_fn(name: str,
                        object_: Union[h5py.Dataset, h5py.Group],
-                       ds: AniH5Dataset,
-                       _group_sizes: List[Tuple[str, int]],
-                       _supported_properties: Set[str]) -> None:
+                       group_sizes: List[Tuple[str, int]],
+                       supported_properties: Set[str],
+                       flag_property: Optional[str] = None) -> None:
 
             if isinstance(object_, h5py.Dataset):
                 molecule_group = object_.parent
                 # Check if we already visited this group via one of its
                 # children or not
-                if molecule_group.name not in [tup[0] for tup in _group_sizes]:
-                    # If the format is correct cache the molecule group path
-                    if not _supported_properties:
-                        _supported_properties.update({k for k in molecule_group.keys()})
-                        if self._flag_property is not None and self._flag_property not in _supported_properties:
-                            raise RuntimeError(f"Flag property {self._flag_property} "
-                                               f"not found in {_supported_properties}")
+                if molecule_group.name not in [tup[0] for tup in group_sizes]:
+                    # Collect properties and check that all the datasets have
+                    # the same properties
+                    if not supported_properties:
+                        supported_properties.update({k for k in molecule_group.keys()})
+                        if flag_property is not None and flag_property not in supported_properties:
+                            raise RuntimeError(f"Flag property {flag_property} "
+                                               f"not found in {supported_properties}")
                     else:
-                        if not {k for k in molecule_group.keys()} == _supported_properties:
+                        if not {k for k in molecule_group.keys()} == supported_properties:
                             raise RuntimeError(f"group {molecule_group.name} has incompatible keys, "
-                                               f"which should be {_supported_properties}, inferred from other groups")
+                                               f"which should be {supported_properties}, inferred from other groups")
+                    # Check for format correctness
                     for v in molecule_group.values():
                         if not isinstance(v, h5py.Dataset):
                             raise RuntimeError("Invalid dataset format, there "
                                                "shouldn't be Groups inside Groups "
                                                "that have Datasets")
-                    _group_sizes.append((molecule_group.name,
-                                         ds._get_group_size(molecule_group, _supported_properties)))
+                    group_sizes.append((molecule_group.name,
+                                         _get_properties_size(molecule_group,
+                                                              flag_property,
+                                                              supported_properties)))
 
-        _group_sizes: List[Tuple[str, int]] = []
-        _supported_properties: Set[str] = set()
+        group_sizes: List[Tuple[str, int]] = []
+        supported_properties: Set[str] = set()
 
         with h5py.File(self._store_file, 'r') as f:
             f.visititems(partial(visitor_fn,
-                                 ds=self,
-                                 _group_sizes=_group_sizes,
-                                 _supported_properties=_supported_properties))
+                                 group_sizes=group_sizes,
+                                 supported_properties=supported_properties,
+                                 flag_property=self._flag_property))
 
-        return _group_sizes, _supported_properties
-
-    def _get_group_size(self, molecule_group: h5py.Group, supported_properties: Optional[Set[str]] = None) -> int:
-        if self._flag_property is not None:
-            size = len(molecule_group[self._flag_property])
-        else:
-            assert supported_properties is not None
-            if 'coordinates' in supported_properties:
-                size = len(molecule_group['coordinates'])
-            elif 'energies' in supported_properties:
-                size = len(molecule_group['energies'])
-            elif 'forces' in supported_properties:
-                size = len(molecule_group['forces'])
-            else:
-                raise RuntimeError('Could not infer number of molecules in molecule'
-                                   ' group since "coordinates", "forces" and "energies" dont'
-                                   ' exist, please provide a key that holds a dataset with the'
-                                   ' molecule size as its first axis / dim')
-        return size
+        return group_sizes, supported_properties
 
     def _get_group(self,
                    key: str,
@@ -420,6 +427,27 @@ def create_batched_dataset(h5_path: Union[str, Path],
                               batch_size,
                               max_batches_per_packet,
                               verbose)
+
+
+def _get_properties_size(molecule_group: Union[h5py.Group, Dict[str, ndarray], Dict[str, Tensor]],
+                        flag_property: Optional[str] = None,
+                        supported_properties: Optional[Set[str]] = None) -> int:
+    if flag_property is not None:
+        size = len(molecule_group[flag_property])
+    else:
+        assert supported_properties is not None
+        if 'coordinates' in supported_properties:
+            size = len(molecule_group['coordinates'])
+        elif 'energies' in supported_properties:
+            size = len(molecule_group['energies'])
+        elif 'forces' in supported_properties:
+            size = len(molecule_group['forces'])
+        else:
+            raise RuntimeError('Could not infer number of molecules in properties'
+                               ' since "coordinates", "forces" and "energies" dont'
+                               ' exist, please provide a key that holds an array/tensor with the'
+                               ' molecule size as its first axis/dim')
+    return size
 
 
 def _maybe_shuffle_indices(conformer_indices: Tensor,

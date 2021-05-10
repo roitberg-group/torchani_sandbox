@@ -22,14 +22,10 @@ class TestTransforms(TestCase):
 
     def setUp(self):
         self.elements = ('H', 'C', 'N', 'O')
-        self.batched_path = Path('./tmp_dataset').resolve()
-        create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path, shuffle=False,
-                splits={'training': 0.5, 'validation': 0.5})
         coordinates = torch.randn((2, 7, 3), dtype=torch.float)
         self.input_ = {'species': torch.tensor([[-1, 1, 1, 6, 1, 7, 8], [1, 1, 1, 1, 1, 1, 6]], dtype=torch.long),
                        'energies': torch.tensor([0.0, 1.0], dtype=torch.float),
                        'coordinates': coordinates}
-        self.train = AniBatchedDataset(self.batched_path, split='training')
 
     def testAtomicNumbersToIndices(self):
         numbers_to_indices = AtomicNumbersToIndices(self.elements)
@@ -60,9 +56,6 @@ class TestTransforms(TestCase):
         for k, v in out.items():
             self.assertEqual(v, expect[k])
 
-    def tearDown(self):
-        shutil.rmtree(self.batched_path)
-
 
 class TestAniBatchedDataset(TestCase):
 
@@ -70,8 +63,9 @@ class TestAniBatchedDataset(TestCase):
         self.batched_path = Path('./tmp_dataset').resolve()
         self.batched_path2 = Path('./tmp_dataset2').resolve()
         self.batched_path_shuffled = Path('./tmp_dataset_shuffled').resolve()
+        self.batch_size = 2560
         create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path, shuffle=False,
-                splits={'training': 0.5, 'validation': 0.5})
+                splits={'training': 0.5, 'validation': 0.5}, batch_size=self.batch_size)
         self.train = AniBatchedDataset(self.batched_path, split='training')
         self.valid = AniBatchedDataset(self.batched_path, split='validation')
 
@@ -80,8 +74,22 @@ class TestAniBatchedDataset(TestCase):
         self.assertTrue(self.valid.split == 'validation')
         self.assertEqual(len(self.train), 3)
         self.assertEqual(len(self.valid), 3)
+        self.assertEqual(self.train.batch_size, self.batch_size)
+        self.assertEqual(self.valid.batch_size, self.batch_size)
         # transform does nothing if no transform was passed
         self.assertTrue(self.train.transform(None) is None)
+
+    def testDropLast(self):
+        train_drop_last = AniBatchedDataset(self.batched_path, split='training', drop_last=True)
+        valid_drop_last = AniBatchedDataset(self.batched_path, split='validation', drop_last=True)
+        self.assertEqual(len(train_drop_last), 2)
+        self.assertEqual(len(valid_drop_last), 2)
+        self.assertEqual(train_drop_last.batch_size, self.batch_size)
+        self.assertEqual(valid_drop_last.batch_size, self.batch_size)
+        for b in train_drop_last:
+            self.assertTrue(len(b['coordinates']), self.batch_size)
+        for b in valid_drop_last:
+            self.assertTrue(len(b['coordinates']), self.batch_size)
 
     def testKeys(self):
         for batch in self.train:
@@ -100,7 +108,7 @@ class TestAniBatchedDataset(TestCase):
         # thest that shuffling at creation time mixes up conformers a lot
         create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path_shuffled, shuffle=True,
                 shuffle_seed=12345,
-                splits={'training': 0.5, 'validation': 0.5})
+                splits={'training': 0.5, 'validation': 0.5}, batch_size=self.batch_size)
         train = AniBatchedDataset(self.batched_path_shuffled, split='training')
         valid = AniBatchedDataset(self.batched_path_shuffled, split='validation')
         # shuffling mixes the conformers a lot, so all batches have pads with -1
@@ -155,7 +163,7 @@ class TestAniBatchedDataset(TestCase):
         for ff in AniBatchedDataset.SUPPORTED_FILE_FORMATS:
             create_batched_dataset(h5_path=dataset_path,
                     dest_path=self.batched_path2, shuffle=False,
-                    splits={'training': 0.5, 'validation': 0.5})
+                    splits={'training': 0.5, 'validation': 0.5}, batch_size=self.batch_size)
             train = AniBatchedDataset(self.batched_path2, split='training')
             valid = AniBatchedDataset(self.batched_path2, split='validation')
             for batch_ref, batch in zip(self.train, train):
