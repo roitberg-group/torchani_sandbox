@@ -14,7 +14,7 @@ transform = Compose([AtomicNumbersToIndices(('H', 'C', 'N'), SubtractSAE([-0.57,
 training = AniBatchedDataset('/path/to/database/', transform=transform, split='training')
 validation = AniBatchedDataset('/path/to/database/', transform=transform, split='validation')
 """
-from typing import Dict, Sequence, Union, Tuple, Optional, Any, List
+from typing import Dict, Sequence, Union, Tuple, Optional, List
 import math
 import warnings
 
@@ -137,7 +137,8 @@ def calculate_saes(dataset: Union[DataLoader, AniBatchedDataset],
                          elements: Sequence[str],
                          mode: str = 'sgd',
                          fraction: float = 1.0,
-                         **kwargs: Any) -> Tuple[Tensor, Optional[Tensor]]:
+                         fit_intercept: bool = False,
+                         **kwargs: float) -> Tuple[Tensor, Optional[Tensor]]:
     if mode == 'exact':
         if 'lr' in kwargs.keys():
             raise ValueError("lr is only used with mode=sgd")
@@ -149,10 +150,17 @@ def calculate_saes(dataset: Union[DataLoader, AniBatchedDataset],
         assert isinstance(dataset.dataset, AniBatchedDataset)
         old_transform = dataset.dataset.transform
         dataset.dataset.transform = AtomicNumbersToIndices(elements)
+        wrapped_ds = dataset.dataset
     else:
         assert isinstance(dataset, AniBatchedDataset)
         old_transform = dataset.transform
         dataset.transform = AtomicNumbersToIndices(elements)
+        wrapped_ds = dataset
+
+    if wrapped_ds.is_inplace_transformed:
+        warnings.warn("Dataset is inplace transformed, "
+                      "SAE calculation may be incorrect "
+                      "depending on the inplace transforms applied")
 
     num_species = len(elements)
     num_batches_to_use = math.ceil(len(dataset) * fraction)
@@ -160,10 +168,10 @@ def calculate_saes(dataset: Union[DataLoader, AniBatchedDataset],
 
     if mode == 'exact':
         print('Calculating SAE using exact OLS method...')
-        m_out, b_out = _calculate_saes_exact(dataset, num_species, num_batches_to_use, **kwargs)
+        m_out, b_out = _calculate_saes_exact(dataset, num_species, num_batches_to_use, fit_intercept)
     elif mode == 'sgd':
         print("Estimating SAE using stochastic gradient descent...")
-        m_out, b_out = _calculate_saes_sgd(dataset, num_species, num_batches_to_use, **kwargs)
+        m_out, b_out = _calculate_saes_sgd(dataset, num_species, num_batches_to_use, fit_intercept, **kwargs)
 
     if isinstance(dataset, DataLoader):
         assert isinstance(dataset.dataset, AniBatchedDataset)
