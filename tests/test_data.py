@@ -26,6 +26,8 @@ class TestTransforms(TestCase):
         self.input_ = {'species': torch.tensor([[-1, 1, 1, 6, 1, 7, 8], [1, 1, 1, 1, 1, 1, 6]], dtype=torch.long),
                        'energies': torch.tensor([0.0, 1.0], dtype=torch.float),
                        'coordinates': coordinates}
+        self.batched_path = Path('./tmp_dataset').resolve()
+        self.batched_path2 = Path('./tmp_dataset2').resolve()
 
     def testAtomicNumbersToIndices(self):
         numbers_to_indices = AtomicNumbersToIndices(self.elements)
@@ -55,6 +57,30 @@ class TestTransforms(TestCase):
         out = compose(self.input_)
         for k, v in out.items():
             self.assertEqual(v, expect[k])
+
+    def testInplaceTransform(self):
+        subtract_sae = SubtractSAE(self.elements, [0.0, 1.0, 0.0, 1.0])
+        numbers_to_indices = AtomicNumbersToIndices(self.elements)
+        compose = Compose([numbers_to_indices, subtract_sae])
+        create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path, shuffle=False,
+                splits={'training': 0.5, 'validation': 0.5}, batch_size=2560, inplace_transform=compose)
+        create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path2, shuffle=False,
+                splits={'training': 0.5, 'validation': 0.5}, batch_size=2560)
+        train_inplace = AniBatchedDataset(self.batched_path, split='training')
+        train = AniBatchedDataset(self.batched_path2, transform=compose, split='training')
+        for b, inplace_b in zip(train, train_inplace):
+            for k in b.keys():
+                self.assertEqual(b[k], inplace_b[k])
+
+    def tearDown(self):
+        try:
+            shutil.rmtree(self.batched_path)
+        except FileNotFoundError:
+            pass
+        try:
+            shutil.rmtree(self.batched_path2)
+        except FileNotFoundError:
+            pass
 
 
 class TestAniBatchedDataset(TestCase):
