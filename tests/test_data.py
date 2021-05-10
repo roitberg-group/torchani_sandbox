@@ -139,46 +139,35 @@ class TestAniH5Dataset(TestCase):
         # group, and fill them with some data
         self.tf_one_group = tempfile.NamedTemporaryFile()
         self.tf_three_groups = tempfile.NamedTemporaryFile()
-
         self.rng = np.random.default_rng(12345)
         self.num_conformers1 = 7
-        properties1 = {'species': ['H', 'C', 'N', 'N'],
+        properties1 = {'species': np.array(['H', 'C', 'N', 'N'], dtype='S'),
                       'coordinates': self.rng.standard_normal((self.num_conformers1, 4, 3)),
                       'energies': self.rng.standard_normal((self.num_conformers1,))}
         self.num_conformers2 = 5
-        properties2 = {'species': ['H', 'O', 'O'],
+        properties2 = {'species': np.array(['H', 'O', 'O'], dtype='S'),
                       'coordinates': self.rng.standard_normal((self.num_conformers2, 3, 3)),
                       'energies': self.rng.standard_normal((self.num_conformers2,))}
         self.num_conformers3 = 8
-        properties3 = {'species': ['H', 'C', 'H', 'H', 'H'],
+        properties3 = {'species': np.array(['H', 'C', 'H', 'H', 'H'], dtype='S'),
                       'coordinates': self.rng.standard_normal((self.num_conformers3, 5, 3)),
                       'energies': self.rng.standard_normal((self.num_conformers3,))}
         with h5py.File(self.tf_one_group, 'r+') as f1:
-            f1.create_group(''.join(properties1['species']))
+            f1.create_group(''.join(properties1['species'].astype(str).tolist()))
         with h5py.File(self.tf_three_groups, 'r+') as f3:
-            f3.create_group(''.join(properties1['species']))
-            f3.create_group(''.join(properties2['species']))
-            f3.create_group(''.join(properties3['species']))
+            f3.create_group(''.join(properties1['species'].astype(str).tolist()))
+            f3.create_group(''.join(properties2['species'].astype(str).tolist()))
+            f3.create_group(''.join(properties3['species'].astype(str).tolist()))
 
         with h5py.File(self.tf_one_group, 'r+') as f1:
             for k, v in properties1.items():
-                if k == 'species':
-                    v = np.asarray(v, dtype='S')
                 f1['HCNN'].create_dataset(k, data=v)
         with h5py.File(self.tf_three_groups, 'r+') as f3:
             for k, v in properties1.items():
-                if k == 'species':
-                    v = np.asarray(v, dtype='S')
                 f3['HCNN'].create_dataset(k, data=v)
-
             for k, v in properties2.items():
-                if k == 'species':
-                    v = np.asarray(v, dtype='S')
                 f3['HOO'].create_dataset(k, data=v)
-
             for k, v in properties3.items():
-                if k == 'species':
-                    v = np.asarray(v, dtype='S')
                 f3['HCHHH'].create_dataset(k, data=v)
 
     def testSizesOneGroup(self):
@@ -248,7 +237,6 @@ class TestAniH5Dataset(TestCase):
         self.assertEqual(len(confs), ds.num_conformers)
 
 
-@unittest.skipIf(True, '')
 class TestData(TestCase):
 
     def testTensorShape(self):
@@ -358,7 +346,7 @@ class TestData(TestCase):
     def testDataloader(self):
         shifter = torchani.EnergyShifter(None)
         dataset = list(torchani.data.load(dataset_path).subtract_self_energies(shifter).species_to_indices().shuffle())
-        loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, collate_fn=torchani.data.collate_fn, num_workers=64)
+        loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, collate_fn=torchani.data.collate_fn, num_workers=2)
         for _ in loader:
             pass
 

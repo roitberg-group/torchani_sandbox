@@ -31,40 +31,14 @@ if not Path(batched_dataset_path).resolve().is_dir():
                                              batch_size=2560,
                                              splits={'training': 0.8, 'validation': 0.2})
 
-# We use a transform on the dataset to perform transformations on the fly, the
-# API for transforms is very similar to torchvision
-# https://pytorch.org/vision/stable/transforms.html with the difference that
-# the transforms are applied to both target and inputs in all cases.
-#
-# A transform can be passed to the "transform" argument of AniBatchedDataset to
-# perform the transforms on CPU after fetching the batches. We will do this in
-# the cache'd version of this example, since the tranform is only applied once
-# in the beginning in this case.
-#
-# Another option is to apply the transform directly during traiing. We will do
-# this in the example, for the non cached version, since it allows us to cast
-# the transform to GPU, which is faster
-#
-# Alternatively a transform can be passed to
-# create_batched_dataset using the argument "inplace_transform", but this is
-# only really recommended if your transforms take a lot of time, since this
-# will modify the dataset and may introduce hard to track discrepancies and
-# reproducibility issues
-#
-elements = ('H', 'C', 'N', 'O')
-# here we use the GSAEs for self energies
-self_energies = [-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000]
-transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
+
+# This batched datasets can be directly iterated upon, but it may be more
+# practical to wrap it with a torch DataLoader
+training = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='training')
+validation = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='validation')
 
 cache = False
 if not cache:
-    # This batched datasets can be directly iterated upon, but it may be more
-    # practical to wrap it with a torch DataLoader
-    training = torchani.datasets.AniBatchedDataset(batched_dataset_path,
-                                                   split='training')
-
-    validation = torchani.datasets.AniBatchedDataset(batched_dataset_path,
-                                                     split='validation')
     # If we decide not to cache the dataset it is a good idea to use
     # multiprocessing. Here we use some default useful arguments for
     # num_workers (extra cores for training) and prefetch_factor (data units
@@ -89,24 +63,17 @@ if not cache:
     training = torch.utils.data.DataLoader(training,
                                            shuffle=True,
                                            num_workers=2,
-                                           prefetch_factor=5,
+                                           prefetch_factor=2,
                                            pin_memory=True,
                                            batch_size=None)
 
     validation = torch.utils.data.DataLoader(validation,
                                              shuffle=False,
                                              num_workers=2,
-                                             prefetch_factor=5,
+                                             prefetch_factor=2,
                                              pin_memory=True,
                                              batch_size=None)
 elif cache:
-    training = torchani.datasets.AniBatchedDataset(batched_dataset_path,
-                                                   transform=transform,
-                                                   split='training')
-
-    validation = torchani.datasets.AniBatchedDataset(batched_dataset_path,
-                                                     transform=transform,
-                                                     split='validation')
     # If need some extra speedup you can cache the dataset before passing it to
     # the DataLoader or iterating on it, but this may occupy a lot of memory,
     # so be careful!!!
@@ -120,6 +87,31 @@ elif cache:
     validation = torch.utils.data.DataLoader(validation.cache(),
                                              shuffle=False,
                                              batch_size=None)
+
+# We use a transform on the dataset to perform transformations on the fly, the
+# API for transforms is very similar to torchvision
+# https://pytorch.org/vision/stable/transforms.html with the difference that
+# the transforms are applied to both target and inputs in all cases.
+#
+# A transform can be passed to the "transform" argument of AniBatchedDataset to
+# perform the transforms on CPU after fetching the batches. If you do this and
+# cache the dataset afterwards, the transform is applied only once, so there is
+# no overhead at all.
+#
+# Another option is to apply the transform directly during training. We will do
+# this in the example, since it allows us to cast the transform to GPU, which
+# is very fast, and it avoids transforming the dataset in-place, which is error
+# prone.
+#
+# Finally, a transform can be passed to create_batched_dataset using the
+# argument "inplace_transform", but this is only really recommended if your
+# transforms take a lot of time, since this will modify the dataset and may
+# introduce hard to track discrepancies and reproducibility issues.
+#
+elements = ('H', 'C', 'N', 'O')
+# here we use the GSAEs for self energies
+self_energies = [-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000]
+transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(self_energies)])
 
 estimate_saes = False
 if estimate_saes:
@@ -138,11 +130,8 @@ if estimate_saes:
     from torchani.transforms import calculate_saes  # noqa
     saes, _ = calculate_saes(training, elements, mode='sgd')
     print(saes)
-    # now we rebuild the transform using the new self energies
+    # now we build the transform using the new self energies
     transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(saes)])
-    if cache:
-        training.transform = transform
-        validation.transform = transform
     # If we really want to, we can also calculate the saes exactly by passing
     # mode = exact, but this will take up a lot of memory because it uses the
     # whole dataset We can also pass a fraction of the dataset, for example
@@ -155,8 +144,7 @@ if estimate_saes:
     # 5% of 1x training:
     # tensor([ -0.5999, -38.0838, -54.7085, -75.1938])
 
-if not cache:
-    transform = transform.to(device)
+transform = transform.to(device)
 
 # --Differences largely end here, besides application of transform in training/validation loops--
 ###############################################################################
@@ -333,8 +321,7 @@ def validate():
     with torch.no_grad():
         for properties in validation:
             properties = {k: v.to(device, non_blocking=True) for k, v in properties.items()}
-            if not cache:
-                properties = transform(properties)
+            properties = transform(properties)
             species = properties['species']
             coordinates = properties['coordinates'].float()
             true_energies = properties['energies'].float()
@@ -388,8 +375,7 @@ for _ in range(AdamW_scheduler.last_epoch + 1, max_epochs):
         desc="epoch {}".format(AdamW_scheduler.last_epoch)
     ):
         properties = {k: v.to(device, non_blocking=True) for k, v in properties.items()}
-        if not cache:
-            properties = transform(properties)
+        properties = transform(properties)
         species = properties['species']
         coordinates = properties['coordinates'].float()
         true_energies = properties['energies'].float()

@@ -99,7 +99,6 @@ from os.path import join, isfile, isdir
 import os
 from ._pyanitools import anidataloader
 from .. import utils
-from ..datasets import AniH5Dataset
 import importlib
 import functools
 import math
@@ -345,7 +344,7 @@ class TransformableIterable:
         return len(self.wrapped_iterable)
 
 
-def load(path, additional_properties=(), legacy=False):
+def load(path, additional_properties=()):
     properties = PROPERTIES + additional_properties
 
     def h5_files(path):
@@ -359,18 +358,11 @@ def load(path, additional_properties=(), legacy=False):
 
     def molecules():
         for f in h5_files(path):
-            if legacy:
-                anidata = anidataloader(f)
-                anidata_size = anidata.group_size()
-                iterator = enumerate(anidata)
-            else:
-                anidata = AniH5Dataset(f)
-                anidata_size = len(anidata)
-                iterator = enumerate(anidata.values())
+            anidata = anidataloader(f)
             use_pbar = PKBAR_INSTALLED and verbose
             if use_pbar:
-                pbar = pkbar.Pbar('=> loading {}, total molecules: {}'.format(f, anidata_size), anidata_size)
-            for i, m in iterator:
+                pbar = pkbar.Pbar('=> loading {}, total molecules: {}'.format(f, anidata.group_size()), anidata.group_size())
+            for i, m in enumerate(anidata):
                 yield m
                 if use_pbar:
                     pbar.update(i)

@@ -224,7 +224,7 @@ class ChemicalSymbolsToAtomicNumbers:
        # atomic_numbers is now torch.tensor([1, 6, 1, 1, 6, 17, 26])
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.converter = np.vectorize(lambda s: ATOMIC_NUMBERS[s])
 
     def __call__(self, symbols: Union[np.ndarray, List[str]]) -> Tensor:

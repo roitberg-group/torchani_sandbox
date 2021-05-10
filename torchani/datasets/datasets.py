@@ -4,24 +4,24 @@ import math
 import pickle
 import warnings
 import importlib
-from typing import Union, Optional, Dict, Any, Callable, Generator, Sequence, Iterator, Tuple, List
+from typing import Union, Optional, Dict, Generator, Sequence, Iterator, Tuple, List, Set, Callable
 from collections import OrderedDict
 from collections.abc import Mapping
 
+import h5py
 import torch
 from torch import Tensor
-import h5py
 import numpy as np
+from numpy import ndarray
 
 from torchani.utils import pad_atomic_properties, ChemicalSymbolsToAtomicNumbers, cumsum_from_zero
 
-PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None  # type: ignore
+PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None
 if PKBAR_INSTALLED:
     import pkbar
 
-
-# These keys are treated differently because they don't have a batch dimension
-ELEMENT_KEYS = ('species', 'numbers', 'atomic_numbers', 'smiles')
+# type alias for transform
+Transform = Callable[[Dict[str, Tensor]], Dict[str, Tensor]]
 
 
 class AniBatchedDataset(torch.utils.data.Dataset):
@@ -31,55 +31,51 @@ class AniBatchedDataset(torch.utils.data.Dataset):
     def __init__(self, store_dir: Union[str, Path],
                        file_format: Optional[str] = None,
                        split: str = 'training',
-                       transform: Callable = lambda x: x):
-
-        if isinstance(store_dir, str):
-            store_dir = Path(store_dir).resolve()
-        assert store_dir.is_dir(), f"The directory {store_dir.as_posix()} could not be found"
+                       transform: Transform = lambda x: x):
         self.split = split
-        self.store_dir = store_dir.joinpath(split)
-        msg = f"The directory {store_dir.as_posix()} exists, but the split {split} could not be found"
-        assert self.store_dir.is_dir(), msg
+        self.store_dir = Path(store_dir).resolve().joinpath(self.split)
+        if not self.store_dir.is_dir():
+            raise ValueError(f'The directory {self.store_dir.as_posix()} exists, '
+                             f'but the split {split} could not be found')
+
         self.batch_paths = [f for f in self.store_dir.iterdir()]
-        assert self.batch_paths, "The path provided has no files"
-        assert all([f.is_file() for f in self.batch_paths]), "Subdirectories in path not supported"
+        if not self.batch_paths:
+            raise RuntimeError("The path provided has no files")
+        if not all([f.is_file() for f in self.batch_paths]):
+            raise RuntimeError("Subdirectories were found in path, this is not supported")
+
         suffix = self.batch_paths[0].suffix
-        assert all([f.suffix == suffix for f in self.batch_paths]), "Different file extensions in same path not supported"
+        if not all([f.suffix == suffix for f in self.batch_paths]):
+            raise RuntimeError("Different file extensions were found in path, not supported")
+
         self.transform = transform
 
-        def numpy_extractor(idx, paths):
-            return {
-                k: torch.as_tensor(v)
-                for k, v in np.load(paths[idx]).items()
-            }
+        def numpy_extractor(idx: int, paths: List[Path]) -> Dict[str, Tensor]:
+            return {k: torch.as_tensor(v) for k, v in np.load(paths[idx]).items()}
 
-        def pickle_extractor(idx, paths):
+        def pickle_extractor(idx: int, paths: List[Path]) -> Dict[str, Tensor]:
             with open(paths[idx], 'rb') as f:
-                return {
-                    k: torch.as_tensor(v)
-                    for k, v in pickle.load(f).items()
-                }
+                return {k: torch.as_tensor(v) for k, v in pickle.load(f).items()}
 
-        def hdf5_extractor(idx, paths):
+        def hdf5_extractor(idx: int, paths: List[Path]) -> Dict[str, Tensor]:
             with h5py.File(paths[idx], 'r') as f:
                 return {k: torch.as_tensor(v[()]) for k, v in f['/'].items()}
 
-        def single_hdf5_extractor(idx, group_keys, path):
+        def single_hdf5_extractor(idx: int, group_keys: List[str], path: Path) -> Dict[str, Tensor]:
             k = group_keys[idx]
             with h5py.File(path, 'r') as f:
                 return {k: torch.as_tensor(v[()]) for k, v in f[k].items()}
 
-        # We use pickle or numpy or hdf5 since saving in
-        # pytorch format is extremely slow
-        format_suffix_map = {'.npz': 'numpy', '.pkl': 'pickle', '.h5': 'hdf5'}
         self._len = len(self.batch_paths)
 
+        # We use pickle or numpy or hdf5 since saving in
+        # pytorch format is extremely slow
         if file_format is None:
+            format_suffix_map = {'.npz': 'numpy', '.pkl': 'pickle', '.h5': 'hdf5'}
             file_format = format_suffix_map[suffix]
             if file_format == 'hdf5' and ('single' in self.batch_paths[0].name):
                 file_format = 'single_hdf5'
 
-        assert file_format is not None
         assert file_format in self.SUPPORTED_FILE_FORMATS
         if file_format == 'numpy':
             self.extractor = partial(numpy_extractor, paths=self.batch_paths)
@@ -88,23 +84,25 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         elif file_format == 'hdf5':
             self.extractor = partial(hdf5_extractor, paths=self.batch_paths)
         elif file_format == 'single_hdf5':
-            warnings.warn('Depending on the implementation, a single HDF5 file'
-                          ' may not support parallel reads, so using num_workers > 1'
-                          ' may have a detrimental effect on performance')
+            warnings.warn('Depending on the implementation, a single HDF5 file '
+                          'may not support parallel reads, so using num_workers > 1 '
+                          'may have a detrimental effect on performance')
             with h5py.File(self.batch_paths[0], 'r') as f:
                 keys = list(f.keys())
                 self._len = len(keys)
                 self.extractor = partial(single_hdf5_extractor, group_keys=keys, path=self.batch_paths[0])
         else:
-            msg = f'Format for file with extension {suffix} could not be infered, please specify explicitly'
-            raise RuntimeError(msg)
+            raise RuntimeError(f'Format for file with extension {suffix} '
+                                'could not be inferred, please specify explicitly')
 
-    def cache(self, pin_memory: bool = True, verbose: bool = True, apply_transform: bool = True):
+    def cache(self, pin_memory: bool = True,
+                    verbose: bool = True,
+                    apply_transform: bool = True) -> 'AniBatchedDataset':
         if verbose:
             print(f"Cacheing split {self.split} of dataset, this may take some time...")
             print("Important: Cacheing the dataset may use a lot of memory, be careful!")
 
-        def memory_extractor(idx, ds):
+        def memory_extractor(idx: int, ds: AniBatchedDataset) -> Dict[str, Tensor]:
             return ds._data[idx]
 
         self._data = [self.extractor(idx) for idx in range(len(self))]
@@ -131,7 +129,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         self.extractor = partial(memory_extractor, ds=self)
         return self
 
-    def __getitem__(self, idx: int) -> Dict[str, Any]:
+    def __getitem__(self, idx: int) -> Dict[str, Tensor]:
         # integral indices must be provided for compatibility with pytorch
         # DataLoader API
         properties = self.extractor(idx)
@@ -139,7 +137,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
             properties = self.transform(properties)
         return properties
 
-    def __iter__(self) -> Generator[Dict[str, Any], None, None]:
+    def __iter__(self) -> Generator[Dict[str, Tensor], None, None]:
         j = 0
         try:
             while True:
@@ -154,150 +152,198 @@ class AniBatchedDataset(torch.utils.data.Dataset):
 
 class AniH5Dataset(Mapping):
 
-    def __init__(self, store_file: Union[str, Path], flag_key: Optional[str] = None):
+    def __init__(self,
+                 store_file: Union[str, Path],
+                 flag_property: Optional[str] = None,
+                 element_keys: Sequence[str] = ('species', 'numbers', 'atomic_numbers', 'smiles')):
         store_file = Path(store_file).resolve()
-        assert isinstance(store_file, Path)
         if not store_file.is_file():
-            raise RuntimeError(f"The h5 file in {store_file.as_posix()} could not be found")
+            raise FileNotFoundError(f"The h5 file in {store_file.as_posix()} could not be found")
 
         self._store_file = store_file
+
         # flag key is used to infer size of molecule groups
         # when iterating over the dataset
-        self._flag_key = flag_key
-        self.group_sizes: Dict[str, int] = OrderedDict()
-        self._cache_group_paths_and_sizes()
+        if flag_property is not None:
+            raise RuntimeError("The flag key provided could not be found in the"
+                               f"dataset properties {self.supported_properties}")
+        self._flag_property = flag_property
+
+        group_sizes, supported_properties = self._cache_group_sizes_and_properties()
+        self.group_sizes = OrderedDict(group_sizes)
+        self.supported_properties = supported_properties
+
+        # element keys are treated differently because they don't have a batch dimension
+        self._supported_element_keys = tuple((k for k in self.supported_properties if k in element_keys))
+        self._supported_non_element_keys = tuple((k for k in self.supported_properties if k not in element_keys))
+
         self.num_conformers = sum(self.group_sizes.values())
         self.num_conformer_groups = len(self.group_sizes.keys())
 
+        self.symbols_to_atomic_numbers = ChemicalSymbolsToAtomicNumbers()
+
     # API
-    def __getitem__(self, key: str):
-        return self._get_group(key, include_properties=None)
+    def __getitem__(self, key: str) -> Dict[str, ndarray]:
+        # this is a simple extraction that just fetches everything
+        return self._get_group(key, self._supported_non_element_keys, self._supported_element_keys)
 
     def __len__(self) -> int:
         return self.num_conformer_groups
 
-    def __iter__(self) -> Iterator:
+    def __iter__(self) -> Iterator[str]:
         # Iterating over groups and yield the associated molecule groups as
         # dictionaries of numpy arrays (except for species, which is a list of
         # strings)
         return iter(self.group_sizes.keys())
 
-    def get_conformers(self, key: str, idx: Optional[Union[int, np.ndarray]] = None, **kwargs) -> Dict[str, Any]:
+    def get_conformers(self,
+                       key: str,
+                       idx: Optional[Union[int, ndarray]] = None,
+                       include_properties: Optional[Sequence[str]] = None,
+                       strict: bool = False,
+                       raw_output: bool = True) -> Dict[str, ndarray]:
+        element_keys, non_element_keys = self._properties_into_keys(include_properties)
         # fetching a conformer actually copies all the group into memory first,
-        # so it is faster to fetch all the indices we need at the same time
-        # using an array for indexing
-        include_properties = kwargs.pop('include_properties', None)
-        strict = kwargs.pop('strict', False)
-        molecule_group = self._get_group(key, include_properties, strict)
+        # because indexing directly into hdf5 is much slower.
+        molecule_group = self._get_group(key, element_keys, non_element_keys, strict)
         if idx is None:
             return molecule_group
-        return self._extract_from_molecule_group(molecule_group, idx, **kwargs)
+        conformers = self._extract_from_group(molecule_group, idx, element_keys, non_element_keys)
+        if raw_output:
+            return conformers
+        else:
+            # here we convert species to atomic numbers and repeat along the
+            # batch dimension all element_keys
+            if 'species' in element_keys:
+                tensor_species = self.symbols_to_atomic_numbers(conformers['species'].astype(str))
+                conformers['species'] = tensor_species.cpu().numpy()
+            if not isinstance(idx, int):
+                for k in element_keys:
+                    conformers[k] = np.tile(conformers[k].reshape((1, -1)), (len(idx), 1))
+            return conformers
 
-    def iter_conformers(self, **kwargs) -> Generator[Dict[str, Any], None, None]:
-        # Iterating sequentially over conformers is also supported
-        include_properties = kwargs.pop('include_properties', None)
-        strict = kwargs.pop('strict', False)
+    def iter_conformers(self,
+                        include_properties: Optional[Sequence[str]] = None,
+                        strict: bool = False) -> Iterator[Dict[str, ndarray]]:
+
+        element_keys, non_element_keys = self._properties_into_keys(include_properties)
+
+        # Iterate sequentially over conformers also copies all the group
+        # into memory first, so it is also fast
         for k, size in self.group_sizes.items():
-            conformer_group = self._get_group(k, include_properties, strict)
-            for j in range(size):
-                yield self._extract_from_molecule_group(conformer_group, j, **kwargs)
+            conformer_group = self._get_group(k, element_keys, non_element_keys, strict)
+            for idx in range(size):
+                yield self._extract_from_group(conformer_group, idx, element_keys, non_element_keys)
     # end API
 
-    def _cache_group_paths_and_sizes(self):
-        # cache paths of all molecule groups into a list
-        _group_sizes = []
+    def _properties_into_keys(self,
+                              properties: Optional[Sequence[str]] = None) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+        if properties is None:
+            element_keys = self._supported_element_keys
+            non_element_keys = self._supported_non_element_keys
+        elif set(properties).issubset(self.supported_properties):
+            element_keys = tuple((k for k in properties if k in self._supported_element_keys))
+            non_element_keys = tuple((k for k in properties if k not in self._supported_element_keys))
+        else:
+            breakpoint()
+            raise ValueError(f"Some of the properties demanded {properties} are not "
+                             f"in the dataset, which has properties {self.supported_properties}")
+        return element_keys, non_element_keys
 
-        def visitor_fn(name, object_, ds: AniH5Dataset, _group_sizes: List[Tuple[str, int]]):
-            # validate format of the dataset
+    def _cache_group_sizes_and_properties(self) -> Tuple[List[Tuple[str, int]], Set[str]]:
+        # cache paths of all molecule groups into a list
+        # and all supported properties into a set
+        def visitor_fn(name: str,
+                       object_: Union[h5py.Dataset, h5py.Group],
+                       ds: AniH5Dataset,
+                       _group_sizes: List[Tuple[str, int]],
+                       _supported_properties: Set[str]) -> None:
+
             if isinstance(object_, h5py.Dataset):
                 molecule_group = object_.parent
-                for k, v in molecule_group.items():
-                    if not isinstance(v, h5py.Dataset):
-                        msg = "Invalid dataset format, there shouldn't be Groups inside Groups that have Datasets"
-                        raise RuntimeError(msg)
-                # If the format is correct cache the molecule group path, if it
-                # hasn't been cached already
-                visited_groups = [tup[0] for tup in _group_sizes]
-                if molecule_group.name not in visited_groups:
-                    size = ds._get_group_size(molecule_group)
-                    _group_sizes.append((molecule_group.name, size))
+                # Check if we already visited this group via one of its
+                # children or not
+                if molecule_group.name not in [tup[0] for tup in _group_sizes]:
+                    # If the format is correct cache the molecule group path
+                    if not _supported_properties:
+                        _supported_properties.update({k for k in molecule_group.keys()})
+                        if self._flag_property is not None and self._flag_property not in _supported_properties:
+                            raise RuntimeError(f"Flag property {self._flag_property} "
+                                               f"not found in {_supported_properties}")
+                    else:
+                        if not {k for k in molecule_group.keys()} == _supported_properties:
+                            raise RuntimeError(f"group {molecule_group.name} has incompatible keys, "
+                                               f"which should be {_supported_properties}, inferred from other groups")
+                    for v in molecule_group.values():
+                        if not isinstance(v, h5py.Dataset):
+                            raise RuntimeError("Invalid dataset format, there "
+                                               "shouldn't be Groups inside Groups "
+                                               "that have Datasets")
+                    _group_sizes.append((molecule_group.name,
+                                         ds._get_group_size(molecule_group, _supported_properties)))
+
+        _group_sizes: List[Tuple[str, int]] = []
+        _supported_properties: Set[str] = set()
 
         with h5py.File(self._store_file, 'r') as f:
-            f.visititems(partial(visitor_fn, ds=self, _group_sizes=_group_sizes))
+            f.visititems(partial(visitor_fn,
+                                 ds=self,
+                                 _group_sizes=_group_sizes,
+                                 _supported_properties=_supported_properties))
 
-        self.group_sizes = OrderedDict(_group_sizes)
+        return _group_sizes, _supported_properties
 
-    def _get_group_size(self, molecule_group) -> int:
-        if self._flag_key is not None:
-            try:
-                size = len(molecule_group[self._flag_key])
-            except KeyError:
-                print(f'The flag key provided {self._flag_key} is not in {molecule_group.name}')
-                raise
+    def _get_group_size(self, molecule_group: h5py.Group, supported_properties: Optional[Set[str]] = None) -> int:
+        if self._flag_property is not None:
+            size = len(molecule_group[self._flag_property])
         else:
-            molecule_keys = list(molecule_group.keys())
-            if 'coordinates' in molecule_keys:
+            assert supported_properties is not None
+            if 'coordinates' in supported_properties:
                 size = len(molecule_group['coordinates'])
-            elif 'energies' in molecule_keys:
-                size = len(molecule_group['coordinates'])
-            elif 'forces' in molecule_keys:
-                size = len(molecule_group['coordinates'])
+            elif 'energies' in supported_properties:
+                size = len(molecule_group['energies'])
+            elif 'forces' in supported_properties:
+                size = len(molecule_group['forces'])
             else:
-                msg = """Could not infer number of molecules in molecule
-                         group since 'coordinates', 'forces' and 'energies' dont
-                         exist, please provide a key that holds a dataset with the
-                         moleucule size as its first axis / dim"""
-                raise RuntimeError(msg)
+                raise RuntimeError('Could not infer number of molecules in molecule'
+                                   ' group since "coordinates", "forces" and "energies" dont'
+                                   ' exist, please provide a key that holds a dataset with the'
+                                   ' molecule size as its first axis / dim')
         return size
 
-    def _get_group(self, key: str,
-                         include_properties: Optional[Sequence[str]] = None,
-                         strict: bool = False) -> Dict[str, Any]:
-        # note that if include_properties are not found then this returns an
-        # empty dict silently, unless strict is passed
-        if include_properties is None:
-            with h5py.File(self._store_file, 'r') as f:
-                molecules = {k: self._parse_species(v[()]) for k, v in f[key].items()}
-        else:
-            if strict:
-                msg = f"Some of the requested properties could not be found in group {key}"
-                assert all([p in f[key].keys() for p in include_properties]), msg
-            with h5py.File(self._store_file, 'r') as f:
-                molecules = {k: self._parse_species(v[()]) for k, v in f[key].items() if k in include_properties}
+    def _get_group(self,
+                   key: str,
+                   non_element_keys: Tuple[str, ...],
+                   element_keys: Tuple[str, ...],
+                   strict: bool = False) -> Dict[str, ndarray]:
+
+        # NOTE: If some keys are not found then
+        # this returns a partial result with the keys that are found, (maybe
+        # even empty) unless strict is passed.
+        with h5py.File(self._store_file, 'r') as f:
+            if strict and not all([p in f[key].keys() for p in element_keys + non_element_keys]):
+                raise RuntimeError('Some of the requested properties could not '
+                                  f'be found in group {key}')
+            molecules = {k: np.copy(v) for k, v in f[key].items() if k in non_element_keys}
+            molecules.update({k: np.copy(f[key][k]) for k in element_keys})
+            if 'species' in element_keys:
+                molecules['species'] = molecules['species'].astype(str)
         return molecules
 
     @staticmethod
-    def _extract_from_molecule_group(molecule_group,
-                                     idx: Union[int, np.ndarray],
-                                     element_keys: Optional[Sequence[str]] = None) -> Dict[str, Any]:
-        # this extraction procedure will fail if there are other keys in the
-        # dataset besides "species", "numbers" and "atomic_numbers" and
-        # "smiles" that don't have group_size as the 0th shape, in this case
-        # those keys have to be specified
-        if element_keys is None:
-            element_keys = ELEMENT_KEYS
+    def _extract_from_group(molecule_group: Dict[str, ndarray],
+                            idx: Union[int, ndarray],
+                            element_keys: Sequence[str],
+                            non_element_keys: Sequence[str]) -> Dict[str, ndarray]:
 
-        if isinstance(idx, np.ndarray):
-            assert idx.ndim == 1, "Only vector indices are supported"
-
-        conformer = {k: v[idx] for k, v in molecule_group.items() if k not in element_keys}
-        # only one of these keys per molecule group exists
-        for k in element_keys:
-            try:
-                conformer.update({k: molecule_group[k]})
-            except KeyError:
-                pass
+        # only one of these "element_keys" per molecule group exists
+        conformer = {k: v for k, v in molecule_group.items() if k in element_keys}
+        conformer.update({k: v[idx] for k, v in molecule_group.items() if k in non_element_keys})
         return conformer
 
-    @staticmethod
-    def _parse_species(v: np.ndarray):
-        if v.dtype == np.bytes_ or v.dtype == np.str_ or v.dtype.name == 'bytes8':
-            v = [s.decode('ascii') for s in v]  # type: ignore
-        return v
 
-
-def _save_batch(path: Path, idx: int, batch: Dict[str, Tensor], file_format: str):
-    # We use pickle or numpy since saving in
+def _save_batch(path: Path, idx: int, batch: Dict[str, Tensor], file_format: str) -> None:
+    # We use pickle, numpy or hdf5 since saving in
     # pytorch format is extremely slow
     batch = {k: v.numpy() for k, v in batch.items()}
     if file_format == 'pickle':
@@ -322,13 +368,13 @@ def create_batched_dataset(h5_path: Union[str, Path],
                            shuffle: bool = True,
                            shuffle_seed: Optional[int] = None,
                            file_format: str = 'hdf5',
-                           include_properties: Tuple[str, ...] = ('species', 'coordinates', 'energies'),
+                           include_properties: Optional[Sequence[str]] = ('species', 'coordinates', 'energies'),
                            batch_size: int = 2560,
                            max_batches_per_packet: int = 350,
                            padding: Optional[Dict[str, float]] = None,
                            splits: Optional[Dict[str, float]] = None,
-                           inplace_transform: Callable[[Dict[str, Tensor]], Dict[str, Tensor]] = lambda x: x,
-                           verbose: bool = True):
+                           inplace_transform: Transform = lambda x: x,
+                           verbose: bool = True) -> None:
     # NOTE: All the tensor manipulation in this function is handled in CPU
     if file_format == 'single_hdf5':
         warnings.warn('Depending on the implementation, a single HDF5 file may'
@@ -340,7 +386,6 @@ def create_batched_dataset(h5_path: Union[str, Path],
     dest_path = Path(dest_path).resolve()
 
     h5_path = Path(h5_path).resolve()
-    assert isinstance(h5_path, Path)
     if h5_path.is_dir():
         h5_datasets = [AniH5Dataset(p) for p in h5_path.iterdir() if p.suffix == '.h5']
     elif h5_path.is_file():
@@ -399,7 +444,7 @@ def _maybe_shuffle_indices(conformer_indices: Tensor,
 
 def _divide_into_splits(conformer_indices: Tensor,
                         dest_path: Path,
-                        splits: dict) -> Tuple[Tuple[Tensor, ...], 'OrderedDict[str, Path]']:
+                        splits: Dict[str, float]) -> Tuple[Tuple[Tensor, ...], 'OrderedDict[str, Path]']:
     total_num_conformers = len(conformer_indices)
     split_sizes = OrderedDict([(k, int(total_num_conformers * v)) for k, v in splits.items()])
     split_paths = OrderedDict([(k, dest_path.joinpath(k)) for k in split_sizes.keys()])
@@ -434,53 +479,36 @@ def _divide_into_splits(conformer_indices: Tensor,
 def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                               conformer_splits: Tuple[Tensor, ...],
                               file_format: str,
-                              include_properties: Sequence[str],
+                              include_properties: Optional[Sequence[str]],
                               h5_datasets: Sequence[AniH5Dataset],
                               padding: Optional[Dict[str, float]],
-                              inplace_transform: Callable[[Dict[str, Any]], Dict[str, Any]],
+                              inplace_transform: Transform,
                               batch_size: int,
                               max_batches_per_packet: int,
                               verbose: bool) -> None:
-    # NOTE: Explanation for complicated logic, please read
+    # NOTE: Explanation for following logic, please read
     #
-    # This sets up a given number of batches (packet) to keep in memory
-    # and then scans the dataset and find the conformers needed for
-    # the packet. It then saves the batches and fetches the next packet.
+    # This sets up a given number of batches (packet) to keep in memory and
+    # then scans the dataset and find the conformers needed for the packet. It
+    # then saves the batches and fetches the next packet.
     #
-    # A "packet" is just a list that has tensors, each of which
+    # A "packet" is a list that has tensors, each of which
     # has batch indices, for instance [tensor([[0, 0, 1, 1, 2], [1, 2, 3, 5]]),
     #                                  tensor([[3, 5, 5, 5], [1, 2, 3, 3]])]
-    # would be a "packet" of 2 batch_indices, each of which has in the first row the
-    # index for the group, and in the second row the index for the conformer
+    # would be a "packet" of 2 batch_indices, each of which has in the first
+    # row the index for the group, and in the second row the index for the
+    # conformer
     #
-    # It is important to do this with a packet and not only 1 batch
-    # the number of reads to the h5 file is batches x conformer_groups
-    # x 3 for 1x (factor of 3 from energies, species, coordinates),
-    # which means ~ 2000 x 3000 x 3 = 9M reads, this is a bad
-    # bottleneck and very slow, even if we fetch all necessary
-    # molecules from each conformer group simultaneously.
+    # It is important to do this with a packet and not only 1 batch.  The
+    # number of reads to the h5 file is batches x conformer_groups x 3 for 1x
+    # (factor of 3 from energies, species, coordinates), which means ~ 2000 x
+    # 3000 x 3 = 9M reads, this is a bad bottleneck and very slow, even if we
+    # fetch all necessary molecules from each conformer group simultaneously.
     #
-    # Doing it for all batches at the same time is (reasonably) fast,
-    # ~ 9000 reads, but in this case it means we will have to put
-    # all, or almost all the dataset into memory at some point, which
-    # is not feasible for larger datasets so it is better if the max
-    # number of batches in each packet is some intermediate number.
-    # (Maybe some heuristic is needed to calculate this automatically,
-    # but I found 350 to be a good compromise).
-    #
-    # if max_batches_per_packet = num_batches many of the following
-    # logic is not necessary, but it is not worth it to simplify for
-    # this specific case since the bottleneck is IO by far.
-
-    # Properties that are ELEMENT_KEYS have to be treated differently because
-    # they don't have a batch dimension, so we separate them here
-    include_element_keys = tuple((k for k in include_properties if k in ELEMENT_KEYS))
-    include_properties = tuple((k for k in include_properties if k not in ELEMENT_KEYS))
-
-    # Important: to prevent possible bugs / errors, that may happen due to
-    # incorrect conversion to indices, species is **always* converted to atomic
-    # numbers when saving the batched dataset.
-    symbols_to_atomic_numbers = ChemicalSymbolsToAtomicNumbers()
+    # Doing it for all batches at the same time is (reasonably) fast, ~ 9000
+    # reads, but in this case it means we will have to put all, or almost all
+    # the dataset into memory at some point, which is not feasible for larger
+    # datasets.
 
     # get all group keys concatenated in a list, with the associated file indexes
     file_idxs_and_group_keys = [(j, k)
@@ -518,39 +546,27 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                 pbar = pkbar.Pbar(f'=> Saving batch packet {j + 1} of {num_batch_indices_packets}'
                                   f' of split {split_path.name},'
                                   f' in format {file_format}', len(counts_cat))
-            # no need to wrap this file opening code in a try/except block for now, since an
-            # exception during this should abort immediatly anyways
-            all_conformers = []
-            h5_files = [h5py.File(h5ds._store_file, 'r') for h5ds in h5_datasets]
+
+            all_conformers: List[Dict[str, Tensor]] = []
             for step, (group_idx, count, start_index) in enumerate(zip(uniqued_idxs_cat, counts_cat, cumcounts_cat)):
                 # select the specific group from the whole list of files
                 file_idx, group_key = file_idxs_and_group_keys[group_idx.item()]
-                group = h5_files[file_idx][group_key]
 
                 # get a slice with the indices to extract the necessary
                 # conformers from the group for all batches in pack.
                 end_index = start_index + count
                 selected_indices = sorted_batch_indices_cat[start_index:end_index, 1]
-                # copying this avoids directly indexing the HDF5
-                # dataset, which is extremely expensive
-                conformers = {k: np.copy(group[k]) for k in include_properties}
-                conformers = {k: v[selected_indices.cpu().numpy()] for k, v in conformers.items()}
-                conformers.update({k: np.copy(group[k]).astype(str) for k in include_element_keys})
 
-                if 'species' in include_element_keys:
-                    conformers['species'] = symbols_to_atomic_numbers(conformers['species'])
-
-                conformers = {k: torch.as_tensor(v) for k, v in conformers.items()}
-
-                for k in include_element_keys:
-                    conformers[k] = conformers[k].view(1, -1).repeat(count, 1)
-
-                all_conformers.append(conformers)
+                # Important: to prevent possible bugs / errors, that may happen
+                # due to incorrect conversion to indices, species is **always*
+                # converted to atomic numbers when saving the batched dataset.
+                numpy_conformers = h5_datasets[file_idx].get_conformers(group_key,
+                                                                  selected_indices.cpu().numpy(),
+                                                                  include_properties, raw_output=False)
+                all_conformers.append({k: torch.as_tensor(v) for k, v in numpy_conformers.items()})
                 if use_pbar:
                     pbar.update(step)
 
-            for f in h5_files:
-                f.close()
             batches_cat = pad_atomic_properties(all_conformers, padding)
             # Now we need to reassign the conformers to the specified
             # batches. Since to get here we cat'ed and sorted, to
