@@ -39,7 +39,7 @@ class SubtractRepulsion(torch.nn.Module):
 
 class SubtractSAE(torch.nn.Module):
 
-    def __init__(self, elements: Union[Sequence[str], Sequence[int]], self_energies: Sequence[float]):
+    def __init__(self, elements: Union[Sequence[str], Sequence[int]], self_energies: Sequence[float], intercept: float = 0.0):
         super().__init__()
         symbols, atomic_numbers = _parse_elements(elements)
 
