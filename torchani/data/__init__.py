@@ -359,9 +359,10 @@ def load(path, additional_properties=()):
     def molecules():
         for f in h5_files(path):
             anidata = anidataloader(f)
+            anidata_size = anidata.group_size()
             use_pbar = PKBAR_INSTALLED and verbose
             if use_pbar:
-                pbar = pkbar.Pbar('=> loading {}, total molecules: {}'.format(f, anidata.group_size()), anidata.group_size())
+                pbar = pkbar.Pbar('=> loading {}, total molecules: {}'.format(f, anidata_size), anidata_size)
             for i, m in enumerate(anidata):
                 yield m
                 if use_pbar:
