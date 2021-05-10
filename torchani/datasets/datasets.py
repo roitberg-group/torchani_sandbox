@@ -164,9 +164,6 @@ class AniH5Dataset(Mapping):
 
         # flag key is used to infer size of molecule groups
         # when iterating over the dataset
-        if flag_property is not None:
-            raise RuntimeError("The flag key provided could not be found in the"
-                               f"dataset properties {self.supported_properties}")
         self._flag_property = flag_property
 
         group_sizes, supported_properties = self._cache_group_sizes_and_properties()
