@@ -1,5 +1,7 @@
 from pathlib import Path
 from functools import partial
+import json
+import datetime
 import math
 import pickle
 import warnings
@@ -14,7 +16,7 @@ from torch import Tensor
 import numpy as np
 from numpy import ndarray
 
-from torchani.utils import pad_atomic_properties, ChemicalSymbolsToAtomicNumbers, cumsum_from_zero
+from torchani import utils
 
 PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None
 if PKBAR_INSTALLED:
@@ -117,6 +119,14 @@ class AniBatchedDataset(torch.utils.data.Dataset):
 
         self._len = len(self.batch_paths)
 
+        try:
+            with open(self.store_dir.parent.joinpath('creation_log.json'), 'r') as logfile:
+                creation_log = json.load(logfile)
+            self.is_inplace_transformed = creation_log['is_inplace_transformed']
+        except Exception:
+            warnings.warn("No creation log found, is_inplace_transformed assumed False")
+            self.is_inplace_transformed = False
+
     def cache(self, pin_memory: bool = True,
                     verbose: bool = True,
                     apply_transform: bool = True) -> 'AniBatchedDataset':
@@ -131,7 +141,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
 
         if apply_transform:
             if verbose:
-                print("Applying transforms...")
+                print("Applying transforms if they are present...")
                 print("Important: Transformations, if there are any present,"
                       " will be applied once during cacheing and then discarded.")
                 print("If you want a different behavior pass apply_transform=False")
@@ -200,7 +210,7 @@ class AniH5Dataset(Mapping):
         self.num_conformers = sum(self.group_sizes.values())
         self.num_conformer_groups = len(self.group_sizes.keys())
 
-        self.symbols_to_atomic_numbers = ChemicalSymbolsToAtomicNumbers()
+        self.symbols_to_atomic_numbers = utils.ChemicalSymbolsToAtomicNumbers()
 
     def __getitem__(self, key: str) -> Dict[str, ndarray]:
         # this is a simple extraction that just fetches everything
@@ -376,7 +386,7 @@ def create_batched_dataset(h5_path: Union[str, Path],
                            max_batches_per_packet: int = 350,
                            padding: Optional[Dict[str, float]] = None,
                            splits: Optional[Dict[str, float]] = None,
-                           inplace_transform: Transform = lambda x: x,
+                           inplace_transform: Optional[Transform] = None,
                            verbose: bool = True) -> None:
     # NOTE: All the tensor manipulation in this function is handled in CPU
     if file_format == 'single_hdf5':
@@ -419,14 +429,29 @@ def create_batched_dataset(h5_path: Union[str, Path],
     # (3) Compute the batch indices for each split and save the conformers to disk
     _save_splits_into_batches(split_paths,
                               conformer_splits,
+                              inplace_transform,
                               file_format,
                               include_properties,
                               h5_datasets,
                               padding,
-                              inplace_transform,
                               batch_size,
                               max_batches_per_packet,
                               verbose)
+
+    # log creation data
+    creation_log = {'datetime_created': str(datetime.datetime.now()),
+                    'source_path': h5_path.as_posix(),
+                    'splits': splits,
+                    'padding': utils.PADDING if padding is None else padding,
+                    'is_inplace_transformed': inplace_transform is not None,
+                    'shuffle': shuffle,
+                    'include_properties': include_properties if include_properties is not None else 'all',
+                    'batch_size': batch_size,
+                    'total_num_conformers': len(conformer_indices),
+                    'total_conformer_groups': len(group_sizes_values)}
+
+    with open(dest_path.joinpath('creation_log.json'), 'w') as logfile:
+        json.dump(creation_log, logfile, indent=1)
 
 
 def _get_properties_size(molecule_group: Union[h5py.Group, Dict[str, ndarray], Dict[str, Tensor]],
@@ -502,11 +527,11 @@ def _divide_into_splits(conformer_indices: Tensor,
 
 def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                               conformer_splits: Tuple[Tensor, ...],
+                              inplace_transform: Optional[Transform],
                               file_format: str,
                               include_properties: Optional[Sequence[str]],
                               h5_datasets: Sequence[AniH5Dataset],
                               padding: Optional[Dict[str, float]],
-                              inplace_transform: Transform,
                               batch_size: int,
                               max_batches_per_packet: int,
                               verbose: bool) -> None:
@@ -533,6 +558,8 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
     # reads, but in this case it means we will have to put all, or almost all
     # the dataset into memory at some point, which is not feasible for larger
     # datasets.
+    if inplace_transform is None:
+        inplace_transform = lambda x: x  # noqa: E731
 
     # get all group keys concatenated in a list, with the associated file indexes
     file_idxs_and_group_keys = [(j, k)
@@ -557,7 +584,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
             sorted_batch_indices_cat = batch_indices_cat[indices_to_sort_batch_indices_cat]
             uniqued_idxs_cat, counts_cat = torch.unique_consecutive(sorted_batch_indices_cat[:, 0],
                                                                     return_counts=True)
-            cumcounts_cat = cumsum_from_zero(counts_cat)
+            cumcounts_cat = utils.cumsum_from_zero(counts_cat)
 
             # batch_sizes and indices_to_unsort are needed for the
             # reverse operation once the conformers have been
@@ -591,7 +618,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                 if use_pbar:
                     pbar.update(step)
 
-            batches_cat = pad_atomic_properties(all_conformers, padding)
+            batches_cat = utils.pad_atomic_properties(all_conformers, padding)
             # Now we need to reassign the conformers to the specified
             # batches. Since to get here we cat'ed and sorted, to
             # reassign we need to unsort and split.
