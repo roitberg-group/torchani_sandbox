@@ -38,7 +38,8 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
       std::vector<Tensor> weight_list,
       std::vector<Tensor> bias_list,
       std::vector<at::Stream> stream_list,
-      bool is_bmm) {
+      bool is_bmm,
+      float celu_alpha) {
     tensor_list to_save;
     std::vector<at::Tensor> outputs;
     Tensor energy_list = at::zeros(num_networks, aev.options());
@@ -94,7 +95,7 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
           }
           // activation layer if it's not the last layer
           if (j < num_layers - 1) {
-            input_ = at::celu_(input_, 0.1);
+            input_ = at::celu_(input_, celu_alpha);
           }
           // save intermediate result for backward
           intm_result_list[start_layers + j] = input_;
@@ -123,12 +124,12 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
     ctx->saved_data["intm_result_list"] = c10::List<Tensor>(intm_result_list);
     ctx->saved_data["idx_list"] = c10::List<Tensor>(idx_list);
     ctx->saved_data["is_bmm"] = is_bmm;
+    ctx->saved_data["celu_alpha"] = (double)celu_alpha;
 
     return at::sum(energy_list, 0, true).view({1, 1});
   }
 
   static tensor_list backward(AutogradContext* ctx, tensor_list grad_o) {
-    float alpha = 0.1f;
     tensor_list saved_tensors = ctx->get_saved_variables();
     c10::List<int64_t> num_layers_list = ctx->saved_data["num_layers_list"].toIntList();
     c10::List<int64_t> start_layers_list = ctx->saved_data["start_layers_list"].toIntList();
@@ -137,6 +138,7 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
     std::vector<Tensor> intm_result_list = ctx->saved_data["intm_result_list"].toTensorVector();
     std::vector<Tensor> idx_list = ctx->saved_data["idx_list"].toTensorVector();
     bool is_bmm = ctx->saved_data["is_bmm"].toBool();
+    float celu_alpha = ctx->saved_data["celu_alpha"].toDouble();
     int num_networks = num_layers_list.size();
 
     Tensor aev = saved_tensors[0];
@@ -194,7 +196,8 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
           Tensor intermediate_result = intm_result_list[start_layers + j];
           // activation layer backward if it's not the last layer
           if (j < num_layers - 1) {
-            input_ = at::elu_backward(input_, alpha, 1, 1.0 / alpha, /* is_result */ true, intermediate_result);
+            input_ =
+                at::elu_backward(input_, celu_alpha, 1, 1.0f / celu_alpha, /* is_result */ true, intermediate_result);
           }
           // linear layer backward
           if (is_bmm) {
@@ -215,7 +218,7 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
       }
     }
 
-    return {aev_grad, Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor()};
+    return {aev_grad, Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor()};
   }
 };
 
@@ -228,9 +231,19 @@ Tensor run_autograd(
     std::vector<Tensor> weight_list,
     std::vector<Tensor> bias_list,
     std::vector<at::Stream> stream_list,
-    bool is_bmm) {
+    bool is_bmm,
+    double celu_alpha = 0.1) {
   return MultiNetFunction::apply(
-      aev, num_networks, num_layers_list, start_layers_list, idx_list, weight_list, bias_list, stream_list, is_bmm);
+      aev,
+      num_networks,
+      num_layers_list,
+      start_layers_list,
+      idx_list,
+      weight_list,
+      bias_list,
+      stream_list,
+      is_bmm,
+      celu_alpha);
 }
 
 // mnp stands for multi network parallel
