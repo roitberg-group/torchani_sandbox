@@ -14,6 +14,7 @@ from torchani.datasets import AniH5Dataset, AniBatchedDataset, create_batched_da
 
 path = os.path.dirname(os.path.realpath(__file__))
 dataset_path = os.path.join(path, '../dataset/ani-1x/sample.h5')
+dataset_path_gdb = os.path.join(path, '../dataset/ani1-up_to_gdb4/ani_gdb_s02.h5')
 batch_size = 256
 ani1x_sae_dict = {'H': -0.60095298, 'C': -38.08316124, 'N': -54.7077577, 'O': -75.19446356}
 
@@ -23,15 +24,21 @@ class TestEstimationSAE(TestCase):
     def setUp(self):
         self.batched_path = Path('./tmp_dataset').resolve()
         self.batch_size = 2560
-        create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path, shuffle=False,
-                splits={'training': 1.0}, batch_size=self.batch_size)
+        create_batched_dataset(h5_path=dataset_path_gdb, dest_path=self.batched_path, shuffle=True,
+                splits={'training': 1.0}, batch_size=self.batch_size, shuffle_seed=12345)
         self.train = AniBatchedDataset(self.batched_path, split='training')
 
     def testExactSAE(self):
         saes, _ = calculate_saes(self.train, ('H', 'C', 'N', 'O'), mode='exact')
+        self.assertEqual(saes, torch.tensor([-0.5960, -38.0730, -54.6918, -75.1471], dtype=torch.float),
+                         atol=1e-3, rtol=1e-3)
 
     def testStochasticSAE(self):
         saes, _ = calculate_saes(self.train, ('H', 'C', 'N', 'O'), mode='sgd')
+        # in this specific case the sae difference is very large because it is a
+        # very small sample, but for the full sample this imlementation is correct
+        self.assertEqual(saes, torch.tensor([-20.4466, -0.3910, -8.8793, -11.4184], dtype=torch.float),
+                         atol=1e-4, rtol=1e-4)
 
     def tearDown(self):
         shutil.rmtree(self.batched_path)

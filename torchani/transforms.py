@@ -230,7 +230,7 @@ def _calculate_saes_sgd(dataset, num_species: int, num_batches_to_use: int,
             opt.zero_grad()
             loss.backward()
             opt.step()
-            if j == num_batches_to_use:
+            if j == num_batches_to_use - 1:
                 break
     model.m.requires_grad_(False)
     m_out = model.m.data.cpu()
@@ -260,7 +260,7 @@ def _calculate_saes_exact(dataset, num_species: int, num_batches_to_use: int,
             species_counts[:, n] = (species == n).sum(-1).float()
         list_species_counts.append(species_counts)
         list_true_energies.append(true_energies)
-        if j == num_batches_to_use:
+        if j == num_batches_to_use - 1:
             break
 
     if fit_intercept:
