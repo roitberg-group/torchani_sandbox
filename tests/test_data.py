@@ -19,6 +19,65 @@ batch_size = 256
 ani1x_sae_dict = {'H': -0.60095298, 'C': -38.08316124, 'N': -54.7077577, 'O': -75.19446356}
 
 
+class TestFineGrainedShuffle(TestCase):
+
+    def testShuffleMixesManyH5(self):
+        # test that shuffling correctly mixes multiple h5 files
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.batched_path = Path('./tmp_dataset').resolve()
+            self.dummy_h50 = tempfile.NamedTemporaryFile(dir=tmpdir, suffix='.h5')
+            self.dummy_h51 = tempfile.NamedTemporaryFile(dir=tmpdir, suffix='.h5')
+            self.dummy_h52 = tempfile.NamedTemporaryFile(dir=tmpdir, suffix='.h5')
+            self.rng = np.random.default_rng(12345)
+            # each file will have 120 conformers, total 360 conformers
+            num_groups = 10
+            num_conformers_per_group = 12
+            properties = ['species', 'coordinates', 'energies']
+            self._create_dummy_file(self.dummy_h50, num_groups, num_conformers_per_group, 'H', 0.0, properties)
+            self._create_dummy_file(self.dummy_h51, num_groups, num_conformers_per_group, 'C', 1.0, properties)
+            self._create_dummy_file(self.dummy_h52, num_groups, num_conformers_per_group, 'N', 2.0, properties)
+
+            self.batched_path = Path('./tmp_dataset').resolve()
+            # both validation and test have 3 batches of 60 each
+            create_batched_dataset(h5_path=tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
+                    splits={'training': 0.5, 'validation': 0.5}, batch_size=60)
+
+        self.train = AniBatchedDataset(self.batched_path, split='training')
+        self.valid = AniBatchedDataset(self.batched_path, split='validation')
+        for b, b_valid in zip(self.train, self.valid):
+            self.assertNotEqual(b['species'], b_valid['species'])
+            self.assertNotEqual(b['energies'], b_valid['energies'])
+            self._test_for_batch_diversity(b)
+            self._test_for_batch_diversity(b_valid)
+
+    def _create_dummy_file(self, file_, num_groups, num_conformers_per_group, element, factor, properties):
+        with h5py.File(file_, 'r+') as f:
+            for j in range(num_groups):
+                f.create_group(f'group{j}')
+                g = f[f'group{j}']
+                for k in properties:
+                    if k == 'species':
+                        g.create_dataset(k, data=np.array([element, element, element], dtype='S'))
+                    elif k == 'coordinates':
+                        g.create_dataset(k, data=self.rng.standard_normal((num_conformers_per_group, 3, 3)))
+                    elif k == 'energies':
+                        g.create_dataset(k, data=factor * np.ones((num_conformers_per_group,)))
+
+    def _test_for_batch_diversity(self, b):
+        zeros = (b['energies'] == 0.0).count_nonzero()
+        ones = (b['energies'] == 1.0).count_nonzero()
+        twos = (b['energies'] == 2.0).count_nonzero()
+        self.assertTrue(zeros > 0)
+        self.assertTrue(ones > 0)
+        self.assertTrue(twos > 0)
+
+    def tearDown(self):
+        try:
+            shutil.rmtree(self.batched_path)
+        except Exception:
+            pass
+
+
 class TestEstimationSAE(TestCase):
 
     def setUp(self):
