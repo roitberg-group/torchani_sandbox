@@ -16,7 +16,6 @@ validation = AniBatchedDataset('/path/to/database/', transform=transform, split=
 """
 from typing import Dict, Sequence, Union, Tuple, Optional, List
 import math
-import itertools
 import warnings
 
 import torch
@@ -42,14 +41,14 @@ class SubtractSAE(torch.nn.Module):
 
     atomic_numbers: Tensor
 
-    def __init__(self, elements: Union[Sequence[str], Sequence[int]], self_energies: Sequence[float], intercept: float = 0.0):
+    def __init__(self, elements: Union[Sequence[str], Sequence[int]], self_energies: List[float], intercept: float = 0.0):
         super().__init__()
         symbols, atomic_numbers = _parse_elements(elements)
         if len(self_energies) != len(atomic_numbers):
             raise ValueError("There should be one self energy per element")
         self.register_buffer('supported_atomic_numbers', torch.tensor(atomic_numbers, dtype=torch.long))
         if intercept != 0.0:
-            self_energies = list(itertools.chain(self_energies, [intercept]))
+            self_energies.append(intercept)
             # for some reason energy_shifter is defaulted as double, so I make
             # it float here
             self.energy_shifter = EnergyShifter(self_energies, fit_intercept=True).float()
