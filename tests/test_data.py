@@ -23,24 +23,9 @@ class TestFineGrainedShuffle(TestCase):
 
     def testShuffleMixesManyH5(self):
         # test that shuffling correctly mixes multiple h5 files
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self.batched_path = Path('./tmp_dataset').resolve()
-            self.dummy_h50 = tempfile.NamedTemporaryFile(dir=tmpdir, suffix='.h5')
-            self.dummy_h51 = tempfile.NamedTemporaryFile(dir=tmpdir, suffix='.h5')
-            self.dummy_h52 = tempfile.NamedTemporaryFile(dir=tmpdir, suffix='.h5')
-            self.rng = np.random.default_rng(12345)
-            # each file will have 120 conformers, total 360 conformers
-            num_groups = 10
-            num_conformers_per_group = 12
-            properties = ['species', 'coordinates', 'energies']
-            self._create_dummy_file(self.dummy_h50, num_groups, num_conformers_per_group, 'H', 0.0, properties)
-            self._create_dummy_file(self.dummy_h51, num_groups, num_conformers_per_group, 'C', 1.0, properties)
-            self._create_dummy_file(self.dummy_h52, num_groups, num_conformers_per_group, 'N', 2.0, properties)
-
-            self.batched_path = Path('./tmp_dataset').resolve()
-            # both validation and test have 3 batches of 60 each
-            create_batched_dataset(h5_path=tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
-                    splits={'training': 0.5, 'validation': 0.5}, batch_size=60)
+        num_groups = 10
+        num_conformers_per_group = 12
+        self._create_dummy_controlled_dataset(num_groups, num_conformers_per_group, use_energy_ranges=False)
 
         self.train = AniBatchedDataset(self.batched_path, split='training')
         self.valid = AniBatchedDataset(self.batched_path, split='validation')
@@ -50,8 +35,66 @@ class TestFineGrainedShuffle(TestCase):
             self._test_for_batch_diversity(b)
             self._test_for_batch_diversity(b_valid)
 
-    def testDisjointTrainValid(self):
+    def testShuffleMixesManyH5Folds(self):
         # test that shuffling correctly mixes multiple h5 files
+        num_groups = 10
+        num_conformers_per_group = 12
+        folds = 3
+        self._create_dummy_controlled_dataset(num_groups, num_conformers_per_group, use_energy_ranges=False, folds=3)
+
+        def check_train_valid(train, valid):
+            for b, b_valid in zip(train, valid):
+                self.assertNotEqual(b['species'], b_valid['species'])
+                self.assertNotEqual(b['energies'], b_valid['energies'])
+                self._test_for_batch_diversity(b)
+                self._test_for_batch_diversity(b_valid)
+        for j in range(folds):
+            train = AniBatchedDataset(self.batched_path, split=f'training{j}')
+            valid = AniBatchedDataset(self.batched_path, split=f'validation{j}')
+            check_train_valid(train, valid)
+
+    def testDisjointFolds(self):
+        # test that shuffling generates disjoint train and validation, with no duplicates
+        num_groups = 10
+        num_conformers_per_group = 12
+        folds = 5
+        self._create_dummy_controlled_dataset(num_groups, num_conformers_per_group, use_energy_ranges=True, folds=folds)
+
+        for j in range(folds):
+            self._check_disjoint_and_nonduplicates(f'training{j}', f'validation{j}')
+
+        for j in range(folds):
+            for k in range(j + 1, folds):
+                self._check_disjoint_and_nonduplicates(f'validation{j}', f'validation{k}')
+
+    def testDisjointTrainValid(self):
+        # test that shuffling generates disjoint train and validation, with no duplicates
+        num_groups = 10
+        num_conformers_per_group = 12
+        self._create_dummy_controlled_dataset(num_groups, num_conformers_per_group, use_energy_ranges=True)
+        self._check_disjoint_and_nonduplicates('training', 'validation')
+
+    def _check_disjoint_and_nonduplicates(self, name1, name2):
+        train = AniBatchedDataset(self.batched_path, split=name1)
+        valid = AniBatchedDataset(self.batched_path, split=name2)
+        all_train_energies = []
+        all_valid_energies = []
+        for b, b_valid in zip(train, valid):
+            all_train_energies.append(b['energies'])
+            all_valid_energies.append(b_valid['energies'])
+        all_train_energies = torch.cat(all_train_energies)
+        all_valid_energies = torch.cat(all_valid_energies)
+
+        all_train_list = [e.item() for e in all_train_energies]
+        all_train_set = set(all_train_list)
+        all_valid_list = [e.item() for e in all_valid_energies]
+        all_valid_set = set(all_valid_list)
+        # no duplicates and disjoint
+        self.assertTrue(len(all_train_list) == len(all_train_set))
+        self.assertTrue(len(all_valid_list) == len(all_valid_set))
+        self.assertTrue(all_train_set.isdisjoint(all_valid_set))
+
+    def _create_dummy_controlled_dataset(self, num_groups, num_conformers_per_group, use_energy_ranges=False, folds=None):
         with tempfile.TemporaryDirectory() as tmpdir:
             self.batched_path = Path('./tmp_dataset').resolve()
             self.dummy_h50 = tempfile.NamedTemporaryFile(dir=tmpdir, suffix='.h5')
@@ -62,37 +105,22 @@ class TestFineGrainedShuffle(TestCase):
             num_groups = 10
             num_conformers_per_group = 12
             properties = ['species', 'coordinates', 'energies']
-            self._create_dummy_file(self.dummy_h50, num_groups, num_conformers_per_group, 'H', 0.0, properties, range_start=0)
-            self._create_dummy_file(self.dummy_h51, num_groups, num_conformers_per_group, 'C', 1.0, properties,
-                                    range_start=num_groups * num_conformers_per_group)
-            self._create_dummy_file(self.dummy_h52, num_groups, num_conformers_per_group, 'N', 2.0, properties,
-                                    range_start=2 * num_groups * num_conformers_per_group)
+            if use_energy_ranges:
+                ranges = [0, num_groups * num_conformers_per_group, 2 * num_groups * num_conformers_per_group]
+            else:
+                ranges = [None, None, None]
+            self._create_dummy_file(self.dummy_h50, num_groups, num_conformers_per_group, 'H', 0.0, properties, ranges[0])
+            self._create_dummy_file(self.dummy_h51, num_groups, num_conformers_per_group, 'C', 1.0, properties, ranges[1])
+            self._create_dummy_file(self.dummy_h52, num_groups, num_conformers_per_group, 'N', 2.0, properties, ranges[2])
 
             self.batched_path = Path('./tmp_dataset').resolve()
             # both validation and test have 3 batches of 60 each
-            create_batched_dataset(h5_path=tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
-                    splits={'training': 0.5, 'validation': 0.5}, batch_size=60)
-
-        self.train = AniBatchedDataset(self.batched_path, split='training')
-        self.valid = AniBatchedDataset(self.batched_path, split='validation')
-        all_train_energies = []
-        all_valid_energies = []
-        for b, b_valid in zip(self.train, self.valid):
-            all_train_energies.append(b['energies'])
-            all_valid_energies.append(b_valid['energies'])
-        all_train_energies = torch.cat(all_train_energies)
-        all_valid_energies = torch.cat(all_valid_energies)
-
-        all_train_list = [e.item() for e in all_train_energies]
-        all_train_set = set(all_train_list)
-        all_valid_list = [e.item() for e in all_valid_energies]
-        all_valid_set = set(all_valid_list)
-        # no duplicates
-        self.assertTrue(len(all_train_list) == len(all_train_set))
-        # no duplicates
-        self.assertTrue(len(all_valid_list) == len(all_valid_set))
-        # disjoint
-        self.assertTrue(all_train_set.isdisjoint(all_valid_set))
+            if folds is None:
+                create_batched_dataset(h5_path=tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
+                        splits={'training': 0.5, 'validation': 0.5}, batch_size=60)
+            else:
+                create_batched_dataset(h5_path=tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
+                        folds=folds, batch_size=60)
 
     def _create_dummy_file(self, file_, num_groups, num_conformers_per_group, element, factor, properties, range_start=None):
         with h5py.File(file_, 'r+') as f:
