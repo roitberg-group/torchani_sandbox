@@ -16,6 +16,7 @@ validation = AniBatchedDataset('/path/to/database/', transform=transform, split=
 """
 from typing import Dict, Sequence, Union, Tuple, Optional, List
 import math
+import itertools
 import warnings
 
 import torch
@@ -39,6 +40,8 @@ class SubtractRepulsion(torch.nn.Module):
 
 class SubtractSAE(torch.nn.Module):
 
+    atomic_numbers: Tensor
+
     def __init__(self, elements: Union[Sequence[str], Sequence[int]], self_energies: Sequence[float], intercept: float = 0.0):
         super().__init__()
         symbols, atomic_numbers = _parse_elements(elements)
@@ -46,7 +49,7 @@ class SubtractSAE(torch.nn.Module):
             raise ValueError("There should be one self energy per element")
         self.register_buffer('supported_atomic_numbers', torch.tensor(atomic_numbers, dtype=torch.long))
         if intercept != 0.0:
-            self_energies.append(intercept)
+            self_energies = list(itertools.chain(self_energies, [intercept]))
             # for some reason energy_shifter is defaulted as double, so I make
             # it float here
             self.energy_shifter = EnergyShifter(self_energies, fit_intercept=True).float()
@@ -110,7 +113,7 @@ class Compose(torch.nn.Module):
 
         all_atomic_numbers: List[Tensor] = []
         for t in transforms:
-            if hasattr(t, 'atomic_numbers'):
+            if hasattr(t, 'atomic_numbers') and isinstance(t.atomic_numbers, Tensor):
                 all_atomic_numbers.append(t.atomic_numbers)
 
         for z in all_atomic_numbers:
@@ -138,11 +141,13 @@ def calculate_saes(dataset: Union[DataLoader, AniBatchedDataset],
                          mode: str = 'sgd',
                          fraction: float = 1.0,
                          fit_intercept: bool = False,
-                         **kwargs: float) -> Tuple[Tensor, Optional[Tensor]]:
+                         device: str = 'cpu',
+                         max_epochs: int = 1,
+                         lr: float = 0.01) -> Tuple[Tensor, Optional[Tensor]]:
     if mode == 'exact':
-        if 'lr' in kwargs.keys():
+        if 'lr' != 0.01:
             raise ValueError("lr is only used with mode=sgd")
-        if 'max_epochs' in kwargs.keys():
+        if 'max_epochs' != 1:
             raise ValueError("max_epochs is only used with mode=sgd")
 
     assert mode in ['sgd', 'exact']
@@ -168,10 +173,14 @@ def calculate_saes(dataset: Union[DataLoader, AniBatchedDataset],
 
     if mode == 'exact':
         print('Calculating SAE using exact OLS method...')
-        m_out, b_out = _calculate_saes_exact(dataset, num_species, num_batches_to_use, fit_intercept)
+        m_out, b_out = _calculate_saes_exact(dataset, num_species, num_batches_to_use,
+                                             device=device, fit_intercept=fit_intercept)
     elif mode == 'sgd':
         print("Estimating SAE using stochastic gradient descent...")
-        m_out, b_out = _calculate_saes_sgd(dataset, num_species, num_batches_to_use, fit_intercept, **kwargs)
+        m_out, b_out = _calculate_saes_sgd(dataset, num_species, num_batches_to_use,
+                                           device=device,
+                                           fit_intercept=fit_intercept,
+                                           max_epochs=max_epochs, lr=lr)
 
     if isinstance(dataset, DataLoader):
         assert isinstance(dataset.dataset, AniBatchedDataset)
