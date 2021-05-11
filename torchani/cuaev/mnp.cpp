@@ -70,10 +70,11 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
     for (int i = 0; i < num_networks; i++) {
       // only run if species idx is not empty
       if (idx_list[i].size(0) > 0) {
-        torch::NoGradGuard no_grad;
+        // Disable autograd, view tracking and version counter bumps
+        at::AutoDispatchBelowADInplaceOrView guard;
 #ifdef USE_STREAMS
         cudaStreamWaitEvent(c10::cuda::CUDAStream(stream_list[i]), start_event, 0);
-        at::cuda::CUDAStreamGuard guard(stream_list[i]);
+        at::cuda::CUDAStreamGuard stream_guard(stream_list[i]);
 #endif
         int start_layers = start_layers_list[i];
         int num_layers = num_layers_list[i];
@@ -166,10 +167,11 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
     for (int i = 0; i < num_networks; i++) {
       // only run if species idx is not empty
       if (idx_list[i].size(0) > 0) {
-        torch::NoGradGuard no_grad;
+        // Disable autograd, view tracking and version counter bumps
+        at::AutoDispatchBelowADInplaceOrView guard;
 #ifdef USE_STREAMS
         cudaStreamWaitEvent(c10::cuda::CUDAStream(stream_list[i]), start_event, 0);
-        at::cuda::CUDAStreamGuard guard(stream_list[i]);
+        at::cuda::CUDAStreamGuard stream_guard(stream_list[i]);
 #endif
         Tensor input_;
         if (is_bmm) {
