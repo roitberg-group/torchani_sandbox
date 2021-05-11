@@ -100,10 +100,20 @@ def cuda_extension(build_all=False):
     include_dirs = [*maybe_download_cub(), os.path.abspath("torchani/cuaev/")]
     return CUDAExtension(
         name='torchani.cuaev',
-        pkg='torchani.cuaev',
         sources=["torchani/cuaev/cuaev.cpp", "torchani/cuaev/aev.cu"],
         include_dirs=include_dirs,
         extra_compile_args={'cxx': ['-std=c++14'], 'nvcc': nvcc_args})
+
+
+def mnp_extension():
+    from torch.utils.cpp_extension import CUDAExtension
+    cxx_args = ['-std=c++14', '-fopenmp']
+    if DEBUG_CUAEV:
+        cxx_args.append('-DTORCHANI_DEBUG')
+    return CUDAExtension(
+        name='torchani.mnp',
+        sources=["torchani/cuaev/mnp.cpp"],
+        extra_compile_args={'cxx': cxx_args})
 
 
 def cuaev_kwargs():
@@ -118,7 +128,8 @@ def cuaev_kwargs():
             'torchani.cuaev',
         ],
         ext_modules=[
-            cuda_extension(BUILD_CUAEV_ALL_SM)
+            cuda_extension(BUILD_CUAEV_ALL_SM),
+            mnp_extension()
         ],
         cmdclass={
             'build_ext': BuildExtension,
