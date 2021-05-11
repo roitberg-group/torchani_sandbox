@@ -50,7 +50,51 @@ class TestFineGrainedShuffle(TestCase):
             self._test_for_batch_diversity(b)
             self._test_for_batch_diversity(b_valid)
 
-    def _create_dummy_file(self, file_, num_groups, num_conformers_per_group, element, factor, properties):
+    def testDisjointTrainValid(self):
+        # test that shuffling correctly mixes multiple h5 files
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.batched_path = Path('./tmp_dataset').resolve()
+            self.dummy_h50 = tempfile.NamedTemporaryFile(dir=tmpdir, suffix='.h5')
+            self.dummy_h51 = tempfile.NamedTemporaryFile(dir=tmpdir, suffix='.h5')
+            self.dummy_h52 = tempfile.NamedTemporaryFile(dir=tmpdir, suffix='.h5')
+            self.rng = np.random.default_rng(12345)
+            # each file will have 120 conformers, total 360 conformers
+            num_groups = 10
+            num_conformers_per_group = 12
+            properties = ['species', 'coordinates', 'energies']
+            self._create_dummy_file(self.dummy_h50, num_groups, num_conformers_per_group, 'H', 0.0, properties, range_start=0)
+            self._create_dummy_file(self.dummy_h51, num_groups, num_conformers_per_group, 'C', 1.0, properties,
+                                    range_start=num_groups * num_conformers_per_group)
+            self._create_dummy_file(self.dummy_h52, num_groups, num_conformers_per_group, 'N', 2.0, properties,
+                                    range_start=2 * num_groups * num_conformers_per_group)
+
+            self.batched_path = Path('./tmp_dataset').resolve()
+            # both validation and test have 3 batches of 60 each
+            create_batched_dataset(h5_path=tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
+                    splits={'training': 0.5, 'validation': 0.5}, batch_size=60)
+
+        self.train = AniBatchedDataset(self.batched_path, split='training')
+        self.valid = AniBatchedDataset(self.batched_path, split='validation')
+        all_train_energies = []
+        all_valid_energies = []
+        for b, b_valid in zip(self.train, self.valid):
+            all_train_energies.append(b['energies'])
+            all_valid_energies.append(b_valid['energies'])
+        all_train_energies = torch.cat(all_train_energies)
+        all_valid_energies = torch.cat(all_valid_energies)
+
+        all_train_list = [e.item() for e in all_train_energies]
+        all_train_set = set(all_train_list)
+        all_valid_list = [e.item() for e in all_valid_energies]
+        all_valid_set = set(all_valid_list)
+        # no duplicates
+        self.assertTrue(len(all_train_list) == len(all_train_set))
+        # no duplicates
+        self.assertTrue(len(all_valid_list) == len(all_valid_set))
+        # disjoint
+        self.assertTrue(all_train_set.isdisjoint(all_valid_set))
+
+    def _create_dummy_file(self, file_, num_groups, num_conformers_per_group, element, factor, properties, range_start=None):
         with h5py.File(file_, 'r+') as f:
             for j in range(num_groups):
                 f.create_group(f'group{j}')
@@ -61,7 +105,11 @@ class TestFineGrainedShuffle(TestCase):
                     elif k == 'coordinates':
                         g.create_dataset(k, data=self.rng.standard_normal((num_conformers_per_group, 3, 3)))
                     elif k == 'energies':
-                        g.create_dataset(k, data=factor * np.ones((num_conformers_per_group,)))
+                        if range_start is not None:
+                            g.create_dataset(k, data=np.arange(range_start + j * num_conformers_per_group,
+                                                               range_start + (j + 1) * num_conformers_per_group, dtype=float))
+                        else:
+                            g.create_dataset(k, data=factor * np.ones((num_conformers_per_group,)))
 
     def _test_for_batch_diversity(self, b):
         zeros = (b['energies'] == 0.0).count_nonzero()
