@@ -393,13 +393,6 @@ def create_batched_dataset(h5_path: Union[str, Path],
     if folds is not None and splits is not None:
         raise ValueError('Only one of ["folds", "splits"] should be specified')
 
-    # by defaults we use splits, if folds or splits is specified we
-    # do the specified operation
-    if folds is None:
-        using_folds = False
-    else:
-        using_folds = True
-
     # NOTE: All the tensor manipulation in this function is handled in CPU
     if file_format == 'single_hdf5':
         warnings.warn('Depending on the implementation, a single HDF5 file may'
@@ -433,7 +426,9 @@ def create_batched_dataset(h5_path: Union[str, Path],
     conformer_indices = _maybe_shuffle_indices(conformer_indices, rng)
 
     # (2) Split shuffled indices according to requested dataset splits or folds
-    if using_folds:
+    # by defaults we use splits, if folds or splits is specified we
+    # do the specified operation
+    if folds is not None:
         conformer_splits, split_paths = _divide_into_folds(conformer_indices, dest_path, folds, rng)
     else:
         if splits is None:
@@ -530,7 +525,8 @@ def _divide_into_folds(conformer_indices: Tensor,
                         rng: Optional[torch.Generator] = None) -> Tuple[Tuple[Tensor, ...], 'OrderedDict[str, Path]']:
 
     # the idea here is to work with "blocks" of size num_conformers / folds
-    conformer_blocks = torch.chunk(conformer_indices, folds)
+    # cast to list for mypy
+    conformer_blocks = list(torch.chunk(conformer_indices, folds))
     conformer_splits: List[Tensor] = []
     split_paths_list: List[Tuple[str, Path]] = []
 
@@ -538,6 +534,7 @@ def _divide_into_folds(conformer_indices: Tensor,
     for f in range(folds):
         # the first shuffle is necessary so that validation splits are shuffled
         validation_split = conformer_blocks[f]
+
         training_split = torch.cat(conformer_blocks[:f] + conformer_blocks[f + 1:])
         # afterwards all training folds are reshuffled to get different
         # batching for different models in the ensemble / cross validation
@@ -551,7 +548,7 @@ def _divide_into_folds(conformer_indices: Tensor,
 
     _create_split_paths(split_paths)
 
-    return conformer_splits, split_paths
+    return tuple(conformer_splits), split_paths
 
 
 def _divide_into_splits(conformer_indices: Tensor,
