@@ -25,17 +25,35 @@ h5_path = '/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5'
 batched_dataset_path = './batched_dataset_1x'
 
 # We prebatch the dataset to train with memory efficiency, keeping a good performance.
+folds = True
 if not Path(batched_dataset_path).resolve().is_dir():
-    torchani.datasets.create_batched_dataset(h5_path,
-                                             dest_path=batched_dataset_path,
-                                             batch_size=2560,
-                                             splits={'training': 0.8, 'validation': 0.2})
+
+    # In this example we use training = 80%, validation = 20%, we don't use folds
+    if not folds:
+        torchani.datasets.create_batched_dataset(h5_path,
+                                                 dest_path=batched_dataset_path,
+                                                 batch_size=2560,
+                                                 splits={'training': 0.8, 'validation': 0.2})
+
+    else:
+        # for splitting into k-folds (for ensemble learning or cross validation)
+        # the fold names will be training0, validation0, training1, validation1,
+        # ... etc.
+        torchani.datasets.create_batched_dataset(h5_path,
+                                                 dest_path=batched_dataset_path,
+                                                 batch_size=2560,
+                                                 folds=5)
 
 
 # This batched datasets can be directly iterated upon, but it may be more
 # practical to wrap it with a torch DataLoader
-training = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='training')
-validation = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='validation')
+if not folds:
+    training = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='training')
+    validation = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='validation')
+
+else:
+    training = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='training0')
+    validation = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='validation0')
 
 cache = False
 if not cache:

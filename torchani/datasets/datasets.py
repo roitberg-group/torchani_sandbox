@@ -386,8 +386,20 @@ def create_batched_dataset(h5_path: Union[str, Path],
                            max_batches_per_packet: int = 350,
                            padding: Optional[Dict[str, float]] = None,
                            splits: Optional[Dict[str, float]] = None,
+                           folds: Optional[int] = None,
                            inplace_transform: Optional[Transform] = None,
                            verbose: bool = True) -> None:
+
+    if folds is not None and splits is not None:
+        raise ValueError('Only one of ["folds", "splits"] should be specified')
+
+    # by defaults we use splits, if folds or splits is specified we
+    # do the specified operation
+    if folds is None:
+        using_folds = False
+    else:
+        using_folds = True
+
     # NOTE: All the tensor manipulation in this function is handled in CPU
     if file_format == 'single_hdf5':
         warnings.warn('Depending on the implementation, a single HDF5 file may'
@@ -404,12 +416,6 @@ def create_batched_dataset(h5_path: Union[str, Path],
     elif h5_path.is_file():
         h5_datasets = [AniH5Dataset(h5_path)]
 
-    if splits is None:
-        splits = {'training': 0.8, 'validation': 0.2}
-
-    if not math.isclose(sum(list(splits.values())), 1.0):
-        raise ValueError("The sum of the split fractions has to add up to one")
-
     # (1) Get all indices and shuffle them if needed
     #
     # These are pairs of indices that index first the group and then the
@@ -421,10 +427,22 @@ def create_batched_dataset(h5_path: Union[str, Path],
     conformer_indices = torch.cat([torch.stack((torch.full(size=(s.item(),), fill_value=j, dtype=torch.long),
                                      (torch.arange(0, s.item(), dtype=torch.long))), dim=-1)
                                      for j, s in enumerate(group_sizes_values)])
-    conformer_indices = _maybe_shuffle_indices(conformer_indices, shuffle, shuffle_seed)
 
-    # (2) Split shuffled indices according to requested dataset splits
-    conformer_splits, split_paths = _divide_into_splits(conformer_indices, dest_path, splits)
+    rng = _get_random_generator(shuffle, shuffle_seed)
+
+    conformer_indices = _maybe_shuffle_indices(conformer_indices, rng)
+
+    # (2) Split shuffled indices according to requested dataset splits or folds
+    if using_folds:
+        conformer_splits, split_paths = _divide_into_folds(conformer_indices, dest_path, folds, rng)
+    else:
+        if splits is None:
+            splits = {'training': 0.8, 'validation': 0.2}
+
+        if not math.isclose(sum(list(splits.values())), 1.0):
+            raise ValueError("The sum of the split fractions has to add up to one")
+
+        conformer_splits, split_paths = _divide_into_splits(conformer_indices, dest_path, splits)
 
     # (3) Compute the batch indices for each split and save the conformers to disk
     _save_splits_into_batches(split_paths,
@@ -442,6 +460,7 @@ def create_batched_dataset(h5_path: Union[str, Path],
     creation_log = {'datetime_created': str(datetime.datetime.now()),
                     'source_path': h5_path.as_posix(),
                     'splits': splits,
+                    'folds': folds,
                     'padding': utils.PADDING if padding is None else padding,
                     'is_inplace_transformed': inplace_transform is not None,
                     'shuffle': shuffle,
@@ -452,6 +471,25 @@ def create_batched_dataset(h5_path: Union[str, Path],
 
     with open(dest_path.joinpath('creation_log.json'), 'w') as logfile:
         json.dump(creation_log, logfile, indent=1)
+
+
+def _get_random_generator(shuffle: bool = False, shuffle_seed: Optional[int] = None) -> Optional[torch.Generator]:
+
+    if shuffle_seed is not None:
+        assert shuffle
+        seed = shuffle_seed
+    else:
+        # non deterministic seed
+        seed = torch.random.seed()
+
+    rng: Optional[torch.Generator]
+
+    if shuffle:
+        rng = torch.random.manual_seed(seed)
+    else:
+        rng = None
+
+    return rng
 
 
 def _get_properties_size(molecule_group: Union[h5py.Group, Dict[str, ndarray], Dict[str, Tensor]],
@@ -476,19 +514,44 @@ def _get_properties_size(molecule_group: Union[h5py.Group, Dict[str, ndarray], D
 
 
 def _maybe_shuffle_indices(conformer_indices: Tensor,
-                           shuffle: bool = True,
-                           shuffle_seed: Optional[int] = None) -> Tensor:
+                           rng: Optional[torch.Generator] = None) -> Tensor:
     total_num_conformers = len(conformer_indices)
-    if shuffle:
-        if shuffle_seed is None:
-            shuffle_indices = torch.randperm(total_num_conformers)
-        else:
-            generator = torch.manual_seed(shuffle_seed)
-            shuffle_indices = torch.randperm(total_num_conformers, generator=generator)
+    if rng is not None:
+        shuffle_indices = torch.randperm(total_num_conformers, generator=rng)
         conformer_indices = conformer_indices[shuffle_indices]
     else:
         warnings.warn("Dataset will not be shuffled, this should only be used for debugging")
     return conformer_indices
+
+
+def _divide_into_folds(conformer_indices: Tensor,
+                        dest_path: Path,
+                        folds: int,
+                        rng: Optional[torch.Generator] = None) -> Tuple[Tuple[Tensor, ...], 'OrderedDict[str, Path]']:
+
+    # the idea here is to work with "blocks" of size num_conformers / folds
+    conformer_blocks = torch.chunk(conformer_indices, folds)
+    conformer_splits: List[Tensor] = []
+    split_paths_list: List[Tuple[str, Path]] = []
+
+    print(f"Generating {folds} folds for cross validation or ensemble training")
+    for f in range(folds):
+        # the first shuffle is necessary so that validation splits are shuffled
+        validation_split = conformer_blocks[f]
+        training_split = torch.cat(conformer_blocks[:f] + conformer_blocks[f + 1:])
+        # afterwards all training folds are reshuffled to get different
+        # batching for different models in the ensemble / cross validation
+        # process (it is technically redundant to reshuffle the first one but
+        # it is done for simplicity)
+        training_split = _maybe_shuffle_indices(training_split, rng)
+        conformer_splits.extend([training_split, validation_split])
+        split_paths_list.extend([(f'training{f}', dest_path.joinpath(f'training{f}')),
+                                 (f'validation{f}', dest_path.joinpath(f'validation{f}'))])
+    split_paths = OrderedDict(split_paths_list)
+
+    _create_split_paths(split_paths)
+
+    return conformer_splits, split_paths
 
 
 def _divide_into_splits(conformer_indices: Tensor,
@@ -498,17 +561,7 @@ def _divide_into_splits(conformer_indices: Tensor,
     split_sizes = OrderedDict([(k, int(total_num_conformers * v)) for k, v in splits.items()])
     split_paths = OrderedDict([(k, dest_path.joinpath(k)) for k in split_sizes.keys()])
 
-    for p in split_paths.values():
-        if p.is_dir():
-            subdirs = [d for d in p.iterdir()]
-            if subdirs:
-                raise ValueError('The dest_path provided already has files'
-                                 ' or directories, please provide'
-                                 ' a different path')
-        else:
-            if p.is_file():
-                raise ValueError('The dest_path is a file, it should be a directory')
-            p.mkdir(parents=True)
+    _create_split_paths(split_paths)
 
     leftover = total_num_conformers - sum(split_sizes.values())
     if leftover != 0:
@@ -523,6 +576,20 @@ def _divide_into_splits(conformer_indices: Tensor,
     print(f'Splits have number of conformers: {dict(split_sizes)}.'
           f' The requested percentages were: {splits}')
     return conformer_splits, split_paths
+
+
+def _create_split_paths(split_paths: 'OrderedDict[str, Path]') -> None:
+    for p in split_paths.values():
+        if p.is_dir():
+            subdirs = [d for d in p.iterdir()]
+            if subdirs:
+                raise ValueError('The dest_path provided already has files'
+                                 ' or directories, please provide'
+                                 ' a different path')
+        else:
+            if p.is_file():
+                raise ValueError('The dest_path is a file, it should be a directory')
+            p.mkdir(parents=True)
 
 
 def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
