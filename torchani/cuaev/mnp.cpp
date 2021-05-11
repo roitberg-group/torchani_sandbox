@@ -7,8 +7,6 @@ using torch::Tensor;
 using torch::autograd::AutogradContext;
 using torch::autograd::tensor_list;
 
-#define USE_STREAMS
-
 // Parse OMP_NUM_THREADS environment variable
 // From: https://github.com/pytorch/pytorch/blob/master/aten/src/ATen/ParallelCommon.cpp#L28
 size_t get_env_num_threads(const char* var_name, size_t def_value = 1) {
@@ -26,7 +24,9 @@ size_t get_env_num_threads(const char* var_name, size_t def_value = 1) {
   return def_value;
 }
 
-class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
+// TODO: Could siwtch to if constexpr once pytorch support c++17
+template <bool use_stream, bool is_bmm>
+class MultiNetFunction : public torch::autograd::Function<MultiNetFunction<use_stream, is_bmm>> {
  public:
   static Tensor forward(
       AutogradContext* ctx,
@@ -38,7 +38,6 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
       std::vector<Tensor> weight_list,
       std::vector<Tensor> bias_list,
       std::vector<at::Stream> stream_list,
-      bool is_bmm,
       float celu_alpha) {
     tensor_list to_save;
     std::vector<at::Tensor> outputs;
@@ -46,18 +45,19 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
     int64_t total_layers = start_layers_list.back() + num_layers_list.back();
     std::vector<at::Tensor> intm_result_list(total_layers, Tensor());
 
-#ifdef USE_STREAMS
-    at::cuda::CUDAStream current_stream = c10::cuda::getCurrentCUDAStream();
-    cudaEvent_t start_event;
-    cudaEventCreate(&start_event);
-    cudaEventRecord(start_event, current_stream);
+    // stream events initialization
     std::vector<cudaEvent_t> event_list;
-    for (int i = 0; i < num_networks; i++) {
-      cudaEvent_t tmp_evt;
-      cudaEventCreate(&tmp_evt);
-      event_list.push_back(tmp_evt);
+    cudaEvent_t start_event;
+    at::cuda::CUDAStream current_stream = c10::cuda::getCurrentCUDAStream();
+    if (use_stream) {
+      cudaEventCreate(&start_event);
+      cudaEventRecord(start_event, current_stream);
+      for (int i = 0; i < num_networks; i++) {
+        cudaEvent_t tmp_evt;
+        cudaEventCreate(&tmp_evt);
+        event_list.push_back(tmp_evt);
+      }
     }
-#endif
 
     int max_threads = get_env_num_threads("OMP_NUM_THREADS");
     int num_threads = max_threads < num_networks ? max_threads : num_networks;
@@ -71,12 +71,13 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
     for (int i = 0; i < num_networks; i++) {
       // only run if species idx is not empty
       if (idx_list[i].size(0) > 0) {
-        // Disable autograd, view tracking and version counter bumps
+        // disable autograd, view tracking and version counter bumps
         at::AutoDispatchBelowADInplaceOrView guard;
-#ifdef USE_STREAMS
-        cudaStreamWaitEvent(c10::cuda::CUDAStream(stream_list[i]), start_event, 0);
-        at::cuda::CUDAStreamGuard stream_guard(stream_list[i]);
-#endif
+        // switch to different streams for each network
+        if (use_stream) {
+          cudaStreamWaitEvent(c10::cuda::CUDAStream(stream_list[i]), start_event, 0);
+          at::cuda::setCurrentCUDAStream(c10::cuda::CUDAStream(stream_list[i]));
+        }
         int start_layers = start_layers_list[i];
         int num_layers = num_layers_list[i];
         Tensor input_ = aev.index_select(0, idx_list[i]);
@@ -107,13 +108,17 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
         // sum out without cudaMemcpyAsync
         auto tmp_energy = energy_list[i];
         at::sum_out(tmp_energy, input_.view(-1), 0, /* keepdim */ false);
-#ifdef USE_STREAMS
+
         // default stream waits until all stream finish
-        cudaEventRecord(event_list[i], c10::cuda::CUDAStream(stream_list[i]));
-        cudaStreamWaitEvent(current_stream, event_list[i], 0);
-#endif
+        if (use_stream) {
+          cudaEventRecord(event_list[i], c10::cuda::CUDAStream(stream_list[i]));
+          cudaStreamWaitEvent(current_stream, event_list[i], 0);
+        }
       }
     }
+    // restore to default streams
+    if (use_stream)
+      at::cuda::setCurrentCUDAStream(current_stream);
 
     to_save.push_back(aev);
     ctx->save_for_backward(to_save);
@@ -123,7 +128,6 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
     ctx->saved_data["weight_list"] = c10::List<Tensor>(weight_list);
     ctx->saved_data["intm_result_list"] = c10::List<Tensor>(intm_result_list);
     ctx->saved_data["idx_list"] = c10::List<Tensor>(idx_list);
-    ctx->saved_data["is_bmm"] = is_bmm;
     ctx->saved_data["celu_alpha"] = (double)celu_alpha;
 
     return at::sum(energy_list, 0, true).view({1, 1});
@@ -137,25 +141,25 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
     std::vector<Tensor> weight_list = ctx->saved_data["weight_list"].toTensorVector();
     std::vector<Tensor> intm_result_list = ctx->saved_data["intm_result_list"].toTensorVector();
     std::vector<Tensor> idx_list = ctx->saved_data["idx_list"].toTensorVector();
-    bool is_bmm = ctx->saved_data["is_bmm"].toBool();
     float celu_alpha = ctx->saved_data["celu_alpha"].toDouble();
     int num_networks = num_layers_list.size();
 
     Tensor aev = saved_tensors[0];
     Tensor aev_grad = torch::zeros_like(aev);
 
-#ifdef USE_STREAMS
-    at::cuda::CUDAStream current_stream = c10::cuda::getCurrentCUDAStream();
-    cudaEvent_t start_event;
-    cudaEventCreate(&start_event);
-    cudaEventRecord(start_event, current_stream);
+    // stream events initialization
     std::vector<cudaEvent_t> event_list;
-    for (int i = 0; i < num_networks; i++) {
-      cudaEvent_t tmp_evt;
-      cudaEventCreate(&tmp_evt);
-      event_list.push_back(tmp_evt);
+    cudaEvent_t start_event;
+    at::cuda::CUDAStream current_stream = c10::cuda::getCurrentCUDAStream();
+    if (use_stream) {
+      cudaEventCreate(&start_event);
+      cudaEventRecord(start_event, current_stream);
+      for (int i = 0; i < num_networks; i++) {
+        cudaEvent_t tmp_evt;
+        cudaEventCreate(&tmp_evt);
+        event_list.push_back(tmp_evt);
+      }
     }
-#endif
 
     int max_threads = get_env_num_threads("OMP_NUM_THREADS");
     int num_threads = max_threads < num_networks ? max_threads : num_networks;
@@ -169,12 +173,13 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
     for (int i = 0; i < num_networks; i++) {
       // only run if species idx is not empty
       if (idx_list[i].size(0) > 0) {
-        // Disable autograd, view tracking and version counter bumps
+        // disable autograd, view tracking and version counter bumps
         at::AutoDispatchBelowADInplaceOrView guard;
-#ifdef USE_STREAMS
-        cudaStreamWaitEvent(c10::cuda::CUDAStream(stream_list[i]), start_event, 0);
-        at::cuda::CUDAStreamGuard stream_guard(stream_list[i]);
-#endif
+        // switch to different streams for each network
+        if (use_stream) {
+          cudaStreamWaitEvent(c10::cuda::CUDAStream(stream_list[i]), start_event, 0);
+          at::cuda::setCurrentCUDAStream(c10::cuda::CUDAStream(stream_list[i]));
+        }
         Tensor input_;
         if (is_bmm) {
           int num_batch = weight_list[0].size(0);
@@ -210,17 +215,22 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
           input_ = input_.sum(0);
         }
         aev_grad.index_put_({idx_list[i]}, input_);
-#ifdef USE_STREAMS
         // default stream waits until all stream finish
-        cudaEventRecord(event_list[i], c10::cuda::CUDAStream(stream_list[i]));
-        cudaStreamWaitEvent(current_stream, event_list[i], 0);
-#endif
+        if (use_stream) {
+          cudaEventRecord(event_list[i], c10::cuda::CUDAStream(stream_list[i]));
+          cudaStreamWaitEvent(current_stream, event_list[i], 0);
+        }
       }
     }
+    if (use_stream)
+      at::cuda::setCurrentCUDAStream(current_stream);
 
     return {aev_grad, Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor(), Tensor()};
   }
 };
+
+#define MNP_INPUT \
+  aev, num_networks, num_layers_list, start_layers_list, idx_list, weight_list, bias_list, stream_list, celu_alpha
 
 Tensor run_autograd(
     Tensor aev,
@@ -233,17 +243,19 @@ Tensor run_autograd(
     std::vector<at::Stream> stream_list,
     bool is_bmm,
     double celu_alpha = 0.1) {
-  return MultiNetFunction::apply(
-      aev,
-      num_networks,
-      num_layers_list,
-      start_layers_list,
-      idx_list,
-      weight_list,
-      bias_list,
-      stream_list,
-      is_bmm,
-      celu_alpha);
+  bool use_stream = aev.device().type() == torch::kCUDA;
+
+  if (use_stream) {
+    if (is_bmm)
+      return MultiNetFunction<true, true>::apply(MNP_INPUT);
+    else
+      return MultiNetFunction<true, false>::apply(MNP_INPUT);
+  } else {
+    if (is_bmm)
+      return MultiNetFunction<false, true>::apply(MNP_INPUT);
+    else
+      return MultiNetFunction<false, false>::apply(MNP_INPUT);
+  }
 }
 
 // mnp stands for multi network parallel
