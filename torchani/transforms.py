@@ -145,9 +145,9 @@ def calculate_saes(dataset: Union[DataLoader, AniBatchedDataset],
                          max_epochs: int = 1,
                          lr: float = 0.01) -> Tuple[Tensor, Optional[Tensor]]:
     if mode == 'exact':
-        if 'lr' != 0.01:
+        if lr != 0.01:
             raise ValueError("lr is only used with mode=sgd")
-        if 'max_epochs' != 1:
+        if max_epochs != 1:
             raise ValueError("max_epochs is only used with mode=sgd")
 
     assert mode in ['sgd', 'exact']
@@ -220,8 +220,6 @@ def _calculate_saes_sgd(dataset, num_species: int, num_batches_to_use: int,
     opt = torch.optim.SGD(model.parameters(), lr=lr)
     for _ in range(max_epochs):
         for j, properties in enumerate(dataset):
-            if j == num_batches_to_use:
-                break
             species = properties['species'].to(device)
             species_counts = torch.zeros((species.shape[0], num_species), dtype=torch.float, device=device)
             for n in range(num_species):
@@ -232,6 +230,8 @@ def _calculate_saes_sgd(dataset, num_species: int, num_batches_to_use: int,
             opt.zero_grad()
             loss.backward()
             opt.step()
+            if j == num_batches_to_use:
+                break
     model.m.requires_grad_(False)
     m_out = model.m.data.cpu()
 
@@ -253,8 +253,6 @@ def _calculate_saes_exact(dataset, num_species: int, num_batches_to_use: int,
     list_species_counts = []
     list_true_energies = []
     for j, properties in enumerate(dataset):
-        if j == num_batches_to_use:
-            break
         species = properties['species'].to(device)
         true_energies = properties['energies'].float().to(device)
         species_counts = torch.zeros((species.shape[0], num_species), dtype=torch.float, device=device)
@@ -262,6 +260,8 @@ def _calculate_saes_exact(dataset, num_species: int, num_batches_to_use: int,
             species_counts[:, n] = (species == n).sum(-1).float()
         list_species_counts.append(species_counts)
         list_true_energies.append(true_energies)
+        if j == num_batches_to_use:
+            break
 
     if fit_intercept:
         list_species_counts.append(torch.ones(num_species, device=device, dtype=torch.float))

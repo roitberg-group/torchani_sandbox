@@ -8,7 +8,7 @@ import unittest
 import tempfile
 import shutil
 from copy import deepcopy
-from torchani.transforms import AtomicNumbersToIndices, SubtractSAE, Compose
+from torchani.transforms import AtomicNumbersToIndices, SubtractSAE, Compose, calculate_saes
 from torchani.testing import TestCase
 from torchani.datasets import AniH5Dataset, AniBatchedDataset, create_batched_dataset
 
@@ -16,6 +16,25 @@ path = os.path.dirname(os.path.realpath(__file__))
 dataset_path = os.path.join(path, '../dataset/ani-1x/sample.h5')
 batch_size = 256
 ani1x_sae_dict = {'H': -0.60095298, 'C': -38.08316124, 'N': -54.7077577, 'O': -75.19446356}
+
+
+class TestEstimationSAE(TestCase):
+
+    def setUp(self):
+        self.batched_path = Path('./tmp_dataset').resolve()
+        self.batch_size = 2560
+        create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path, shuffle=False,
+                splits={'training': 1.0}, batch_size=self.batch_size)
+        self.train = AniBatchedDataset(self.batched_path, split='training')
+
+    def testExactSAE(self):
+        saes, _ = calculate_saes(self.train, ('H', 'C', 'N', 'O'), mode='exact')
+
+    def testStochasticSAE(self):
+        saes, _ = calculate_saes(self.train, ('H', 'C', 'N', 'O'), mode='sgd')
+
+    def tearDown(self):
+        shutil.rmtree(self.batched_path)
 
 
 class TestTransforms(TestCase):
