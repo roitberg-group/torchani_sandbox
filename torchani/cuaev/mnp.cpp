@@ -35,14 +35,13 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
       std::vector<int64_t> num_layers_list,
       std::vector<int64_t> start_layers_list,
       tensor_list idx_list,
-      std::vector<std::vector<Tensor>> weight_list,
-      std::vector<std::vector<Tensor>> bias_list,
+      std::vector<Tensor> weight_list,
+      std::vector<Tensor> bias_list,
       std::vector<at::Stream> stream_list) {
     tensor_list to_save;
     std::vector<at::Tensor> outputs;
     Tensor energy_list = at::zeros(num_networks, aev.options());
     int64_t total_layers = start_layers_list.back() + num_layers_list.back();
-    std::vector<at::Tensor> to_save_weight_list(total_layers, Tensor());
     std::vector<at::Tensor> intm_result_list(total_layers, Tensor());
 
 #ifdef USE_STREAMS
@@ -75,20 +74,20 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
         cudaStreamWaitEvent(c10::cuda::CUDAStream(stream_list[i]), start_event, 0);
         at::cuda::CUDAStreamGuard guard(stream_list[i]);
 #endif
-        int num_layers = weight_list[i].size();
+        int start_layers = start_layers_list[i];
+        int num_layers = num_layers_list[i];
         Tensor input_ = aev.index_select(0, idx_list[i]);
 
         // loop over layers
         for (int j = 0; j < num_layers; j++) {
           // linear layer
-          input_ = at::addmm(bias_list[i][j], input_, weight_list[i][j]);
+          input_ = at::addmm(bias_list[start_layers + j], input_, weight_list[start_layers + j]);
           // activation layer if it's not the last layer
           if (j < num_layers - 1) {
             input_ = at::celu_(input_, 0.1);
           }
-          // save weight and intermediate for backward
-          to_save_weight_list[start_layers_list[i] + j] = weight_list[i][j];
-          intm_result_list[start_layers_list[i] + j] = input_;
+          // save intermediate result for backward
+          intm_result_list[start_layers + j] = input_;
         }
 
         // sum out without cudaMemcpyAsync
@@ -107,7 +106,7 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
     ctx->saved_data["num_layers_list"] = c10::List<int64_t>(num_layers_list);
     ctx->saved_data["start_layers_list"] = c10::List<int64_t>(start_layers_list);
     ctx->saved_data["stream_list"] = c10::List<at::Stream>(stream_list);
-    ctx->saved_data["weight_list"] = c10::List<Tensor>(to_save_weight_list);
+    ctx->saved_data["weight_list"] = c10::List<Tensor>(weight_list);
     ctx->saved_data["intm_result_list"] = c10::List<Tensor>(intm_result_list);
     ctx->saved_data["idx_list"] = c10::List<Tensor>(idx_list);
 
@@ -159,13 +158,15 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction> {
         at::cuda::CUDAStreamGuard guard(stream_list[i]);
 #endif
         Tensor input_ = grad_o[0].expand({idx_list[i].size(0), -1});
+        int start_layers = start_layers_list[i];
+        int num_layers = num_layers_list[i];
 
         // loop over layers reversely
-        for (int j = num_layers_list[i] - 1; j >= 0; j--) {
-          Tensor weight = weight_list[start_layers_list[i] + j].transpose(0, 1);
-          Tensor intermediate_result = intm_result_list[start_layers_list[i] + j];
+        for (int j = num_layers - 1; j >= 0; j--) {
+          Tensor weight = weight_list[start_layers + j].transpose(0, 1);
+          Tensor intermediate_result = intm_result_list[start_layers + j];
           // activation layer backward if it's not the last layer
-          if (j < num_layers_list[i] - 1) {
+          if (j < num_layers - 1) {
             input_ = at::elu_backward(input_, alpha, 1, 1.0 / alpha, /* is_result */ true, intermediate_result);
           }
           // linear layer backward
@@ -190,8 +191,8 @@ Tensor run_autograd(
     std::vector<int64_t> num_layers_list,
     std::vector<int64_t> start_layers_list,
     tensor_list idx_list,
-    std::vector<std::vector<Tensor>> weight_list,
-    std::vector<std::vector<Tensor>> bias_list,
+    std::vector<Tensor> weight_list,
+    std::vector<Tensor> bias_list,
     std::vector<at::Stream> stream_list) {
   return MultiNetFunction::apply(
       aev, num_networks, num_layers_list, start_layers_list, idx_list, weight_list, bias_list, stream_list);
