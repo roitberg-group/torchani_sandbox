@@ -24,7 +24,8 @@ size_t get_env_num_threads(const char* var_name, size_t def_value = 1) {
   return def_value;
 }
 
-// TODO: Could siwtch to if constexpr once pytorch support c++17
+// TODO: Could switch to if constexpr once pytorch support c++17.
+// TODO: When reach to really big system, each network could be ran in different GPUs.
 template <bool use_stream, bool is_bmm>
 class MultiNetFunction : public torch::autograd::Function<MultiNetFunction<use_stream, is_bmm>> {
  public:
@@ -59,6 +60,7 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction<use_s
       }
     }
 
+    // set number of threads for OpenMP
     int max_threads = get_env_num_threads("OMP_NUM_THREADS");
     int num_threads = max_threads < num_networks ? max_threads : num_networks;
     omp_set_num_threads(num_threads);
@@ -66,7 +68,7 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction<use_s
     printf("fwd: number of host CPUs: %d, number of CPUs using: %d\n", max_threads, num_threads);
 #endif
 
-// loop over networks
+    // loop over networks
 #pragma omp parallel for schedule(static, 1)
     for (int i = 0; i < num_networks; i++) {
       // only run if species idx is not empty
@@ -161,6 +163,7 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction<use_s
       }
     }
 
+    // set number of threads for OpenMP
     int max_threads = get_env_num_threads("OMP_NUM_THREADS");
     int num_threads = max_threads < num_networks ? max_threads : num_networks;
     omp_set_num_threads(num_threads);
@@ -168,7 +171,7 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction<use_s
     printf("bwd: number of host CPUs: %d, number of CPUs using: %d\n", max_threads, num_threads);
 #endif
 
-// loop over networks
+    // loop over networks
 #pragma omp parallel for schedule(static, 1)
     for (int i = 0; i < num_networks; i++) {
       // only run if species idx is not empty
