@@ -1,8 +1,19 @@
 import torch
-from . import mnp  # type: ignore # noqa: F401
+import warnings
 from . import utils
 from typing import Tuple, NamedTuple, Optional
 from torch import Tensor
+import importlib_metadata
+
+
+mnp_is_installed = 'torchani.mnp' in importlib_metadata.metadata(
+    __package__.split('.')[0]).get_all('Provides')
+
+if mnp_is_installed:
+    # We need to import torchani.cuaev to tell PyTorch to initialize torch.ops.cuaev
+    from . import mnp  # type: ignore # noqa: F401
+else:
+    warnings.warn("mnp not installed")
 
 
 class SpeciesEnergies(NamedTuple):
@@ -146,6 +157,8 @@ class ANIInferModel(torch.nn.ModuleDict):
 
     @torch.jit.unused
     def init_mnp(self):
+        assert mnp_is_installed, "MNP extension is not installed"
+
         self.weight_list = []  # shape: [num_networks, num_layers]
         self.bias_list = []
         self.celu_alpha = None
@@ -251,6 +264,7 @@ class BmmEnsemble(torch.nn.Module):
 
     @torch.jit.unused
     def init_mnp(self):
+        assert mnp_is_installed, "MNP extension is not installed"
         self.weight_list = []  # shape: [num_networks, num_layers]
         self.bias_list = []
         self.celu_alpha = None
