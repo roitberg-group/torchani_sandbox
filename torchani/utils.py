@@ -2,10 +2,22 @@ import torch
 from torch import Tensor
 import torch.utils.data
 import math
+import os
+import warnings
 from collections import defaultdict
 from typing import Tuple, NamedTuple, Optional
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
+
+
+def check_openmp_threads():
+    if "OMP_NUM_THREADS" not in os.environ:
+        warnings.warn("""OMP_NUM_THREADS is not set, mnp works best if OMP_NUM_THREADS >= 2.
+              You can set it by `export OMP_NUM_THREADS=4` or `export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK` if using slurm""")
+    else:
+        num_threads = int(os.environ["OMP_NUM_THREADS"])
+        assert num_threads > 0
+        print(f"OMP_NUM_THREADS is set as {num_threads}")
 
 
 def cumsum_from_zero(input_: Tensor) -> Tensor:

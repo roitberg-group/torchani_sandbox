@@ -24,7 +24,7 @@ size_t get_env_num_threads(const char* var_name, size_t def_value = 1) {
   return def_value;
 }
 
-// TODO: Could switch to if constexpr once pytorch support c++17.
+// TODO: Could switch to if constexpr once Pytorch support c++17.
 // TODO: When reach to really big system, each network could be ran in different GPUs.
 template <bool use_stream, bool is_bmm>
 class MultiNetFunction : public torch::autograd::Function<MultiNetFunction<use_stream, is_bmm>> {
@@ -132,7 +132,7 @@ class MultiNetFunction : public torch::autograd::Function<MultiNetFunction<use_s
     ctx->saved_data["idx_list"] = c10::List<Tensor>(idx_list);
     ctx->saved_data["celu_alpha"] = (double)celu_alpha;
 
-    return at::sum(energy_list, 0, true).view({1, 1});
+    return at::sum(energy_list, 0, true);
   }
 
   static tensor_list backward(AutogradContext* ctx, tensor_list grad_o) {
