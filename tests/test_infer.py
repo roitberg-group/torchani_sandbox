@@ -7,7 +7,7 @@ import pytest
 
 
 path = os.path.dirname(os.path.realpath(__file__))
-# Disable Tensorfloat, error between two run of same model for large system could reach 1e-3.
+# Disable Tensorfloat, errors between two run of same model for large system could reach 1e-3.
 # However note that this error for large system is not that big actually.
 torch.backends.cuda.matmul.allow_tf32 = False
 
