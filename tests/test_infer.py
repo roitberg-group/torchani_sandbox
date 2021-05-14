@@ -10,6 +10,8 @@ path = os.path.dirname(os.path.realpath(__file__))
 # Disable Tensorfloat, errors between two run of same model for large system could reach 1e-3.
 # However note that this error for large system is not that big actually.
 torch.backends.cuda.matmul.allow_tf32 = False
+devices = ['cuda', 'cpu'] if torch.cuda.is_available() else ['cpu']
+use_mnps = [True, False] if torchani.infer.mnp_is_installed else [False]
 
 
 @pytest.fixture(scope="module")
@@ -17,8 +19,8 @@ def ani2x():
     return torchani.models.ANI2x(periodic_table_index=True, model_index=None)
 
 
-@pytest.mark.parametrize("device", ['cuda', 'cpu'])
-@pytest.mark.parametrize("use_mnp", [True, False])
+@pytest.mark.parametrize("device", devices)
+@pytest.mark.parametrize("use_mnp", use_mnps)
 def test_bmm_ensemble(device, use_mnp, ani2x):
     model_iterator = ani2x.neural_networks
     aev_computer = torchani.AEVComputer.like_2x(use_cuda_extension=(device == 'cuda'))
@@ -43,8 +45,8 @@ def test_bmm_ensemble(device, use_mnp, ani2x):
         torch.testing.assert_allclose(force1, force2, atol=1e-5, rtol=1e-5)
 
 
-@pytest.mark.parametrize("device", ['cuda', 'cpu'])
-@pytest.mark.parametrize("use_mnp", [True, False])
+@pytest.mark.parametrize("device", devices)
+@pytest.mark.parametrize("use_mnp", use_mnps)
 def test_ani_infer_model(device, use_mnp, ani2x):
     model_iterator = ani2x.neural_networks
     aev_computer = torchani.AEVComputer.like_2x(use_cuda_extension=(device == 'cuda'))
