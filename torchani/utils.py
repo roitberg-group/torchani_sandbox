@@ -320,6 +320,21 @@ def hessian(coordinates: Tensor, energies: Optional[Tensor] = None, forces: Opti
     ], dim=1)
 
 
+def batched_hessian(model: torch.nn.Module, species_coordinates: Tuple[Tensor, Tensor]) -> Tensor:
+    # this accepts species with dummy atoms (index = -1)
+    # hessian elements for dummy atoms are 0.0
+    species, coordinates = species_coordinates
+    hessians = []
+    for s, c in zip(species, coordinates):
+        s = s.unsqueeze(0)
+        c = c.unsqueeze(0)
+        c.requires_grad_(True)
+        energy = model((s, c)).energies
+        h = hessian(c, energy)
+        hessians.append(h)
+    return torch.cat(hessians)
+
+
 class FreqsModes(NamedTuple):
     freqs: Tensor
     modes: Tensor
@@ -506,4 +521,4 @@ ATOMIC_NUMBERS = {symbol: z for z, symbol in enumerate(PERIODIC_TABLE)}
 
 __all__ = ['pad_atomic_properties', 'present_species', 'hessian',
            'vibrational_analysis', 'strip_redundant_padding',
-           'ChemicalSymbolsToInts', 'get_atomic_masses']
+           'ChemicalSymbolsToInts', 'get_atomic_masses', 'batched_hessian', 'AtomicNumbersToMasses']
