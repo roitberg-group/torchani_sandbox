@@ -4,8 +4,9 @@ from torch import Tensor
 import torch.utils.data
 import math
 from collections import defaultdict
-from typing import Tuple, NamedTuple, Optional, List, Union, Dict
+from typing import Tuple, NamedTuple, Optional, List, Union, Dict, Sequence
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
+import warnings
 from .nn import SpeciesEnergies
 
 PADDING = {
@@ -365,7 +366,10 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
     # Hq = w^2 * Tq ==> Hq = w^2 * T^(1/2) T^(1/2) q
     # Letting q' = T^(1/2) q, we then have
     # T^(-1/2) H T^(-1/2) q' = w^2 * q'
-    inv_sqrt_mass = (1 / masses.sqrt()).repeat_interleave(3, dim=1)  # shape (molecule, 3 * atoms)
+    inv_sqrt_mass = 1 / masses.sqrt()
+    # dummy_atoms = masses == 0.0
+    # inv_sqrt_mass[dummy_atoms] = 0.0
+    inv_sqrt_mass = inv_sqrt_mass.repeat_interleave(3, dim=1)  # shape (molecule, 3 * atoms)
     mass_scaled_hessian = hessian * inv_sqrt_mass.unsqueeze(1) * inv_sqrt_mass.unsqueeze(2)
     if mass_scaled_hessian.shape[0] != 1:
         raise ValueError('The input should contain only one molecule')
@@ -396,10 +400,10 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
     return VibAnalysis(wavenumbers, modes, fconstants, rmasses)
 
 
-def get_atomic_masses(species):
+class AtomicNumbersToMasses(torch.nn.Module):
     r"""Convert a tensor of atomic numbers ("periodic table indices") into a tensor of atomic masses
 
-    Atomic masses supported are the first 119 elements, and are taken from:
+    By default atomic masses supported are the first 119 elements, and are taken from:
 
     Atomic weights of the elements 2013 (IUPAC Technical Report). Meija, J.,
     Coplen, T., Berglund, M., et al. (2016). Pure and Applied Chemistry, 88(3), pp.
@@ -407,18 +411,66 @@ def get_atomic_masses(species):
 
     They are all consistent with those used in ASE
 
+    Dummy atoms are assigned a mass of zero
+
     Arguments:
         species (:class:`torch.Tensor`): tensor with atomic numbers
 
     Returns:
-        :class:`torch.Tensor`: Tensor of dtype :class:`torch.double`, with
-        atomic masses, with the same shape as the input.
+        :class:`torch.Tensor`: Tensor, with atomic masses, with the same shape
+        as the input.
     """
+    atomic_masses: Tensor
+
+    def __init__(self, atomic_masses: Optional[Union[Tensor, Sequence[float]]] = None):
+        super().__init__()
+
+        if atomic_masses is None:
+            atomic_masses = DEFAULT_ATOMIC_MASSES
+
+        self.register_buffer('atomic_masses', torch.as_tensor(atomic_masses, dtype=torch.float))
+
+    def forward(self, species: Tensor) -> Tensor:
+        assert (species == 0).count_nonzero() == 0, "Atomic number of zero not supported"
+
+        dummy_atoms = species == -1
+        species[dummy_atoms] = 0
+        masses = self.atomic_masses[species]
+        species[dummy_atoms] = -1
+
+        return masses
+
+
+def get_atomic_masses(species):
+    warnings.warn("get_atomic_masses is deprecated")
     # Note that there should not be any atoms with index zero, because that is
     # not an element
-    assert len((species == 0).nonzero()) == 0
-    default_atomic_masses = torch.tensor(
-            [0.        ,   1.008     ,   4.002602  ,   6.94      , # noqa
+    default_atomic_masses = torch.tensor(DEFAULT_ATOMIC_MASSES, dtype=torch.double, device=species.device) # noqa
+
+    assert (species == 0).count_nonzero() == 0
+
+    dummy_atoms = species == -1
+    species[dummy_atoms] = 0
+    masses = default_atomic_masses[species]
+    species[dummy_atoms] = -1
+
+    return masses
+
+
+# This constant, when indexed with the corresponding atomic number, gives the
+# element associated with it. Note that there is no element with atomic number
+# 0, so 'Dummy' returned in this case.
+PERIODIC_TABLE = ['Dummy'] + """
+    H                                                                                                                           He
+    Li  Be                                                                                                  B   C   N   O   F   Ne
+    Na  Mg                                                                                                  Al  Si  P   S   Cl  Ar
+    K   Ca  Sc                                                          Ti  V   Cr  Mn  Fe  Co  Ni  Cu  Zn  Ga  Ge  As  Se  Br  Kr
+    Rb  Sr  Y                                                           Zr  Nb  Mo  Tc  Ru  Rh  Pd  Ag  Cd  In  Sn  Sb  Te  I   Xe
+    Cs  Ba  La  Ce  Pr  Nd  Pm  Sm  Eu  Gd  Tb  Dy  Ho  Er  Tm  Yb  Lu  Hf  Ta  W   Re  Os  Ir  Pt  Au  Hg  Tl  Pb  Bi  Po  At  Rn
+    Fr  Ra  Ac  Th  Pa  U   Np  Pu  Am  Cm  Bk  Cf  Es  Fm  Md  No  Lr  Rf  Db  Sg  Bh  Hs  Mt  Ds  Rg  Cn  Nh  Fl  Mc  Lv  Ts  Og
+    """.strip().split()
+
+DEFAULT_ATOMIC_MASSES = [0.        ,   1.008     ,   4.002602  ,   6.94      , # noqa
              9.0121831 ,  10.81      ,  12.011     ,  14.007     , # noqa
             15.999     ,  18.99840316,  20.1797    ,  22.98976928, # noqa
             24.305     ,  26.9815385 ,  28.085     ,  30.973762  , # noqa
@@ -447,24 +499,7 @@ def get_atomic_masses(species):
            267.122     , 268.126     , 271.134     , 270.133     , # noqa
            269.1338    , 278.156     , 281.165     , 281.166     , # noqa
            285.177     , 286.182     , 289.19      , 289.194     , # noqa
-           293.204     , 293.208     , 294.214], # noqa
-        dtype=torch.double, device=species.device) # noqa
-    masses = default_atomic_masses[species]
-    return masses
-
-
-# This constant, when indexed with the corresponding atomic number, gives the
-# element associated with it. Note that there is no element with atomic number
-# 0, so 'Dummy' returned in this case.
-PERIODIC_TABLE = ['Dummy'] + """
-    H                                                                                                                           He
-    Li  Be                                                                                                  B   C   N   O   F   Ne
-    Na  Mg                                                                                                  Al  Si  P   S   Cl  Ar
-    K   Ca  Sc                                                          Ti  V   Cr  Mn  Fe  Co  Ni  Cu  Zn  Ga  Ge  As  Se  Br  Kr
-    Rb  Sr  Y                                                           Zr  Nb  Mo  Tc  Ru  Rh  Pd  Ag  Cd  In  Sn  Sb  Te  I   Xe
-    Cs  Ba  La  Ce  Pr  Nd  Pm  Sm  Eu  Gd  Tb  Dy  Ho  Er  Tm  Yb  Lu  Hf  Ta  W   Re  Os  Ir  Pt  Au  Hg  Tl  Pb  Bi  Po  At  Rn
-    Fr  Ra  Ac  Th  Pa  U   Np  Pu  Am  Cm  Bk  Cf  Es  Fm  Md  No  Lr  Rf  Db  Sg  Bh  Hs  Mt  Ds  Rg  Cn  Nh  Fl  Mc  Lv  Ts  Og
-    """.strip().split()
+           293.204     , 293.208     , 294.214] # noqa
 
 ATOMIC_NUMBERS = {symbol: z for z, symbol in enumerate(PERIODIC_TABLE)}
 
