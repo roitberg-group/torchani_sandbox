@@ -353,8 +353,9 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
     Note that normal modes in many popular software packages such as
     Gaussian and ORCA are output as mass deweighted normalized (MDN).
     Normal modes in ASE are output as mass deweighted unnormalized (MDU).
-    Some packages such as Psi4 let ychoose different normalizations.
-    Force constants and reduced masses are calculated as in Gaussian.
+    Some packages such as Psi4 let the user choose different normalizations.
+    Force constants and reduced masses are calculated as in Gaussian (units are
+    AMU for reduced masses and mDyne / (Angstrom * AMU) for force constants).
 
     mode_type should be one of:
     - MWN (mass weighted normalized)
