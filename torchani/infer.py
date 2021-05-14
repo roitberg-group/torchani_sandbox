@@ -1,5 +1,5 @@
 import torch
-from . import mnp
+from . import mnp  # type: ignore # noqa: F401
 from . import utils
 from typing import Tuple, NamedTuple, Optional
 from torch import Tensor
@@ -206,7 +206,7 @@ class BmmEnsemble(torch.nn.Module):
         self.stream_list = [torch.cuda.Stream() for i in range(self.num_network)]
         # mnp
         self.use_mnp = False
-        if self.use_mnp:
+        if use_mnp:
             self.init_mnp()
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
