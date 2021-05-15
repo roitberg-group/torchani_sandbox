@@ -107,6 +107,7 @@ class ANIInferModel(torch.nn.ModuleDict):
         self.num_network = len(self.keys())
         self.last_species_ptr = None
         self.idx_list = [torch.empty(0) for i in range(self.num_network)]
+        assert torch.cuda.is_available(), "Infer model needs cuda is available"
         self.stream_list = [torch.cuda.Stream() for i in range(self.num_network)]
         # mnp
         self.use_mnp = False
@@ -216,6 +217,7 @@ class BmmEnsemble(torch.nn.Module):
         self.num_network = len(self.bmm_networks)
         self.last_species_ptr = None
         self.idx_list = [torch.empty(0) for i in range(self.num_network)]
+        assert torch.cuda.is_available(), "Infer model needs cuda is available"
         self.stream_list = [torch.cuda.Stream() for i in range(self.num_network)]
         # mnp
         self.use_mnp = False
