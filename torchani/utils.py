@@ -340,6 +340,12 @@ class FreqsModes(NamedTuple):
     modes: Tensor
 
 
+class MOIOutput(NamedTuple):
+    moi: Tensor
+    eigenvalues: Tensor
+    eigenvectors: Tensor
+
+
 class VibAnalysis(NamedTuple):
     freqs: Tensor
     modes: Tensor
@@ -455,6 +461,76 @@ class AtomicNumbersToMasses(torch.nn.Module):
         species[dummy_atoms] = -1
 
         return masses
+
+
+class CenterOfMass(torch.nn.Module):
+
+    def __init__(self, atomic_masses: Optional[Union[Tensor, Sequence[float]]] = None):
+        super().__init__()
+
+        if atomic_masses is None:
+            atomic_masses = DEFAULT_ATOMIC_MASSES
+
+        self.znums_to_masses = AtomicNumbersToMasses(atomic_masses)
+
+    def forward(self, species_coordinates: Tuple[Tensor, Tensor]) -> Tensor:
+        # expects a batch
+        species, coordinates = species_coordinates
+        masses = self.znums_to_masses(species)
+        centers_of_mass = (coordinates * masses.unsqueeze(-1)).sum(1) / masses.unsqueeze(-1).sum(1)
+
+        return centers_of_mass
+
+
+class MomentOfInertia(torch.nn.Module):
+
+    def __init__(self, atomic_masses: Optional[Union[Tensor, Sequence[float]]] = None):
+        super().__init__()
+
+        if atomic_masses is None:
+            atomic_masses = DEFAULT_ATOMIC_MASSES
+
+        self.znums_to_masses = AtomicNumbersToMasses(atomic_masses)
+        self.com = CenterOfMass(atomic_masses)
+
+    def forward(self, species_coordinates: Tuple[Tensor, Tensor]) -> MOIOutput:
+        # expects a batch
+        species, coordinates = species_coordinates
+        coordinates -= self.com((species, coordinates)).view(-1, 1, 3)
+        masses = torch.sqrt(self.znums_to_masses(species))
+
+        moi = torch.zeros(size=(species.shape[0], species.shape[1], 3, 3), dtype=coordinates.dtype, device=coordinates.device)
+        # NOTE: This code is simple but probably inefficient and can probably
+        # be improved by doing something similar to a covariance calculation
+        sq_coordinates = coordinates**2
+
+        # Diagonal:
+        # sum(m_a * (y_a**2 + z_a**2))
+        moi[:, :, 0, 0] = sq_coordinates[:, :, 1] + sq_coordinates[:, :, 2]
+        # sum(m_a * (x_a**2 + z_a**2))
+        moi[:, :, 1, 1] = sq_coordinates[:, :, 0] + sq_coordinates[:, :, 2]
+        # sum(m_a * (x_a**2 + y_a**2))
+        moi[:, :, 2, 2] = sq_coordinates[:, :, 0] + sq_coordinates[:, :, 1]
+
+        # Off diagonal
+        # - sum(m_a * x_a * y_a)
+        moi[:, :, 0, 1] = -coordinates[:, :, 0] * coordinates[:, :, 1]
+        # - sum(m_a * x_a * z_a)
+        moi[:, :, 0, 2] = -coordinates[:, :, 0] * coordinates[:, :, 2]
+        # - sum(m_a * y_a * z_a)
+        moi[:, :, 1, 2] = -coordinates[:, :, 1] * coordinates[:, :, 2]
+
+        moi *= masses.unsqueeze(-1).unsqueeze(-1)
+        moi = moi.sum(1)
+
+        # now we need to symmetrize this
+        moi[:, 1, 0] = moi[:, 0, 1]
+        moi[:, 2, 0] = moi[:, 0, 2]
+        moi[:, 1, 2] = moi[:, 2, 1]
+
+        eigenvalues, eigenvectors = torch.symeig(moi, eigenvectors=True)
+
+        return MOIOutput(moi, eigenvalues, eigenvectors)
 
 
 def get_atomic_masses(species):
