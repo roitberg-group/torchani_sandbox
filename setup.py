@@ -113,10 +113,10 @@ def cuda_extension(build_all=False):
         nvcc_args.append('-DTORCHANI_DEBUG')
     print("nvcc_args: ", nvcc_args)
     print('-' * 75)
-    include_dirs = [*maybe_download_cub(), os.path.abspath("torchani/cuaev/")]
+    include_dirs = [*maybe_download_cub(), os.path.abspath("torchani/csrc/")]
     return CUDAExtension(
         name='torchani.cuaev',
-        sources=["torchani/cuaev/cuaev.cpp", "torchani/cuaev/aev.cu"],
+        sources=["torchani/csrc/cuaev.cpp", "torchani/csrc/aev.cu"],
         include_dirs=include_dirs,
         extra_compile_args={'cxx': ['-std=c++14'], 'nvcc': nvcc_args})
 
@@ -128,7 +128,7 @@ def mnp_extension():
         cxx_args.append('-DTORCHANI_DEBUG')
     return CUDAExtension(
         name='torchani.mnp',
-        sources=["torchani/cuaev/mnp.cpp"],
+        sources=["torchani/csrc/mnp.cpp"],
         extra_compile_args={'cxx': cxx_args})
 
 
