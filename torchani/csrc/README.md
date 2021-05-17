@@ -132,7 +132,7 @@ python tests/test_infer.py
 ```
 
 ## Usage
-### CUAEV
+#### CUAEV
 Pass `use_cuda_extension=True` when construct aev_computer, for example:
 ```python
 cuaev_computer = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, use_cuda_extension=True)
@@ -140,7 +140,7 @@ cuaev_computer = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, Sh
 cuaev_computer = torchani.AEVComputer.like_1x(use_cuda_extension=True)
 ```
 
-### MNP
+#### MNP
 ```python
 ani2x = torchani.models.ANI2x()
 # ensemble
@@ -157,7 +157,7 @@ model = ani2x.neural_networks[0].to_infer_modle(use_mnp=True)
 
 ## Benchmark
 
-### CUAEV
+#### CUAEV
 Benchmark of [torchani/tools/training-aev-benchmark.py](https://github.com/aiqm/torchani/blob/master/tools/training-aev-benchmark.py):
 
 Train ANI-1x dataset (Batchsize 2560) on Tesla V100 for 1 epoch:
@@ -178,5 +178,5 @@ python tools/aev-benchmark-size.py
 
 For bigger system inference, Also check on [CUAEV calculation optimzation #16](https://github.com/roitberg-group/torchani_sandbox/pull/16)
 
-### MNP
+#### MNP
 Check on [NN optimization #35](https://github.com/roitberg-group/torchani_sandbox/pull/35)
