@@ -176,10 +176,10 @@ python tools/training-aev-benchmark.py download/dataset/ani-1x/sample.h5
 python tools/aev-benchmark-size.py -p
 ```
 
-For bigger system inference, Also check on [CUAEV calculation optimzation #16](https://github.com/roitberg-group/torchani_sandbox/pull/16)
+For bigger system inference, Also check [#16 CUAEV calculation optimzation](https://github.com/roitberg-group/torchani_sandbox/pull/16)
 
 #### MNP
-Check on [NN optimization #35](https://github.com/roitberg-group/torchani_sandbox/pull/35)
+Check [#35 NN optimization](https://github.com/roitberg-group/torchani_sandbox/pull/35)
 
 ```bash
 # original
