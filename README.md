@@ -62,9 +62,9 @@ To run the tests and examples, you must manually download a data package
 ```
 
 # Extensions (Optional)
-[Torchani extensions csrc](https://github.com/roitberg-group/torchani_sandbox/tree/master/torchani/csrc)
+[Torchani extensions csrc](torchani/csrc)
 
-To install AEV CUDA Extension (speedup for AEV calculation) and MNP (Multi Net Parallel for inference), please follow the instruction at [torchani/csrc](https://github.com/roitberg-group/torchani_sandbox/tree/master/torchani/csrc).
+To install AEV CUDA Extension (speedup for AEV calculation) and MNP (Multi Net Parallel for inference), please follow the instruction at [torchani/csrc](torchani/csrc).
 
 # Citation
 
