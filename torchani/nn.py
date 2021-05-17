@@ -81,7 +81,7 @@ class ANIModel(torch.nn.ModuleDict):
         output = output.view_as(species)
         return output
 
-    def to_infer_modle(self, use_mnp=True):
+    def to_infer_model(self, use_mnp=True):
         return infer.ANIInferModel(list(self.items()), use_mnp)
 
 
@@ -101,7 +101,7 @@ class Ensemble(torch.nn.ModuleList):
         species, _ = species_input
         return SpeciesEnergies(species, sum_ / self.size)
 
-    def to_infer_modle(self, use_mnp=True):
+    def to_infer_model(self, use_mnp=True):
         return infer.BmmEnsemble(self, use_mnp)
 
 

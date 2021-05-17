@@ -383,8 +383,8 @@ if __name__ == "__main__":
     num_models = len(neural_networks)
     single_model = neural_networks[0]
     if args.infer_model:
-        neural_networks = neural_networks.to_infer_modle(use_mnp=args.mnp).to(device)
-        single_model = single_model.to_infer_modle(use_mnp=args.mnp).to(device)
+        neural_networks = neural_networks.to_infer_model(use_mnp=args.mnp).to(device)
+        single_model = single_model.to_infer_model(use_mnp=args.mnp).to(device)
     energy_shifter = nnp_ref.energy_shifter
 
     if args.nsight:

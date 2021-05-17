@@ -144,9 +144,9 @@ cuaev_computer = torchani.AEVComputer.like_1x(use_cuda_extension=True)
 ```python
 ani2x = torchani.models.ANI2x()
 # ensemble
-bmm_ensemble = ani2x.neural_networks.to_infer_modle(use_mnp=True)
+bmm_ensemble = ani2x.neural_networks.to_infer_model(use_mnp=True)
 # single model
-model = ani2x.neural_networks[0].to_infer_modle(use_mnp=True)
+model = ani2x.neural_networks[0].to_infer_model(use_mnp=True)
 ```
 
 ## TODOs

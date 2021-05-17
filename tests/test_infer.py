@@ -25,7 +25,7 @@ def test_bmm_ensemble(device, use_mnp, ani2x):
     model_iterator = ani2x.neural_networks
     aev_computer = torchani.AEVComputer.like_2x(use_cuda_extension=(device == 'cuda'))
     ensemble = torchani.nn.Sequential(aev_computer, model_iterator).to(device)
-    bmm_ensemble = torchani.nn.Sequential(aev_computer, ani2x.neural_networks.to_infer_modle(use_mnp=use_mnp)).to(device)
+    bmm_ensemble = torchani.nn.Sequential(aev_computer, ani2x.neural_networks.to_infer_model(use_mnp=use_mnp)).to(device)
     files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
     for file in files:
         filepath = os.path.join(path, f'../dataset/pdb/{file}')
@@ -52,7 +52,7 @@ def test_ani_infer_model(device, use_mnp, ani2x):
     model_iterator = ani2x.neural_networks
     aev_computer = torchani.AEVComputer.like_2x(use_cuda_extension=(device == 'cuda'))
     model_ref = torchani.nn.Sequential(aev_computer, model_iterator[0]).to(device)
-    model_infer = torchani.nn.Sequential(aev_computer, model_iterator[0].to_infer_modle(use_mnp=use_mnp)).to(device)
+    model_infer = torchani.nn.Sequential(aev_computer, model_iterator[0].to_infer_model(use_mnp=use_mnp)).to(device)
     files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
     for file in files:
         filepath = os.path.join(path, f'../dataset/pdb/{file}')
