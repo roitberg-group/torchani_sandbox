@@ -379,6 +379,11 @@ if __name__ == "__main__":
     nnp_cuaev.aev_computer.use_cuda_extension = True
     maxatoms = [6000, 10000]
 
+    if args.nsight:
+        N = 5
+        torch.cuda.profiler.start()
+        maxatoms = [10000]
+
     neural_networks = nnp_ref.neural_networks
     num_models = len(neural_networks)
     single_model = neural_networks[0]
@@ -386,11 +391,6 @@ if __name__ == "__main__":
         neural_networks = neural_networks.to_infer_model(use_mnp=args.mnp).to(device)
         single_model = single_model.to_infer_model(use_mnp=args.mnp).to(device)
     energy_shifter = nnp_ref.energy_shifter
-
-    if args.nsight:
-        N = 5
-        torch.cuda.profiler.start()
-        maxatoms = [10000]
 
     # if run for plots
     if args.plot:
