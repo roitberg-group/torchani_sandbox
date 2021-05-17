@@ -146,13 +146,11 @@ class ANIInferModel(torch.nn.ModuleDict):
         # or the species has changed
         if self.last_species_ptr is None or self.last_species_ptr != species.data_ptr():
             with torch.no_grad():
-                print('----- init spe_list ----')
                 self.last_species_ptr = species.data_ptr()
                 self.idx_list = [torch.empty(0) for i in range(self.num_network)]
                 for i in range(self.num_network):
                     mask = (species_ == i)
                     midx = mask.nonzero().flatten()
-                    print(i, midx.shape[0])
                     if midx.shape[0] > 0:
                         self.idx_list[i] = midx
 
@@ -200,7 +198,7 @@ class ANIInferModel(torch.nn.ModuleDict):
 class BmmEnsemble(torch.nn.Module):
     """
     Fuse all same networks of an ensemble into BmmNetworks, for example 8 same H networks will be fused into 1 BmmNetwork.
-    BmmNetwork is composed of BatchLinear layers, which will perform Batch Matmul (bmm) instead of normal matmul
+    BmmNetwork is composed of BmmLinear layers, which will perform Batch Matmul (bmm) instead of normal matmul
     to reduce the number of kernel calls.
     """
     def __init__(self, models, use_mnp=True):
@@ -254,13 +252,11 @@ class BmmEnsemble(torch.nn.Module):
         # or the species has changed
         if self.last_species_ptr is None or self.last_species_ptr != species.data_ptr():
             with torch.no_grad():
-                print('----- init spe_list ----')
                 self.last_species_ptr = species.data_ptr()
                 self.idx_list = [torch.empty(0) for i in range(self.num_network)]
                 for i in range(self.num_network):
                     mask = (species_ == i)
                     midx = mask.nonzero().flatten()
-                    print(i, midx.shape[0])
                     if midx.shape[0] > 0:
                         self.idx_list[i] = midx
 
@@ -276,7 +272,7 @@ class BmmEnsemble(torch.nn.Module):
             weights = []
             biases = []
             for layer in net.layers:
-                if isinstance(layer, BatchLinear):
+                if isinstance(layer, BmmLinear):
                     weights.append(layer.weights.clone().detach())
                     biases.append(layer.bias.clone().detach())
                 else:
@@ -305,7 +301,7 @@ class BmmEnsemble(torch.nn.Module):
 
 class BmmNetwork(torch.nn.Module):
     """
-    Multiple BatchLinear layers with activation function
+    Multiple BmmLinear layers with activation function
     """
     def __init__(self, networks):
         super(BmmNetwork, self).__init__()
@@ -313,7 +309,7 @@ class BmmNetwork(torch.nn.Module):
         self.batch = len(networks)
         for layer_idx, layer in enumerate(networks[0]):
             if isinstance(layer, torch.nn.Linear):
-                layers.append(BatchLinear([net[layer_idx] for net in networks]))
+                layers.append(BmmLinear([net[layer_idx] for net in networks]))
             else:
                 assert isinstance(layer, torch.nn.CELU), "Currently only support CELU as activation function"
                 layers.append(layer)
@@ -326,7 +322,7 @@ class BmmNetwork(torch.nn.Module):
         return input_.mean(0)
 
 
-class BatchLinear(torch.nn.Module):
+class BmmLinear(torch.nn.Module):
     """
     Batch Linear layer fuses multiple Linear layers that have same architecture and same input.
     input : (b x n x m)
@@ -335,7 +331,7 @@ class BatchLinear(torch.nn.Module):
     out   : (b x n x p)
     """
     def __init__(self, linear_layers):
-        super(BatchLinear, self).__init__()
+        super(BmmLinear, self).__init__()
         # assert each layer has same architecture
         weights = [layer.weight.unsqueeze(0).clone().detach() for layer in linear_layers]
         bias = [layer.bias.view(1, 1, -1).clone().detach() for layer in linear_layers]
