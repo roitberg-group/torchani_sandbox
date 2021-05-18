@@ -198,7 +198,7 @@ class BuiltinModel(torch.nn.Module):
         try:
             self._species_to_tensor
         except AttributeError:
-            self._species_to_tensor = ChemicalSymbolsToInts(self.get_chemical_symbols)
+            self._species_to_tensor = ChemicalSymbolsToInts(self.get_chemical_symbols())
 
         out = self._species_to_tensor(*args, **kwargs)
         return out.to(self.aev_computer.radial_terms.ShfR.device)
