@@ -64,7 +64,6 @@ class BuiltinModel(torch.nn.Module):
         self.energy_shifter = energy_shifter
 
         self.species_converter = SpeciesConverter(elements)
-        self._species_to_tensor = ChemicalSymbolsToInts(elements)
 
         self.periodic_table_index = periodic_table_index
         numbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
@@ -189,11 +188,20 @@ class BuiltinModel(torch.nn.Module):
         Returns:
             tensor (:class:`torch.Tensor`): A 1D tensor of integers
         """
+
         # The only difference between this and the "raw" private version
         # _species_to_tensor is that this sends the final tensor to the model
         # device
-        return self._species_to_tensor(*args, **kwargs) \
-            .to(self.aev_computer.radial_terms.ShfR.device)
+
+        # callable attribute is set on first call to avoid JIT from trying to
+        # register it
+        try:
+            self._species_to_tensor
+        except AttributeError:
+            self._species_to_tensor = ChemicalSymbolsToInts(self.get_chemical_symbols)
+
+        out = self._species_to_tensor(*args, **kwargs)
+        return out.to(self.aev_computer.radial_terms.ShfR.device)
 
     def ase(self, **kwargs):
         """Get an ASE Calculator using this ANI model
