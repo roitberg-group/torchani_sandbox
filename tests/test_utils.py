@@ -1,5 +1,6 @@
 import unittest
 import torch
+import math
 import torchani
 from torchani.testing import TestCase
 
@@ -101,6 +102,73 @@ class TestUtils(TestCase):
         species = species.repeat(2, 1)
         hessian = torchani.utils.batched_hessian(model, (species, coordinates))
         self.assertEqual(hessian_expect, hessian)
+
+    def testCOM(self):
+        com_calc = torchani.utils.CenterOfMass()
+
+        # symmetric
+        coordinates0 = torch.tensor([[[0.0, 0.0, 0.0],
+                                     [1.0, 0.0, 0.0],
+                                     [-1.0, 0.0, 0.0]]], dtype=torch.float)
+        species0 = torch.tensor([[6, 8, 8]], dtype=torch.long)
+        com = com_calc((species0, coordinates0))
+        expect0 = torch.tensor([[0.0, 0.0000, 0.0000]], dtype=torch.float)
+        self.assertEqual(com, expect0)
+
+        # asymmetric
+        coordinates1 = torch.tensor([[[0.0, 0.0, 0.0],
+                                     [1.0, 0.0, 0.0],
+                                     [-2.0, 0.0, 0.0]]], dtype=torch.float)
+        species1 = torch.tensor([[6, 8, 8]], dtype=torch.long)
+        com = com_calc((species1, coordinates1))
+        expect1 = torch.tensor([[-0.3635392, 0.0000, 0.0000]], dtype=torch.float)
+        self.assertEqual(com, expect1)
+
+        # batched
+        com = com_calc((torch.cat((species0, species1), dim=0), torch.cat((coordinates0, coordinates1), dim=0)))
+        self.assertEqual(com, torch.cat((expect0, expect1), dim=0))
+
+    def testMOI(self):
+        coordinates0 = torch.tensor([[[0.0, 0.0, 0.0],
+                                     [1.0, 0.0, 0.0],
+                                     [-1.0, 0.0, 0.0]]], dtype=torch.float)
+        species0 = torch.tensor([[6, 8, 8]], dtype=torch.long)
+
+        coordinates0 = torch.tensor([[[0.0, 1.0, 0.0],
+                                     [math.sqrt(3) / 2, -1 / 2, 0.0],
+                                     [-math.sqrt(3) / 2, -1 / 2, 0.0]]], dtype=torch.float)
+        species0 = torch.tensor([[1, 1, 1]], dtype=torch.long)
+
+        moi_calc = torchani.utils.MomentOfInertia()
+        moi_out = moi_calc((species0, coordinates0))
+        moi_expect = torch.tensor([[[1.5060, 0.0000, 0.0000],
+                                    [0.0000, 1.5060, 0.0000],
+                                    [0.0000, 0.0000, 3.0119762]]], dtype=torch.float)
+        evalues_expect = torch.tensor([[1.5060, 1.5060, 3.0119762]], dtype=torch.float)
+        evectors_expect = torch.tensor([[[1., -0., 0.],
+                                         [0., 1., 0.],
+                                         [0., 0., 1.]]], dtype=torch.float)
+        self.assertEqual(moi_expect, moi_out.moi)
+        self.assertEqual(evalues_expect, moi_out.eigenvalues)
+        self.assertEqual(evectors_expect, moi_out.eigenvectors)
+
+        # padded
+        coordinates0 = torch.tensor([[[0.0, 1.0, 0.0],
+                                     [math.sqrt(3) / 2, -1 / 2, 0.0],
+                                     [-math.sqrt(3) / 2, -1 / 2, 0.0],
+                                     [0.0, 0.0, 0.0]]], dtype=torch.float)
+
+        species0 = torch.tensor([[1, 1, 1, -1]], dtype=torch.long)
+        moi_out = moi_calc((species0, coordinates0))
+        self.assertEqual(moi_expect, moi_out.moi)
+        self.assertEqual(evalues_expect, moi_out.eigenvalues)
+        self.assertEqual(evectors_expect, moi_out.eigenvectors)
+
+        # batched
+        moi_out = moi_calc((species0.repeat(2, 1), coordinates0.repeat(2, 1, 1)))
+        self.assertEqual(moi_expect.repeat(2, 1, 1), moi_out.moi)
+        self.assertEqual(evalues_expect.repeat(2, 1), moi_out.eigenvalues)
+        self.assertEqual(evectors_expect.repeat(2, 1, 1), moi_out.eigenvectors)
 
 
 if __name__ == '__main__':

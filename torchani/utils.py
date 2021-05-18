@@ -368,9 +368,9 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
     - MDU (mass deweighted unnormalized)
     - MDN (mass deweighted normalized)
 
-    MDU modes are not orthogonal, and not normalized,
-    MDN modes are not orthogonal, and normalized.
-    MWN modes are orthonormal, but they correspond
+    MDU modes are orthogonal, but are not normalized,
+    MDN modes are not orthogonal, but are normalized.
+    MWN modes are orthogonal and normalized (orthonormal), but they correspond
     to mass weighted cartesian coordinates (x' = sqrt(m)x).
     """
     if unit == 'meV':
