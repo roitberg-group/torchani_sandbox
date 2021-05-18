@@ -663,8 +663,8 @@ class CellList(BaseNeighborlist):
         # which amber does, in order to calculate diffusion coefficients, etc
         fractional_coordinates -= fractional_coordinates.floor()
         # fractional_coordinates should be in the range [0, 1.0)
-        fractional_coordinates[fractional_coordinates >= 1.0].add_(-1.0)
-        fractional_coordinates[fractional_coordinates < 0.0].add_(1.0)
+        fractional_coordinates[fractional_coordinates >= 1.0] += -1.0
+        fractional_coordinates[fractional_coordinates < 0.0] += 1.0
 
         assert not torch.isnan(fractional_coordinates).any(),\
                 "Some fractional coordinates are NaN."
