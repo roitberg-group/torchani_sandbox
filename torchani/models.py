@@ -58,6 +58,7 @@ class BuiltinModel(torch.nn.Module):
                  periodic_table_index: bool = False):
 
         super().__init__()
+
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
         self.energy_shifter = energy_shifter
@@ -84,7 +85,7 @@ class BuiltinModel(torch.nn.Module):
         else:
             assert len(self.neural_networks) == len(self.atomic_numbers)
 
-    @torch.jit.ignore
+    @torch.jit.unused
     def get_chemical_symbols(self) -> List[str]:
         return [PERIODIC_TABLE[z] for z in self.atomic_numbers]
 
@@ -176,6 +177,7 @@ class BuiltinModel(torch.nn.Module):
         self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
         self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
 
+    @torch.jit.unused
     def species_to_tensor(self, *args, **kwargs):
         """Convert species from strings to tensor.
 
