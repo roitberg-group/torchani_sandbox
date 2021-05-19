@@ -10,6 +10,7 @@ mnp_is_installed = 'torchani.mnp' in importlib_metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
 
 if mnp_is_installed:
+    # We need to import torchani.mnp to tell PyTorch to initialize torch.ops.mnp
     from . import mnp  # type: ignore # noqa: F401
 else:
     warnings.warn("mnp not installed")
