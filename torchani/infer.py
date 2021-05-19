@@ -28,6 +28,9 @@ class MultiNetFunction(torch.autograd.Function):
     """
     @staticmethod
     def forward(ctx, aev, num_network, idx_list, net_list, stream_list):
+        assert num_network == len(idx_list)
+        assert num_network == len(net_list)
+        assert num_network == len(stream_list)
         energy_list = torch.zeros(num_network, dtype=aev.dtype, device=aev.device)
         event_list = [torch.cuda.Event() for i in range(num_network)]
         current_stream = torch.cuda.current_stream()
