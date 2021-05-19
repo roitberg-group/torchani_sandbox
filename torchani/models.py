@@ -333,7 +333,10 @@ class BuiltinEnsemble(BuiltinModel):
     @torch.jit.export
     def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
                       cell: Optional[Tensor] = None,
-                      pbc: Optional[Tensor] = None, unbiased: bool = True) -> SpeciesEnergiesQBC:
+                      pbc: Optional[Tensor] = None,
+                      unbiased: bool = True,
+                      scale_energies: bool = True, 
+                      scale_qbcs: bool = True) -> SpeciesEnergiesQBC:
         """Calculates predicted predicted energies and qbc factors
 
         QBC factors are used for query-by-committee (QBC) based active learning
@@ -372,12 +375,50 @@ class BuiltinEnsemble(BuiltinModel):
 
         # standard deviation is taken across ensemble members
         qbc_factors = energies.std(0, unbiased=unbiased)
+        energies = energies.mean(dim=0)
 
         # rho's (qbc factors) are weighted by dividing by the square root of
         # the number of atoms in each molecule
-        num_atoms = (species >= 0).sum(dim=1, dtype=energies.dtype)
-        qbc_factors = qbc_factors / num_atoms.sqrt()
-        energies = energies.mean(dim=0)
+        if scale_energies or scale_qbcs:
+            sqrt_atoms = (species >= 0).sum(dim=1, dtype=energies.dtype).sqrt()
+            if scale_qbcs:
+                qbc_factors /= sqrt_atoms
+            if scale_energies:
+                energies /= sqrt_atoms
+
+        assert qbc_factors.shape == energies.shape
+        return SpeciesEnergiesQBC(species, energies, qbc_factors)
+
+    @torch.jit.export
+    def energies_forces_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
+                      cell: Optional[Tensor] = None,
+                      pbc: Optional[Tensor] = None,
+                      unbiased: bool = True,
+                      scale_energies: bool = True,
+                      scale_energy_qbcs: bool = True, 
+                      scale_force_qbcs: bool = True) -> SpeciesEnergiesQBC:
+
+        species, coordinates = species_coordinates
+        coordinates.requires_grad_(True)
+        species, members_energies = self.members_energies((species, coordinates), cell, pbc)
+
+        members_forces = -torch.autograd.grad(members_energies.sum(), coordinates)[0]
+        # members energies should have shape (M, N)
+        # members forces should have shape (M, N, 3)
+
+        # standard deviation is taken across ensemble members
+        energy_qbc_factors = members_energies.std(0, unbiased=unbiased)
+        energies = members_energies.detach().mean(dim=0)
+
+        # rho's (qbc factors) are weighted by dividing by the square root of
+        # the number of atoms in each molecule
+        if scale_energies or scale_energy_qbcs or scale_force_qbcs:
+            sqrt_atoms = (species >= 0).sum(dim=1, dtype=energies.dtype).sqrt()
+            if scale_qbcs:
+                qbc_factors /= sqrt_atoms
+            if scale_energies:
+                energies /= sqrt_atoms
+
         assert qbc_factors.shape == energies.shape
         return SpeciesEnergiesQBC(species, energies, qbc_factors)
 
