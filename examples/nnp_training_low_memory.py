@@ -36,14 +36,30 @@ if not Path(batched_dataset_path).resolve().is_dir():
                                                  splits={'training': 0.8, 'validation': 0.2})
 
     else:
-        # for splitting into k-folds (for ensemble learning or cross validation)
+        # We can prebatch the dataset using folds, this is useful for ensemble training
+        # or cross validation.
+        # for example, if the dataset has 10 conformations, we can split into 5
+        # folds, each fold will have 8 conformations for a training set and 2
+        # conformations for the validation set. All validation sets will be
+        # disjoint.
+        #
+        # schematically:
+        # total set: 0 1 2 3 4 5 6 7 8 9
+        #
+        # fold 0:   {0 1 } [2 3 4 5 6 7 8 9 ]
+        # fold 1:   [0 1] {2 3} [4 5 6 7 8 9]
+        # fold 2:   [0 1 2 3] {4 5} [6 7 8 9]
+        # fold 3:   [0 1 2 3 4 5] {6 7} [8 9]
+        # fold 4:   [0 1 2 3 4 5 6 7 ] {8 9 }
+        # where {} encloses validation and [] encloses training conformations
+        #
         # the fold names will be training0, validation0, training1, validation1,
         # ... etc.
+        #
         torchani.datasets.create_batched_dataset(h5_path,
                                                  dest_path=batched_dataset_path,
                                                  batch_size=2560,
                                                  folds=5)
-
 
 # This batched datasets can be directly iterated upon, but it may be more
 # practical to wrap it with a torch DataLoader
@@ -96,6 +112,10 @@ elif cache:
     # the DataLoader or iterating on it, but this may occupy a lot of memory,
     # so be careful!!!
     #
+    # this is basically what the previous dataset api (data.load) did always so
+    # you should get the same speed as with the previous api, but without the
+    # initial memory peak the previous api had.
+    #
     # Note: it is very important to **not** pass pin_memory=True here, since
     # cacheing automatically pins the memory of the whole dataset
     training = torch.utils.data.DataLoader(training.cache(),
@@ -125,11 +145,14 @@ elif cache:
 # argument "inplace_transform", but this is only really recommended if your
 # transforms take a lot of time, since this will modify the dataset and may
 # introduce hard to track discrepancies and reproducibility issues.
+# This last thing is basically what the previous dataset api (data.load) did
+# always so you should get the same speed as with the previous api by doing
+# this.
 #
 elements = ('H', 'C', 'N', 'O')
 # here we use the GSAEs for self energies
 self_energies = [-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000]
-transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(elements, self_energies)])
+transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(elements, self_energies)]).to(device)
 
 estimate_saes = False
 if estimate_saes:
@@ -149,7 +172,7 @@ if estimate_saes:
     saes, _ = calculate_saes(training, elements, mode='sgd')
     print(saes)
     # now we build the transform using the new self energies
-    transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(elements, saes)])
+    transform = torchani.transforms.Compose([AtomicNumbersToIndices(elements), SubtractSAE(elements, saes)]).to(device)
     # If we really want to, we can also calculate the saes exactly by passing
     # mode = exact, but this will take up a lot of memory because it uses the
     # whole dataset We can also pass a fraction of the dataset, for example
@@ -161,8 +184,6 @@ if estimate_saes:
     # tensor([ -0.5997, -38.0840, -54.7085, -75.1936])
     # 5% of 1x training:
     # tensor([ -0.5999, -38.0838, -54.7085, -75.1938])
-
-transform = transform.to(device)
 
 # --Differences largely end here, besides application of transform in training/validation loops--
 ###############################################################################

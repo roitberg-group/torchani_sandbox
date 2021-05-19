@@ -4,7 +4,7 @@ from torch import Tensor
 import torch.utils.data
 import math
 from collections import defaultdict
-from typing import Tuple, NamedTuple, Optional, List, Union, Dict, Sequence
+from typing import Tuple, NamedTuple, Optional, Sequence, List, Union, Dict
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 import warnings
 from .nn import SpeciesEnergies
@@ -233,7 +233,7 @@ class ChemicalSymbolsToAtomicNumbers:
         return torch.as_tensor(atomic_numbers).to(torch.long)
 
 
-class ChemicalSymbolsToInts:
+class ChemicalSymbolsToInts(torch.nn.Module):
     r"""Helper that can be called to convert chemical symbol string to integers
 
     On initialization the class should be supplied with a :class:`list` (or in
@@ -271,10 +271,12 @@ class ChemicalSymbolsToInts:
         according to atomic number).
     """
 
-    def __init__(self, all_species):
+    def __init__(self, all_species: Sequence[str]):
+        super().__init__()
         self.rev_species = {s: i for i, s in enumerate(all_species)}
 
-    def __call__(self, species):
+    @torch.jit.unused
+    def forward(self, species: Sequence[str]) -> Tensor:
         r"""Convert species from sequence of strings to 1D tensor"""
         rev = [self.rev_species[s] for s in species]
         return torch.tensor(rev, dtype=torch.long)
