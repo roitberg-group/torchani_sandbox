@@ -62,7 +62,7 @@ class BuiltinModel(torch.nn.Module):
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
         self.energy_shifter = energy_shifter
-
+        self._species_to_tensor = ChemicalSymbolsToInts(elements)
         self.species_converter = SpeciesConverter(elements)
 
         self.periodic_table_index = periodic_table_index
@@ -192,13 +192,6 @@ class BuiltinModel(torch.nn.Module):
         # The only difference between this and the "raw" private version
         # _species_to_tensor is that this sends the final tensor to the model
         # device
-
-        # callable attribute is set on first call to avoid JIT from trying to
-        # register it
-        try:
-            self._species_to_tensor
-        except AttributeError:
-            self._species_to_tensor = ChemicalSymbolsToInts(self.get_chemical_symbols())
 
         out = self._species_to_tensor(*args, **kwargs)
         return out.to(self.aev_computer.radial_terms.ShfR.device)
