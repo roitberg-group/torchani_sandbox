@@ -331,7 +331,7 @@ class BmmLinear(torch.nn.Module):
     out   : (b x n x p)
     """
     def __init__(self, linear_layers):
-        super(BmmLinear, self).__init__()
+        super().__init__()
         # assert each layer has same architecture
         weights = [layer.weight.unsqueeze(0).clone().detach() for layer in linear_layers]
         bias = [layer.bias.view(1, 1, -1).clone().detach() for layer in linear_layers]
