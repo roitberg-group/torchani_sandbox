@@ -13,6 +13,7 @@ torch.backends.cuda.matmul.allow_tf32 = False
 
 use_mnps = [True, False] if torchani.infer.mnp_is_installed else [False]
 devices = ['cuda', 'cpu']
+ani2x = torchani.models.ANI2x(periodic_table_index=True, model_index=None)
 
 
 @parameterized_class(('device', 'use_mnp'), product(devices, use_mnps))
@@ -20,7 +21,7 @@ devices = ['cuda', 'cpu']
 class TestInfer(TestCase):
 
     def setUp(self):
-        self.ani2x = torchani.models.ANI2x(periodic_table_index=True, model_index=None)
+        self.ani2x = ani2x
         self.path = os.path.dirname(os.path.realpath(__file__))
 
     def testBmmEnsemble(self):
