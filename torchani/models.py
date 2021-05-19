@@ -42,6 +42,14 @@ class SpeciesEnergiesQBC(NamedTuple):
     qbcs: Tensor
 
 
+class SpeciesEnergiesForcesQBC(NamedTuple):
+    species: Tensor
+    energies: Tensor
+    energy_qbcs: Tensor
+    forces: Tensor
+    force_qbcs: Tensor
+
+
 class BuiltinModel(torch.nn.Module):
     r"""Private template for the builtin ANI models """
 
@@ -335,7 +343,7 @@ class BuiltinEnsemble(BuiltinModel):
                       cell: Optional[Tensor] = None,
                       pbc: Optional[Tensor] = None,
                       unbiased: bool = True,
-                      scale_energies: bool = True, 
+                      scale_energies: bool = True,
                       scale_qbcs: bool = True) -> SpeciesEnergiesQBC:
         """Calculates predicted predicted energies and qbc factors
 
@@ -389,38 +397,43 @@ class BuiltinEnsemble(BuiltinModel):
         assert qbc_factors.shape == energies.shape
         return SpeciesEnergiesQBC(species, energies, qbc_factors)
 
-    @torch.jit.export
+    @torch.jit.unused
     def energies_forces_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
                       cell: Optional[Tensor] = None,
                       pbc: Optional[Tensor] = None,
                       unbiased: bool = True,
                       scale_energies: bool = True,
-                      scale_energy_qbcs: bool = True, 
-                      scale_force_qbcs: bool = True) -> SpeciesEnergiesQBC:
+                      scale_energy_qbcs: bool = True,
+                      scale_force_qbcs: bool = True) -> SpeciesEnergiesForcesQBC:
 
         species, coordinates = species_coordinates
         coordinates.requires_grad_(True)
         species, members_energies = self.members_energies((species, coordinates), cell, pbc)
-
         members_forces = -torch.autograd.grad(members_energies.sum(), coordinates)[0]
         # members energies should have shape (M, N)
         # members forces should have shape (M, N, 3)
 
         # standard deviation is taken across ensemble members
+        force_qbc_factors = members_forces.std(0, unbiased=unbiased).mean(dim=-1)
         energy_qbc_factors = members_energies.std(0, unbiased=unbiased)
         energies = members_energies.detach().mean(dim=0)
+        forces = members_forces.detach().mean(dim=0)
 
         # rho's (qbc factors) are weighted by dividing by the square root of
         # the number of atoms in each molecule
         if scale_energies or scale_energy_qbcs or scale_force_qbcs:
             sqrt_atoms = (species >= 0).sum(dim=1, dtype=energies.dtype).sqrt()
-            if scale_qbcs:
-                qbc_factors /= sqrt_atoms
+            if scale_energy_qbcs:
+                energy_qbc_factors /= sqrt_atoms
             if scale_energies:
                 energies /= sqrt_atoms
+            if scale_force_qbcs:
+                force_qbc_factors /= sqrt_atoms
 
-        assert qbc_factors.shape == energies.shape
-        return SpeciesEnergiesQBC(species, energies, qbc_factors)
+        assert energy_qbc_factors.shape == energies.shape
+        assert force_qbc_factors.shape == energies.shape
+
+        return SpeciesEnergiesForcesQBC(species, energies, energy_qbc_factors, forces, force_qbc_factors)
 
     def __len__(self):
         """Get the number of networks in the ensemble
