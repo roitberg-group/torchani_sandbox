@@ -304,7 +304,7 @@ class BmmNetwork(torch.nn.Module):
     Multiple BmmLinear layers with activation function
     """
     def __init__(self, networks):
-        super(BmmNetwork, self).__init__()
+        super().__init__()
         layers = []
         self.batch = len(networks)
         for layer_idx, layer in enumerate(networks[0]):
