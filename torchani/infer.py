@@ -23,8 +23,10 @@ class SpeciesEnergies(NamedTuple):
 
 class MultiNetFunction(torch.autograd.Function):
     """
-    Python implementation of MNP autograd function.
-    This is not exactly the same as cpp version, there is no multiprocessing used here, whereas cpp version is implemented with OpenMP.
+    Run Multiple Networks (HCNO..) on different streams, this is python implementation of MNP (Multi Net Parallel) autograd function, which
+    actually cannot parallel between different species networks because of loop performance of dynamic interpretation of python language.
+
+    There is no multiprocessing used here, whereas cpp version is implemented with OpenMP.
     """
     @staticmethod
     def forward(ctx, aev, num_network, idx_list, net_list, stream_list):
