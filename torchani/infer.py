@@ -10,7 +10,6 @@ mnp_is_installed = 'torchani.mnp' in importlib_metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
 
 if mnp_is_installed:
-    # We need to import torchani.cuaev to tell PyTorch to initialize torch.ops.cuaev
     from . import mnp  # type: ignore # noqa: F401
 else:
     warnings.warn("mnp not installed")
