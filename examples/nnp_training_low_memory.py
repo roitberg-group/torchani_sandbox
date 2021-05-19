@@ -112,6 +112,10 @@ elif cache:
     # the DataLoader or iterating on it, but this may occupy a lot of memory,
     # so be careful!!!
     #
+    # this is basically what the previous dataset api (data.load) did always so
+    # you should get the same speed as with the previous api, but without the
+    # initial memory peak the previous api had.
+    #
     # Note: it is very important to **not** pass pin_memory=True here, since
     # cacheing automatically pins the memory of the whole dataset
     training = torch.utils.data.DataLoader(training.cache(),
@@ -141,6 +145,9 @@ elif cache:
 # argument "inplace_transform", but this is only really recommended if your
 # transforms take a lot of time, since this will modify the dataset and may
 # introduce hard to track discrepancies and reproducibility issues.
+# This last thing is basically what the previous dataset api (data.load) did
+# always so you should get the same speed as with the previous api by doing
+# this.
 #
 elements = ('H', 'C', 'N', 'O')
 # here we use the GSAEs for self energies
