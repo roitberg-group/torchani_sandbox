@@ -7,3 +7,4 @@ pkbar
 pyyaml
 pytest
 pynvml
+parameterized

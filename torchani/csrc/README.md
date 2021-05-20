@@ -123,7 +123,7 @@ pip install -e . && pip install -v -e . --global-option="--ext"
 ## Test
 ```bash
 cd torchani
-pip install pytest pynvml pkbar ase
+pip install pytest pynvml pkbar ase parameterized
 ./download.sh
 # cuaev
 python tests/test_cuaev.py
