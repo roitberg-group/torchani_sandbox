@@ -243,7 +243,7 @@ class ChemicalSymbolsToAtomicNumbers:
         atomic_numbers = self.converter(np.asarray(symbols))
         return torch.as_tensor(atomic_numbers).to(torch.long)
 
-      
+
 class ChemicalSymbolsToInts(torch.nn.Module):
     r"""Helper that can be called to convert chemical symbol string to integers
 
