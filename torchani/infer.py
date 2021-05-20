@@ -106,8 +106,20 @@ class MultiNetFunction(torch.autograd.Function):
 
 
 class ANIInferModel(torch.nn.ModuleDict):
-    def __init__(self, modules, use_mnp=True):
+    """
+    Note when jit is True:
+    It is user's responsibility to manually call set_species() function before change to a different molecule.
+
+    TODO: set_species() could be ommited once jit support tensor.data_ptr()
+    """
+    def __init__(self, modules, use_mnp=True, jit=False):
         super().__init__(modules)
+
+        self.jit = jit
+        if self.jit:
+            assert use_mnp== True, "JIT version only support use_mnp=True"
+            warnings.warn("Using JIT infer model, Note that it is user's responsibility to manually call set_species() "
+                          "function before change to a different molecule.")
 
         self.num_network = len(self.keys())
         self.last_species_ptr = None
@@ -126,10 +138,20 @@ class ANIInferModel(torch.nn.ModuleDict):
         assert species.shape == aev.shape[:-1]
         num_mol = species.shape[0]
         assert num_mol == 1, "ANIInferModel currently only support inference for single molecule"
-        mol_energies = self._single_mol_energies((species, aev))
+        if self.jit:
+            mol_energies = self._single_mol_energies_jittable((species, aev))
+        else:
+            mol_energies = self._single_mol_energies((species, aev))
         return SpeciesEnergies(species, mol_energies)
 
     @torch.jit.export
+    def _single_mol_energies_jittable(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
+        species, aev = species_aev
+        aev = aev.flatten(0, 1)
+        output = torch.ops.mnp.run(aev, self.num_network, self.num_layers_list, self.start_layers_list, self.idx_list, self.weight_list_, self.bias_list_, self.stream_list, False, self.celu_alpha)
+        return output
+
+    @torch.jit.unused
     def _single_mol_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
         species, aev = species_aev
         aev = aev.flatten(0, 1)
@@ -146,18 +168,21 @@ class ANIInferModel(torch.nn.ModuleDict):
 
     @torch.jit.unused
     def _check_if_idxlist_needs_updates(self, species):
-        species_ = species.flatten()
         # initialize each species index if it has not been initialized
         # or the species has changed
         if self.last_species_ptr is None or self.last_species_ptr != species.data_ptr():
-            with torch.no_grad():
-                self.last_species_ptr = species.data_ptr()
-                self.idx_list = [torch.empty(0) for i in range(self.num_network)]
-                for i in range(self.num_network):
-                    mask = (species_ == i)
-                    midx = mask.nonzero().flatten()
-                    if midx.shape[0] > 0:
-                        self.idx_list[i] = midx
+            self.set_species(species)
+
+    @torch.jit.export
+    def set_species(self, species):
+        species_ = species.flatten()
+        with torch.no_grad():
+            self.idx_list = [torch.empty(0) for i in range(self.num_network)]
+            for i in range(self.num_network):
+                mask = (species_ == i)
+                midx = mask.nonzero().flatten()
+                if midx.shape[0] > 0:
+                    self.idx_list[i] = midx
 
     @torch.jit.unused
     def init_mnp(self):
@@ -194,6 +219,10 @@ class ANIInferModel(torch.nn.ModuleDict):
         self.weight_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.weight_list for item in sublist])
         self.bias_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.bias_list for item in sublist])
 
+        # self.weight_list is ParameterList, which could not be interpreted as List<Tensor>
+        self.weight_list_ = [w for w in self.weight_list]
+        self.bias_list_ = [b for b in self.bias_list]
+
         # check OpenMP environment variable
         utils.check_openmp_threads()
 
@@ -206,10 +235,16 @@ class BmmEnsemble(torch.nn.Module):
     BmmNetwork is composed of BmmLinear layers, which will perform Batch Matmul (bmm) instead of normal matmul
     to reduce the number of kernel calls.
     """
-    def __init__(self, models, use_mnp=True):
+    def __init__(self, models, use_mnp=True, jit=False):
         super(BmmEnsemble, self).__init__()
         # assert all models have the same networks as model[0]
         # and each network should have same architecture
+
+        self.jit = jit
+        if self.jit:
+            assert use_mnp== True, "JIT version only support use_mnp=True"
+            warnings.warn("Using JIT infer model, Note that it is user's responsibility to manually call set_species() "
+                          "function before change to a different molecule.")
 
         # networks
         bmm_networks = []
@@ -234,9 +269,20 @@ class BmmEnsemble(torch.nn.Module):
         assert species.shape == aev.shape[:-1]
         num_mol = species.shape[0]
         assert num_mol == 1, "BmmEnsemble currently only support inference for single molecule"
-        mol_energies = self._single_mol_energies((species, aev))
+        if self.jit:
+            mol_energies = self._single_mol_energies_jittable((species, aev))
+        else:
+            mol_energies = self._single_mol_energies((species, aev))
         return SpeciesEnergies(species, mol_energies)
 
+    @torch.jit.export
+    def _single_mol_energies_jittable(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
+        species, aev = species_aev
+        aev = aev.flatten(0, 1)
+        output = torch.ops.mnp.run(aev, self.num_network, self.num_layers_list, self.start_layers_list, self.idx_list, self.weight_list_, self.bias_list_, self.stream_list, True, self.celu_alpha)
+        return output
+
+    @torch.jit.unused
     def _single_mol_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
         species, aev = species_aev
         aev = aev.flatten(0, 1)
@@ -252,18 +298,21 @@ class BmmEnsemble(torch.nn.Module):
 
     @torch.jit.unused
     def _check_if_idxlist_needs_updates(self, species):
-        species_ = species.flatten()
         # initialize each species index if it has not been initialized
         # or the species has changed
         if self.last_species_ptr is None or self.last_species_ptr != species.data_ptr():
-            with torch.no_grad():
-                self.last_species_ptr = species.data_ptr()
-                self.idx_list = [torch.empty(0) for i in range(self.num_network)]
-                for i in range(self.num_network):
-                    mask = (species_ == i)
-                    midx = mask.nonzero().flatten()
-                    if midx.shape[0] > 0:
-                        self.idx_list[i] = midx
+            self.set_species(species)
+
+    @torch.jit.export
+    def set_species(self, species):
+        species_ = species.flatten()
+        with torch.no_grad():
+            self.idx_list = [torch.empty(0) for i in range(self.num_network)]
+            for i in range(self.num_network):
+                mask = (species_ == i)
+                midx = mask.nonzero().flatten()
+                if midx.shape[0] > 0:
+                    self.idx_list[i] = midx
 
     @torch.jit.unused
     def init_mnp(self):
@@ -297,6 +346,10 @@ class BmmEnsemble(torch.nn.Module):
         # flatten weight and bias list
         self.weight_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.weight_list for item in sublist])
         self.bias_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.bias_list for item in sublist])
+
+        # self.weight_list is ParameterList, which could not be interpreted as List<Tensor>
+        self.weight_list_ = [w for w in self.weight_list]
+        self.bias_list_ = [b for b in self.bias_list]
 
         # check OpenMP environment variable
         utils.check_openmp_threads()

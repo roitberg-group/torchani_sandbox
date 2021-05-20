@@ -81,8 +81,8 @@ class ANIModel(torch.nn.ModuleDict):
         output = output.view_as(species)
         return output
 
-    def to_infer_model(self, use_mnp=True):
-        return infer.ANIInferModel(list(self.items()), use_mnp)
+    def to_infer_model(self, use_mnp=True, jit=False):
+        return infer.ANIInferModel(list(self.items()), use_mnp, jit)
 
 
 class Ensemble(torch.nn.ModuleList):
@@ -101,8 +101,8 @@ class Ensemble(torch.nn.ModuleList):
         species, _ = species_input
         return SpeciesEnergies(species, sum_ / self.size)
 
-    def to_infer_model(self, use_mnp=True):
-        return infer.BmmEnsemble(self, use_mnp)
+    def to_infer_model(self, use_mnp=True, jit=False):
+        return infer.BmmEnsemble(self, use_mnp, jit)
 
 
 class Sequential(torch.nn.ModuleList):
@@ -117,6 +117,24 @@ class Sequential(torch.nn.ModuleList):
         for module in self:
             input_ = module(input_, cell=cell, pbc=pbc)
         return input_
+
+
+class InferModelSequential(torch.nn.Module):
+    def __init__(self, *modules):
+        super().__init__()
+        self.aev_computer = modules[0]
+        self.network = modules[1]
+
+    def forward(self, input_: Tuple[Tensor, Tensor],  # type: ignore
+                cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None):
+        input_ = self.aev_computer(input_, cell=cell, pbc=pbc)
+        input_ = self.network(input_, cell=cell, pbc=pbc)
+        return input_
+
+    @torch.jit.export
+    def set_species(self, species):
+        self.network.set_species(species)
 
 
 class Gaussian(torch.nn.Module):
