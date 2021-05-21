@@ -24,7 +24,7 @@ class TestInfer(TestCase):
         self.ani2x = ani2x
         self.path = os.path.dirname(os.path.realpath(__file__))
 
-    def _test(self, model_ref, model_infer):
+    def _test(self, model_ref, model_infer, jit=False):
         files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
         for file in files:
             filepath = os.path.join(self.path, f'../dataset/pdb/{file}')
@@ -37,6 +37,9 @@ class TestInfer(TestCase):
 
             _, energy1 = model_ref((species, coordinates))
             force1 = torch.autograd.grad(energy1.sum(), coordinates)[0]
+            if jit:
+                # WARNING: set_species before switch to a new molecule
+                model_infer.set_species(species)
             _, energy2 = model_infer((species, coordinates))
             force2 = torch.autograd.grad(energy2.sum(), coordinates)[0]
 
@@ -57,54 +60,27 @@ class TestInfer(TestCase):
         model_infer = torchani.nn.Sequential(aev_computer, model_iterator[0].to_infer_model(use_mnp=self.use_mnp)).to(self.device)
         self._test(model_ref, model_infer)
 
-
-@parameterized_class(('device'), product(devices))
-@unittest.skipIf(not torch.cuda.is_available(), "Infer model needs cuda is available")
-class TestInferJIT(TestCase):
-
-    def setUp(self):
-        self.ani2x = ani2x
-        self.path = os.path.dirname(os.path.realpath(__file__))
-
-    def _test(self, model_ref, model_infer_jit):
-        files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
-        for file in files:
-            filepath = os.path.join(self.path, f'../dataset/pdb/{file}')
-            mol = read(filepath)
-            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
-            positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
-            speciesPositions = self.ani2x.species_converter((species, positions))
-            species, coordinates = speciesPositions
-            coordinates.requires_grad_(True)
-
-            _, energy1 = model_ref((species, coordinates))
-            force1 = torch.autograd.grad(energy1.sum(), coordinates)[0]
-
-            # WARNING: set_species before switch to a new molecule
-            model_infer_jit.set_species(species)
-            _, energy2 = model_infer_jit((species, coordinates))
-            force2 = torch.autograd.grad(energy2.sum(), coordinates)[0]
-
-            self.assertEqual(energy1, energy2, atol=1e-5, rtol=1e-5)
-            self.assertEqual(force1, force2, atol=1e-5, rtol=1e-5)
-
-    def testBmmEnsemble(self):
+    def testBmmEnsembleJIT(self):
+        if not self.use_mnp:
+            self.skipTest('mnp is needed for JIT tests')
         model_iterator = self.ani2x.neural_networks
         aev_computer = torchani.AEVComputer.like_2x(use_cuda_extension=(self.device == 'cuda'))
         ensemble = torchani.nn.Sequential(aev_computer, model_iterator).to(self.device)
         # jit
-        bmm_ensemble = torchani.nn.InferModelSequential(aev_computer, self.ani2x.neural_networks.to_infer_model(use_mnp=True, jit=True)).to(self.device)
+        bmm_ensemble = torchani.nn.InferModelSequential(aev_computer, self.ani2x.neural_networks.to_infer_model(use_mnp=self.use_mnp, jit=True)).to(self.device)
         bmm_ensemble_jit = torch.jit.script(bmm_ensemble)
-        self._test(ensemble, bmm_ensemble_jit)
+        self._test(ensemble, bmm_ensemble_jit, jit=True)
 
-    def testANIInferModel(self):
+    def testANIInferModelJIT(self):
+        if not self.use_mnp:
+            self.skipTest('mnp is needed for JIT tests')
         model_iterator = self.ani2x.neural_networks
         aev_computer = torchani.AEVComputer.like_2x(use_cuda_extension=(self.device == 'cuda'))
         model_ref = torchani.nn.Sequential(aev_computer, model_iterator[0]).to(self.device)
         # jit
-        model_infer = torchani.nn.InferModelSequential(aev_computer, model_iterator[0].to_infer_model(use_mnp=True, jit=True)).to(self.device)
+        model_infer = torchani.nn.InferModelSequential(aev_computer, model_iterator[0].to_infer_model(use_mnp=self.use_mnp, jit=True)).to(self.device)
         model_infer_jit = torch.jit.script(model_infer)
-        self._test(model_ref, model_infer_jit)
+        self._test(model_ref, model_infer_jit, jit=True)
 
 
 if __name__ == '__main__':
