@@ -120,21 +120,31 @@ class Sequential(torch.nn.ModuleList):
 
 
 class InferModelSequential(torch.nn.Module):
+    """
+    Modified Sequential module that accept Tuple type as input,
+    and allow infer_model to run set_species() function.
+
+    Note: infer_model must be the 2nd module in the module list.
+    """
     def __init__(self, *modules):
         super().__init__()
-        self.aev_computer = modules[0]
-        self.network = modules[1]
+        self.module_list = torch.nn.ModuleList(list(modules))
+        assert isinstance(modules[1], infer.ANIInferModel) or isinstance(modules[1], infer.BmmEnsemble), "The 2nd module in the module list should be Infer model"
+        for i, m in enumerate(modules):
+            if isinstance(m, infer.ANIInferModel) or isinstance(m, infer.BmmEnsemble):
+                assert i == 1, f"Infer model should only be the 2nd module in the module list, but it's {i + 1}"
 
     def forward(self, input_: Tuple[Tensor, Tensor],  # type: ignore
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None):
-        input_ = self.aev_computer(input_, cell=cell, pbc=pbc)
-        input_ = self.network(input_, cell=cell, pbc=pbc)
+        for module in self.module_list:
+            input_ = module(input_, cell=cell, pbc=pbc)
         return input_
 
     @torch.jit.export
     def set_species(self, species):
-        self.network.set_species(species)
+        # cannot use dynamic indexing because of jit
+        self.module_list[1].set_species(species)
 
 
 class Gaussian(torch.nn.Module):
