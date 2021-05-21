@@ -209,7 +209,7 @@ class InferModelBase(torch.nn.Module):
 
     @torch.jit.unused
     def copy_weight_bias(self):
-        raise NotImplementedError
+        raise NotImplementedError("NotImplemented for InferModelBase")
 
 
 class ANIInferModel(InferModelBase):
