@@ -72,7 +72,7 @@ class BuiltinModel(torch.nn.Module):
         # checks are performed to make sure all modules passed support the
         # correct number of species
         if energy_shifter.fit_intercept:
-            assert len(energy_shifter.self_energies) == len(self.atomic_numbers + 1)
+            assert len(energy_shifter.self_energies) == len(self.atomic_numbers) + 1
         else:
             assert len(energy_shifter.self_energies) == len(self.atomic_numbers)
 
