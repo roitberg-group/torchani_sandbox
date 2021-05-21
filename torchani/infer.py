@@ -117,7 +117,7 @@ class InferModelBase(torch.nn.Module):
 
         self.jit = jit
         if self.jit:
-            assert use_mnp== True, "JIT version only support use_mnp=True"
+            assert use_mnp is True, "JIT version only support use_mnp=True"
             warnings.warn("Using JIT infer model, Note that it is user's responsibility to manually call set_species() "
                           "function before change to a different molecule.")
         self.last_species_ptr = None
@@ -210,6 +210,7 @@ class InferModelBase(torch.nn.Module):
     @torch.jit.unused
     def copy_weight_bias(self):
         raise NotImplementedError
+
 
 class ANIInferModel(InferModelBase):
     """
