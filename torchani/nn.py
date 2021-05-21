@@ -129,9 +129,9 @@ class InferModelSequential(torch.nn.Module):
     def __init__(self, *modules):
         super().__init__()
         self.module_list = torch.nn.ModuleList(list(modules))
-        assert isinstance(modules[1], infer.ANIInferModel) or isinstance(modules[1], infer.BmmEnsemble), "The 2nd module in the module list should be Infer model"
+        assert isinstance(modules[1], infer.InferModelBase), "The 2nd module in the module list should be Infer model"
         for i, m in enumerate(modules):
-            if isinstance(m, infer.ANIInferModel) or isinstance(m, infer.BmmEnsemble):
+            if isinstance(m, infer.InferModelBase):
                 assert i == 1, f"Infer model should only be the 2nd module in the module list, but it's {i + 1}"
 
     def forward(self, input_: Tuple[Tensor, Tensor],  # type: ignore

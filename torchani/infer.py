@@ -105,31 +105,27 @@ class MultiNetFunction(torch.autograd.Function):
         return aev_grad, None, None, None, None
 
 
-class ANIInferModel(torch.nn.ModuleDict):
+class InferModelBase(torch.nn.Module):
     """
     Note when jit is True:
     It is user's responsibility to manually call set_species() function before change to a different molecule.
 
     TODO: set_species() could be ommited once jit support tensor.data_ptr()
     """
-    def __init__(self, modules, use_mnp=True, jit=False):
-        super().__init__(modules)
+    def __init__(self, num_network, use_mnp=True, jit=False):
+        super().__init__()
 
         self.jit = jit
         if self.jit:
             assert use_mnp== True, "JIT version only support use_mnp=True"
             warnings.warn("Using JIT infer model, Note that it is user's responsibility to manually call set_species() "
                           "function before change to a different molecule.")
-
-        self.num_network = len(self.keys())
         self.last_species_ptr = None
-        self.idx_list = [torch.empty(0) for i in range(self.num_network)]
         assert torch.cuda.is_available(), "Infer model needs cuda is available"
+
+        self.num_network = num_network
+        self.idx_list = [torch.empty(0) for i in range(self.num_network)]
         self.stream_list = [torch.cuda.Stream() for i in range(self.num_network)]
-        # mnp
-        self.use_mnp = False
-        if use_mnp:
-            self.init_mnp()
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
                 cell: Optional[Tensor] = None,
@@ -137,7 +133,7 @@ class ANIInferModel(torch.nn.ModuleDict):
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
         num_mol = species.shape[0]
-        assert num_mol == 1, "ANIInferModel currently only support inference for single molecule"
+        assert num_mol == 1, "InferModel currently only support inference for single molecule"
         if self.jit:
             mol_energies = self._single_mol_energies_jittable((species, aev))
         else:
@@ -148,7 +144,7 @@ class ANIInferModel(torch.nn.ModuleDict):
     def _single_mol_energies_jittable(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
         species, aev = species_aev
         aev = aev.flatten(0, 1)
-        output = torch.ops.mnp.run(aev, self.num_network, self.num_layers_list, self.start_layers_list, self.idx_list, self.weight_list_, self.bias_list_, self.stream_list, False, self.celu_alpha)
+        output = torch.ops.mnp.run(aev, self.num_network, self.num_layers_list, self.start_layers_list, self.idx_list, self.weight_list_, self.bias_list_, self.stream_list, self.is_bmm, self.celu_alpha)
         return output
 
     @torch.jit.unused
@@ -157,13 +153,12 @@ class ANIInferModel(torch.nn.ModuleDict):
         aev = aev.flatten(0, 1)
         self._check_if_idxlist_needs_updates(species)
 
-        torch.cuda.nvtx.range_push('Network')
+        # torch.cuda.nvtx.range_push('Network')
         if not self.use_mnp:
-            net_list = list(self.values())
-            output = MultiNetFunction.apply(aev, self.num_network, self.idx_list, net_list, self.stream_list)
+            output = MultiNetFunction.apply(aev, self.num_network, self.idx_list, self.net_list, self.stream_list)
         else:
-            output = torch.ops.mnp.run(aev, self.num_network, self.num_layers_list, self.start_layers_list, self.idx_list, self.weight_list, self.bias_list, self.stream_list, False, self.celu_alpha)
-        torch.cuda.nvtx.range_pop()
+            output = torch.ops.mnp.run(aev, self.num_network, self.num_layers_list, self.start_layers_list, self.idx_list, self.weight_list_, self.bias_list_, self.stream_list, self.is_bmm, self.celu_alpha)
+        # torch.cuda.nvtx.range_pop()
         return output
 
     @torch.jit.unused
@@ -187,14 +182,54 @@ class ANIInferModel(torch.nn.ModuleDict):
     @torch.jit.unused
     def init_mnp(self):
         assert mnp_is_installed, "MNP extension is not installed"
-
         self.weight_list = []  # shape: [num_networks, num_layers]
         self.bias_list = []
         self.celu_alpha = None
-        net_list = list(self.values())
 
-        # copy parameters
-        for i, net in enumerate(net_list):
+        # copy weights and bias, and transform them if is ensemble
+        self.copy_weight_bias()
+
+        self.num_layers_list = [len(weights) for weights in self.weight_list]
+        self.start_layers_list = [0] * self.num_network
+        for i in range(self.num_network - 1):
+            self.start_layers_list[i + 1] = self.start_layers_list[i] + self.num_layers_list[i]
+
+        # flatten weight and bias list
+        self.weight_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.weight_list for item in sublist])
+        self.bias_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.bias_list for item in sublist])
+
+        # self.weight_list is ParameterList, which could not be interpreted as List<Tensor>
+        self.weight_list_ = [w for w in self.weight_list]
+        self.bias_list_ = [b for b in self.bias_list]
+
+        # check OpenMP environment variable
+        utils.check_openmp_threads()
+
+        self.use_mnp = True
+
+    @torch.jit.unused
+    def copy_weight_bias(self):
+        raise NotImplementedError
+
+class ANIInferModel(InferModelBase):
+    """
+    InferModel for a single ANI model, instead of an ensemble.
+    """
+    def __init__(self, modules, use_mnp=True, jit=False):
+        num_network = len(modules)
+        super().__init__(num_network, use_mnp, jit)
+
+        self.is_bmm = False
+        self.net_list = [m for (key, m) in modules]
+
+        # mnp
+        self.use_mnp = False
+        if use_mnp:
+            self.init_mnp()
+
+    @torch.jit.unused
+    def copy_weight_bias(self):
+        for i, net in enumerate(self.net_list):
             weights = []
             biases = []
             for layer in net:
@@ -210,119 +245,34 @@ class ANIInferModel(torch.nn.ModuleDict):
             self.weight_list.append(weights)
             self.bias_list.append(biases)
 
-        self.num_layers_list = [len(weights) for weights in self.weight_list]
-        self.start_layers_list = [0] * self.num_network
-        for i in range(self.num_network - 1):
-            self.start_layers_list[i + 1] = self.start_layers_list[i] + self.num_layers_list[i]
 
-        # flatten weight and bias list
-        self.weight_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.weight_list for item in sublist])
-        self.bias_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.bias_list for item in sublist])
-
-        # self.weight_list is ParameterList, which could not be interpreted as List<Tensor>
-        self.weight_list_ = [w for w in self.weight_list]
-        self.bias_list_ = [b for b in self.bias_list]
-
-        # check OpenMP environment variable
-        utils.check_openmp_threads()
-
-        self.use_mnp = True
-
-
-class BmmEnsemble(torch.nn.Module):
+class BmmEnsemble(InferModelBase):
     """
     Fuse all same networks of an ensemble into BmmNetworks, for example 8 same H networks will be fused into 1 BmmNetwork.
     BmmNetwork is composed of BmmLinear layers, which will perform Batch Matmul (bmm) instead of normal matmul
     to reduce the number of kernel calls.
     """
     def __init__(self, models, use_mnp=True, jit=False):
-        super(BmmEnsemble, self).__init__()
+        num_network = len(models[0])
+        super().__init__(num_network, use_mnp, jit)
         # assert all models have the same networks as model[0]
         # and each network should have same architecture
 
-        self.jit = jit
-        if self.jit:
-            assert use_mnp== True, "JIT version only support use_mnp=True"
-            warnings.warn("Using JIT infer model, Note that it is user's responsibility to manually call set_species() "
-                          "function before change to a different molecule.")
-
+        self.is_bmm = True
         # networks
         bmm_networks = []
         for net_key, network in models[0].items():
             bmm_networks.append(BmmNetwork([model[net_key] for model in models]))
-        self.bmm_networks = torch.nn.ModuleList(bmm_networks)
+        self.net_list = torch.nn.ModuleList(bmm_networks)
 
-        self.num_network = len(self.bmm_networks)
-        self.last_species_ptr = None
-        self.idx_list = [torch.empty(0) for i in range(self.num_network)]
-        assert torch.cuda.is_available(), "Infer model needs cuda is available"
-        self.stream_list = [torch.cuda.Stream() for i in range(self.num_network)]
         # mnp
         self.use_mnp = False
         if use_mnp:
             self.init_mnp()
 
-    def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
-                cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        species, aev = species_aev
-        assert species.shape == aev.shape[:-1]
-        num_mol = species.shape[0]
-        assert num_mol == 1, "BmmEnsemble currently only support inference for single molecule"
-        if self.jit:
-            mol_energies = self._single_mol_energies_jittable((species, aev))
-        else:
-            mol_energies = self._single_mol_energies((species, aev))
-        return SpeciesEnergies(species, mol_energies)
-
-    @torch.jit.export
-    def _single_mol_energies_jittable(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
-        species, aev = species_aev
-        aev = aev.flatten(0, 1)
-        output = torch.ops.mnp.run(aev, self.num_network, self.num_layers_list, self.start_layers_list, self.idx_list, self.weight_list_, self.bias_list_, self.stream_list, True, self.celu_alpha)
-        return output
-
     @torch.jit.unused
-    def _single_mol_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
-        species, aev = species_aev
-        aev = aev.flatten(0, 1)
-        self._check_if_idxlist_needs_updates(species)
-
-        torch.cuda.nvtx.range_push('Network')
-        if not self.use_mnp:
-            output = MultiNetFunction.apply(aev, self.num_network, self.idx_list, self.bmm_networks, self.stream_list)
-        else:
-            output = torch.ops.mnp.run(aev, self.num_network, self.num_layers_list, self.start_layers_list, self.idx_list, self.weight_list, self.bias_list, self.stream_list, True, self.celu_alpha)
-        torch.cuda.nvtx.range_pop()
-        return output
-
-    @torch.jit.unused
-    def _check_if_idxlist_needs_updates(self, species):
-        # initialize each species index if it has not been initialized
-        # or the species has changed
-        if self.last_species_ptr is None or self.last_species_ptr != species.data_ptr():
-            self.set_species(species)
-
-    @torch.jit.export
-    def set_species(self, species):
-        species_ = species.flatten()
-        with torch.no_grad():
-            self.idx_list = [torch.empty(0) for i in range(self.num_network)]
-            for i in range(self.num_network):
-                mask = (species_ == i)
-                midx = mask.nonzero().flatten()
-                if midx.shape[0] > 0:
-                    self.idx_list[i] = midx
-
-    @torch.jit.unused
-    def init_mnp(self):
-        assert mnp_is_installed, "MNP extension is not installed"
-        self.weight_list = []  # shape: [num_networks, num_layers]
-        self.bias_list = []
-        self.celu_alpha = None
-
-        # copy parameters
-        for i, net in enumerate(self.bmm_networks):
+    def copy_weight_bias(self):
+        for i, net in enumerate(self.net_list):
             weights = []
             biases = []
             for layer in net.layers:
@@ -337,24 +287,6 @@ class BmmEnsemble(torch.nn.Module):
                         assert self.celu_alpha == layer.alpha, "All CELU layer should have same alpha"
             self.weight_list.append(weights)
             self.bias_list.append(biases)
-
-        self.num_layers_list = [len(weights) for weights in self.weight_list]
-        self.start_layers_list = [0] * self.num_network
-        for i in range(self.num_network - 1):
-            self.start_layers_list[i + 1] = self.start_layers_list[i] + self.num_layers_list[i]
-
-        # flatten weight and bias list
-        self.weight_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.weight_list for item in sublist])
-        self.bias_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.bias_list for item in sublist])
-
-        # self.weight_list is ParameterList, which could not be interpreted as List<Tensor>
-        self.weight_list_ = [w for w in self.weight_list]
-        self.bias_list_ = [b for b in self.bias_list]
-
-        # check OpenMP environment variable
-        utils.check_openmp_threads()
-
-        self.use_mnp = True
 
 
 class BmmNetwork(torch.nn.Module):
