@@ -31,7 +31,7 @@ directly calculate energies or get an ASE calculator. For example:
 import os
 import torch
 from torch import Tensor
-from typing import Tuple, Optional, NamedTuple, List
+from typing import Tuple, Optional, NamedTuple, Sequence
 from .nn import SpeciesConverter, SpeciesEnergies, Ensemble
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE
 from .aev import AEVComputer
@@ -54,7 +54,7 @@ class BuiltinModel(torch.nn.Module):
                  aev_computer,
                  neural_networks,
                  energy_shifter,
-                 elements: List[str],
+                 elements: Sequence[str],
                  periodic_table_index: bool = False):
 
         super().__init__()
@@ -85,8 +85,8 @@ class BuiltinModel(torch.nn.Module):
             assert len(self.neural_networks) == len(self.atomic_numbers)
 
     @torch.jit.unused
-    def get_chemical_symbols(self) -> List[str]:
-        return [PERIODIC_TABLE[z] for z in self.atomic_numbers]
+    def get_chemical_symbols(self) -> Tuple[str, ...]:
+        return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)
 
     @classmethod
     def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False, model_index=0):
