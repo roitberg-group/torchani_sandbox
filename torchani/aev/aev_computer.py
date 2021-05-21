@@ -74,7 +74,6 @@ class AEVComputer(torch.nn.Module):
 
     use_cuda_extension: Final[bool]
     triu_index: Tensor
-    cuaev_is_initialized: Tensor
 
     def __init__(self,
                 Rcr: Optional[float] = None,
@@ -134,7 +133,7 @@ class AEVComputer(torch.nn.Module):
 
         # We defer true cuaev initialization to forward so that we ensure that
         # all tensors are in GPU once it is initialized.
-        self.register_buffer('cuaev_is_initialized', torch.tensor(False))
+        self.cuaev_is_initialized = False
 
     def _validate_cutoffs_init(self):
         # validate cutoffs and emit warnings for strange configurations
@@ -282,7 +281,7 @@ class AEVComputer(torch.nn.Module):
         if self.use_cuda_extension:
             if not self.cuaev_is_initialized:
                 self._init_cuaev_computer()
-                self.cuaev_is_initialized = torch.tensor(True)
+                self.cuaev_is_initialized = True
             assert pbc is None or (not pbc.any()), "cuaev currently does not support PBC"
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
