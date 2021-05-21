@@ -10,7 +10,7 @@ from ..utils import cumsum_from_zero
 from ..compat import Final
 # modular parts of AEVComputer
 from .cutoffs import _parse_cutoff_fn
-from .aev_terms import _parse_angular_terms, _parse_radial_terms
+from .aev_terms import _parse_angular_terms, _parse_radial_terms, StandardAngular, StandardRadial
 from .neighbors import _parse_neighborlist
 
 
@@ -126,8 +126,8 @@ class AEVComputer(torch.nn.Module):
         # cuda aev
         if self.use_cuda_extension:
             assert cuaev_is_installed, "AEV cuda extension is not installed"
-            assert angular_terms in ['standard', 'ani1x', 'ani2x'], 'nonstandard aev terms not supported for cuaev'
-            assert radial_terms in ['standard', 'ani1x', 'ani2x'], 'nonstandard aev terms not supported for cuaev'
+            assert isinstance(angular_terms, StandardAngular), 'nonstandard aev terms not supported for cuaev'
+            assert isinstance(radial_terms, StandardRadial), 'nonstandard aev terms not supported for cuaev'
         if cuaev_is_installed:
             self._register_cuaev_computer()
 
