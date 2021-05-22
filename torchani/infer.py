@@ -1,7 +1,7 @@
 import torch
 import warnings
 from . import utils
-from typing import Tuple, NamedTuple, Optional
+from typing import Tuple, NamedTuple, Optional, List
 from torch import Tensor
 import importlib_metadata
 
@@ -112,20 +112,22 @@ class InferModelBase(torch.nn.Module):
 
     TODO: set_species() could be ommited once jit support tensor.data_ptr()
     """
-    def __init__(self, num_network, use_mnp=True, jit=False):
+    def __init__(self, num_network):
         super().__init__()
 
-        self.jit = jit
-        if self.jit:
-            assert use_mnp is True, "JIT version only support use_mnp=True"
-            warnings.warn("Using JIT infer model, Note that it is user's responsibility to manually call set_species() "
-                          "function before change to a different molecule.")
         self.last_species_ptr = None
         assert torch.cuda.is_available(), "Infer model needs cuda is available"
 
         self.num_network = num_network
         self.idx_list = [torch.empty(0) for i in range(self.num_network)]
         self.stream_list = [torch.cuda.Stream() for i in range(self.num_network)]
+
+        # holders for jit when use_mnp == False
+        self.weight_list_: List[Tensor] = [torch.empty(0)]
+        self.bias_list_: List[Tensor] = [torch.empty(0)]
+        self.celu_alpha: float = float('inf')
+        self.num_layers_list: List[int] = [0]
+        self.start_layers_list: List[int] = [0]
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
                 cell: Optional[Tensor] = None,
@@ -134,8 +136,11 @@ class InferModelBase(torch.nn.Module):
         assert species.shape == aev.shape[:-1]
         num_mol = species.shape[0]
         assert num_mol == 1, "InferModel currently only support inference for single molecule"
-        if self.jit:
-            mol_energies = self._single_mol_energies_jittable((species, aev))
+        if torch.jit.is_scripting():  # if in compilation (script) mode
+            if self.use_mnp:
+                mol_energies = self._single_mol_energies_jittable((species, aev))
+            else:
+                raise RuntimeError("JIT Infer Model only support use_mnp=True")
         else:
             mol_energies = self._single_mol_energies((species, aev))
         return SpeciesEnergies(species, mol_energies)
@@ -216,9 +221,9 @@ class ANIInferModel(InferModelBase):
     """
     InferModel for a single ANI model, instead of an ensemble.
     """
-    def __init__(self, modules, use_mnp=True, jit=False):
+    def __init__(self, modules, use_mnp=True):
         num_network = len(modules)
-        super().__init__(num_network, use_mnp, jit)
+        super().__init__(num_network)
 
         self.is_bmm = False
         self.net_list = [m for (key, m) in modules]
@@ -253,9 +258,9 @@ class BmmEnsemble(InferModelBase):
     BmmNetwork is composed of BmmLinear layers, which will perform Batch Matmul (bmm) instead of normal matmul
     to reduce the number of kernel calls.
     """
-    def __init__(self, models, use_mnp=True, jit=False):
+    def __init__(self, models, use_mnp=True):
         num_network = len(models[0])
-        super().__init__(num_network, use_mnp, jit)
+        super().__init__(num_network)
         # assert all models have the same networks as model[0]
         # and each network should have same architecture
 

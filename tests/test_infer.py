@@ -61,26 +61,32 @@ class TestInfer(TestCase):
         self._test(model_ref, model_infer)
 
     def testBmmEnsembleJIT(self):
-        if not self.use_mnp:
-            self.skipTest('mnp is needed for JIT tests')
         model_iterator = self.ani2x.neural_networks
         aev_computer = torchani.AEVComputer.like_2x(use_cuda_extension=(self.device == 'cuda'))
         ensemble = torchani.nn.Sequential(aev_computer, model_iterator).to(self.device)
         # jit
-        bmm_ensemble = torchani.nn.InferModelSequential(aev_computer, self.ani2x.neural_networks.to_infer_model(use_mnp=self.use_mnp, jit=True)).to(self.device)
+        bmm_ensemble = torchani.nn.InferModelSequential(aev_computer, self.ani2x.neural_networks.to_infer_model(use_mnp=self.use_mnp)).to(self.device)
         bmm_ensemble_jit = torch.jit.script(bmm_ensemble)
-        self._test(ensemble, bmm_ensemble_jit, jit=True)
+        if self.use_mnp:
+            self._test(ensemble, bmm_ensemble_jit, jit=True)
+        else:
+            with self.assertRaisesRegex(torch.jit.Error, "The following operation failed in the TorchScript interpreter."):
+                # with error "RuntimeError: JIT Infer Model only support use_mnp=True"
+                self._test(ensemble, bmm_ensemble_jit, jit=True)
 
     def testANIInferModelJIT(self):
-        if not self.use_mnp:
-            self.skipTest('mnp is needed for JIT tests')
         model_iterator = self.ani2x.neural_networks
         aev_computer = torchani.AEVComputer.like_2x(use_cuda_extension=(self.device == 'cuda'))
         model_ref = torchani.nn.Sequential(aev_computer, model_iterator[0]).to(self.device)
         # jit
-        model_infer = torchani.nn.InferModelSequential(aev_computer, model_iterator[0].to_infer_model(use_mnp=self.use_mnp, jit=True)).to(self.device)
+        model_infer = torchani.nn.InferModelSequential(aev_computer, model_iterator[0].to_infer_model(use_mnp=self.use_mnp)).to(self.device)
         model_infer_jit = torch.jit.script(model_infer)
-        self._test(model_ref, model_infer_jit, jit=True)
+        if self.use_mnp:
+            self._test(model_ref, model_infer_jit, jit=True)
+        else:
+            with self.assertRaisesRegex(torch.jit.Error, "The following operation failed in the TorchScript interpreter."):
+                # with error "RuntimeError: JIT Infer Model only support use_mnp=True"
+                self._test(model_ref, model_infer_jit, jit=True)
 
 
 if __name__ == '__main__':
