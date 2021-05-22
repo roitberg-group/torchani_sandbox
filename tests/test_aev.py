@@ -1,4 +1,5 @@
 import torch
+import warnings
 import torchani
 import unittest
 import os
@@ -42,28 +43,34 @@ class TestAEVConstructor(TestCase):
         self._compare_constants(aev_1ccx_nc, aev_1ccx, rtol=1e-17, atol=1e-17)
 
     def testANI1x(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            approx_angular = torchani.aev.StandardAngular.like_1x(exact=False)
+            approx_radial = torchani.aev.StandardRadial.like_1x(exact=False)
         exact_angular = torchani.aev.StandardAngular.like_1x(exact=True)
-        approx_angular = torchani.aev.StandardAngular.like_1x(exact=False)
         exact_radial = torchani.aev.StandardRadial.like_1x(exact=True)
-        approx_radial = torchani.aev.StandardRadial.like_1x(exact=False)
 
         self._compare_constants(exact_angular, approx_angular)
         self._compare_constants(exact_radial, approx_radial)
 
     def testANI2x(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            approx_angular = torchani.aev.StandardAngular.like_2x(exact=False)
+            approx_radial = torchani.aev.StandardRadial.like_2x(exact=False)
         exact_angular = torchani.aev.StandardAngular.like_2x(exact=True)
-        approx_angular = torchani.aev.StandardAngular.like_2x(exact=False)
         exact_radial = torchani.aev.StandardRadial.like_2x(exact=True)
-        approx_radial = torchani.aev.StandardRadial.like_2x(exact=False)
 
         self._compare_constants(exact_angular, approx_angular)
         self._compare_constants(exact_radial, approx_radial)
 
     def testANI1ccx(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            approx_angular = torchani.aev.StandardAngular.like_1ccx(exact=False)
+            approx_radial = torchani.aev.StandardRadial.like_1ccx(exact=False)
         exact_angular = torchani.aev.StandardAngular.like_1ccx(exact=True)
-        approx_angular = torchani.aev.StandardAngular.like_1ccx(exact=False)
         exact_radial = torchani.aev.StandardRadial.like_1ccx(exact=True)
-        approx_radial = torchani.aev.StandardRadial.like_1ccx(exact=False)
 
         self._compare_constants(exact_angular, approx_angular)
         self._compare_constants(exact_radial, approx_radial)
