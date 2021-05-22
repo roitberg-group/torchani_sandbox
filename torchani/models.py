@@ -35,7 +35,7 @@ from collections import OrderedDict
 import torch
 from torch import Tensor
 from torch.nn import Module
-from typing import Tuple, Optional, NamedTuple, Sequence
+from typing import Tuple, Optional, NamedTuple, Sequence, Union
 from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from .aev import AEVComputer
@@ -385,29 +385,6 @@ class BuiltinEnsemble(BuiltinModel):
         return len(self.neural_networks)
 
 
-def _get_component_modules_neurochem(info_file: str,
-                           model_index: Optional[int] = None,
-                           use_cuda_extension: bool = False) -> Tuple[Sequence[str], Module, Module, Module]:
-    # this creates modules from a neurochem info path,
-    # since for neurochem architecture and parameters are kind of mixed up,
-    # this doesn't support non pretrained models, it directly outputs a pretrained module
-
-    from . import neurochem  # noqa
-    const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file)
-    consts = neurochem.Constants(const_file)
-    elements = consts.species
-    aev_computer = AEVComputer(**consts, use_cuda_extension=use_cuda_extension)
-
-    if model_index is None:
-        neural_networks = neurochem.load_model_ensemble(elements, ensemble_prefix, ensemble_size)
-    else:
-        if (model_index >= ensemble_size):
-            raise ValueError(f"The ensemble size is only {ensemble_size}, model {model_index} can't be loaded")
-        network_dir = os.path.join(f'{ensemble_prefix}{model_index}', 'networks')
-        neural_networks = neurochem.load_model(elements, network_dir)
-    return aev_computer, neural_networks, neurochem.load_sae(sae_file), elements
-
-
 def _get_component_modules(state_dict_file: str,
                            model_index: Optional[int] = None,
                            use_cuda_extension: bool = False,
@@ -479,7 +456,7 @@ def _fetch_state_dict(state_dict_file: str,
 
 def _load_ani_model(state_dict_file: Optional[str] = None,
                     info_file: Optional[str] = None,
-                    **model_kwargs):
+                    **model_kwargs) -> Union[BuiltinModel, BuiltinEnsemble]:
     # Helper function to toggle if the loading is done from an NC file or
     # directly using torchani and state_dicts
     use_neurochem_source = model_kwargs.pop('use_neurochem_source', False)
@@ -488,9 +465,10 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     pretrained = model_kwargs.pop('pretrained', False)
 
     if use_neurochem_source:
-        assert info_file is not None, "Info file is needed to load from a nc source"
-        assert pretrained
-        components = _get_component_modules_neurochem(info_file, model_index, use_cuda_extension)
+        assert info_file is not None, "Info file is needed to load from a neurochem source"
+        assert pretrained, "Non pretrained models not available from neurochem source"
+        from . import neurochem  # noqa
+        components = neurochem._get_component_modules(info_file, model_index, use_cuda_extension)
     else:
         assert state_dict_file is not None
         components = _get_component_modules(state_dict_file, model_index, use_cuda_extension)
@@ -505,8 +483,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     model = model_class(elements, aev_computer, neural_networks, energy_shifter, **model_kwargs)
 
     if pretrained:
-        state_dict = _fetch_state_dict(state_dict_file, model_index)
-        model.load_state_dict(state_dict)
+        model.load_state_dict(_fetch_state_dict(state_dict_file, model_index))
     return model
 
 
