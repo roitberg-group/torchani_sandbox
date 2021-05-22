@@ -1,3 +1,5 @@
+import tempfile
+from pathlib import Path
 import torch
 import numpy as np
 from torch import Tensor
@@ -16,6 +18,18 @@ PADDING = {
     'forces': 0.0,
     'energies': 0.0
 }
+
+
+def path_is_writable(path: Union[str, Path]) -> bool:
+    # check if a path is writeable, adapted from:
+    # https://stackoverflow.com/questions/2113427/determining-whether-a-directory-is-writeable
+    try:
+        testfile = tempfile.TemporaryFile(dir=path)
+        testfile.close()
+    except (OSError, IOError):
+        testfile.close()
+        return False
+    return True
 
 
 def cumsum_from_zero(input_: Tensor) -> Tensor:
