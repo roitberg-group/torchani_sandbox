@@ -40,6 +40,7 @@ from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from .aev import AEVComputer
 from .compat import Final
+from . import atomics
 
 
 class SpeciesEnergiesQBC(NamedTuple):
@@ -402,7 +403,7 @@ def _get_component_modules_neurochem(info_file: str,
     else:
         if (model_index >= ensemble_size):
             raise ValueError(f"The ensemble size is only {ensemble_size}, model {model_index} can't be loaded")
-        network_dir = os.path.join('{}{}'.format(ensemble_prefix, model_index), 'networks')
+        network_dir = os.path.join(f'{ensemble_prefix}{model_index}', 'networks')
         neural_networks = neurochem.load_model(elements, network_dir)
     return aev_computer, neural_networks, neurochem.load_sae(sae_file), elements
 
@@ -413,22 +414,21 @@ def _get_component_modules(state_dict_file: str,
                            ensemble_size: int = 8) -> Tuple[Sequence[str], Module, Module, Module]:
     # This generates ani-style architectures without neurochem
     name = state_dict_file.split('_')[0]
-
     if name == 'ani1x':
-        aev_computer = AEVComputer.like_1x(use_cuda_extension=use_cuda_extension)
+        aev_maker = AEVComputer.like_1x
         atomic_maker = atomics.make_like_1x
         elements = ('H', 'C', 'N', 'O')
     elif name == 'ani1ccx':
-        aev_computer = AEVComputer.like_1ccx(use_cuda_extension=use_cuda_extension)
+        aev_maker = AEVComputer.like_1ccx
         atomic_maker = atomics.make_like_1ccx
         elements = ('H', 'C', 'N', 'O')
     elif name == 'ani2x':
-        aev_computer = AEVComputer.like_2x(use_cuda_extension=use_cuda_extension)
+        aev_maker = AEVComputer.like_2x
         atomic_maker = atomics.make_like_2x
         elements = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
     else:
         raise ValueError(f'{name} is not a supported model')
-
+    aev_computer = aev_maker(use_cuda_extension=use_cuda_extension)
     atomic_networks = OrderedDict([(e, atomic_maker(e)) for e in elements])
     if model_index is None:
         neural_networks = Ensemble([ANIModel(deepcopy(atomic_networks)) for _ in range(ensemble_size)])
@@ -442,8 +442,7 @@ def _fetch_state_dict(state_dict_file: str,
                       local: bool = False) -> 'OrderedDict[str, Tensor]':
     # if we want a pretrained model then we load the state dict from a
     # remote url or a local path
-    #
-    # torch.hub caches remote state_dicts after they have been downloaded
+    # NOTE: torch.hub caches remote state_dicts after they have been downloaded
     if local:
         return torch.load(state_dict_file)
 
@@ -455,7 +454,7 @@ def _fetch_state_dict(state_dict_file: str,
     # group, this url is for public models
     tag = 'v0.1'
     url = f'https://github.com/roitberg-group/torchani_model_zoo/releases/download/{tag}/{state_dict_file}'
-    # for simplicity we load a state dict for the ensemble directly and
+    # for now for simplicity we load a state dict for the ensemble directly and
     # then parse if needed
     state_dict = torch.hub.load_state_dict_from_url(url, model_dir=model_dir)
 
