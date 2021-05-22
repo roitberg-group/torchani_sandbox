@@ -35,7 +35,7 @@ from collections import OrderedDict
 import torch
 from torch import Tensor
 from torch.nn import Module
-from typing import Tuple, Optional, NamedTuple, Sequence, Union
+from typing import Tuple, Optional, NamedTuple, Sequence, Union, Type, Any
 from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from .aev import AEVComputer
@@ -166,8 +166,6 @@ class BuiltinModel(Module):
     @torch.jit.unused
     def species_to_tensor(self, *args, **kwargs):
         """Convert species from strings to tensor.
-
-        See also :method:`torchani.neurochem.Constant.species_to_tensor`
 
         Arguments:
             species (:class:`str`): A string of chemical symbols
@@ -388,25 +386,28 @@ class BuiltinEnsemble(BuiltinModel):
 def _get_component_modules(state_dict_file: str,
                            model_index: Optional[int] = None,
                            use_cuda_extension: bool = False,
-                           ensemble_size: int = 8) -> Tuple[Sequence[str], Module, Module, Module]:
+                           ensemble_size: int = 8) -> Tuple[Module, Module, Module, Sequence[str]]:
     # This generates ani-style architectures without neurochem
     name = state_dict_file.split('_')[0]
+    elements: Tuple[str, ...]
     if name == 'ani1x':
         aev_maker = AEVComputer.like_1x
-        atomic_maker = atomics.make_like_1x
+        atomic_maker = atomics.like_1x
         elements = ('H', 'C', 'N', 'O')
     elif name == 'ani1ccx':
         aev_maker = AEVComputer.like_1ccx
-        atomic_maker = atomics.make_like_1ccx
+        atomic_maker = atomics.like_1ccx
         elements = ('H', 'C', 'N', 'O')
     elif name == 'ani2x':
         aev_maker = AEVComputer.like_2x
-        atomic_maker = atomics.make_like_2x
+        atomic_maker = atomics.like_2x
         elements = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
     else:
         raise ValueError(f'{name} is not a supported model')
     aev_computer = aev_maker(use_cuda_extension=use_cuda_extension)
     atomic_networks = OrderedDict([(e, atomic_maker(e)) for e in elements])
+
+    neural_networks: Union[ANIModel, Ensemble]
     if model_index is None:
         neural_networks = Ensemble([ANIModel(deepcopy(atomic_networks)) for _ in range(ensemble_size)])
     else:
@@ -462,19 +463,20 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     use_neurochem_source = model_kwargs.pop('use_neurochem_source', False)
     use_cuda_extension = model_kwargs.pop('use_cuda_extension', False)
     model_index = model_kwargs.pop('model_index', None)
-    pretrained = model_kwargs.pop('pretrained', False)
+    pretrained = model_kwargs.pop('pretrained', True)
 
     if use_neurochem_source:
         assert info_file is not None, "Info file is needed to load from a neurochem source"
         assert pretrained, "Non pretrained models not available from neurochem source"
         from . import neurochem  # noqa
-        components = neurochem._get_component_modules(info_file, model_index, use_cuda_extension)
+        components = neurochem.parse_resources._get_component_modules(info_file, model_index, use_cuda_extension)
     else:
         assert state_dict_file is not None
         components = _get_component_modules(state_dict_file, model_index, use_cuda_extension)
 
     elements, aev_computer, neural_networks, energy_shifter = components
 
+    model_class: Type[Any]
     if model_index is None:
         model_class = BuiltinEnsemble
     else:
@@ -482,7 +484,8 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
 
     model = model_class(elements, aev_computer, neural_networks, energy_shifter, **model_kwargs)
 
-    if pretrained:
+    if pretrained and not use_neurochem_source:
+        assert state_dict_file is not None
         model.load_state_dict(_fetch_state_dict(state_dict_file, model_index))
     return model
 

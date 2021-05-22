@@ -79,7 +79,7 @@ def _get_resources(resource_path, info_file):
 
 def _get_component_modules(info_file: str,
                            model_index: Optional[int] = None,
-                           use_cuda_extension: bool = False) -> Tuple[Sequence[str], Module, Module, Module]:
+                           use_cuda_extension: bool = False) -> Tuple[Module, Module, Module, Sequence[str]]:
     # this creates modules from a neurochem info path,
     # since for neurochem architecture and parameters are kind of mixed up,
     # this doesn't support non pretrained models, it directly outputs a pretrained module
