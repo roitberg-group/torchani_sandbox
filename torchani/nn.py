@@ -2,7 +2,7 @@ import torch
 import math
 from collections import OrderedDict
 from torch import Tensor
-from typing import Tuple, NamedTuple, Optional
+from typing import Tuple, NamedTuple, Optional, Sequence
 from . import utils
 from .compat import Final
 
@@ -74,11 +74,10 @@ class ANIModel(torch.nn.ModuleDict):
         output = aev.new_zeros(species_.shape)
 
         for i, m in enumerate(self.values()):
-            mask = (species_ == i)
-            midx = mask.nonzero().flatten()
+            midx = (species_ == i).nonzero().view(-1)
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
-                output.masked_scatter_(mask, m(input_).flatten())
+                output.index_add_(0, midx, m(input_).view(-1))
         output = output.view_as(species)
         return output
 
@@ -164,7 +163,7 @@ class SpeciesConverter(torch.nn.Module):
     """
     conv_tensor: Tensor
 
-    def __init__(self, species):
+    def __init__(self, species: Sequence[str]):
         super().__init__()
         rev_idx = {s: k for k, s in enumerate(utils.PERIODIC_TABLE)}
         maxidx = max(rev_idx.values())
