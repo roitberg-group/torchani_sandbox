@@ -2,12 +2,13 @@ from typing import Tuple, Optional, Union
 
 import torch
 from torch import Tensor
-from torch.nn import functional
+from torch.nn import functional, Module
 from ..utils import map_to_central, cumsum_from_zero
 from ..compat import Final
 
 
-def _parse_neighborlist(neighborlist, cutoff):
+def _parse_neighborlist(neighborlist: Module, cutoff: float):
+    assert isinstance(neighborlist, Module)
     if neighborlist == 'full_pairwise':
         neighborlist = FullPairwise(cutoff)
     elif neighborlist == 'cell_list':
@@ -16,12 +17,10 @@ def _parse_neighborlist(neighborlist, cutoff):
         neighborlist = CellList(cutoff=cutoff, verlet=True)
     elif neighborlist is None:
         neighborlist = BaseNeighborlist(cutoff)
-    else:
-        assert isinstance(neighborlist, torch.nn.Module)
     return neighborlist
 
 
-class BaseNeighborlist(torch.nn.Module):
+class BaseNeighborlist(Module):
 
     cutoff: Final[float]
     default_pbc: Tensor
@@ -117,7 +116,7 @@ class BaseNeighborlist(torch.nn.Module):
         return screened_neighborlist, shift_values, screened_diff_vectors, screened_distances
 
     @torch.jit.export
-    def _recast_long_buffers(self):
+    def _recast_long_buffers(self) -> None:
         pass
 
 
@@ -259,11 +258,11 @@ class CellList(BaseNeighborlist):
     spherical_factor: Tensor
 
     def __init__(self,
-                 cutoff,
-                 buckets_per_cutoff=1,
-                 verlet=False,
-                 skin=None,
-                 constant_volume=False):
+                 cutoff: float,
+                 buckets_per_cutoff: int = 1,
+                 verlet: bool = False,
+                 skin: Optional[float] = None,
+                 constant_volume: bool = False):
         super().__init__(cutoff)
 
         # right now I will only support this, and the extra neighbors are
@@ -377,7 +376,7 @@ class CellList(BaseNeighborlist):
         self.old_values_are_cached = False
 
     @torch.jit.export
-    def _recast_long_buffers(self):
+    def _recast_long_buffers(self) -> None:
         # for cell list
         self.total_buckets = self.total_buckets.to(dtype=torch.long)
         self.scaling_for_flat_index = self.scaling_for_flat_index.to(dtype=torch.long)
@@ -390,7 +389,7 @@ class CellList(BaseNeighborlist):
     def forward(self, species: Tensor,
                 coordinates: Tensor,
                 cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> Tuple[Tensor, Union[Tensor, None], Tensor, Tensor]:
+                pbc: Optional[Tensor] = None) -> Tuple[Tensor, Optional[Tensor], Tensor, Tensor]:
 
         assert coordinates.shape[0] == 1, "Cell list doesn't support batches"
         if cell is None:
