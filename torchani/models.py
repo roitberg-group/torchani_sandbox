@@ -370,6 +370,7 @@ class BuiltinModelExternalInterface(BuiltinModel):
             diff_vectors = coords0 - coords1 + shift_values
             distances = diff_vectors.norm(2, -1)
 
+        assert neighbors is not None
         aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
         species_energies = self.neural_networks((species, aevs))
         return self.energy_shifter(species_energies)
