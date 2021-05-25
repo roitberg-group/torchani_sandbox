@@ -104,7 +104,7 @@ class TestRepulsion(TestCase):
 
     def testRepulsionEnergy(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model = torchani.models.ANI1x(repulsion=True, model_index=0, cutoff_fn='smooth')
+        model = torchani.models.ANI1x(repulsion=True, pretrained=False, model_index=0, cutoff_fn='smooth')
         model.neural_networks = load_model('repulsion_model_1x.pt', model.aev_computer.aev_length)
         model.energy_shifter = torchani.EnergyShifter([-0.506930115400, -37.814410115700, -54.55653828400, -75.02918133970])
         model = model.to(device=device, dtype=torch.double)

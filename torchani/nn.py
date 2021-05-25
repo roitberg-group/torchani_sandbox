@@ -107,8 +107,9 @@ class Ensemble(torch.nn.ModuleList):
         members_list = []
         for nnp in self:
             members_list.append(nnp._atomic_energies((species_aev)).unsqueeze(0))
-        member_atomic_energies = torch.cat(members_list, dim=0)
-        return member_atomic_energies
+        members_atomic_energies = torch.cat(members_list, dim=0)
+        # out shape is (M, C, A)
+        return members_atomic_energies
 
 
 class Sequential(torch.nn.ModuleList):

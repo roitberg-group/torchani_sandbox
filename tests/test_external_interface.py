@@ -9,7 +9,7 @@ class TestExternalInterface(TestCase):
     def setUp(self):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.model_interface = torchani.models.ANI1x(periodic_table_index=False, external_cell_list=True)
+        self.model_interface = torchani.models.ANI1x(periodic_table_index=False, external_neighborlist=True)
         self.model_interface = self.model_interface.to(device=self.device, dtype=torch.float)
 
         self.model = torchani.models.ANI1x(periodic_table_index=False)

@@ -29,14 +29,22 @@ directly calculate energies or get an ASE calculator. For example:
     model0.species_to_tensor(['C', 'H', 'H', 'H', 'H'])
 """
 import os
+from copy import deepcopy
+from pathlib import Path
+from collections import OrderedDict
 import torch
 from torch import Tensor
-from typing import Tuple, Optional, NamedTuple, Sequence
-from .nn import SpeciesConverter, SpeciesEnergies, Ensemble
-from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE
+from torch.nn import Module
+from typing import Tuple, Optional, NamedTuple, Sequence, Union, Type, Dict, Any
+from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
+from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from .aev import AEVComputer
 from .repulsion import RepulsionCalculator
 from .compat import Final
+from . import atomics
+
+
+NN = Union[ANIModel, Ensemble]
 
 
 class SpeciesEnergiesQBC(NamedTuple):
@@ -45,15 +53,15 @@ class SpeciesEnergiesQBC(NamedTuple):
     qbcs: Tensor
 
 
-class BuiltinModel(torch.nn.Module):
+class BuiltinModel(Module):
     r"""Private template for the builtin ANI models """
 
     atomic_numbers: Tensor
     periodic_table_index: Final[bool]
 
     def __init__(self,
-                 aev_computer,
-                 neural_networks,
+                 aev_computer: AEVComputer,
+                 neural_networks: NN,
                  energy_shifter,
                  elements: Sequence[str],
                  periodic_table_index: bool = False):
@@ -101,67 +109,56 @@ class BuiltinModel(torch.nn.Module):
 
         Returns:
             species_energies: energies for the given configurations
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            will be in Hartree.
         """
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-
-        # check if unknown species are included
-        if species_coordinates[0].ge(self.aev_computer.num_species).any():
-            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
-
-        species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
-        species_energies = self.neural_networks(species_aevs)
-        return self.energy_shifter(species_energies)
+        in_species, species_idx, coordinates = self._get_species_and_indices(species_coordinates)
+        aevs = self.aev_computer((species_idx, coordinates), cell=cell, pbc=pbc).aevs
+        energies = self.neural_networks((species_idx, aevs)).energies
+        energies = self.energy_shifter((species_idx, energies)).energies
+        return SpeciesEnergies(in_species, energies)
 
     @torch.jit.export
+    def _get_species_and_indices(self, species_coordinates: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
+        in_species, coordinates = species_coordinates
+
+        if self.periodic_table_index:
+            species_idx = self.species_converter(species_coordinates).species
+        else:
+            species_idx = in_species.clone()
+
+        if (species_idx >= self.aev_computer.num_species).any():
+            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
+
+        return in_species, species_idx, coordinates
+
     def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                         cell: Optional[Tensor] = None,
                         pbc: Optional[Tensor] = None, average: bool = True) -> SpeciesEnergies:
         """Calculates predicted atomic energies of all atoms in a molecule
 
-        ..warning::
-            Since this function does not call ``__call__`` directly,
-            hooks are not registered and profiling is not done correctly by
-            pytorch on it. It is meant as a convenience function for analysis
-             and active learning.
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            will be in Hartree.
-
         Args:
             species_coordinates: minibatch of configurations
             cell: the cell used in PBC computation, set to None if PBC is not enabled
             pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
+            average: If True (the default) it returns the average over all models
+                in the ensemble, should there be more than one (shape (C, A)),
+                otherwise it returns one atomic energy per model (shape (M, C, A)).
 
         Returns:
             species_atomic_energies: species and energies for the given configurations
                 note that the shape of species is (C, A), where C is
                 the number of configurations and A the number of atoms, and
                 the shape of energies is (C, A) for a BuiltinModel.
-
-        If average is True (the default) it returns the average over all models
-        in the ensemble, should there be more than one (shape (C, A)),
-        otherwise it returns one atomic energy per model (shape (M, C, A)).
         """
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
-        atomic_energies = self.neural_networks._atomic_energies((species, aevs))
-        atomic_saes = self.energy_shifter._calc_atomic_saes(species)
+        in_species, species_idx, coordinates = self._get_species_and_indices(species_coordinates)
+        aevs = self.aev_computer((species_idx, coordinates), cell=cell, pbc=pbc).aevs
+        atomic_energies = self.neural_networks._atomic_energies((species_idx, aevs))
+        atomic_energies += self.energy_shifter._atomic_saes(species_idx)
 
-        # shift all atomic energies individually
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
-
-        assert atomic_saes.shape == atomic_energies[0].shape
-
-        atomic_energies += atomic_saes
         if average:
-            return SpeciesEnergies(species, atomic_energies.mean(dim=0))
-        return SpeciesEnergies(species, atomic_energies)
+            atomic_energies = atomic_energies.mean(dim=0)
+        return SpeciesEnergies(in_species, atomic_energies)
 
     # unfortunately this is an UGLY workaround to a torchscript bug
     @torch.jit.export
@@ -177,7 +174,7 @@ class BuiltinModel(torch.nn.Module):
             kwargs: ase.Calculator kwargs
 
         Returns:
-            calculator (:class:`int`): A calculator to be used with ASE
+            calculator (:class:`ase.Calculator`): A calculator to be used with ASE
         """
         from . import ase
         return ase.Calculator(self.get_chemical_symbols(), self, **kwargs)
@@ -197,8 +194,10 @@ class BuiltinModel(torch.nn.Module):
         """
         assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
         ret = BuiltinModel(self.aev_computer,
-                           self.neural_networks[index], self.energy_shifter,
-                           self.get_chemical_symbols(), self.periodic_table_index)
+                           self.neural_networks[index],
+                           self.energy_shifter,
+                           self.get_chemical_symbols(),
+                           self.periodic_table_index)
         return ret
 
     @torch.jit.export
@@ -207,15 +206,6 @@ class BuiltinModel(torch.nn.Module):
                          pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         """Calculates predicted energies of all member modules
 
-        ..warning::
-            Since this function does not call ``__call__`` directly,
-            hooks are not registered and profiling is not done correctly by
-            pytorch on it. It is meant as a convenience function for analysis
-             and active learning.
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            will be in Hartree.
-
         Args:
             species_coordinates: minibatch of configurations
             cell: the cell used in PBC computation, set to None if PBC is not enabled
@@ -223,25 +213,13 @@ class BuiltinModel(torch.nn.Module):
 
         Returns:
             species_energies: species and energies for the given configurations
-                note that the shape of species is (C, A), where C is
-                the number of configurations and A the number of atoms, and
-                the shape of energies is (M, C), where M is the number
-                of modules in the ensemble
+                shape of species is (C, A), where C is the number of
+                configurations and A the number of atoms, and shape of energies
+                is (M, C), where M is the number of modules in the ensemble.
 
         """
-        assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
-        member_outputs = []
-        for nnp in self.neural_networks:
-            # hint for JIT, this function can only be called if neural_networks
-            # is an ensemble and not an ANIModel
-            assert not isinstance(nnp, str)
-            unshifted_energies = nnp((species, aevs)).energies
-            shifted_energies = self.energy_shifter((species, unshifted_energies)).energies
-            member_outputs.append(shifted_energies.unsqueeze(0))
-        return SpeciesEnergies(species, torch.cat(member_outputs, dim=0))
+        species, members_energies = self.atomic_energies(species_coordinates, average=False)
+        return SpeciesEnergies(species, members_energies.sum(-1))
 
     @torch.jit.export
     def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -254,15 +232,6 @@ class BuiltinModel(torch.nn.Module):
 
         .. _less-is-more:
             https://aip.scitation.org/doi/10.1063/1.5023802
-
-        ..warning::
-            Since this function does not call ``__call__`` directly,
-            hooks are not registered and profiling is not done correctly by
-            pytorch on it. It is meant as a convenience function for analysis
-             and active learning.
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            and qbc factors will be in Hartree.
 
         Args:
             species_coordinates: minibatch of configurations
@@ -362,6 +331,7 @@ class BuiltinModelExternalInterface(BuiltinModel):
             diff_vectors = coords0 - coords1 + shift_values
             distances = diff_vectors.norm(2, -1)
 
+        assert neighbors is not None
         aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
         species_energies = self.neural_networks((species, aevs))
         return self.energy_shifter(species_energies)
@@ -388,9 +358,9 @@ class BuiltinModelExternalInterface(BuiltinModel):
 class BuiltinModelPairInteractions(BuiltinModel):
     # NOTE: contribution of pairwise interactions to atomic energies is not implemented yet
 
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         pairwise_potentials = kwargs.pop('pairwise_potentials', list())
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
         assert isinstance(pairwise_potentials, (tuple, list))
         self.pairwise_potentials = torch.nn.ModuleList(pairwise_potentials)
 
@@ -443,56 +413,139 @@ class BuiltinModelPairInteractions(BuiltinModel):
         return SpeciesEnergies(species, torch.cat(member_outputs, dim=0))
 
 
-def _build_neurochem_model(info_file_path, periodic_table_index=False,
-        external_cell_list=False, model_index=None, torch_cell_list=False,
-        repulsion=False, adaptive_torch_cell_list=False, cutoff_fn='cosine'):
-    from . import neurochem  # noqa
-    # builder function that creates a BuiltinModel from a neurochem info path
-    assert not (external_cell_list and (torch_cell_list or adaptive_torch_cell_list)), \
-            "external interface models don't use a neighborlist"
+def _get_component_modules(state_dict_file: str,
+                           model_index: Optional[int] = None,
+                           aev_computer_kwargs: Optional[Dict[str, Any]] = None,
+                           ensemble_size: int = 8) -> Tuple[AEVComputer, Module, EnergyShifter, Sequence[str]]:
+    if aev_computer_kwargs is None:
+        aev_computer_kwargs = dict()
+    # This generates ani-style architectures without neurochem
+    name = state_dict_file.split('_')[0]
+    elements: Tuple[str, ...]
+    if name == 'ani1x':
+        aev_maker = AEVComputer.like_1x
+        atomic_maker = atomics.like_1x
+        elements = ('H', 'C', 'N', 'O')
+    elif name == 'ani1ccx':
+        aev_maker = AEVComputer.like_1ccx
+        atomic_maker = atomics.like_1ccx
+        elements = ('H', 'C', 'N', 'O')
+    elif name == 'ani2x':
+        aev_maker = AEVComputer.like_2x
+        atomic_maker = atomics.like_2x
+        elements = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
+    else:
+        raise ValueError(f'{name} is not a supported model')
+    aev_computer = aev_maker(**aev_computer_kwargs)
+    atomic_networks = OrderedDict([(e, atomic_maker(e)) for e in elements])
 
-    const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
-    consts = neurochem.Constants(const_file)
-    elements = consts.species
-
-    aev_kwargs = dict(**consts)
-    aev_kwargs.update({'cutoff_fn': cutoff_fn})
-
-    if torch_cell_list:
-        aev_kwargs.update({'neighborlist': 'cell_list'})
-    elif adaptive_torch_cell_list:
-        aev_kwargs.update({'neighborlist': 'verlet_cell_list'})
-
-    aev_computer = AEVComputer(**aev_kwargs)
-
+    neural_networks: NN
     if model_index is None:
-        neural_networks = neurochem.load_model_ensemble(elements, ensemble_prefix, ensemble_size)
+        neural_networks = Ensemble([ANIModel(deepcopy(atomic_networks)) for _ in range(ensemble_size)])
     else:
-        if (model_index >= ensemble_size):
-            raise ValueError(f"The ensemble size is only {ensemble_size}, model {model_index} can't be loaded")
-        network_dir = os.path.join('{}{}'.format(ensemble_prefix, model_index), 'networks')
-        neural_networks = neurochem.load_model(elements, network_dir)
+        neural_networks = ANIModel(atomic_networks)
+    return aev_computer, neural_networks, EnergyShifter([0.0 for _ in elements]), elements
 
-    energy_shifter = neurochem.load_sae(sae_file)
 
-    kwargs = {'aev_computer': aev_computer,
-            'energy_shifter': energy_shifter,
-            'neural_networks': neural_networks,
-            'elements': elements,
-            'periodic_table_index': periodic_table_index}
+def _fetch_state_dict(state_dict_file: str,
+                      model_index: Optional[int] = None,
+                      local: bool = False) -> 'OrderedDict[str, Tensor]':
+    # if we want a pretrained model then we load the state dict from a
+    # remote url or a local path
+    # NOTE: torch.hub caches remote state_dicts after they have been downloaded
+    if local:
+        return torch.load(state_dict_file)
 
-    if repulsion:
+    model_dir = Path(__file__).parent.joinpath('resources/state_dicts').as_posix()
+    if not path_is_writable(model_dir):
+        model_dir = os.path.expanduser('~/.local/torchani/')
+
+    # NOTE: we need some private url for in-development models of the
+    # group, this url is for public models
+    tag = 'v0.1'
+    url = f'https://github.com/roitberg-group/torchani_model_zoo/releases/download/{tag}/{state_dict_file}'
+    # for now for simplicity we load a state dict for the ensemble directly and
+    # then parse if needed
+    state_dict = torch.hub.load_state_dict_from_url(url, model_dir=model_dir)
+
+    if model_index is not None:
+        new_state_dict = OrderedDict()
+        # Parse the state dict and rename/select only useful keys to build
+        # the individual model
+        for k, v in state_dict.items():
+            tkns = k.split('.')
+            if tkns[0] == 'neural_networks':
+                # rename or discard the key
+                if int(tkns[1]) == model_index:
+                    tkns.pop(1)
+                    k = '.'.join(tkns)
+                else:
+                    continue
+            new_state_dict[k] = v
+        state_dict = new_state_dict
+
+    return state_dict
+
+
+def _load_ani_model(state_dict_file: Optional[str] = None,
+                    info_file: Optional[str] = None,
+                    **model_kwargs) -> BuiltinModel:
+    # Helper function to toggle if the loading is done from an NC file or
+    # directly using torchani and state_dicts
+    use_neurochem_source = model_kwargs.pop('use_neurochem_source', False)
+    model_index = model_kwargs.pop('model_index', None)
+    pretrained = model_kwargs.pop('pretrained', True)
+    external_neighborlist = model_kwargs.pop('external_neighborlist', False)
+    repulsion = model_kwargs.pop('repulsion', False)
+    cutoff_fn = model_kwargs.pop('cutoff_fn', 'cosine')
+
+    if pretrained:
+        assert not repulsion, "No pretrained model with those characteristics exists"
+        assert cutoff_fn == 'cosine', "No pretrained model with those characteristics exists"
+
+    # aev computer args
+    if model_kwargs.pop('torch_cell_list', False):
+        neighborlist = 'cell_list'
+    elif model_kwargs.pop('adaptive_torch_cell_list', False):
+        neighborlist = 'verlet_cell_list'
+    else:
+        neighborlist = 'full_pairwise'
+    aev_computer_kwargs = {'neighborlist': neighborlist,
+                           'cutoff_fn': cutoff_fn,
+                           'use_cuda_extension': model_kwargs.pop('use_cuda_extension', False)}
+
+    if use_neurochem_source:
+        assert info_file is not None, "Info file is needed to load from a neurochem source"
+        assert pretrained, "Non pretrained models not available from neurochem source"
+        from . import neurochem  # noqa
+        components = neurochem.parse_resources._get_component_modules(info_file, model_index, aev_computer_kwargs)
+    else:
+        assert state_dict_file is not None
+        components = _get_component_modules(state_dict_file, model_index, aev_computer_kwargs)
+
+    aev_computer, neural_networks, energy_shifter, elements = components
+
+    model_class: Type[BuiltinModel]
+    assert not (repulsion and external_neighborlist), "repulsion not implemented for external interface models yet"
+
+    if external_neighborlist:
+        model_class = BuiltinModelExternalInterface
+    elif repulsion:
         cutoff = aev_computer.radial_terms.cutoff
-        kwargs.update({'pairwise_potentials': [RepulsionCalculator(cutoff)]})
-        return BuiltinModelPairInteractions(**kwargs)
-    elif external_cell_list:
-        assert not repulsion, "repulsion not implemented for external interface models yet"
-        return BuiltinModelExternalInterface(**kwargs)
+        model_kwargs.update({'pairwise_potentials': [RepulsionCalculator(cutoff)]})
+        model_class = BuiltinModelPairInteractions
     else:
-        return BuiltinModel(**kwargs)
+        model_class = BuiltinModel
+
+    model = model_class(aev_computer, neural_networks, energy_shifter, elements, **model_kwargs)
+
+    if pretrained and not use_neurochem_source:
+        assert state_dict_file is not None
+        model.load_state_dict(_fetch_state_dict(state_dict_file, model_index))
+    return model
 
 
-def ANI1x(*args, **kwargs):
+def ANI1x(**kwargs):
     """The ANI-1x model as in `ani-1x_8x on GitHub`_ and `Active Learning Paper`_.
 
     The ANI-1x model is an ensemble of 8 networks that was trained using
@@ -507,10 +560,11 @@ def ANI1x(*args, **kwargs):
         https://aip.scitation.org/doi/abs/10.1063/1.5023802
     """
     info_file = 'ani-1x_8x.info'
-    return _build_neurochem_model(*args, **kwargs, info_file_path=info_file)
+    state_dict_file = 'ani1x_state_dict.pt'
+    return _load_ani_model(state_dict_file, info_file, **kwargs)
 
 
-def ANI1ccx(*args, **kwargs):
+def ANI1ccx(**kwargs):
     """The ANI-1ccx model as in `ani-1ccx_8x on GitHub`_ and `Transfer Learning Paper`_.
 
     The ANI-1ccx model is an ensemble of 8 networks that was trained
@@ -526,10 +580,11 @@ def ANI1ccx(*args, **kwargs):
         https://doi.org/10.26434/chemrxiv.6744440.v1
     """
     info_file = 'ani-1ccx_8x.info'
-    return _build_neurochem_model(*args, **kwargs, info_file_path=info_file)
+    state_dict_file = 'ani1ccx_state_dict.pt'
+    return _load_ani_model(state_dict_file, info_file, **kwargs)
 
 
-def ANI2x(*args, **kwargs):
+def ANI2x(**kwargs):
     """The ANI-2x model as in `ANI2x Paper`_ and `ANI2x Results on GitHub`_.
 
     The ANI-2x model is an ensemble of 8 networks that was trained on the
@@ -544,4 +599,5 @@ def ANI2x(*args, **kwargs):
         https://doi.org/10.26434/chemrxiv.11819268.v1
     """
     info_file = 'ani-2x_8x.info'
-    return _build_neurochem_model(*args, **kwargs, info_file_path=info_file)
+    state_dict_file = 'ani2x_state_dict.pt'
+    return _load_ani_model(state_dict_file, info_file, **kwargs)
