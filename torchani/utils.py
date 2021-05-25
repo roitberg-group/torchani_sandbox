@@ -199,14 +199,14 @@ class EnergyShifter(torch.nn.Module):
         """(species, molecular energies)->(species, molecular energies + sae)
         """
         species, energies = species_energies
-        sae = self._calc_atomic_saes(species).sum(dim=1)
+        sae = self._atomic_saes(species).sum(dim=1)
 
         if self.fit_intercept:
             sae += self.self_energies[-1]
         return SpeciesEnergies(species, energies + sae)
 
     @torch.jit.export
-    def _calc_atomic_saes(self, species: Tensor) -> Tensor:
+    def _atomic_saes(self, species: Tensor) -> Tensor:
         # Compute atomic self energies for a set of species.
         self_atomic_energies = self.self_energies[species]
         self_atomic_energies = self_atomic_energies.masked_fill(species == -1, 0.0)
@@ -226,7 +226,7 @@ class EnergyShifter(torch.nn.Module):
             :class:`torch.Tensor`: 1D vector in shape ``(conformations,)``
             for molecular self energies.
         """
-        sae = self._calc_atomic_saes(species).sum(dim=1)
+        sae = self._atomic_saes(species).sum(dim=1)
         if self.fit_intercept:
             sae += self.self_energies[-1]
         return sae
