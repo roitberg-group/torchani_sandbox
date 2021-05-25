@@ -488,7 +488,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     aev_computer, neural_networks, energy_shifter, elements = components
 
     model_class: Type[BuiltinModel]
-    if external_neighborlist is not None:
+    if external_neighborlist:
         model_class = BuiltinModelExternalInterface
     else:
         model_class = BuiltinModel
