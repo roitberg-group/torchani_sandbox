@@ -43,6 +43,9 @@ from .compat import Final
 from . import atomics
 
 
+NN = Union[ANIModel, Ensemble]
+
+
 class SpeciesEnergiesQBC(NamedTuple):
     species: Tensor
     energies: Tensor
@@ -57,7 +60,7 @@ class BuiltinModel(Module):
 
     def __init__(self,
                  aev_computer: AEVComputer,
-                 neural_networks,
+                 neural_networks: NN,
                  energy_shifter,
                  elements: Sequence[str],
                  periodic_table_index: bool = False):
@@ -105,70 +108,56 @@ class BuiltinModel(Module):
 
         Returns:
             species_energies: energies for the given configurations
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            will be in Hartree.
         """
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-
-        # check if unknown species are included
-        if species_coordinates[0].ge(self.aev_computer.num_species).any():
-            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
-
-        species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
-        species_energies = self.neural_networks(species_aevs)
-        return self.energy_shifter(species_energies)
+        in_species, species_idx, coordinates = self._get_species_and_indices(species_coordinates)
+        aevs = self.aev_computer((species_idx, coordinates), cell=cell, pbc=pbc).aevs
+        energies = self.neural_networks((species_idx, aevs)).energies
+        energies = self.energy_shifter((species_idx, energies)).energies
+        return SpeciesEnergies(in_species, energies)
 
     @torch.jit.export
+    def _get_species_and_indices(self, species_coordinates: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
+        in_species, coordinates = species_coordinates
+
+        if self.periodic_table_index:
+            species_idx = self.species_converter(species_coordinates).species
+        else:
+            species_idx = in_species.clone()
+
+        if (species_idx >= self.aev_computer.num_species).any():
+            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
+
+        return in_species, species_idx, coordinates
+
     def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                         cell: Optional[Tensor] = None,
                         pbc: Optional[Tensor] = None, average: bool = True) -> SpeciesEnergies:
         """Calculates predicted atomic energies of all atoms in a molecule
 
-        ..warning::
-            Since this function does not call ``__call__`` directly,
-            hooks are not registered and profiling is not done correctly by
-            pytorch on it. It is meant as a convenience function for analysis
-             and active learning.
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            will be in Hartree.
-
         Args:
             species_coordinates: minibatch of configurations
             cell: the cell used in PBC computation, set to None if PBC is not enabled
             pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
+            average: If True (the default) it returns the average over all models
+                in the ensemble, should there be more than one (shape (C, A)),
+                otherwise it returns one atomic energy per model (shape (M, C, A)).
 
         Returns:
             species_atomic_energies: species and energies for the given configurations
                 note that the shape of species is (C, A), where C is
                 the number of configurations and A the number of atoms, and
                 the shape of energies is (C, A) for a BuiltinModel.
-
-        If average is True (the default) it returns the average over all models
-        in the ensemble, should there be more than one (shape (C, A)),
-        otherwise it returns one atomic energy per model (shape (M, C, A)).
         """
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
+        in_species, species_idx, coordinates = self._get_species_and_indices(species_coordinates)
+        aevs = self.aev_computer((species_idx, coordinates), cell=cell, pbc=pbc).aevs
+        atomic_energies = self.neural_networks._atomic_energies((species_idx, aevs))
+        atomic_energies += self.energy_shifter._atomic_saes(species_idx)
 
-        species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
-
-        atomic_energies = self.neural_networks._atomic_energies((species, aevs))
-
-        atomic_saes = self.energy_shifter._calc_atomic_saes(species)
-
-        # shift all atomic energies individually
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
-
-        assert atomic_saes.shape == atomic_energies[0].shape
-
-        atomic_energies += atomic_saes
         if average:
-            return SpeciesEnergies(species, atomic_energies.mean(dim=0))
-        return SpeciesEnergies(species, atomic_energies)
+            atomic_energies = atomic_energies.mean(dim=0)
+        return SpeciesEnergies(in_species, atomic_energies)
 
     # unfortunately this is an UGLY workaround to a torchscript bug
     @torch.jit.export
@@ -184,7 +173,7 @@ class BuiltinModel(Module):
             kwargs: ase.Calculator kwargs
 
         Returns:
-            calculator (:class:`int`): A calculator to be used with ASE
+            calculator (:class:`ase.Calculator`): A calculator to be used with ASE
         """
         from . import ase
         return ase.Calculator(self.get_chemical_symbols(), self, **kwargs)
@@ -216,15 +205,6 @@ class BuiltinModel(Module):
                          pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         """Calculates predicted energies of all member modules
 
-        ..warning::
-            Since this function does not call ``__call__`` directly,
-            hooks are not registered and profiling is not done correctly by
-            pytorch on it. It is meant as a convenience function for analysis
-             and active learning.
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            will be in Hartree.
-
         Args:
             species_coordinates: minibatch of configurations
             cell: the cell used in PBC computation, set to None if PBC is not enabled
@@ -232,25 +212,13 @@ class BuiltinModel(Module):
 
         Returns:
             species_energies: species and energies for the given configurations
-                note that the shape of species is (C, A), where C is
-                the number of configurations and A the number of atoms, and
-                the shape of energies is (M, C), where M is the number
-                of modules in the ensemble
+                shape of species is (C, A), where C is the number of
+                configurations and A the number of atoms, and shape of energies
+                is (M, C), where M is the number of modules in the ensemble.
 
         """
-        assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-        species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
-        member_outputs = []
-        for nnp in self.neural_networks:
-            # hint for JIT, this function can only be called if neural_networks
-            # is an ensemble and not an ANIModel
-            assert not isinstance(nnp, str)
-            unshifted_energies = nnp((species, aevs)).energies
-            shifted_energies = self.energy_shifter((species, unshifted_energies)).energies
-            member_outputs.append(shifted_energies.unsqueeze(0))
-        return SpeciesEnergies(species, torch.cat(member_outputs, dim=0))
+        species, members_energies = self.atomic_energies(species_coordinates, average=False)
+        return SpeciesEnergies(species, members_energies.sum(-1))
 
     @torch.jit.export
     def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -263,15 +231,6 @@ class BuiltinModel(Module):
 
         .. _less-is-more:
             https://aip.scitation.org/doi/10.1063/1.5023802
-
-        ..warning::
-            Since this function does not call ``__call__`` directly,
-            hooks are not registered and profiling is not done correctly by
-            pytorch on it. It is meant as a convenience function for analysis
-             and active learning.
-
-        .. note:: The coordinates, and cell are in Angstrom, and the energies
-            and qbc factors will be in Hartree.
 
         Args:
             species_coordinates: minibatch of configurations
@@ -421,7 +380,7 @@ def _get_component_modules(state_dict_file: str,
     aev_computer = aev_maker(**aev_computer_kwargs)
     atomic_networks = OrderedDict([(e, atomic_maker(e)) for e in elements])
 
-    neural_networks: Union[ANIModel, Ensemble]
+    neural_networks: NN
     if model_index is None:
         neural_networks = Ensemble([ANIModel(deepcopy(atomic_networks)) for _ in range(ensemble_size)])
     else:
