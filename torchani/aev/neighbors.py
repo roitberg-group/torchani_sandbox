@@ -123,6 +123,8 @@ class BaseNeighborlist(torch.nn.Module):
 
 class FullPairwise(BaseNeighborlist):
 
+    default_shift_values: Tensor
+
     def __init__(self, cutoff: float):
         """Compute pairs of atoms that are neighbors, uses pbc depending on
         weather pbc.any() is True or not
@@ -132,7 +134,6 @@ class FullPairwise(BaseNeighborlist):
         """
         super().__init__(cutoff)
         self.register_buffer('default_shift_values', torch.tensor(0.0), persistent=False)
-        self.default_shift_values: Tensor
 
     def forward(self, species: Tensor, coordinates: Tensor, cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> Tuple[Tensor, Union[Tensor, None], Tensor, Tensor]:
@@ -861,11 +862,11 @@ class CellList(BaseNeighborlist):
         self.old_values_are_cached = True
 
     def reset_cached_values(self) -> None:
-        dtype = self.cell_diagonal.dtype
+        float_dtype = self.cell_diagonal.dtype
         device = self.cell_diagonal.device
         self._cache_values(torch.zeros(1, dtype=torch.long, device=device),
                            torch.zeros(1, dtype=torch.long, device=device),
-                           torch.zeros(1, dtype=dtype, device=device))
+                           torch.zeros(1, dtype=float_dtype, device=device))
         self.old_values_are_cached = False
 
     def _need_new_list(self, coordinates: Tensor) -> bool:
