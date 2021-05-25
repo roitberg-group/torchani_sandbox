@@ -35,7 +35,7 @@ from collections import OrderedDict
 import torch
 from torch import Tensor
 from torch.nn import Module
-from typing import Tuple, Optional, NamedTuple, Sequence, Union, Type, Any
+from typing import Tuple, Optional, NamedTuple, Sequence, Union, Type
 from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from .aev import AEVComputer
@@ -56,7 +56,7 @@ class BuiltinModel(Module):
     periodic_table_index: Final[bool]
 
     def __init__(self,
-                 aev_computer,
+                 aev_computer: AEVComputer,
                  neural_networks,
                  energy_shifter,
                  elements: Sequence[str],
@@ -263,8 +263,10 @@ class BuiltinEnsemble(BuiltinModel):
                 calculations
         """
         ret = BuiltinModel(self.aev_computer,
-                           self.neural_networks[index], self.energy_shifter,
-                           self.get_chemical_symbols(), self.periodic_table_index)
+                           self.neural_networks[index],
+                           self.energy_shifter,
+                           self.get_chemical_symbols(),
+                           self.periodic_table_index)
         return ret
 
     @torch.jit.export
@@ -368,7 +370,7 @@ class BuiltinEnsemble(BuiltinModel):
 def _get_component_modules(state_dict_file: str,
                            model_index: Optional[int] = None,
                            use_cuda_extension: bool = False,
-                           ensemble_size: int = 8) -> Tuple[Module, Module, Module, Sequence[str]]:
+                           ensemble_size: int = 8) -> Tuple[AEVComputer, Module, EnergyShifter, Sequence[str]]:
     # This generates ani-style architectures without neurochem
     name = state_dict_file.split('_')[0]
     elements: Tuple[str, ...]
@@ -456,15 +458,15 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         assert state_dict_file is not None
         components = _get_component_modules(state_dict_file, model_index, use_cuda_extension)
 
-    elements, aev_computer, neural_networks, energy_shifter = components
+    aev_computer, neural_networks, energy_shifter, elements = components
 
-    model_class: Type[Any]
+    model_class: Union[Type[BuiltinEnsemble], Type[BuiltinModel]]
     if model_index is None:
         model_class = BuiltinEnsemble
     else:
         model_class = BuiltinModel
 
-    model = model_class(elements, aev_computer, neural_networks, energy_shifter, **model_kwargs)
+    model = model_class(aev_computer, neural_networks, energy_shifter, elements, **model_kwargs)
 
     if pretrained and not use_neurochem_source:
         assert state_dict_file is not None
