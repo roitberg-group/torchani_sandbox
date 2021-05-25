@@ -408,7 +408,7 @@ def _fetch_state_dict(state_dict_file: str,
     if local:
         return torch.load(state_dict_file)
 
-    model_dir = Path(__file__).parent.joinpath('resources').as_posix()
+    model_dir = Path(__file__).parent.joinpath('resources/state_dicts').as_posix()
     if not path_is_writable(model_dir):
         model_dir = os.path.expanduser('~/.local/torchani/')
 
