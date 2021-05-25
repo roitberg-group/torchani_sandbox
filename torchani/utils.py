@@ -1,3 +1,5 @@
+import tempfile
+from pathlib import Path
 import torch
 from torch import Tensor
 import torch.utils.data
@@ -5,7 +7,7 @@ import math
 import os
 import warnings
 from collections import defaultdict
-from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict
+from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
 
@@ -27,6 +29,18 @@ def check_openmp_threads():
         num_threads = int(os.environ["OMP_NUM_THREADS"])
         assert num_threads > 0
         print(f"OMP_NUM_THREADS is set as {num_threads}")
+
+
+def path_is_writable(path: Union[str, Path]) -> bool:
+    # check if a path is writeable, adapted from:
+    # https://stackoverflow.com/questions/2113427/determining-whether-a-directory-is-writeable
+    try:
+        testfile = tempfile.TemporaryFile(dir=path)
+        testfile.close()
+    except (OSError, IOError):
+        testfile.close()
+        return False
+    return True
 
 
 def cumsum_from_zero(input_: Tensor) -> Tensor:
