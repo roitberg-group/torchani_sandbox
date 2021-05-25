@@ -7,8 +7,7 @@ from ..utils import map_to_central, cumsum_from_zero
 from ..compat import Final
 
 
-def _parse_neighborlist(neighborlist: Module, cutoff: float):
-    assert isinstance(neighborlist, Module)
+def _parse_neighborlist(neighborlist: Optional[Union[Module, str]], cutoff: float):
     if neighborlist == 'full_pairwise':
         neighborlist = FullPairwise(cutoff)
     elif neighborlist == 'cell_list':
@@ -17,6 +16,8 @@ def _parse_neighborlist(neighborlist: Module, cutoff: float):
         neighborlist = CellList(cutoff=cutoff, verlet=True)
     elif neighborlist is None:
         neighborlist = BaseNeighborlist(cutoff)
+    else:
+        assert isinstance(neighborlist, Module)
     return neighborlist
 
 
