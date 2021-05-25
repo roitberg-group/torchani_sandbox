@@ -5,7 +5,7 @@ from torch import Tensor
 import torch.utils.data
 import math
 from collections import defaultdict
-from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict
+from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
 
