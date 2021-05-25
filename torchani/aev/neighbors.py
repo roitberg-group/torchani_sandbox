@@ -36,8 +36,8 @@ class BaseNeighborlist(torch.nn.Module):
         """
         super().__init__()
         self.cutoff = cutoff
-        self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
-        self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool))
+        self.register_buffer('default_cell', torch.eye(3, dtype=torch.float), persistent=False)
+        self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool), persistent=False)
         self.default_cell: Tensor
         self.default_pbc: Tensor
 
@@ -131,7 +131,7 @@ class FullPairwise(BaseNeighborlist):
             cutoff (float): the cutoff inside which atoms are considered pairs
         """
         super().__init__(cutoff)
-        self.register_buffer('default_shift_values', torch.tensor(0.0))
+        self.register_buffer('default_shift_values', torch.tensor(0.0), persistent=False)
         self.default_shift_values: Tensor
 
     def forward(self, species: Tensor, coordinates: Tensor, cell: Optional[Tensor] = None,
@@ -270,23 +270,23 @@ class CellList(BaseNeighborlist):
         assert buckets_per_cutoff == 1, "Cell list currently only supports one bucket per cutoff"
         self.constant_volume = constant_volume
         self.verlet = verlet
-        self.register_buffer('spherical_factor', torch.full(size=(3, ), fill_value=1.0))
-        self.register_buffer('cell_diagonal', torch.zeros(1))
-        self.register_buffer('cell_inverse', torch.zeros(1))
-        self.register_buffer('total_buckets', torch.zeros(1, dtype=torch.long))
+        self.register_buffer('spherical_factor', torch.full(size=(3, ), fill_value=1.0), persistent=False)
+        self.register_buffer('cell_diagonal', torch.zeros(1), persistent=False)
+        self.register_buffer('cell_inverse', torch.zeros(1), persistent=False)
+        self.register_buffer('total_buckets', torch.zeros(1, dtype=torch.long), persistent=False)
         self.register_buffer('scaling_for_flat_index',
-                             torch.zeros(1, dtype=torch.long))
+                             torch.zeros(1, dtype=torch.long), persistent=False)
         self.register_buffer('shape_buckets_grid',
-                             torch.zeros(1, dtype=torch.long))
+                             torch.zeros(1, dtype=torch.long), persistent=False)
         self.register_buffer('vector_idx_to_flat',
-                             torch.zeros(1, dtype=torch.long))
+                             torch.zeros(1, dtype=torch.long), persistent=False)
         self.register_buffer('translation_cases',
-                             torch.zeros(1, dtype=torch.long))
+                             torch.zeros(1, dtype=torch.long), persistent=False)
         self.register_buffer('vector_index_displacement',
-                             torch.zeros(1, dtype=torch.long))
+                             torch.zeros(1, dtype=torch.long), persistent=False)
         self.register_buffer('translation_displacement_indices',
-                             torch.zeros(1, dtype=torch.long))
-        self.register_buffer('bucket_length_lower_bound', torch.zeros(1))
+                             torch.zeros(1, dtype=torch.long), persistent=False)
+        self.register_buffer('bucket_length_lower_bound', torch.zeros(1), persistent=False)
 
         if skin is None:
             if verlet:
@@ -295,13 +295,13 @@ class CellList(BaseNeighborlist):
             else:
                 # default value for non dynamically updated neighborlist
                 skin = 0.0
-        self.register_buffer('skin', torch.tensor(skin))
+        self.register_buffer('skin', torch.tensor(skin), persistent=False)
 
         # only used for dynamic update
-        self.register_buffer('old_cell_diagonal', torch.zeros(1))
-        self.register_buffer('old_shift_indices', torch.zeros(1, dtype=torch.long))
-        self.register_buffer('old_atom_pairs', torch.zeros(1, dtype=torch.long))
-        self.register_buffer('old_coordinates', torch.zeros(1))
+        self.register_buffer('old_cell_diagonal', torch.zeros(1), persistent=False)
+        self.register_buffer('old_shift_indices', torch.zeros(1, dtype=torch.long), persistent=False)
+        self.register_buffer('old_atom_pairs', torch.zeros(1, dtype=torch.long), persistent=False)
+        self.register_buffer('old_coordinates', torch.zeros(1), persistent=False)
 
         # buckets_per_cutoff is also the number of buckets that is scanned in
         # each direction. It determines how fine grained the grid is, with
@@ -372,8 +372,8 @@ class CellList(BaseNeighborlist):
         self._register_bucket_length_lower_bound()
 
         # variables are not set until we have received a cell at least once
-        self.register_buffer('cell_variables_are_set', torch.tensor(False, dtype=torch.bool))
-        self.register_buffer('old_values_are_cached', torch.tensor(False, dtype=torch.bool))
+        self.cell_variables_are_set = False
+        self.old_values_are_cached = False
 
     @torch.jit.export
     def _recast_long_buffers(self):
@@ -595,7 +595,7 @@ class CellList(BaseNeighborlist):
         self.translation_cases[-1, -1, 1:-1] = 16
         self.translation_cases[-1, 1:-1, 1:-1] = 17
 
-        self.cell_variables_are_set = torch.tensor(True, dtype=torch.bool, device=current_device)
+        self.cell_variables_are_set = True
 
     @staticmethod
     def _pad_circular(x: Tensor) -> Tensor:
@@ -857,7 +857,7 @@ class CellList(BaseNeighborlist):
             self.old_shift_indices = shift_indices.detach()
         self.old_coordinates = coordinates.detach()
         self.old_cell_diagonal = self.cell_diagonal.detach()
-        self.old_values_are_cached = torch.tensor(True, dtype=torch.bool, device=coordinates.device)
+        self.old_values_are_cached = True
 
     def reset_cached_values(self):
         dtype = self.cell_diagonal.dtype
@@ -865,7 +865,7 @@ class CellList(BaseNeighborlist):
         self._cache_values(torch.zeros(1, dtype=torch.long, device=device),
                            torch.zeros(1, dtype=torch.long, device=device),
                            torch.zeros(1, dtype=dtype, device=device))
-        self.old_values_are_cached = torch.tensor(False, dtype=torch.bool, device=device)
+        self.old_values_are_cached = False
 
     def _need_new_list(self, coordinates: Tensor) -> bool:
         if not self.verlet:
