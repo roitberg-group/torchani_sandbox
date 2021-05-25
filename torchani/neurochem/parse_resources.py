@@ -84,6 +84,8 @@ def _get_component_modules(info_file: str,
     # this creates modules from a neurochem info path,
     # since for neurochem architecture and parameters are kind of mixed up,
     # this doesn't support non pretrained models, it directly outputs a pretrained module
+    if aev_computer_kwargs is None:
+        aev_computer_kwargs = dict()
     const_file, sae_file, ensemble_prefix, ensemble_size = parse_neurochem_resources(info_file)
     consts = Constants(const_file)
     elements = consts.species

@@ -24,6 +24,8 @@ def _parse_neighborlist(neighborlist, cutoff):
 class BaseNeighborlist(torch.nn.Module):
 
     cutoff: Final[float]
+    default_pbc: Tensor
+    default_cell: Tensor
 
     def __init__(self, cutoff: float):
         """Compute pairs of atoms that are neighbors, uses pbc depending on
@@ -38,8 +40,6 @@ class BaseNeighborlist(torch.nn.Module):
         self.cutoff = cutoff
         self.register_buffer('default_cell', torch.eye(3, dtype=torch.float), persistent=False)
         self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool), persistent=False)
-        self.default_cell: Tensor
-        self.default_pbc: Tensor
 
     @torch.jit.export
     def _compute_bounding_cell(self, coordinates: Tensor,
@@ -412,6 +412,7 @@ class CellList(BaseNeighborlist):
             # and every time for variable V, (constant P, NPT) simulations
             self._setup_variables(cell.detach())
 
+        shift_indices: Optional[Tensor]
         if self.verlet and self.old_values_are_cached and (not self._need_new_list(coordinates_displaced.detach())):
             # If a new cell list is not needed use the old cached values
             # IMPORTANT: here cached values should NOT be updated, moving cache
@@ -849,7 +850,7 @@ class CellList(BaseNeighborlist):
         return neighbor_translation_types
 
     def _cache_values(self, atom_pairs: Tensor,
-                            shift_indices: Union[Tensor, None],
+                            shift_indices: Optional[Tensor],
                             coordinates: Tensor):
 
         self.old_atom_pairs = atom_pairs.detach()
@@ -859,7 +860,7 @@ class CellList(BaseNeighborlist):
         self.old_cell_diagonal = self.cell_diagonal.detach()
         self.old_values_are_cached = True
 
-    def reset_cached_values(self):
+    def reset_cached_values(self) -> None:
         dtype = self.cell_diagonal.dtype
         device = self.cell_diagonal.device
         self._cache_values(torch.zeros(1, dtype=torch.long, device=device),
@@ -875,5 +876,5 @@ class CellList(BaseNeighborlist):
         box_scaling = self.cell_diagonal / self.old_cell_diagonal
         delta = coordinates - self.old_coordinates * box_scaling
         dist_squared = delta.pow(2).sum(-1)
-        need_new_list = (dist_squared > (self.skin / 2) ** 2).any()
-        return need_new_list
+        need_new_list = (dist_squared > (self.skin / 2) ** 2).any().item()
+        return bool(need_new_list)

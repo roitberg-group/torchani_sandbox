@@ -371,6 +371,7 @@ class BuiltinModelExternalInterface(BuiltinModel):
             diff_vectors = coords0 - coords1 + shift_values
             distances = diff_vectors.norm(2, -1)
 
+        assert neighbors is not None
         aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
         species_energies = self.neural_networks((species, aevs))
         return self.energy_shifter(species_energies)
@@ -398,6 +399,8 @@ def _get_component_modules(state_dict_file: str,
                            model_index: Optional[int] = None,
                            aev_computer_kwargs: Optional[Dict[str, Any]] = None,
                            ensemble_size: int = 8) -> Tuple[AEVComputer, Module, EnergyShifter, Sequence[str]]:
+    if aev_computer_kwargs is None:
+        aev_computer_kwargs = dict()
     # This generates ani-style architectures without neurochem
     name = state_dict_file.split('_')[0]
     elements: Tuple[str, ...]

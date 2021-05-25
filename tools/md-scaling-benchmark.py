@@ -248,15 +248,12 @@ if __name__ == "__main__":
             plot_many(args.path_to_files, comment, show)
     else:
         device = torch.device(args.device)
-        sizes: Union[List[int], np.ndarray]
+        sizes: Union[List[int], np.ndarray] = []
         if not path_to_xyz:
             num_atoms = 3  # for water
-            sizes = (
-                num_atoms * torch.arange(4, args.box_repeats + 1)**3).numpy().tolist()
+            sizes = (num_atoms * torch.arange(4, args.box_repeats + 1)**3).numpy().tolist()
         else:
             assert isinstance(path_to_xyz, Path)
-            sizes = []
-
             xyz_files: Union[List[Path], np.ndarray]
 
             xyz_files = [
