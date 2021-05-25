@@ -274,18 +274,12 @@ class CellList(BaseNeighborlist):
         self.register_buffer('cell_diagonal', torch.zeros(1), persistent=False)
         self.register_buffer('cell_inverse', torch.zeros(1), persistent=False)
         self.register_buffer('total_buckets', torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('scaling_for_flat_index',
-                             torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('shape_buckets_grid',
-                             torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('vector_idx_to_flat',
-                             torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('translation_cases',
-                             torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('vector_index_displacement',
-                             torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('translation_displacement_indices',
-                             torch.zeros(1, dtype=torch.long), persistent=False)
+        self.register_buffer('scaling_for_flat_index', torch.zeros(1, dtype=torch.long), persistent=False)
+        self.register_buffer('shape_buckets_grid', torch.zeros(1, dtype=torch.long), persistent=False)
+        self.register_buffer('vector_idx_to_flat', torch.zeros(1, dtype=torch.long), persistent=False)
+        self.register_buffer('translation_cases', torch.zeros(1, dtype=torch.long), persistent=False)
+        self.register_buffer('vector_index_displacement', torch.zeros(1, dtype=torch.long), persistent=False)
+        self.register_buffer('translation_displacement_indices', torch.zeros(1, dtype=torch.long), persistent=False)
         self.register_buffer('bucket_length_lower_bound', torch.zeros(1), persistent=False)
 
         if skin is None:
@@ -297,7 +291,7 @@ class CellList(BaseNeighborlist):
                 skin = 0.0
         self.register_buffer('skin', torch.tensor(skin), persistent=False)
 
-        # only used for dynamic update
+        # only used for verlet option
         self.register_buffer('old_cell_diagonal', torch.zeros(1), persistent=False)
         self.register_buffer('old_shift_indices', torch.zeros(1, dtype=torch.long), persistent=False)
         self.register_buffer('old_atom_pairs', torch.zeros(1, dtype=torch.long), persistent=False)
@@ -361,8 +355,7 @@ class CellList(BaseNeighborlist):
                                                      extra_translation_displacements), dim=0)
         self.translation_displacement_indices = translation_displacement_indices
 
-        assert self.translation_displacement_indices.shape == torch.Size(
-            [18, 3])
+        assert self.translation_displacement_indices.shape == torch.Size([18, 3])
         # This is 26 for 2 buckets and 17 for 1 bucket
         # This is necessary for the image - atom map and atom - image map
         self.num_neighbors = len(self.vector_index_displacement)
@@ -469,7 +462,8 @@ class CellList(BaseNeighborlist):
         # this gives A*, A(f) , "A(f' <= f)" = Ac(f) (cumulative) f being the
         # flat bucket index, A being the number of atoms for that bucket,
         # and Ac being the cumulative number of atoms up to that bucket
-        flat_bucket_count, flat_bucket_cumcount, max_in_bucket = self._get_atoms_in_flat_bucket_counts(atom_flat_index)
+        out_in_flat_bucket = self._get_atoms_in_flat_bucket_counts(atom_flat_index)
+        flat_bucket_count, flat_bucket_cumcount, max_in_bucket = out_in_flat_bucket
 
         # 2) this are indices WITHIN the central buckets
         within_image_pairs = self._get_within_image_pairs(flat_bucket_count, flat_bucket_cumcount, max_in_bucket)
