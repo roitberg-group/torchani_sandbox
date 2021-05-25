@@ -8,6 +8,7 @@ from torch.nn import Module
 from distutils import dir_util
 from pathlib import Path
 from ..aev import AEVComputer
+from ..utils import EnergyShifter
 from .neurochem import Constants, load_model_ensemble, load_model, load_sae
 
 
@@ -79,7 +80,7 @@ def _get_resources(resource_path, info_file):
 
 def _get_component_modules(info_file: str,
                            model_index: Optional[int] = None,
-                           use_cuda_extension: bool = False) -> Tuple[Module, Module, Module, Sequence[str]]:
+                           use_cuda_extension: bool = False) -> Tuple[AEVComputer, Module, EnergyShifter, Sequence[str]]:
     # this creates modules from a neurochem info path,
     # since for neurochem architecture and parameters are kind of mixed up,
     # this doesn't support non pretrained models, it directly outputs a pretrained module
