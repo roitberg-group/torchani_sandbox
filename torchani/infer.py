@@ -172,6 +172,7 @@ class InferModelBase(torch.nn.Module):
         # or the species has changed
         if self.last_species_ptr is None or self.last_species_ptr != species.data_ptr():
             self.set_species(species)
+            self.last_species_ptr = species.data_ptr()
 
     @torch.jit.export
     def set_species(self, species):
