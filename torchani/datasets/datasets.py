@@ -256,6 +256,12 @@ class AniH5Dataset(Mapping):
     def iter_conformers(self,
                         include_properties: Optional[Sequence[str]] = None,
                         strict: bool = False) -> Iterator[Dict[str, ndarray]]:
+        for _, _, c in self.iter_key_idx_conformers(include_properties, strict):
+            yield c
+
+    def iter_key_idx_conformers(self,
+                                include_properties: Optional[Sequence[str]] = None,
+                                strict: bool = False) -> Tuple[str, int, Iterator[Dict[str, ndarray]]]:
 
         element_keys, non_element_keys = self._properties_into_keys(include_properties)
 
@@ -266,7 +272,7 @@ class AniH5Dataset(Mapping):
             for idx in range(size):
                 out_conformer_group = {k: conformer_group[k] for k in element_keys}
                 out_conformer_group.update({k: conformer_group[k][idx] for k in non_element_keys})
-                yield out_conformer_group
+                yield k, idx, out_conformer_group
 
     def _properties_into_keys(self,
                               properties: Optional[Sequence[str]] = None) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
