@@ -1,4 +1,5 @@
 import torch
+from pathlib import Path
 from torch import Tensor
 import math
 import warnings
@@ -55,6 +56,7 @@ def tensor_from_xyz(path):
 
 
 def tensor_to_xyz(path, species_coordinates: Tuple[Tensor, Tensor], cell: Optional[Tensor] = None, no_exponent: bool = True):
+    path = Path(path).resolve()
     # input species must be atomic numbers
     species, coordinates = species_coordinates
     num_atoms = species.shape[1]
