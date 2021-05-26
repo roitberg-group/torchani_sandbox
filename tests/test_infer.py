@@ -26,6 +26,8 @@ class TestInfer(TestCase):
 
     def _test(self, model_ref, model_infer, jit=False):
         files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
+        # Skip 6W8H.pdb (slow on cpu) if device is cpu
+        files = files[:-1] if self.device == 'cpu' else files
         for file in files:
             filepath = os.path.join(self.path, f'../dataset/pdb/{file}')
             mol = read(filepath)
