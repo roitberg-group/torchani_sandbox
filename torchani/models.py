@@ -61,7 +61,7 @@ class BuiltinModel(Module):
     def __init__(self,
                  aev_computer: AEVComputer,
                  neural_networks: NN,
-                 energy_shifter,
+                 energy_shifter: EnergyShifter,
                  elements: Sequence[str],
                  periodic_table_index: bool = False):
 
@@ -274,7 +274,7 @@ class BuiltinModel(Module):
 def _get_component_modules(state_dict_file: str,
                            model_index: Optional[int] = None,
                            use_cuda_extension: bool = False,
-                           ensemble_size: int = 8) -> Tuple[AEVComputer, Module, EnergyShifter, Sequence[str]]:
+                           ensemble_size: int = 8) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
     # This generates ani-style architectures without neurochem
     name = state_dict_file.split('_')[0]
     elements: Tuple[str, ...]
@@ -363,7 +363,6 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         components = _get_component_modules(state_dict_file, model_index, use_cuda_extension)
 
     aev_computer, neural_networks, energy_shifter, elements = components
-
     model = BuiltinModel(aev_computer, neural_networks, energy_shifter, elements, **model_kwargs)
 
     if pretrained and not use_neurochem_source:
