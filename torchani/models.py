@@ -35,7 +35,7 @@ from collections import OrderedDict
 import torch
 from torch import Tensor
 from torch.nn import Module
-from typing import Tuple, Optional, NamedTuple, Sequence, Union, Type
+from typing import Tuple, Optional, NamedTuple, Sequence, Union
 from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from .aev import AEVComputer
@@ -215,7 +215,8 @@ class BuiltinModel(Module):
                 is (M, C), where M is the number of modules in the ensemble.
 
         """
-        species, members_energies = self.atomic_energies(species_coordinates, average=False)
+        # NOTE: cell and pbc have to be specified due to JIT bug
+        species, members_energies = self.atomic_energies(species_coordinates, cell=None, pbc=None, average=False)
         return SpeciesEnergies(species, members_energies.sum(-1))
 
     @torch.jit.export
@@ -268,89 +269,6 @@ class BuiltinModel(Module):
             length (:class:`int`): Number of networks in the ensemble
         """
         return self.neural_networks.size
-
-
-class BuiltinModelExternalInterface(BuiltinModel):
-    # TODO: Most BuiltinModel functions fail here, only forward works this
-    # It will be necessary to rewrite that code for this use case if we
-    # want those functions in amber, I'm looking for a different solution though
-
-    assume_screened_input: Final[bool]
-
-    def __init__(self, *args, **kwargs):
-        assume_screened_input = kwargs.pop('assume_screened_input', False)
-        super().__init__(*args, **kwargs)
-        self.assume_screened_input = assume_screened_input
-
-    def forward(self, species_coordinates: Tuple[Tensor, Tensor],
-                neighbors: Optional[Tensor] = None,
-                shift_values: Optional[Tensor] = None) -> SpeciesEnergies:
-        # It is convenient to keep these arguments optional due to JIT, but
-        # actually they are needed for this class
-        assert neighbors is not None
-        assert shift_values is not None
-
-        # check consistency of shapes of neighborlist
-        assert neighbors.dim() == 2 and neighbors.shape[0] == 2
-        assert shift_values.dim() == 2 and shift_values.shape[1] == 3
-        assert neighbors.shape[1] == shift_values.shape[0]
-
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-        # check if unknown species are included
-        if species_coordinates[0].ge(self.aev_computer.num_species).any():
-            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
-
-        species, coordinates = species_coordinates
-        # check shapes for correctness
-        assert species.dim() == 2
-        assert coordinates.dim() == 3
-        assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
-
-        if not self.assume_screened_input:
-            # first we screen the input neighbors in case some of the
-            # values are at distances larger than the radial cutoff, or some of
-            # the values are masked with dummy atoms. The first may happen if
-            # the neighborlist uses some sort of skin value to rebuild itself
-            # (as in Loup Verlet lists), which is common in MD programs.
-            cutoff = self.aev_computer.radial_terms.cutoff
-            nl_out = self.aev_computer.neighborlist._screen_with_cutoff(cutoff,
-                                                           coordinates,
-                                                           neighbors,
-                                                           shift_values,
-                                                           (species == -1))
-            neighbors, _, diff_vectors, distances = nl_out
-        else:
-            # if the input neighbors is assumed to be pre screened then we
-            # just calculate the distances and diff_vector here
-            coordinates = coordinates.view(-1, 3)
-            coords0 = coordinates.index_select(0, neighbors[0])
-            coords1 = coordinates.index_select(0, neighbors[1])
-            diff_vectors = coords0 - coords1 + shift_values
-            distances = diff_vectors.norm(2, -1)
-
-        assert neighbors is not None
-        aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
-        species_energies = self.neural_networks((species, aevs))
-        return self.energy_shifter(species_energies)
-
-    @torch.jit.export
-    def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
-                neighbors: Optional[Tensor] = None,
-                shift_values: Optional[Tensor] = None):
-        assert False, "Not implemented for external interface"
-
-    @torch.jit.export
-    def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
-                neighbors: Optional[Tensor] = None,
-                shift_values: Optional[Tensor] = None):
-        assert False, "Not implemented for external interface"
-
-    @torch.jit.export
-    def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
-                neighbors: Optional[Tensor] = None,
-                shift_values: Optional[Tensor] = None):
-        assert False, "Not implemented for external interface"
 
 
 def _get_component_modules(state_dict_file: str,
@@ -434,7 +352,6 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     use_cuda_extension = model_kwargs.pop('use_cuda_extension', False)
     model_index = model_kwargs.pop('model_index', None)
     pretrained = model_kwargs.pop('pretrained', True)
-    external_neighborlist = model_kwargs.pop('external_neighborlist', False)
 
     if use_neurochem_source:
         assert info_file is not None, "Info file is needed to load from a neurochem source"
@@ -447,13 +364,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
 
     aev_computer, neural_networks, energy_shifter, elements = components
 
-    model_class: Type[BuiltinModel]
-    if external_neighborlist:
-        model_class = BuiltinModelExternalInterface
-    else:
-        model_class = BuiltinModel
-
-    model = model_class(aev_computer, neural_networks, energy_shifter, elements, **model_kwargs)
+    model = BuiltinModel(aev_computer, neural_networks, energy_shifter, elements, **model_kwargs)
 
     if pretrained and not use_neurochem_source:
         assert state_dict_file is not None
