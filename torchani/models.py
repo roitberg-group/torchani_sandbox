@@ -99,7 +99,7 @@ class BuiltinModel(Module):
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        """Calculates predicted properties for minibatch of configurations
+        """Calculates predicted energies for minibatch of configurations
 
         Args:
             species_coordinates: minibatch of configurations
@@ -107,7 +107,7 @@ class BuiltinModel(Module):
             pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
 
         Returns:
-            species_energies: energies for the given configurations
+            species_energies: same species as was input, together with energies for the given configurations
         """
         in_species, species_idx, coordinates = self._get_species_and_indices(species_coordinates)
         aevs = self.aev_computer((species_idx, coordinates), cell=cell, pbc=pbc).aevs
@@ -122,13 +122,14 @@ class BuiltinModel(Module):
         if self.periodic_table_index:
             species_idx = self.species_converter(species_coordinates).species
         else:
-            species_idx = in_species.clone()
+            species_idx = in_species
 
         if (species_idx >= self.aev_computer.num_species).any():
             raise ValueError(f'Unknown species found in {species_coordinates[0]}')
 
         return in_species, species_idx, coordinates
-
+ 
+    @torch.jit.export
     def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                         cell: Optional[Tensor] = None,
                         pbc: Optional[Tensor] = None, average: bool = True) -> SpeciesEnergies:
