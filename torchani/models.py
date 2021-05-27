@@ -128,7 +128,7 @@ class BuiltinModel(Module):
             raise ValueError(f'Unknown species found in {species_coordinates[0]}')
 
         return in_species, species_idx, coordinates
- 
+
     @torch.jit.export
     def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                         cell: Optional[Tensor] = None,
