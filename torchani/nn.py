@@ -3,6 +3,7 @@ from collections import OrderedDict
 from torch import Tensor
 from typing import Tuple, NamedTuple, Optional, Sequence
 from . import utils
+from . import infer
 from .compat import Final
 
 
@@ -83,6 +84,9 @@ class ANIModel(torch.nn.ModuleDict):
         output = output.view_as(species)
         return output
 
+    def to_infer_model(self, use_mnp=True):
+        return infer.ANIInferModel(list(self.items()), use_mnp)
+
 
 class Ensemble(torch.nn.ModuleList):
     """Compute the average output of an ensemble of modules."""
@@ -110,6 +114,9 @@ class Ensemble(torch.nn.ModuleList):
         members_atomic_energies = torch.cat(members_list, dim=0)
         # out shape is (M, C, A)
         return members_atomic_energies
+
+    def to_infer_model(self, use_mnp=True):
+        return infer.BmmEnsemble(self, use_mnp)
 
 
 class Sequential(torch.nn.ModuleList):
