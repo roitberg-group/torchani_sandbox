@@ -6,7 +6,7 @@ import math
 import pickle
 import warnings
 import importlib
-from typing import Union, Optional, Dict, Generator, Sequence, Iterator, Tuple, List, Set, Callable
+from typing import Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set, Callable
 from collections import OrderedDict, Counter
 from collections.abc import Mapping
 
@@ -176,7 +176,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
             properties = self.transform(properties)
         return properties
 
-    def __iter__(self) -> Generator[Dict[str, Tensor], None, None]:
+    def __iter__(self) -> Iterator[Dict[str, Tensor]]:
         j = 0
         try:
             while True:
@@ -267,7 +267,7 @@ class AniH5Dataset(Mapping):
 
     def iter_key_idx_conformers(self,
                                 include_properties: Optional[Sequence[str]] = None,
-                                strict: bool = False) -> Tuple[str, int, Iterator[Dict[str, ndarray]]]:
+                                strict: bool = False) -> Iterator[Tuple[str, int, Dict[str, ndarray]]]:
 
         element_keys, non_element_keys = self._properties_into_keys(include_properties)
 
