@@ -108,6 +108,7 @@ class AEVComputer(torch.nn.Module):
         # and only full pairwise neighborlist
         # if a cutoff function is passed, it is used for both radial and
         # angular terms.
+        self.cutoff_fn_type = cutoff_fn
         cutoff_fn = _parse_cutoff_fn(cutoff_fn)
         self.angular_terms = _parse_angular_terms(angular_terms, cutoff_fn, EtaA, Zeta, ShfA, ShfZ, Rca)
         self.radial_terms = _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr)
@@ -161,10 +162,12 @@ class AEVComputer(torch.nn.Module):
         # initialization, it is always necessary to reinitialize in forward at
         # least once, since some tensors may be on CPU at this point**
         empty = torch.empty(0)
-        self.cuaev_computer = torch.classes.cuaev.CuaevComputer(0.0, 0.0, empty, empty, empty, empty, empty, empty, 1)
+        self.cuaev_computer = torch.classes.cuaev.CuaevComputer(0.0, 0.0, empty, empty, empty, empty, empty, empty, 1, True)
 
     @jit_unused_if_no_cuaev()
     def _init_cuaev_computer(self):
+        assert self.cutoff_fn_type in ['cosine', 'smooth'], 'cuaev only supports cosine and smooth cutoff functions'
+        use_cos_cutoff = self.cutoff_fn_type == 'cosine'
         self.cuaev_computer = torch.classes.cuaev.CuaevComputer(self.radial_terms.cutoff,
                                                                 self.angular_terms.cutoff,
                                                                 self.radial_terms.EtaR.flatten(),
@@ -173,7 +176,8 @@ class AEVComputer(torch.nn.Module):
                                                                 self.angular_terms.Zeta.flatten(),
                                                                 self.angular_terms.ShfA.flatten(),
                                                                 self.angular_terms.ShfZ.flatten(),
-                                                                self.num_species)
+                                                                self.num_species,
+                                                                use_cos_cutoff)
 
     @staticmethod
     def _calculate_triu_index(num_species: int) -> Tensor:

@@ -138,6 +138,8 @@ struct AEVScalarParams {
   Tensor Zeta_t;
   Tensor ShfA_t;
   Tensor ShfZ_t;
+  bool use_cos_cutoff;
+
   AEVScalarParams(
       float Rcr,
       float Rca,
@@ -147,7 +149,8 @@ struct AEVScalarParams {
       Tensor Zeta_t,
       Tensor ShfA_t,
       Tensor ShfZ_t,
-      int num_species);
+      int num_species,
+      bool use_cos_cutoff);
 };
 
 struct Result {
@@ -217,7 +220,8 @@ struct CuaevComputer : torch::CustomClassHolder {
       const Tensor& Zeta_t,
       const Tensor& ShfA_t,
       const Tensor& ShfZ_t,
-      int64_t num_species);
+      int64_t num_species,
+      bool use_cos_cutoff);
 
   // TODO add option for simulation only forward, which will initilize result space, and no need to allocate any more.
   Result forward(const Tensor& coordinates_t, const Tensor& species_t) {

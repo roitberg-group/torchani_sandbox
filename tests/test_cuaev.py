@@ -18,7 +18,7 @@ class TestCUAEVNoGPU(TestCase):
 
     def testSimple(self):
         def f(coordinates, species, Rcr: float, Rca: float, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species: int):
-            cuaev_computer = torch.classes.cuaev.CuaevComputer(Rcr, Rca, EtaR.flatten(), ShfR.flatten(), EtaA.flatten(), Zeta.flatten(), ShfA.flatten(), ShfZ.flatten(), num_species)
+            cuaev_computer = torch.classes.cuaev.CuaevComputer(Rcr, Rca, EtaR.flatten(), ShfR.flatten(), EtaA.flatten(), Zeta.flatten(), ShfA.flatten(), ShfZ.flatten(), num_species, True)
             return torch.ops.cuaev.run(coordinates, species, cuaev_computer)
         s = torch.jit.script(f)
         self.assertIn("cuaev::run", str(s.graph))
