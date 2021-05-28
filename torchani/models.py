@@ -67,6 +67,7 @@ from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is
 from .aev import AEVComputer
 from .compat import Final
 from . import atomics
+from . infer import InferModelBase
 
 
 NN = Union[ANIModel, Ensemble]
@@ -123,7 +124,7 @@ class BuiltinModel(Module):
             optimized for inference.
 
             Currently this function assumes that the atomic networks consist of
-            an MLP interleaved with CELU activation functions, all with the same alpha
+            an MLP with CELU activation functions, all with the same alpha.
         """
         self.neural_networks = self.neural_networks.to_infer_model(*args, **kwargs)
         return self
@@ -175,6 +176,7 @@ class BuiltinModel(Module):
         Returns:
             species_energies: tuple of tensors, species and atomic energies
         """
+        assert not isinstance(self.neural_networks, InferModelBase), "Method not supported for inference-optimized models"
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         atomic_energies = self.neural_networks._atomic_energies(species_aevs)
@@ -205,6 +207,7 @@ class BuiltinModel(Module):
 
     def __getitem__(self, index: int) -> 'BuiltinModel':
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+        assert not isinstance(self.neural_networks, InferModelBase), "Method not supported for inference-optimized models"
         return BuiltinModel(self.aev_computer,
                            self.neural_networks[index],
                            self.energy_shifter,
@@ -227,6 +230,7 @@ class BuiltinModel(Module):
                 shape of energies is (M, C), where M is the number of modules in the ensemble.
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+        assert not isinstance(self.neural_networks, InferModelBase), "Method not supported for inference-optimized models"
         species, members_energies = self.atomic_energies(species_coordinates, cell=cell, pbc=pbc, average=False)
         return SpeciesEnergies(species, members_energies.sum(-1))
 
@@ -254,6 +258,7 @@ class BuiltinModel(Module):
                 energies are equal.
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+        assert not isinstance(self.neural_networks, InferModelBase), "Method not supported for inference-optimized models"
         species, energies = self.members_energies(species_coordinates, cell, pbc)
 
         # standard deviation is taken across ensemble members
@@ -269,6 +274,7 @@ class BuiltinModel(Module):
 
     def __len__(self):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+        assert not isinstance(self.neural_networks, InferModelBase), "Method not supported for inference-optimized models"
         return self.neural_networks.size
 
 
