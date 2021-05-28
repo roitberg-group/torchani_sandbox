@@ -423,9 +423,7 @@ class CellList(BaseNeighborlist):
             # The cell list is calculated with a skin here. Since coordinates are
             # fractionalized before cell calculation, it is not needed for them to
             # be imaged to the central cell, they can lie outside the cell.
-            out = self._calculate_cell_list(coordinates_displaced.detach(), pbc)
-            atom_pairs = out[0]
-            shift_indices: Optional[Tensor] = out[1]
+            atom_pairs, shift_indices = self._calculate_cell_list(coordinates_displaced.detach(), pbc)
             # 'Verlet' prevent unnecessary rebuilds of the neighborlist
             if self.verlet:
                 self._cache_values(atom_pairs, shift_indices, coordinates_displaced.detach())
