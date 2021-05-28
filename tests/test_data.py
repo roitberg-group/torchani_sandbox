@@ -166,9 +166,10 @@ class TestEstimationSAE(TestCase):
 
     def testExactSAE(self):
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+            warnings.filterwarnings(action='ignore',
+                                    message="Using all batches to estimate SAE, this may take up a lot of memory.")
             saes, _ = calculate_saes(self.train, ('H', 'C', 'N', 'O'), mode='exact')
-        self.assertEqual(saes, torch.tensor([-0.5960, -38.0730, -54.6918, -75.1471], dtype=torch.float),
+        self.assertEqual(saes, torch.tensor([-0.5983, -38.0726, -54.6750, -75.1433], dtype=torch.float),
                          atol=1e-3, rtol=1e-3)
 
     def testStochasticSAE(self):
