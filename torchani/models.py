@@ -16,6 +16,11 @@ networks in the ensemble
 The models also have three extra entry points for more specific use cases:
 members_energies, atomic_energies and energies_qbcs.
 
+All entrypoints expect a tuple of tensors `(species, coordinates)` as input,
+together with two optional tensors, `cell` and `pbc`.
+`coordinates` and `cell` should be in units of Angstroms,
+and the output energies are always in Hartrees
+
 example usage:
 
 .. _ani-model-zoo:
