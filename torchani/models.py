@@ -34,7 +34,6 @@ from pathlib import Path
 from collections import OrderedDict
 import torch
 from torch import Tensor
-from torch.nn import Module
 from typing import Tuple, Optional, NamedTuple, Sequence, Union, Type, Dict, Any
 from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
@@ -52,7 +51,7 @@ class SpeciesEnergiesQBC(NamedTuple):
     qbcs: Tensor
 
 
-class BuiltinModel(Module):
+class BuiltinModel(torch.nn.Module):
     r"""Private template for the builtin ANI models """
 
     atomic_numbers: Tensor
@@ -357,7 +356,7 @@ class BuiltinModelExternalInterface(BuiltinModel):
 def _get_component_modules(state_dict_file: str,
                            model_index: Optional[int] = None,
                            aev_computer_kwargs: Optional[Dict[str, Any]] = None,
-                           ensemble_size: int = 8) -> Tuple[AEVComputer, Module, EnergyShifter, Sequence[str]]:
+                           ensemble_size: int = 8) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
     if aev_computer_kwargs is None:
         aev_computer_kwargs = dict()
     # This generates ani-style architectures without neurochem
