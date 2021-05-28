@@ -109,25 +109,18 @@ class BuiltinModel(Module):
         Returns:
             species_energies: same species as was input, together with energies for the given configurations
         """
-        in_species, species_idx, coordinates = self._get_species_and_indices(species_coordinates)
-        aevs = self.aev_computer((species_idx, coordinates), cell=cell, pbc=pbc).aevs
-        energies = self.neural_networks((species_idx, aevs)).energies
-        energies = self.energy_shifter((species_idx, energies)).energies
-        return SpeciesEnergies(in_species, energies)
+        species_coordinates = self._maybe_convert_species(species_coordinates)
+        species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
+        species_energies = self.neural_networks(species_aevs)
+        return self.energy_shifter(species_energies)
 
     @torch.jit.export
-    def _get_species_and_indices(self, species_coordinates: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
-        in_species, coordinates = species_coordinates
-
+    def _maybe_convert_species(self, species_coordinates: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tensor]:
         if self.periodic_table_index:
-            species_idx = self.species_converter(species_coordinates).species
-        else:
-            species_idx = in_species
-
-        if (species_idx >= self.aev_computer.num_species).any():
+            species_coordinates = self.species_converter(species_coordinates)
+        if (species_coordinates[0] >= self.aev_computer.num_species).any():
             raise ValueError(f'Unknown species found in {species_coordinates[0]}')
-
-        return in_species, species_idx, coordinates
+        return species_coordinates
 
     @torch.jit.export
     def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -149,16 +142,16 @@ class BuiltinModel(Module):
                 the number of configurations and A the number of atoms, and
                 the shape of energies is (C, A) for a BuiltinModel.
         """
-        in_species, species_idx, coordinates = self._get_species_and_indices(species_coordinates)
-        aevs = self.aev_computer((species_idx, coordinates), cell=cell, pbc=pbc).aevs
-        atomic_energies = self.neural_networks._atomic_energies((species_idx, aevs))
-        atomic_energies += self.energy_shifter._atomic_saes(species_idx)
+        species_coordinates = self._maybe_convert_species(species_coordinates)
+        species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
+        atomic_energies = self.neural_networks._atomic_energies(species_aevs)
+        atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
 
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
         if average:
             atomic_energies = atomic_energies.mean(dim=0)
-        return SpeciesEnergies(in_species, atomic_energies)
+        return SpeciesEnergies(species_coordinates[0], atomic_energies)
 
     @torch.jit.export
     def _recast_long_buffers(self):
@@ -216,8 +209,7 @@ class BuiltinModel(Module):
                 is (M, C), where M is the number of modules in the ensemble.
 
         """
-        # NOTE: cell and pbc have to be specified due to JIT bug
-        species, members_energies = self.atomic_energies(species_coordinates, cell=None, pbc=None, average=False)
+        species, members_energies = self.atomic_energies(species_coordinates, cell=cell, pbc=pbc, average=False)
         return SpeciesEnergies(species, members_energies.sum(-1))
 
     @torch.jit.export
