@@ -72,7 +72,7 @@ distances = torch.tensor([0.1, 0.2, 0.5], dtype=torch.double, device=device)
 # species indices
 species = torch.tensor([[0, 0, 1]], device=device, dtype=torch.long)
 pre_dispersion_energy = torch.tensor([1.0], dtype=torch.double, device=device)
-rep = RepulsionCalculator().to(device)
+rep_ = RepulsionCalculator().to(device)
 
-energy_plus_dispersion = rep((species, pre_dispersion_energy), neighborlist, distances).energies
+energy_plus_dispersion = rep_((species, pre_dispersion_energy), neighborlist, distances).energies
 print('Initial energy,  1.0 Ha, plus dispersion', energy_plus_dispersion)

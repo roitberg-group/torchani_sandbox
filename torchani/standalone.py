@@ -59,6 +59,7 @@ class StandalonePairwiseWrapper(torch.nn.Module):
         # are always assumed to be mapped to the central cell
         if pbc is not None:
             if pbc.any():
+                assert cell is not None
                 coordinates = map_to_central(coordinates, cell, pbc)
 
         return self._perform_module_actions(species_coordinates, atom_index12, distances)

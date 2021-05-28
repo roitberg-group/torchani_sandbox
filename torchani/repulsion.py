@@ -17,6 +17,9 @@ class RepulsionCalculator(torch.nn.Module):
     in work by Grimme: https://pubs.acs.org/doi/10.1021/acs.jctc.8b01176"""
 
     cutoff: Final[float]
+    y_ab: Tensor
+    sqrt_alpha_ab: Tensor
+    k_rep_ab: Tensor
 
     def __init__(self, cutoff=5.2, alpha=None, y_eff=None, k_rep_ab=None,
             elements=('H', 'C', 'N', 'O'), cutoff_fn='smooth'):
@@ -55,7 +58,7 @@ class RepulsionCalculator(torch.nn.Module):
         self.register_buffer('sqrt_alpha_ab', sqrt_alpha_ab)
         self.register_buffer('k_rep_ab', k_rep_ab)
 
-    def _calculate_repulsion(self, species_energies: Tensor, atom_index12:
+    def _calculate_repulsion(self, species_energies: Tuple[Tensor, Tensor], atom_index12:
             Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
 
         # all internal calculations of this module are made with atomic units,
@@ -93,7 +96,7 @@ class RepulsionCalculator(torch.nn.Module):
 
         return SpeciesEnergies(species, energies)
 
-    def forward(self, species_energies: Tensor, atom_index12: Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(self, species_energies: Tuple[Tensor, Tensor], atom_index12: Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
         return self._calculate_repulsion(species_energies, atom_index12, distances)
 
 

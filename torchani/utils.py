@@ -10,7 +10,6 @@ from collections import defaultdict
 from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
-import warnings
 
 PADDING = {
     'species': -1,
