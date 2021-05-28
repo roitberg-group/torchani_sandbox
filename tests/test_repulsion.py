@@ -1,6 +1,7 @@
 import unittest
 import torch
 import torchani
+from pathlib import Path
 from torchani.models import _fetch_state_dict
 from torchani.testing import TestCase
 from torchani.repulsion import RepulsionCalculator, StandaloneRepulsionCalculator
@@ -76,7 +77,8 @@ class TestRepulsion(TestCase):
                                        requires_grad=True, device=device, dtype=torch.double)
             energies.append(model((species, coordinates)).energies.item())
         energies = torch.tensor(energies)
-        with open('./test_data/energies_repulsion_1x.pkl', 'rb') as f:
+        path = Path(__file__).resolve().parent.joinpath('test_data/energies_repulsion_1x.pkl')
+        with open(path, 'rb') as f:
             energies_expect = torch.tensor(torch.load(f))
         self.assertTrue(torch.isclose(energies_expect, energies).all())
 
