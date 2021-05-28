@@ -406,13 +406,12 @@ class CellList(BaseNeighborlist):
             # and every time for variable V, (constant P, NPT) simulations
             self._setup_variables(cell.detach())
 
-        shift_indices: Optional[Tensor]
         if self.verlet and self.old_values_are_cached and (not self._need_new_list(coordinates_displaced.detach())):
             # If a new cell list is not needed use the old cached values
             # IMPORTANT: here cached values should NOT be updated, moving cache
             # to the new step is incorrect
             atom_pairs = self.old_atom_pairs
-            shift_indices = self.old_shift_indices
+            shift_indices: Optional[Tensor] = self.old_shift_indices
         else:
             # The cell list is calculated with a skin here. Since coordinates are
             # fractionalized before cell calculation, it is not needed for them to
