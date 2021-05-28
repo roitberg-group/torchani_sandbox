@@ -1,15 +1,23 @@
+r"""Some utilities for extracting information from neurochem files"""
 import os
 import io
 import requests
 import zipfile
+from typing import Optional, Sequence, Tuple, Union, Dict, Any
 from distutils import dir_util
 from pathlib import Path
+from ..aev import AEVComputer
+from ..nn import Ensemble, ANIModel
+from ..utils import EnergyShifter
+from .neurochem import Constants, load_model_ensemble, load_model, load_sae
 
 
 __all__ = ['parse_neurochem_resources']
 
 
 SUPPORTED_INFO_FILES = ['ani-1ccx_8x.info', 'ani-1x_8x.info', 'ani-2x_8x.info']
+
+NN = Union[Ensemble, ANIModel]
 
 
 def parse_neurochem_resources(info_file_path):
@@ -51,10 +59,9 @@ def parse_neurochem_resources(info_file_path):
             dir_util.remove_tree(os.path.join(resource_path, extracted_name))
 
         else:
-            raise ValueError('File {0} could not be found either in {1} or {2}\n'
+            raise ValueError(f'File {info_file_path} could not be found either in {resource_path} or {local_dir}\n'
                              'It is also not one of the supported builtin info files:'
-                             ' {3}'.format(info_file_path, resource_path, local_dir,
-                                           SUPPORTED_INFO_FILES))
+                             ' {SUPPORTED_INFO_FILES}')
 
     return _get_resources(resource_path, info_file_path)
 
@@ -71,3 +78,26 @@ def _get_resources(resource_path, info_file):
         ensemble_prefix = os.path.join(resource_path, ensemble_prefix_path)
         ensemble_size = int(ensemble_size)
     return const_file, sae_file, ensemble_prefix, ensemble_size
+
+
+def _get_component_modules(info_file: str,
+                           model_index: Optional[int] = None,
+                           aev_computer_kwargs: Optional[Dict[str, Any]] = None) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
+    # this creates modules from a neurochem info path,
+    # since for neurochem architecture and parameters are kind of mixed up,
+    # this doesn't support non pretrained models, it directly outputs a pretrained module
+    if aev_computer_kwargs is None:
+        aev_computer_kwargs = dict()
+    const_file, sae_file, ensemble_prefix, ensemble_size = parse_neurochem_resources(info_file)
+    consts = Constants(const_file)
+    elements = consts.species
+    aev_computer = AEVComputer(**consts, **aev_computer_kwargs)
+
+    if model_index is None:
+        neural_networks = load_model_ensemble(elements, ensemble_prefix, ensemble_size)
+    else:
+        if (model_index >= ensemble_size):
+            raise ValueError(f"The ensemble size is only {ensemble_size}, model {model_index} can't be loaded")
+        network_dir = os.path.join(f'{ensemble_prefix}{model_index}', 'networks')
+        neural_networks = load_model(elements, network_dir)
+    return aev_computer, neural_networks, load_sae(sae_file), elements

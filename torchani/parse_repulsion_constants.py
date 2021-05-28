@@ -96,8 +96,8 @@ for line in _data:
     all_znumbers.append(PERIODIC_TABLE.index(element))
 assert all_znumbers == list(range(1, SUPPORTED_REPULSION_ELEMENTS + 1))
 
-alpha_constants = [0] * (SUPPORTED_REPULSION_ELEMENTS + 1)
-y_eff_constants = [0] * (SUPPORTED_REPULSION_ELEMENTS + 1)
+alpha_constants = [0.0] * (SUPPORTED_REPULSION_ELEMENTS + 1)
+y_eff_constants = [0.0] * (SUPPORTED_REPULSION_ELEMENTS + 1)
 for line in _data:
     element, _, _, alpha, y_eff = line.split()[:5]
     # note that the first value is a dummy value actually

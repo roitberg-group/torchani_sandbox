@@ -1,12 +1,15 @@
+import tempfile
+from pathlib import Path
 import torch
 from torch import Tensor
 import torch.utils.data
 import math
+import os
+import warnings
 from collections import defaultdict
-from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict
+from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
-import warnings
 
 PADDING = {
     'species': -1,
@@ -16,6 +19,28 @@ PADDING = {
     'forces': 0.0,
     'energies': 0.0
 }
+
+
+def check_openmp_threads():
+    if "OMP_NUM_THREADS" not in os.environ:
+        warnings.warn("""OMP_NUM_THREADS is not set, mnp works best if OMP_NUM_THREADS >= 2.
+              You can set it by `export OMP_NUM_THREADS=4` or `export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK` if using slurm""")
+    else:
+        num_threads = int(os.environ["OMP_NUM_THREADS"])
+        assert num_threads > 0
+        print(f"OMP_NUM_THREADS is set as {num_threads}")
+
+
+def path_is_writable(path: Union[str, Path]) -> bool:
+    # check if a path is writeable, adapted from:
+    # https://stackoverflow.com/questions/2113427/determining-whether-a-directory-is-writeable
+    try:
+        testfile = tempfile.TemporaryFile(dir=path)
+        testfile.close()
+    except (OSError, IOError):
+        testfile.close()
+        return False
+    return True
 
 
 def cumsum_from_zero(input_: Tensor) -> Tensor:
@@ -192,14 +217,14 @@ class EnergyShifter(torch.nn.Module):
         """(species, molecular energies)->(species, molecular energies + sae)
         """
         species, energies = species_energies
-        sae = self._calc_atomic_saes(species).sum(dim=1)
+        sae = self._atomic_saes(species).sum(dim=1)
 
         if self.fit_intercept:
             sae += self.self_energies[-1]
         return SpeciesEnergies(species, energies + sae)
 
     @torch.jit.export
-    def _calc_atomic_saes(self, species: Tensor) -> Tensor:
+    def _atomic_saes(self, species: Tensor) -> Tensor:
         # Compute atomic self energies for a set of species.
         self_atomic_energies = self.self_energies[species]
         self_atomic_energies = self_atomic_energies.masked_fill(species == -1, 0.0)
@@ -219,11 +244,7 @@ class EnergyShifter(torch.nn.Module):
             :class:`torch.Tensor`: 1D vector in shape ``(conformations,)``
             for molecular self energies.
         """
-        self_energies = self._calc_atomic_saes(species).sum(dim=1)
-
-        self_energies = self.self_energies[species]
-        self_energies[species == torch.tensor(-1, device=species.device)] = 0.0
-        sae = self_energies.sum(dim=1)
+        sae = self._atomic_saes(species).sum(dim=1)
         if self.fit_intercept:
             sae += self.self_energies[-1]
         return sae
@@ -399,7 +420,7 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
     if mass_scaled_hessian.shape[0] != 1:
         raise ValueError('The input should contain only one molecule')
     mass_scaled_hessian = mass_scaled_hessian.squeeze(0)
-    eigenvalues, eigenvectors = torch.symeig(mass_scaled_hessian, eigenvectors=True)
+    eigenvalues, eigenvectors = torch.linalg.eigh(mass_scaled_hessian)
     angular_frequencies = eigenvalues.sqrt()
     frequencies = angular_frequencies / (2 * math.pi)
     # converting from sqrt(hartree / (amu * angstrom^2)) to cm^-1 or meV

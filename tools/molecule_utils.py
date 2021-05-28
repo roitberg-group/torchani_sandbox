@@ -1,9 +1,10 @@
 import torch
+from pathlib import Path
+from torch import Tensor
 import math
 import warnings
 from torchani.utils import PERIODIC_TABLE
 from typing import Tuple, Optional
-from torch import Tensor
 
 
 def make_methane(device=None, eq_bond=1.09):
@@ -66,11 +67,16 @@ def tensor_from_xyz(path):
 
 
 def tensor_to_xyz(path, species_coordinates: Tuple[Tensor, Tensor], cell: Optional[Tensor] = None, no_exponent: bool = True):
+    path = Path(path).resolve()
     # input species must be atomic numbers
     species, coordinates = species_coordinates
     num_atoms = species.shape[1]
+
+    assert coordinates.dim() == 3, "bad number of dimensions for coordinates"
+    assert species.dim() == 2, "bad number of dimensions for species"
     assert coordinates.shape[0] == 1, "Batch printing not implemented"
     assert species.shape[0] == 1, "Batch printing not implemented"
+
     coordinates = coordinates.view(-1, 3)
     species = species.view(-1)
 

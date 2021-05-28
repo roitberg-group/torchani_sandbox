@@ -1,51 +1,10 @@
 import unittest
 import torch
 import torchani
+from pathlib import Path
+from torchani.models import _fetch_state_dict
 from torchani.testing import TestCase
 from torchani.repulsion import RepulsionCalculator, StandaloneRepulsionCalculator
-import pickle
-
-
-def load_model(path, aev_dim):
-    H_network = torch.nn.Sequential(
-        torch.nn.Linear(aev_dim, 160, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(160, 128, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(128, 96, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(96, 1, bias=False)
-    )
-    C_network = torch.nn.Sequential(
-        torch.nn.Linear(aev_dim, 144, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(144, 112, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(112, 96, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(96, 1, bias=False)
-    )
-    N_network = torch.nn.Sequential(
-        torch.nn.Linear(aev_dim, 128, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(128, 112, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(112, 96, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(96, 1, bias=False)
-    )
-    O_network = torch.nn.Sequential(
-        torch.nn.Linear(aev_dim, 128, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(128, 112, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(112, 96, bias=False),
-        torch.nn.GELU(),
-        torch.nn.Linear(96, 1, bias=False)
-    )
-    nn = torchani.ANIModel([H_network, C_network, N_network, O_network])
-    nn.load_state_dict(torch.load(path, map_location=torch.device('cpu')))
-    return nn
 
 
 class TestRepulsion(TestCase):
@@ -104,9 +63,8 @@ class TestRepulsion(TestCase):
 
     def testRepulsionEnergy(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model = torchani.models.ANI1x(repulsion=True, model_index=0, cutoff_fn='smooth')
-        model.neural_networks = load_model('repulsion_model_1x.pt', model.aev_computer.aev_length)
-        model.energy_shifter = torchani.EnergyShifter([-0.506930115400, -37.814410115700, -54.55653828400, -75.02918133970])
+        model = torchani.models.ANI1x(repulsion=True, pretrained=False, model_index=0, cutoff_fn='smooth')
+        model.load_state_dict(_fetch_state_dict('ani1x_state_dict.pt', 0), strict=False)
         model = model.to(device=device, dtype=torch.double)
 
         species = torch.tensor([[3, 0, 0]], device=device)
@@ -118,13 +76,11 @@ class TestRepulsion(TestCase):
                                         [-0.250380004 * d, 0.96814764 * d, 0.0]]],
                                        requires_grad=True, device=device, dtype=torch.double)
             energies.append(model((species, coordinates)).energies.item())
-
         energies = torch.tensor(energies)
-        with open('energies.pkl', 'rb') as f:
-            energies_salva = torch.tensor(pickle.load(f))
-        print(energies_salva)
-        print(energies)
-        self.assertTrue(torch.isclose(energies_salva, energies).all())
+        path = Path(__file__).resolve().parent.joinpath('test_data/energies_repulsion_1x.pkl')
+        with open(path, 'rb') as f:
+            energies_expect = torch.tensor(torch.load(f))
+        self.assertTrue(torch.isclose(energies_expect, energies).all())
 
 
 if __name__ == '__main__':
