@@ -177,7 +177,7 @@ class TestEstimationSAE(TestCase):
             torch.set_printoptions(precision=10)
         self.assertEqual(saes,
                          torch.tensor([-0.5983182192, -38.0726242065, -54.6750144958, -75.1433029175], dtype=torch.float),
-                         atol=1e-3, rtol=1e-3)
+                         atol=2.5e-3, rtol=2.5e-3)
 
     def testStochasticSAE(self):
         saes, _ = calculate_saes(self.train, ('H', 'C', 'N', 'O'), mode='sgd')
@@ -283,8 +283,12 @@ class TestAniBatchedDataset(TestCase):
         self.assertTrue(self.train.transform(None) is None)
 
     def testDropLast(self):
-        train_drop_last = AniBatchedDataset(self.batched_path, split='training', drop_last=True)
-        valid_drop_last = AniBatchedDataset(self.batched_path, split='validation', drop_last=True)
+        with warnings.catch_warnings():
+            msg = 'Recalculating batch size is necessary for drop_last and it may take considerable time if your disk is an HDD'
+            warnings.filterwarnings(action='ignore',
+                                    message=msg)
+            train_drop_last = AniBatchedDataset(self.batched_path, split='training', drop_last=True)
+            valid_drop_last = AniBatchedDataset(self.batched_path, split='validation', drop_last=True)
         self.assertEqual(len(train_drop_last), 2)
         self.assertEqual(len(valid_drop_last), 2)
         self.assertEqual(train_drop_last.batch_size, self.batch_size)
