@@ -1,13 +1,22 @@
 # -*- coding: utf-8 -*-
 """The ANI model zoo that stores public ANI models.
 
-Currently the model zoo has three models: ANI-1x, ANI-1ccx, and ANI-2x.
-The parameters of these models are stored in `ani-model-zoo`_ repository and
-will be automatically downloaded the first time any of these models are
-instantiated. The classes of these models are :class:`ANI1x`, :class:`ANI1ccx`,
-and :class:`ANI2x` these are subclasses of :class:`torch.nn.Module`.
-To use the models just instantiate them and either
-directly calculate energies or get an ASE calculator. For example:
+Currently the model zoo has three models: ANI-1x, ANI-1ccx, and ANI-2x.  The
+parameters of these models are stored in `ani-model-zoo`_ repository and will
+be automatically downloaded the first time any of these models are
+instantiated.
+
+To use the models just instantiate them and either directly calculate energies
+by calling them, or cast them to an ASE calculator.
+
+If the models have many ensembled neural networks they can be indexed to access
+individual members of the ensemble, and len() can be used to get the number of
+networks in the ensemble
+
+The models also have three extra entry points for more specific use cases:
+members_energies, atomic_energies and energies_qbcs.
+
+example usage:
 
 .. _ani-model-zoo:
     https://github.com/aiqm/ani-model-zoo
@@ -15,18 +24,30 @@ directly calculate energies or get an ASE calculator. For example:
 .. code-block:: python
 
     ani1x = torchani.models.ANI1x()
+
     # compute energy using ANI-1x model ensemble
     _, energies = ani1x((species, coordinates))
-    ani1x.ase()  # get ASE Calculator using this ensemble
+
+    # get an ASE Calculator using this ensemble
+    ani1x_calc = ani1x.ase()
+
     # convert atom species from string to long tensor
     ani1x.species_to_tensor(['C', 'H', 'H', 'H', 'H'])
 
-    model0 = ani1x[0]  # get the first model in the ensemble
-    # compute energy using the first model in the ANI-1x model ensemble
+    # output shape of energies is (M, C), where M is the number of ensemble members
+    _, members_energies = ani1x.members_energies((species, coordinates))
+
+    # output shape of energies is (A, C) where A is the number of atoms in the minibatch
+    # atomic energies are averaged over all models by default
+    _, atomic_energies = ani1x.atomic_energies((species, coordinates))
+
+    # qbc factors are used for active learning, shape of qbc factors is equal to energies
+    _, energies, qbcs = ani1x.energies_qbcs((species, coordinates))
+
+    # individual models of the ensemble can be obtained by indexing,
+    # and they have the same functionality as the ensembled model
+    model0 = ani1x[0]
     _, energies = model0((species, coordinates))
-    model0.ase()  # get ASE Calculator using this model
-    # convert atom species from string to long tensor
-    model0.species_to_tensor(['C', 'H', 'H', 'H', 'H'])
 """
 import os
 from copy import deepcopy
@@ -107,7 +128,7 @@ class BuiltinModel(Module):
             pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
 
         Returns:
-            species_energies: same species as was input, together with energies for the given configurations
+            species_energies: tuple of tensors, species and energies for the given configurations
         """
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
@@ -133,14 +154,11 @@ class BuiltinModel(Module):
             cell: the cell used in PBC computation, set to None if PBC is not enabled
             pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
             average: If True (the default) it returns the average over all models
-                in the ensemble, should there be more than one (shape (C, A)),
-                otherwise it returns one atomic energy per model (shape (M, C, A)).
+                in the ensemble, should there be more than one (output shape (C, A)),
+                otherwise it returns one atomic energy per model (output shape (M, C, A)).
 
         Returns:
-            species_atomic_energies: species and energies for the given configurations
-                note that the shape of species is (C, A), where C is
-                the number of configurations and A the number of atoms, and
-                the shape of energies is (C, A) for a BuiltinModel.
+            species_energies: tuple of tensors, species and atomic energies
         """
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
@@ -170,26 +188,13 @@ class BuiltinModel(Module):
         from . import ase
         return ase.Calculator(self.get_chemical_symbols(), self, **kwargs)
 
-    def __getitem__(self, index):
-        """Get a model that uses a single network
-
-        Indexing allows access to a single model inside the ensemble
-        that can be used directly for calculations.
-
-        Args:
-            index (:class:`int`): Index of the model
-
-        Returns:
-            ret: (:class:`torchani.models.BuiltinModel`) Model ready for
-                calculations
-        """
-        assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
-        ret = BuiltinModel(self.aev_computer,
+    def __getitem__(self, index: int) -> 'BuiltinModel':
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+        return BuiltinModel(self.aev_computer,
                            self.neural_networks[index],
                            self.energy_shifter,
                            self.get_chemical_symbols(),
                            self.periodic_table_index)
-        return ret
 
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -203,12 +208,10 @@ class BuiltinModel(Module):
             pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
 
         Returns:
-            species_energies: species and energies for the given configurations
-                shape of species is (C, A), where C is the number of
-                configurations and A the number of atoms, and shape of energies
-                is (M, C), where M is the number of modules in the ensemble.
-
+            species_energies: species and members energies for the given configurations
+                shape of energies is (M, C), where M is the number of modules in the ensemble.
         """
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species, members_energies = self.atomic_energies(species_coordinates, cell=cell, pbc=pbc, average=False)
         return SpeciesEnergies(species, members_energies.sum(-1))
 
@@ -226,22 +229,16 @@ class BuiltinModel(Module):
 
         Args:
             species_coordinates: minibatch of configurations
-            cell: the cell used in PBC computation, set to None if PBC is not
-                enabled
-            pbc: the bool tensor indicating which direction PBC is enabled, set
-                to None if PBC is not enabled
-            unbiased: if `True` then Bessel's correction is applied to the
-                standard deviation over the ensemble member's. If `False` Bessel's
-                correction is not applied, True by default.
+            cell: the cell used in PBC computation, set to None if PBC is not enabled
+            pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
+            unbiased: Whether to take an unbiased standard deviation over the ensemble's members.
 
         Returns:
-            species_energies_qbcs: species, energies and qbc factors for the
-                given configurations. Note that the shape of species is (C, A),
-                where C is the number of configurations and A the number of
-                atoms, the shape of energies is (C,) and the shape of qbc
-                factors is also (C,).
+            species_energies_qbcs: tuple of tensors, species, energies and qbc
+                factors for the given configurations. The shapes of qbcs and
+                energies are equal.
         """
-        assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species, energies = self.members_energies(species_coordinates, cell, pbc)
 
         # standard deviation is taken across ensemble members
@@ -261,6 +258,7 @@ class BuiltinModel(Module):
         Returns:
             length (:class:`int`): Number of networks in the ensemble
         """
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         return self.neural_networks.size
 
 
