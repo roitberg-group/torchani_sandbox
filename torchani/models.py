@@ -118,6 +118,16 @@ class BuiltinModel(Module):
         else:
             assert len(self.neural_networks) == len(self.atomic_numbers)
 
+    def to_infer_model(self, *args, **kwargs) -> 'BuiltinModel':
+        """ Convert the neural networks module of the model into a module
+            optimized for inference.
+
+            Currently this function assumes that the atomic networks consist of
+            an MLP interleaved with CELU activation functions, all with the same alpha
+        """
+        self.neural_networks = self.neural_networks.to_infer_model(*args, **kwargs)
+        return self
+
     @torch.jit.unused
     def get_chemical_symbols(self) -> Tuple[str, ...]:
         return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)

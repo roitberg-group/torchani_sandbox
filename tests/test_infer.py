@@ -13,7 +13,8 @@ torch.backends.cuda.matmul.allow_tf32 = False
 
 use_mnps = [True, False] if torchani.infer.mnp_is_installed else [False]
 devices = ['cuda', 'cpu']
-ani2x = torchani.models.ANI2x(periodic_table_index=True, model_index=None)
+ani2x = torchani.models.ANI2x()
+species_converter = torchani.nn.SpeciesConverter(ani2x.get_chemical_symbols())
 
 
 @parameterized_class(('device', 'use_mnp'), product(devices, use_mnps))
@@ -21,7 +22,8 @@ ani2x = torchani.models.ANI2x(periodic_table_index=True, model_index=None)
 class TestInfer(TestCase):
 
     def setUp(self):
-        self.ani2x = ani2x
+        self.ani2x = ani2x.to(self.device)
+        self.species_converter = species_converter.to(self.device)
         self.path = os.path.dirname(os.path.realpath(__file__))
 
     def _test(self, model_ref, model_infer):
@@ -33,7 +35,7 @@ class TestInfer(TestCase):
             mol = read(filepath)
             species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
             positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
-            speciesPositions = self.ani2x.species_converter((species, positions))
+            speciesPositions = self.species_converter((species, positions))
             species, coordinates = speciesPositions
             coordinates.requires_grad_(True)
 
@@ -44,6 +46,15 @@ class TestInfer(TestCase):
 
             self.assertEqual(energy1, energy2, atol=1e-5, rtol=1e-5)
             self.assertEqual(force1, force2, atol=1e-5, rtol=1e-5)
+
+    def _testRaisesError(self, model, model_jit):
+        with self.assertRaisesRegex(torch.jit.Error, "The following operation failed in the TorchScript interpreter."):
+            # with error "RuntimeError: JIT Infer Model only support use_mnp=True"
+            self._test(model, model_jit)
+
+    def testANI2xInfer(self):
+        ani2x_infer = torchani.models.ANI2x().to_infer_model(use_mnp=self.use_mnp).to(self.device)
+        self._test(ani2x, ani2x_infer)
 
     def testBmmEnsemble(self):
         model_iterator = self.ani2x.neural_networks
@@ -59,6 +70,14 @@ class TestInfer(TestCase):
         model_infer = torchani.nn.Sequential(aev_computer, model_iterator[0].to_infer_model(use_mnp=self.use_mnp)).to(self.device)
         self._test(model_ref, model_infer)
 
+    def testANI2xInferJIT(self):
+        ani2x_infer_jit = torchani.models.ANI2x().to_infer_model(use_mnp=self.use_mnp).to(self.device)
+        ani2x_infer_jit = torch.jit.script(ani2x_infer_jit)
+        if self.use_mnp:
+            self._test(ani2x, ani2x_infer_jit)
+        else:
+            self._testRaisesError(ani2x, ani2x_infer_jit)
+
     def testBmmEnsembleJIT(self):
         model_iterator = self.ani2x.neural_networks
         aev_computer = torchani.AEVComputer.like_2x(use_cuda_extension=(self.device == 'cuda'))
@@ -69,9 +88,7 @@ class TestInfer(TestCase):
         if self.use_mnp:
             self._test(ensemble, bmm_ensemble_jit)
         else:
-            with self.assertRaisesRegex(torch.jit.Error, "The following operation failed in the TorchScript interpreter."):
-                # with error "RuntimeError: JIT Infer Model only support use_mnp=True"
-                self._test(ensemble, bmm_ensemble_jit)
+            self._testRaisesError(ensemble, bmm_ensemble_jit)
 
     def testANIInferModelJIT(self):
         model_iterator = self.ani2x.neural_networks
@@ -83,9 +100,7 @@ class TestInfer(TestCase):
         if self.use_mnp:
             self._test(model_ref, model_infer_jit)
         else:
-            with self.assertRaisesRegex(torch.jit.Error, "The following operation failed in the TorchScript interpreter."):
-                # with error "RuntimeError: JIT Infer Model only support use_mnp=True"
-                self._test(model_ref, model_infer_jit)
+            self._testRaisesError(model_ref, model_infer_jit)
 
 
 if __name__ == '__main__':
