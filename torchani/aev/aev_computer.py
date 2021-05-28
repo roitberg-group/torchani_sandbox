@@ -377,7 +377,7 @@ class AEVComputer(torch.nn.Module):
         # JIT has a bug that makes this line fail under some circumstances, on some
         # torch versions unless the "one" tensor is defined
         one = torch.tensor(1, device=atom_index12.device, dtype=atom_index12.dtype)
-        pair_sizes = counts * (counts - one) // 2
+        pair_sizes = (counts * (counts - one)).div(2, rounding_mode='floor')
         pair_indices = torch.repeat_interleave(pair_sizes)
         central_atom_index = uniqued_central_atom_index.index_select(
             0, pair_indices)
