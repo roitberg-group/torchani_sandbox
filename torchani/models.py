@@ -258,11 +258,6 @@ class BuiltinModel(Module):
         return SpeciesEnergiesQBC(species, energies, qbc_factors)
 
     def __len__(self):
-        """Get the number of networks being used by the model
-
-        Returns:
-            length (:class:`int`): Number of networks in the ensemble
-        """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         return self.neural_networks.size
 
