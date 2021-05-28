@@ -200,9 +200,11 @@ class EnergyShifter(torch.nn.Module):
 
     def __init__(self, self_energies, fit_intercept=False):
         super().__init__()
+
         self.fit_intercept = fit_intercept
         if self_energies is not None:
             self_energies = torch.tensor(self_energies, dtype=torch.double)
+
         self.register_buffer('self_energies', self_energies)
 
     @torch.jit.export
