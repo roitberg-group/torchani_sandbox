@@ -40,6 +40,36 @@ __device__ __forceinline__ int2 pairidx_to_jk(int n) {
   return make_int2(jj, kk);
 }
 
+template <typename DataT>
+__device__ __forceinline__ DataT cosine_cutoff_fwd(DataT Rij, DataT Rc) {
+  return 0.5f * __cosf(PI * Rij / Rc) + 0.5f;
+}
+
+template <typename DataT>
+__device__ __forceinline__ DataT cosine_cutoff_bwd(DataT Rij, DataT Rc) {
+  return -0.5f * (PI / Rc) * __sinf(PI * Rij / Rc);
+}
+
+template <typename DataT>
+__device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, DataT Rc) {
+  int order = 2;
+  DataT eps = 1e-10;
+  DataT o = __powf(Rij / Rc, order);
+  DataT e = 1 - 1 / std::max(eps, (1 - o));
+  e = __expf(e);
+  return e;
+}
+
+template <typename DataT>
+__device__ __forceinline__ DataT smooth_cutoff_bwd(DataT Rij, DataT Rc) {
+  int order = 2;
+  DataT eps = 1e-10;
+  DataT o = __powf(Rij / Rc, order);
+  DataT m = std::max(eps, 1 - o);
+  DataT step_fn = (-eps - o + 1) >= 0 ? 1 : 0;
+  return -step_fn * order * o * __expf(1 - 1 / m) / (Rij * m * m);
+}
+
 template <typename SpeciesT, typename DataT, typename IndexT = int>
 __global__ void pairwiseDistance(
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
@@ -184,6 +214,7 @@ __global__ void pairwiseDistanceSingleMolecule(
 template <
     int BLOCK_X,
     int BLOCK_Y,
+    bool use_cos_cutoff,
     typename SpeciesT,
     typename DataT,
     typename IndexT = int,
@@ -267,8 +298,10 @@ __global__ void cuAngularAEVs(
     svec[jj] = make_float3(coord_j.x - coord_i.x, coord_j.y - coord_i.y, coord_j.z - coord_i.z);
     s_species[jj] = specie_j;
     sdist[jj] = Rij;
-    DataT fc_ij = 0.5f * __cosf(PI * Rij / Rca) + 0.5f;
-    sfc[jj] = fc_ij;
+    if (use_cos_cutoff)
+      sfc[jj] = cosine_cutoff_fwd(Rij, Rca);
+    else
+      sfc[jj] = smooth_cutoff_fwd(Rij, Rca);
   }
   __syncthreads();
 
@@ -335,6 +368,7 @@ template <
     bool is_double_backward,
     int BLOCK_X,
     int BLOCK_Y,
+    bool use_cos_cutoff,
     typename SpeciesT,
     typename DataT,
     typename IndexT = int,
@@ -444,10 +478,13 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
     svec[jj] = make_float3(coord_j.x - coord_i.x, coord_j.y - coord_i.y, coord_j.z - coord_i.z);
     s_species[jj] = specie_j;
     sdist[jj] = Rij;
-    DataT fc_ij = 0.5f * __cosf(PI * Rij / Rca) + 0.5f;
-    DataT fc_ij_grad = -0.5f * (PI / Rca) * __sinf(PI * Rij / Rca);
-    sfc[jj] = fc_ij;
-    sfc_grad[jj] = fc_ij_grad;
+    if (use_cos_cutoff) {
+      sfc[jj] = cosine_cutoff_fwd(Rij, Rca);
+      sfc_grad[jj] = cosine_cutoff_bwd(Rij, Rca);
+    } else {
+      sfc[jj] = smooth_cutoff_fwd(Rij, Rca);
+      sfc_grad[jj] = smooth_cutoff_bwd(Rij, Rca);
+    }
     spos_j_grad[jj] = make_float3(0.f, 0.f, 0.f);
   }
   __syncthreads();
@@ -622,7 +659,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
   }
 }
 
-template <typename SpeciesT, typename DataT>
+template <bool use_cos_cutoff, typename SpeciesT, typename DataT>
 __global__ void cuRadialAEVs(
     torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
     torch::PackedTensorAccessor32<DataT, 1, torch::RestrictPtrTraits> ShfR_t,
@@ -665,7 +702,10 @@ __global__ void cuRadialAEVs(
 
   for (int jj = tIdx; jj < jnum; jj += blockDim.x * blockDim.y) {
     DataT Rij = distJ[start_idx + jj];
-    s_fc[jj] = 0.5f * __cosf(PI * Rij / Rcr) + 0.5f;
+    if (use_cos_cutoff)
+      s_fc[jj] = cosine_cutoff_fwd(Rij, Rcr);
+    else
+      s_fc[jj] = smooth_cutoff_fwd(Rij, Rcr);
   }
   __syncthreads();
 
@@ -689,7 +729,7 @@ __global__ void cuRadialAEVs(
 }
 
 // every <TILE_SIZE> threads take care of 1 RIJ, and iterate for <nShfR / TILE_SIZE> times
-template <bool is_double_backward, typename SpeciesT, typename DataT, int TILE_SIZE>
+template <bool is_double_backward, int TILE_SIZE, bool use_cos_cutoff, typename SpeciesT, typename DataT>
 __global__ void cuRadialAEVs_backward_or_doublebackward(
     const DataT* pos_p,
     const torch::PackedTensorAccessor32<SpeciesT, 2, torch::RestrictPtrTraits> species_t,
@@ -764,8 +804,15 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
   for (int jj = threadIdx.y; jj < jnum; jj += blockDim.y) {
     DataT Rij = distJ[start_idx + jj];
     int j = atomJ[start_idx + jj];
-    DataT fc = 0.5f * __cosf(PI * Rij / Rcr) + 0.5f;
-    DataT fc_grad = -0.5f * (PI / Rcr) * __sinf(PI * Rij / Rcr);
+    DataT fc;
+    DataT fc_grad;
+    if (use_cos_cutoff) {
+      fc = cosine_cutoff_fwd(Rij, Rcr);
+      fc_grad = cosine_cutoff_bwd(Rij, Rcr);
+    } else {
+      fc = smooth_cutoff_fwd(Rij, Rcr);
+      fc_grad = smooth_cutoff_bwd(Rij, Rcr);
+    }
     SpeciesT specie_j = species_t[mol_idx][j];
 
     if (is_double_backward) {
@@ -1049,7 +1096,7 @@ void cuaev_forward(
   { // RadialAEV
     constexpr dim3 block_radial(8, 16, 1);
     int smem_radial = aev_params.radial_length * sizeof(float) + result.radialNbr.maxNumJPerI * sizeof(float);
-    cuRadialAEVs<int, float><<<result.nI, block_radial, smem_radial, stream>>>(
+    cuRadialAEVs<true><<<result.nI, block_radial, smem_radial, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
         aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1081,7 +1128,7 @@ void cuaev_forward(
 
     int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
     constexpr dim3 block(C10_WARP_SIZE, 4, 1);
-    cuAngularAEVs<block.x, block.y><<<result.nI, block, smem_size, stream>>>(
+    cuAngularAEVs<block.x, block.y, true><<<result.nI, block, smem_size, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         coordinates_p,
         aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1129,7 +1176,7 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
   constexpr dim3 block_radial(8, 16, 1);
   int smem_radial =
       result.radialNbr.maxNumJPerI * sizeof(float) + aev_params.radial_length * sizeof(float); // grad_dist, grad_aev
-  cuRadialAEVs_backward_or_doublebackward<false, int, float, 8><<<result.nI, block_radial, smem_radial, stream>>>(
+  cuRadialAEVs_backward_or_doublebackward<false, 8, true><<<result.nI, block_radial, smem_radial, stream>>>(
       coordinates_p,
       species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
       aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1165,7 +1212,7 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
 #endif
 
   constexpr dim3 block(C10_WARP_SIZE, 4, 1);
-  cuAngularAEVs_backward_or_doublebackward<false, block.x, block.y><<<result.nI, block, smem_size, stream>>>(
+  cuAngularAEVs_backward_or_doublebackward<false, block.x, block.y, true><<<result.nI, block, smem_size, stream>>>(
       species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
       coordinates_p,
       aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1216,7 +1263,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
   constexpr dim3 block_radial(8, 16, 1);
   int smem_radial = result.radialNbr.maxNumJPerI * sizeof(float) +
       aev_params.radial_length * sizeof(float); // grad_dist, grad_grad_aev
-  cuRadialAEVs_backward_or_doublebackward<true, int, float, 8><<<result.nI, block_radial, smem_radial, stream>>>(
+  cuRadialAEVs_backward_or_doublebackward<true, 8, true><<<result.nI, block_radial, smem_radial, stream>>>(
       coordinates_p,
       species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
       aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1247,7 +1294,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
   };
   int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
   constexpr dim3 block(C10_WARP_SIZE, 4, 1);
-  cuAngularAEVs_backward_or_doublebackward<true, block.x, block.y><<<result.nI, block, smem_size, stream>>>(
+  cuAngularAEVs_backward_or_doublebackward<true, block.x, block.y, true><<<result.nI, block, smem_size, stream>>>(
       species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
       coordinates_p,
       aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
