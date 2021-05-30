@@ -1324,6 +1324,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
   return grad_grad_aev;
 }
 
+// Explicit Template Instantiation
 Result CuaevComputer::forward(const Tensor& coordinates_t, const Tensor& species_t) {
   Result result(coordinates_t, species_t);
   if (aev_params.use_cos_cutoff)

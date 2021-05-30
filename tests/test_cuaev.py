@@ -5,6 +5,8 @@ import unittest
 import pickle
 from ase.io import read
 from torchani.testing import TestCase, make_tensor
+from parameterized import parameterized_class
+from itertools import product
 
 path = os.path.dirname(os.path.realpath(__file__))
 
@@ -34,6 +36,7 @@ class TestCUAEVNoGPU(TestCase):
 
 @skipIfNoGPU
 @skipIfNoCUAEV
+@parameterized_class(('cutoff_fn'), product(['cosine', 'smooth']))
 class TestCUAEV(TestCase):
 
     @classmethod
@@ -43,12 +46,12 @@ class TestCUAEV(TestCase):
     def setUp(self):
         self.tolerance = 5e-5
         self.device = 'cuda'
-        self.aev_computer_1x = torchani.AEVComputer.like_1x().to(self.device)
-        self.cuaev_computer_1x = torchani.AEVComputer.like_1x(use_cuda_extension=True).to(self.device)
+        self.aev_computer_1x = torchani.AEVComputer.like_1x(cutoff_fn=self.cutoff_fn).to(self.device)
+        self.cuaev_computer_1x = torchani.AEVComputer.like_1x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
         self.nn = torch.nn.Sequential(torch.nn.Linear(384, 1, False)).to(self.device)
 
-        self.aev_computer_2x = torchani.AEVComputer.like_2x().to(self.device)
-        self.cuaev_computer_2x = torchani.AEVComputer.like_2x(use_cuda_extension=True).to(self.device)
+        self.aev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn).to(self.device)
+        self.cuaev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
         self.ani2x = self.__class__.ani2x
 
     def _double_backward_1_test(self, species, coordinates):
@@ -158,7 +161,7 @@ class TestCUAEV(TestCase):
         cu_aev.backward(torch.ones_like(cu_aev))
         cuaev_grad = coordinates.grad
         self.assertEqual(cu_aev, aev, f'cu_aev: {cu_aev}\n aev: {aev}')
-        self.assertEqual(cuaev_grad, aev_grad, f'\ncuaev_grad: {cuaev_grad}\n aev_grad: {aev_grad}')
+        self.assertEqual(cuaev_grad, aev_grad, f'\ncuaev_grad: {cuaev_grad}\n aev_grad: {aev_grad}', atol=5e-5, rtol=5e-5)
 
     def testSimpleDoubleBackward_1(self):
         """
