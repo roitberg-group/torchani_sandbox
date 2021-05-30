@@ -7,7 +7,7 @@ import math
 import os
 import warnings
 from collections import defaultdict
-from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
+from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union, Final
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
 
@@ -19,6 +19,25 @@ PADDING = {
     'forces': 0.0,
     'energies': 0.0
 }
+
+# Ground state atomic energies for different levels of theory
+GSAE: Final[Dict[str, Dict[str, float]]] = {'RwB97X/6-31G(d)': {'H': -0.499321200000,
+                                                                'C': -37.83383340000,
+                                                                'N': -54.57328250000,
+                                                                'O': -75.04245190000}}
+
+
+def ground_atomic_energies(elements: Sequence[str], level_of_theory: str = 'RwB97X/6-31G(d)') -> List[float]:
+    r"""Obtain the ground state atomic energies of a sequence of elements
+
+    Level of theory is given by XFunctional/Basis where X is R or U for restricted or unrestricted
+    Kohn-Sham DFT respectively, Functional is the density functional and Basis the basis set.
+    (e.g. `level_of_theory=RwB97X/6-31G(d)`)"""
+    try:
+        self_energies = [GSAE[level_of_theory][e] for e in elements]
+    except KeyError:
+        raise ValueError(f'Elements {elements} not supportted for the requested level of theory')
+    return self_energies
 
 
 def check_openmp_threads():

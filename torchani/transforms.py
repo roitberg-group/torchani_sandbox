@@ -14,7 +14,7 @@ transform = Compose([AtomicNumbersToIndices(('H', 'C', 'N'), SubtractSAE([-0.57,
 training = AniBatchedDataset('/path/to/database/', transform=transform, split='training')
 validation = AniBatchedDataset('/path/to/database/', transform=transform, split='validation')
 """
-from typing import Dict, Sequence, Union, Tuple, Optional, List
+from typing import Dict, Sequence, Union, Tuple, Optional, List, Final
 import math
 import warnings
 
@@ -27,6 +27,9 @@ from .datasets import AniBatchedDataset
 from torch.utils.data import DataLoader
 
 
+DeviceType = Union[int, str, torch.device]
+
+
 class SubtractRepulsion(torch.nn.Module):
 
     def __init__(self, elements: Union[Sequence[str], Sequence[int]]):
@@ -37,12 +40,70 @@ class SubtractRepulsion(torch.nn.Module):
         return properties
 
 
+class ToDevice(torch.nn.Module):
+    # casts to the device of the internal dummy tensor
+
+    def __init__(self, device: Optional[DeviceType] = None, non_blocking: bool = True):
+        super().__init__()
+        self.non_blocking = non_blocking
+        # dummy tensor to hold device
+        _dummy = torch.empty(0)
+        if device is not None:
+            _dummy = _dummy.to(device)
+        self.register_buffer('_dummy_tensor', _dummy, persistent=False)
+
+    def forward(self, properties: Dict[str, Tensor]) -> Dict[str, Tensor]:
+        return {k: v.to(self._dummy_tensor.device, non_blocking=self.non_blocking)
+                for k, v in properties.items()}
+
+
+class Cast(torch.nn.Module):
+
+    def __init__(self, float_keys: Optional[Sequence[str]] = ('energies', 'coordinates'),
+                       long_keys: Optional[Sequence[str]] = ('species',)):
+        super().__init__()
+        if float_keys is not None and long_keys is not None:
+            assert set(float_keys).isdisjoint(set(long_keys))
+        self.float_keys = float_keys
+        self.long_keys = long_keys
+
+    def forward(self, properties: Dict[str, Tensor]) -> Dict[str, Tensor]:
+        if self.float_keys is not None:
+            for k in self.float_keys:
+                properties[k] = properties[k].float()
+        if self.long_keys is not None:
+            for k in self.long_keys:
+                properties[k] = properties[k].long()
+        return properties
+
+
+GSAE: Final[Dict[str, Dict[str, float]]] = {'wB97X': {'H': -0.499321200000,
+                                                      'C': -37.83383340000,
+                                                      'N': -54.57328250000,
+                                                      'O': -75.04245190000}}
+
+
+def ground_atomic_energies(elements: Sequence[str], level_of_theory: str = 'wB97X'):
+    try:
+        self_energies = [GSAE[level_of_theory][e] for e in elements]
+    except KeyError:
+        raise ValueError(f'Elements {elements} not supportted for the requested level of theory')
+    return self_energies
+
+
 class SubtractSAE(torch.nn.Module):
 
     atomic_numbers: Tensor
 
-    def __init__(self, elements: Union[Sequence[str], Sequence[int]], self_energies: List[float], intercept: float = 0.0):
+    def __init__(self, elements: Union[Sequence[str], Sequence[int]],
+                       self_energies: Optional[List[float]] = None,
+                       intercept: float = 0.0,
+                       gsae_level_of_theory: str = 'wB97X'):
         super().__init__()
+
+        if self_energies is None:
+            self_energies = ground_atomic_energies(elements, gsae_level_of_theory)
+
         symbols, atomic_numbers = _parse_elements(elements)
         if len(self_energies) != len(atomic_numbers):
             raise ValueError("There should be one self energy per element")
