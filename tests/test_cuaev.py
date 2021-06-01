@@ -56,7 +56,7 @@ class TestCUAEV(TestCase):
 
     def _skip_if_not_cosine(self):
         if self.cutoff_fn != "cosine":
-            self.skipTest("Skip if not cosine cutoff")
+            self.skipTest("Skip slow tests for non-cosine cutoff")
 
     def _double_backward_1_test(self, species, coordinates):
 

@@ -57,8 +57,8 @@ template <typename DataT>
 __device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, DataT Rc) {
   int order = SMOOTH_CUTOFF_ORDER;
   DataT eps = SMOOTH_CUTOFF_EPS;
-  DataT o = __powf(Rij / Rc, order);
-  DataT m = std::max(eps, 1 - o);
+  DataT p = __powf(Rij / Rc, order);
+  DataT m = std::max(eps, 1 - p);
   return __expf(1 - 1 / m);
 }
 
@@ -66,10 +66,10 @@ template <typename DataT>
 __device__ __forceinline__ DataT smooth_cutoff_bwd(DataT Rij, DataT Rc) {
   int order = SMOOTH_CUTOFF_ORDER;
   DataT eps = SMOOTH_CUTOFF_EPS;
-  DataT o = __powf(Rij / Rc, order);
-  DataT m = std::max(eps, 1 - o);
-  DataT step_fn = (-eps - o + 1) >= 0 ? 1 : 0;
-  return -step_fn * order * o * __expf(1 - 1 / m) / (Rij * m * m);
+  DataT p = __powf(Rij / Rc, order);
+  DataT m = std::max(eps, 1 - p);
+  DataT step_fn = (-eps - p + 1) >= 0 ? 1 : 0;
+  return -step_fn * order * p * __expf(1 - 1 / m) / (Rij * m * m);
 }
 
 template <typename SpeciesT, typename DataT, typename IndexT = int>
