@@ -116,7 +116,10 @@ class AEVComputer(torch.nn.Module):
         if isinstance(cutoff_fn, CutoffCosine):
             self.cutoff_fn_type = 'cosine'
         elif isinstance(cutoff_fn, CutoffSmooth):
-            self.cutoff_fn_type = 'smooth'
+            if cutoff_fn.order == 2 and cutoff_fn.eps == 1e-10:
+                self.cutoff_fn_type = 'smooth'
+            else:
+                self.cutoff_fn_type = 'smooth_modified'
         else:
             self.cutoff_fn_type = 'others'
 
@@ -171,7 +174,8 @@ class AEVComputer(torch.nn.Module):
 
     @jit_unused_if_no_cuaev()
     def _init_cuaev_computer(self):
-        assert self.cutoff_fn_type in ['cosine', 'smooth'], 'cuaev only supports cosine and smooth cutoff functions'
+        assert self.cutoff_fn_type != 'others', 'cuaev currently only supports cosine and smooth cutoff functions'
+        assert self.cutoff_fn_type != 'smooth_modified', 'cuaev currently only supports standard parameters for smooth cutoff function'
         use_cos_cutoff = self.cutoff_fn_type == 'cosine'
         self.cuaev_computer = torch.classes.cuaev.CuaevComputer(self.radial_terms.cutoff,
                                                                 self.angular_terms.cutoff,
