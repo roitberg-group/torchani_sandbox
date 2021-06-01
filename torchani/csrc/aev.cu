@@ -58,9 +58,8 @@ __device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, DataT Rc) {
   int order = SMOOTH_CUTOFF_ORDER;
   DataT eps = SMOOTH_CUTOFF_EPS;
   DataT o = __powf(Rij / Rc, order);
-  DataT e = 1 - 1 / std::max(eps, (1 - o));
-  e = __expf(e);
-  return e;
+  DataT m = std::max(eps, 1 - o);
+  return __expf(1 - 1 / m);
 }
 
 template <typename DataT>
