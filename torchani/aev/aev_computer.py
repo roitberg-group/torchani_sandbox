@@ -9,7 +9,7 @@ from torch import Tensor
 from ..utils import cumsum_from_zero
 from ..compat import Final
 # modular parts of AEVComputer
-from .cutoffs import _parse_cutoff_fn
+from .cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
 from .aev_terms import _parse_angular_terms, _parse_radial_terms, StandardAngular, StandardRadial
 from .neighbors import _parse_neighborlist
 
@@ -108,12 +108,17 @@ class AEVComputer(torch.nn.Module):
         # and only full pairwise neighborlist
         # if a cutoff function is passed, it is used for both radial and
         # angular terms.
-        self.cutoff_fn_type = cutoff_fn
         cutoff_fn = _parse_cutoff_fn(cutoff_fn)
         self.angular_terms = _parse_angular_terms(angular_terms, cutoff_fn, EtaA, Zeta, ShfA, ShfZ, Rca)
         self.radial_terms = _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr)
         self.neighborlist = _parse_neighborlist(neighborlist, self.radial_terms.cutoff)
         self._validate_cutoffs_init()
+        if isinstance(cutoff_fn, CutoffCosine):
+            self.cutoff_fn_type = 'cosine'
+        elif isinstance(cutoff_fn, CutoffSmooth):
+            self.cutoff_fn_type = 'smooth'
+        else:
+            self.cutoff_fn_type = 'others'
 
         # length variables are updated once radial and angular terms are initialized
         # The lengths of buffers can't be changed with load_state_dict so we can

@@ -54,6 +54,10 @@ class TestCUAEV(TestCase):
         self.cuaev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
         self.ani2x = self.__class__.ani2x
 
+    def _skip_if_not_cosine(self):
+        if self.cutoff_fn != "cosine":
+            self.skipTest("Skip if not cosine cutoff")
+
     def _double_backward_1_test(self, species, coordinates):
 
         def double_backward(aev_computer, species, coordinates):
@@ -237,6 +241,9 @@ class TestCUAEV(TestCase):
                 self.assertEqual(cuaev_grad, aev_grad, atol=5e-5, rtol=5e-5)
 
     def testTripeptideMDDoubleBackward_2(self):
+        # skip if not cosine
+        self._skip_if_not_cosine()
+
         for i in range(100):
             datafile = os.path.join(path, 'test_data/tripeptide-md/{}.dat'.format(i))
             with open(datafile, 'rb') as f:
@@ -246,6 +253,9 @@ class TestCUAEV(TestCase):
                 self._double_backward_2_test(species, coordinates)
 
     def testNIST(self):
+        # skip if not cosine
+        self._skip_if_not_cosine()
+
         datafile = os.path.join(path, 'test_data/NIST/all')
         with open(datafile, 'rb') as f:
             data = pickle.load(f)

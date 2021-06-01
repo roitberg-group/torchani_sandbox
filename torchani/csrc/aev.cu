@@ -8,6 +8,9 @@
 
 #define PI 3.141592653589793
 #define MAX_NUMJ_PER_I_IN_RCR 1000 // normally this value is less than 100 when Rcr is 5 A
+#define SMOOTH_CUTOFF_ORDER 2
+#define SMOOTH_CUTOFF_EPS 1e-10
+
 using torch::Tensor;
 
 // fetch from the following matrix
@@ -52,8 +55,8 @@ __device__ __forceinline__ DataT cosine_cutoff_bwd(DataT Rij, DataT Rc) {
 
 template <typename DataT>
 __device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, DataT Rc) {
-  int order = 2;
-  DataT eps = 1e-10;
+  int order = SMOOTH_CUTOFF_ORDER;
+  DataT eps = SMOOTH_CUTOFF_EPS;
   DataT o = __powf(Rij / Rc, order);
   DataT e = 1 - 1 / std::max(eps, (1 - o));
   e = __expf(e);
@@ -62,8 +65,8 @@ __device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, DataT Rc) {
 
 template <typename DataT>
 __device__ __forceinline__ DataT smooth_cutoff_bwd(DataT Rij, DataT Rc) {
-  int order = 2;
-  DataT eps = 1e-10;
+  int order = SMOOTH_CUTOFF_ORDER;
+  DataT eps = SMOOTH_CUTOFF_EPS;
   DataT o = __powf(Rij / Rc, order);
   DataT m = std::max(eps, 1 - o);
   DataT step_fn = (-eps - o + 1) >= 0 ? 1 : 0;
