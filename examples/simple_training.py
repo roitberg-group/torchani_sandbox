@@ -50,8 +50,8 @@ class Runner:
                    use_tqdm: bool = True,
                    verbose: bool = True) -> ScalarMetrics:
         # outputs for logging
-        mean_epoch_loss = torch.tensor(0.0, dtype=torch.float)
-        mean_epoch_rmse = torch.tensor(0.0, dtype=torch.float)
+        mean_epoch_loss = 0.0
+        mean_epoch_rmse = 0.0
         count = 0
 
         self.model.train(train)
@@ -59,11 +59,15 @@ class Runner:
             properties = transform(properties)
             species, coordinates = properties['species'], properties['coordinates']
             target_energies = properties['energies']
-
             predicted_energies = self.model((species, coordinates)).energies
             num_atoms = (species >= 0).sum(dim=1, dtype=coordinates.dtype)
             mse = self.mse(predicted_energies, target_energies)
             scaled_mse = (mse / num_atoms.sqrt())
+
+            # update for logging
+            mean_epoch_loss += scaled_mse.detach().sum()
+            mean_epoch_rmse += mse.detach().sum()
+            count += species.shape[0]
 
             if train:
                 loss = scaled_mse.mean()
@@ -71,13 +75,9 @@ class Runner:
                 loss.backward()
                 self.optimizer.step()
 
-            # update for logging
-            mean_epoch_loss += scaled_mse.detach()
-            mean_epoch_rmse += mse.detach()
-            count += species.shape[0]
         self.model.train(not train)
 
-        metrics = {'loss_hartree': (mean_epoch_loss / count).item(),
+        metrics = {'loss_hartree_squared': (mean_epoch_loss / count).item(),
                    'rmse_kcalpermol': units.hartree2kcalmol(torch.sqrt(mean_epoch_rmse / count)).item()}
         self._maybe_print_metrics(dataset, metrics, verbose)
         return metrics
@@ -206,19 +206,13 @@ if __name__ == '__main__':
                                              batch_size=None)
 
     # Model
-    model = torchani.models.ANI1x(pretrained=False, model_index=0, use_cuda_extension=True)
-    model.add_saes_(False)
-    model.periodic_table_index_(False)
+    model = torchani.models.ANI1x(pretrained=False, periodic_table_index=True, model_index=0, bias=False, activation=torchani.nn.FittedSoftplus()).float()
+    elements = model.get_chemical_symbols()
+    model.energy_shifter = torchani.utils.EnergyShifter(torchani.utils.ground_atomic_energies(elements, 'RwB97X/6-31G(d)')).float()
 
     # Transforms
-    elements = model.get_chemical_symbols()
-    subtract_sae = transforms.SubtractSAE(elements).float()
-    atomic_nums_to_indices = transforms.AtomicNumbersToIndices(elements)
     transform = transforms.Compose([transforms.ToDevice(non_blocking=True),
-                                    transforms.Cast(float_keys=('energies', 'coordinates'), long_keys=('species')),
-                                    atomic_nums_to_indices,
-                                    subtract_sae])
-    model.energy_shifter = subtract_sae.energy_shifter
+                                    transforms.Cast(float_keys=('energies', 'coordinates'), long_keys=('species',))])
 
     # transform and model have to be sent to a device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -231,7 +225,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.AdamW(model.parameters(), weight_decay=weight_decay, lr=initial_lr)
 
     # Lr scheduler
-    max_epochs = 100
+    max_epochs = 2000
     early_stopping_learning_rate = 1.0e-6
     track_metric = 'rmse_kcalpermol'
     scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=50, threshold=1e-4)

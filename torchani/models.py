@@ -83,13 +83,15 @@ class BuiltinModel(Module):
 
     atomic_numbers: Tensor
     periodic_table_index: Final[bool]
+    add_saes: Final[bool]
 
     def __init__(self,
                  aev_computer: AEVComputer,
                  neural_networks: NN,
                  energy_shifter: EnergyShifter,
                  elements: Sequence[str],
-                 periodic_table_index: bool = False):
+                 periodic_table_index: bool = False,
+                 add_saes: bool = True):
 
         super().__init__()
 
@@ -100,6 +102,7 @@ class BuiltinModel(Module):
         self.species_converter = SpeciesConverter(elements)
 
         self.periodic_table_index = periodic_table_index
+        self.add_saes = add_saes
         numbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
         self.register_buffer('atomic_numbers', numbers)
 
@@ -117,6 +120,14 @@ class BuiltinModel(Module):
                 assert len(nnp) == len(self.atomic_numbers)
         else:
             assert len(self.neural_networks) == len(self.atomic_numbers)
+
+    def periodic_table_index_(self, b: bool = True) -> 'BuiltinModel':
+        self.periodic_table_index = b
+        return self
+
+    def add_saes_(self, b: bool = True) -> 'BuiltinModel':
+        self.add_saes = b
+        return self
 
     @torch.jit.unused
     def get_chemical_symbols(self) -> Tuple[str, ...]:
@@ -138,7 +149,9 @@ class BuiltinModel(Module):
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         species_energies = self.neural_networks(species_aevs)
-        return self.energy_shifter(species_energies)
+        if self.add_saes:
+            species_energies = self.energy_shifter(species_energies)
+        return species_energies
 
     @torch.jit.export
     def _maybe_convert_species(self, species_coordinates: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tensor]:
@@ -168,7 +181,8 @@ class BuiltinModel(Module):
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         atomic_energies = self.neural_networks._atomic_energies(species_aevs)
-        atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
+        if self.add_saes:
+            atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
 
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
@@ -199,7 +213,8 @@ class BuiltinModel(Module):
                            self.neural_networks[index],
                            self.energy_shifter,
                            self.get_chemical_symbols(),
-                           self.periodic_table_index)
+                           self.periodic_table_index,
+                           self.add_saes)
 
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -265,8 +280,12 @@ class BuiltinModel(Module):
 def _get_component_modules(state_dict_file: str,
                            model_index: Optional[int] = None,
                            use_cuda_extension: bool = False,
+                           bias: bool = True,
+                           activation: Optional[torch.nn.Module] = None,
                            ensemble_size: int = 8) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
     # This generates ani-style architectures without neurochem
+    if activation is None:
+        activation = torch.nn.CELU(0.1)
     name = state_dict_file.split('_')[0]
     elements: Tuple[str, ...]
     if name == 'ani1x':
@@ -284,7 +303,7 @@ def _get_component_modules(state_dict_file: str,
     else:
         raise ValueError(f'{name} is not a supported model')
     aev_computer = aev_maker(use_cuda_extension=use_cuda_extension)
-    atomic_networks = OrderedDict([(e, atomic_maker(e)) for e in elements])
+    atomic_networks = OrderedDict([(e, atomic_maker(e, bias=bias, activation=activation)) for e in elements])
 
     neural_networks: NN
     if model_index is None:
@@ -343,15 +362,18 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     use_cuda_extension = model_kwargs.pop('use_cuda_extension', False)
     model_index = model_kwargs.pop('model_index', None)
     pretrained = model_kwargs.pop('pretrained', True)
+    bias = model_kwargs.pop('bias', True)
+    activation = model_kwargs.pop('activation', None)
 
     if use_neurochem_source:
         assert info_file is not None, "Info file is needed to load from a neurochem source"
         assert pretrained, "Non pretrained models not available from neurochem source"
+        assert bias, "Neurochem source models must have a bias term"
         from . import neurochem  # noqa
         components = neurochem.parse_resources._get_component_modules(info_file, model_index, use_cuda_extension)
     else:
         assert state_dict_file is not None
-        components = _get_component_modules(state_dict_file, model_index, use_cuda_extension)
+        components = _get_component_modules(state_dict_file, model_index, use_cuda_extension, bias=bias, activation=activation)
 
     aev_computer, neural_networks, energy_shifter, elements = components
     model = BuiltinModel(aev_computer, neural_networks, energy_shifter, elements, **model_kwargs)

@@ -7,7 +7,7 @@ import math
 import os
 import warnings
 from collections import defaultdict
-from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union, Final
+from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
 
@@ -21,7 +21,7 @@ PADDING = {
 }
 
 # Ground state atomic energies for different levels of theory
-GSAE: Final[Dict[str, Dict[str, float]]] = {'RwB97X/6-31G(d)': {'H': -0.499321200000,
+GSAE: Dict[str, Dict[str, float]] = {'RwB97X/6-31G(d)': {'H': -0.499321200000,
                                                                 'C': -37.83383340000,
                                                                 'N': -54.57328250000,
                                                                 'O': -75.04245190000}}

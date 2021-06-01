@@ -14,14 +14,14 @@ transform = Compose([AtomicNumbersToIndices(('H', 'C', 'N'), SubtractSAE([-0.57,
 training = AniBatchedDataset('/path/to/database/', transform=transform, split='training')
 validation = AniBatchedDataset('/path/to/database/', transform=transform, split='validation')
 """
-from typing import Dict, Sequence, Union, Tuple, Optional, List, Final
+from typing import Dict, Sequence, Union, Tuple, Optional, List
 import math
 import warnings
 
 import torch
 from torch import Tensor
 
-from .utils import EnergyShifter, PERIODIC_TABLE, ATOMIC_NUMBERS
+from .utils import EnergyShifter, PERIODIC_TABLE, ATOMIC_NUMBERS, ground_atomic_energies
 from .nn import SpeciesConverter
 from .datasets import AniBatchedDataset
 from torch.utils.data import DataLoader
@@ -75,20 +75,6 @@ class Cast(torch.nn.Module):
             for k in self.long_keys:
                 properties[k] = properties[k].long()
         return properties
-
-
-GSAE: Final[Dict[str, Dict[str, float]]] = {'wB97X': {'H': -0.499321200000,
-                                                      'C': -37.83383340000,
-                                                      'N': -54.57328250000,
-                                                      'O': -75.04245190000}}
-
-
-def ground_atomic_energies(elements: Sequence[str], level_of_theory: str = 'wB97X'):
-    try:
-        self_energies = [GSAE[level_of_theory][e] for e in elements]
-    except KeyError:
-        raise ValueError(f'Elements {elements} not supportted for the requested level of theory')
-    return self_energies
 
 
 class SubtractSAE(torch.nn.Module):
