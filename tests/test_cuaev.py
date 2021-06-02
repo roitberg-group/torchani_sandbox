@@ -6,7 +6,6 @@ import pickle
 from ase.io import read
 from torchani.testing import TestCase, make_tensor
 from parameterized import parameterized_class
-from itertools import product
 
 path = os.path.dirname(os.path.realpath(__file__))
 
