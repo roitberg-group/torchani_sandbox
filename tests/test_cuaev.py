@@ -36,7 +36,7 @@ class TestCUAEVNoGPU(TestCase):
 
 @skipIfNoGPU
 @skipIfNoCUAEV
-@parameterized_class(('cutoff_fn'), product(['cosine', 'smooth']))
+@parameterized_class(('cutoff_fn'), ['cosine', 'smooth'])
 class TestCUAEV(TestCase):
 
     @classmethod
