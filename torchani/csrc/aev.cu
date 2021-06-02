@@ -55,18 +55,30 @@ __device__ __forceinline__ DataT cosine_cutoff_bwd(DataT Rij, DataT Rc) {
 
 template <typename DataT>
 __device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, DataT Rc) {
-  int order = SMOOTH_CUTOFF_ORDER;
   DataT eps = SMOOTH_CUTOFF_EPS;
+  int order = SMOOTH_CUTOFF_ORDER;
+#if (SMOOTH_CUTOFF_ORDER == 2)
+  DataT p = (Rij / Rc) * (Rij / Rc);
+#elif (SMOOTH_CUTOFF_ORDER == 3)
+  DataT p = (Rij / Rc) * (Rij / Rc) * (Rij / Rc);
+#else
   DataT p = __powf(Rij / Rc, order);
+#endif
   DataT m = std::max(eps, 1 - p);
   return __expf(1 - 1 / m);
 }
 
 template <typename DataT>
 __device__ __forceinline__ DataT smooth_cutoff_bwd(DataT Rij, DataT Rc) {
-  int order = SMOOTH_CUTOFF_ORDER;
   DataT eps = SMOOTH_CUTOFF_EPS;
+  int order = SMOOTH_CUTOFF_ORDER;
+#if (SMOOTH_CUTOFF_ORDER == 2)
+  DataT p = (Rij / Rc) * (Rij / Rc);
+#elif (SMOOTH_CUTOFF_ORDER == 3)
+  DataT p = (Rij / Rc) * (Rij / Rc) * (Rij / Rc);
+#else
   DataT p = __powf(Rij / Rc, order);
+#endif
   DataT m = std::max(eps, 1 - p);
   DataT step_fn = (-eps - p + 1) >= 0 ? 1 : 0;
   return -step_fn * order * p * __expf(1 - 1 / m) / (Rij * m * m);
