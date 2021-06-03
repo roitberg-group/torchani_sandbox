@@ -1,8 +1,10 @@
 import torch
 from collections import OrderedDict
 from torch import Tensor
-from typing import Tuple, NamedTuple, Optional
+from typing import Tuple, NamedTuple, Optional, Sequence
 from . import utils
+from . import infer
+from .compat import Final
 
 
 class SpeciesEnergies(NamedTuple):
@@ -72,17 +74,21 @@ class ANIModel(torch.nn.ModuleDict):
         output = aev.new_zeros(species_.shape)
 
         for i, m in enumerate(self.values()):
-            mask = (species_ == i)
-            midx = mask.nonzero().flatten()
+            midx = (species_ == i).nonzero().view(-1)
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
-                output.masked_scatter_(mask, m(input_).flatten())
+                output.index_add_(0, midx, m(input_).view(-1))
         output = output.view_as(species)
         return output
+
+    def to_infer_model(self, use_mnp=True):
+        return infer.ANIInferModel(list(self.items()), use_mnp)
 
 
 class Ensemble(torch.nn.ModuleList):
     """Compute the average output of an ensemble of modules."""
+
+    size: Final[int]
 
     def __init__(self, modules):
         super().__init__(modules)
@@ -95,7 +101,19 @@ class Ensemble(torch.nn.ModuleList):
         for x in self:
             sum_ += x(species_input)[1]
         species, _ = species_input
-        return SpeciesEnergies(species, sum_ / self.size)
+        return SpeciesEnergies(species, sum_ / self.size)  # type: ignore
+
+    @torch.jit.export
+    def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
+        members_list = []
+        for nnp in self:
+            members_list.append(nnp._atomic_energies((species_aev)).unsqueeze(0))
+        members_atomic_energies = torch.cat(members_list, dim=0)
+        # out shape is (M, C, A)
+        return members_atomic_energies
+
+    def to_infer_model(self, use_mnp=True):
+        return infer.BmmEnsemble(self, use_mnp)
 
 
 class Sequential(torch.nn.ModuleList):
@@ -118,6 +136,26 @@ class Gaussian(torch.nn.Module):
         return torch.exp(- x * x)
 
 
+class FittedSoftplus(torch.nn.Module):
+    """Softplus function parametrized to be equal to a CELU
+
+    This allows keeping the good characteristics of CELU, while having an
+    infinitely differentiable function.
+    It is highly recommended to leave alpha and beta as their defaults,
+    which match closely CELU with alpha = 0.1"""
+
+    alpha: Final[float]
+    beta: Final[float]
+
+    def __init__(self, alpha=0.1, beta=20):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.nn.functional.softplus(x + self.alpha, beta=self.beta) - self.alpha
+
+
 class SpeciesConverter(torch.nn.Module):
     """Converts tensors with species labeled as atomic numbers into tensors
     labeled with internal torchani indices according to a custom ordering
@@ -132,7 +170,7 @@ class SpeciesConverter(torch.nn.Module):
     """
     conv_tensor: Tensor
 
-    def __init__(self, species):
+    def __init__(self, species: Sequence[str]):
         super().__init__()
         rev_idx = {s: k for k, s in enumerate(utils.PERIODIC_TABLE)}
         maxidx = max(rev_idx.values())

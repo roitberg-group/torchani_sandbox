@@ -13,7 +13,8 @@ AEVScalarParams::AEVScalarParams(
     Tensor Zeta_t,
     Tensor ShfA_t,
     Tensor ShfZ_t,
-    int num_species)
+    int num_species,
+    bool use_cos_cutoff)
     : Rcr(Rcr),
       Rca(Rca),
       radial_sublength(EtaR_t.size(0) * ShfR_t.size(0)),
@@ -24,7 +25,8 @@ AEVScalarParams::AEVScalarParams(
       EtaA_t(EtaA_t),
       Zeta_t(Zeta_t),
       ShfA_t(ShfA_t),
-      ShfZ_t(ShfZ_t) {
+      ShfZ_t(ShfZ_t),
+      use_cos_cutoff(use_cos_cutoff) {
   radial_length = radial_sublength * num_species;
   angular_length = angular_sublength * (num_species * (num_species + 1) / 2);
 }
@@ -87,8 +89,9 @@ CuaevComputer::CuaevComputer(
     const Tensor& Zeta_t,
     const Tensor& ShfA_t,
     const Tensor& ShfZ_t,
-    int64_t num_species)
-    : aev_params(Rcr, Rca, EtaR_t, ShfR_t, EtaA_t, Zeta_t, ShfA_t, ShfZ_t, num_species) {}
+    int64_t num_species,
+    bool use_cos_cutoff)
+    : aev_params(Rcr, Rca, EtaR_t, ShfR_t, EtaA_t, Zeta_t, ShfA_t, ShfZ_t, num_species, use_cos_cutoff) {}
 
 Tensor CuaevDoubleAutograd::forward(
     AutogradContext* ctx,
@@ -117,7 +120,7 @@ Tensor CuaevAutograd::forward(
     const Tensor& coordinates_t,
     const Tensor& species_t,
     const torch::intrusive_ptr<CuaevComputer>& cuaev_computer) {
-  at::AutoNonVariableTypeMode g;
+  at::AutoDispatchBelowADInplaceOrView guard;
   Result result = cuaev_computer->forward(coordinates_t, species_t);
   if (coordinates_t.requires_grad()) {
     ctx->saved_data["cuaev_computer"] = cuaev_computer;
@@ -195,7 +198,7 @@ Tensor run_with_nbrlist_autograd(
 
 TORCH_LIBRARY(cuaev, m) {
   m.class_<CuaevComputer>("CuaevComputer")
-      .def(torch::init<double, double, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, int64_t>());
+      .def(torch::init<double, double, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, int64_t, bool>());
   m.def("run", run_only_forward);
   m.def("run_with_nbrlist", run_with_nbrlist_only_forward);
 }
