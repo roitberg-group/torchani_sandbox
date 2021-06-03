@@ -212,7 +212,7 @@ void cuaev_forward(
     const AEVScalarParams& aev_params,
     Result& result);
 
-// TODO
+template <bool use_cos_cutoff>
 void cuaev_forward_with_nbrlist(
     const Tensor& coordinates_t,
     const Tensor& species_t,
@@ -250,16 +250,7 @@ struct CuaevComputer : torch::CustomClassHolder {
   // TODO add option for simulation only forward, which will initilize result space, and no need to allocate any more.
   Result forward(const Tensor& coordinates_t, const Tensor& species_t);
 
-  Result forward_with_nbrlist(
-      const Tensor& coordinates_t,
-      const Tensor& species_t,
-      const Tensor& atomIJ_t,
-      const Tensor& deltaJ_t,
-      const Tensor& distJ_t) {
-    Result result(coordinates_t, species_t);
-    cuaev_forward_with_nbrlist(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, aev_params, result);
-    return result;
-  }
+  Result forward_with_nbrlist(const Tensor& coordinates_t, const Tensor& species_t, const Tensor& atomIJ_t, const Tensor& deltaJ_t, const Tensor& distJ_t);
 
   Tensor backward(const Tensor& grad_e_aev, const Result& result);
 

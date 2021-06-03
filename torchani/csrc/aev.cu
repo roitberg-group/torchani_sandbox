@@ -1239,6 +1239,7 @@ void cuaev_forward(
   }
 }
 
+template <bool use_cos_cutoff>
 void cuaev_forward_with_nbrlist(
     const Tensor& coordinates_t,
     const Tensor& species_t,
@@ -1371,11 +1372,15 @@ void cuaev_forward_with_nbrlist(
 #endif
   }
 
+  // Merge two cubMax streamSync into one
+  result.radialNbr.maxNumJPerI = cubMax(radialNbr_numJPerI_p, result.nI, stream, /* sync */ false);
+  result.angularNbr.maxNumJPerI = cubMax(angularNbr_numJPerI_p, result.nI, stream, /* sync */ false);
+  cudaStreamSynchronize(stream);
+
   { // RadialAEV
-    result.radialNbr.maxNumJPerI = cubMax(radialNbr_numJPerI_p, result.nI, stream);
     constexpr dim3 block_radial(4, 16, 1);
     int smem_radial = aev_params.radial_length * sizeof(float) + result.radialNbr.maxNumJPerI * sizeof(float);
-    cuRadialAEVs<int, float><<<result.nI, block_radial, smem_radial, stream>>>(
+    cuRadialAEVs<use_cos_cutoff><<<result.nI, block_radial, smem_radial, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
         aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1404,10 +1409,9 @@ void cuaev_forward_with_nbrlist(
       return (sm_aev + sxyz + sRij + sfc + sj) * ncatom_per_tpb;
     };
 
-    result.angularNbr.maxNumJPerI = cubMax(angularNbr_numJPerI_p, result.nI, stream);
     int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
     constexpr dim3 block(C10_WARP_SIZE, 4, 1);
-    cuAngularAEVs<block.x, block.y><<<result.nI, block, smem_size, stream>>>(
+    cuAngularAEVs<block.x, block.y, use_cos_cutoff><<<result.nI, block, smem_size, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         angularNbr_deltaJ_p,
         aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1458,7 +1462,7 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
   int smem_radial =
       result.radialNbr.maxNumJPerI * sizeof(float) + aev_params.radial_length * sizeof(float); // grad_dist, grad_aev
   cuRadialAEVs_backward_or_doublebackward<false, 8, use_cos_cutoff><<<result.nI, block_radial, smem_radial, stream>>>(
-      coordinates_p,
+      radialNbr_deltaJ_p,
       species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
       aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
       aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1495,7 +1499,7 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
   cuAngularAEVs_backward_or_doublebackward<false, block.x, block.y, use_cos_cutoff>
       <<<result.nI, block, smem_size, stream>>>(
           species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-          coordinates_p,
+          angularNbr_deltaJ_p,
           aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
           aev_params.ShfZ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
           aev_params.EtaA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1547,7 +1551,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
   int smem_radial = result.radialNbr.maxNumJPerI * sizeof(float) +
       aev_params.radial_length * sizeof(float); // grad_dist, grad_grad_aev
   cuRadialAEVs_backward_or_doublebackward<true, 8, use_cos_cutoff><<<result.nI, block_radial, smem_radial, stream>>>(
-      coordinates_p,
+      radialNbr_deltaJ_p,
       species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
       aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
       aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1579,7 +1583,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
   cuAngularAEVs_backward_or_doublebackward<true, block.x, block.y, use_cos_cutoff>
       <<<result.nI, block, smem_size, stream>>>(
           species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-          coordinates_p,
+          angularNbr_deltaJ_p,
           aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
           aev_params.ShfZ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
           aev_params.EtaA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
@@ -1609,6 +1613,15 @@ Result CuaevComputer::forward(const Tensor& coordinates_t, const Tensor& species
     cuaev_forward<true>(coordinates_t, species_t, aev_params, result);
   else
     cuaev_forward<false>(coordinates_t, species_t, aev_params, result);
+  return result;
+}
+
+Result CuaevComputer::forward_with_nbrlist(const Tensor& coordinates_t, const Tensor& species_t, const Tensor& atomIJ_t, const Tensor& deltaJ_t, const Tensor& distJ_t){
+  Result result(coordinates_t, species_t);
+  if (aev_params.use_cos_cutoff)
+    cuaev_forward_with_nbrlist<true>(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, aev_params, result);
+  else
+    cuaev_forward_with_nbrlist<false>(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, aev_params, result);
   return result;
 }
 

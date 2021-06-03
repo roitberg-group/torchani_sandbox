@@ -144,7 +144,7 @@ Tensor CuaevWithNbrlistAutograd::forward(
     const Tensor& deltaJ_t,
     const Tensor& distJ_t,
     const torch::intrusive_ptr<CuaevComputer>& cuaev_computer) {
-  at::AutoNonVariableTypeMode g;
+  at::AutoDispatchBelowADInplaceOrView guard;
   Result result = cuaev_computer->forward_with_nbrlist(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t);
   if (coordinates_t.requires_grad()) {
     ctx->saved_data["cuaev_computer"] = cuaev_computer;

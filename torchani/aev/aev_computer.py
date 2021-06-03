@@ -296,12 +296,12 @@ class AEVComputer(torch.nn.Module):
             if not self.cuaev_is_initialized:
                 self._init_cuaev_computer()
                 self.cuaev_is_initialized = True
-            assert pbc is None or (not pbc.any()), "cuaev currently does not support PBC"
             if use_cuaev_interface is not None and use_cuaev_interface:
                 # TODO, no_grad for self.neighborlist?
                 atom_index12, _, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
                 aev = self._compute_cuaev_with_nbrlist(species, coordinates, atom_index12, diff_vector, distances)
             else:
+                assert pbc is None or (not pbc.any()), "cuaev currently does not support PBC"
                 aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
 
