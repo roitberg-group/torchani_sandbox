@@ -17,7 +17,7 @@ __all__ = ['parse_neurochem_resources']
 
 SUPPORTED_INFO_FILES = ['ani-1ccx_8x.info', 'ani-1x_8x.info', 'ani-2x_8x.info']
 
-NN = Union[Ensemble, ANIModel]
+NN = Union[ANIModel, Ensemble]
 
 
 def parse_neurochem_resources(info_file_path):

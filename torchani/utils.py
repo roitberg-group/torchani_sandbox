@@ -211,18 +211,6 @@ class EnergyShifter(torch.nn.Module):
             self_energies = torch.tensor(self_energies, dtype=torch.double)
         self.register_buffer('self_energies', self_energies)
 
-    def forward(self, species_energies: Tuple[Tensor, Tensor],
-                cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        """(species, molecular energies)->(species, molecular energies + sae)
-        """
-        species, energies = species_energies
-        sae = self._atomic_saes(species).sum(dim=1)
-
-        if self.fit_intercept:
-            sae += self.self_energies[-1]
-        return SpeciesEnergies(species, energies + sae)
-
     @torch.jit.export
     def _atomic_saes(self, species: Tensor) -> Tensor:
         # Compute atomic self energies for a set of species.
@@ -248,6 +236,18 @@ class EnergyShifter(torch.nn.Module):
         if self.fit_intercept:
             sae += self.self_energies[-1]
         return sae
+
+    def forward(self, species_energies: Tuple[Tensor, Tensor],
+                cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        """(species, molecular energies)->(species, molecular energies + sae)
+        """
+        species, energies = species_energies
+        sae = self._atomic_saes(species).sum(dim=1)
+
+        if self.fit_intercept:
+            sae += self.self_energies[-1]
+        return SpeciesEnergies(species, energies + sae)
 
 
 class ChemicalSymbolsToAtomicNumbers(torch.nn.Module):
