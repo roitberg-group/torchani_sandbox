@@ -214,6 +214,9 @@ class AniH5DatasetList(abc.Sequence):
         for _, _, _, c in self.iter_fileidx_key_idx_conformers(include_properties, **get_group_kwargs):
             yield c
 
+    def iter_file_key(self):
+        yield from ((j, k) for j, d in enumerate(self._datasets) for k in d.group_sizes.keys())
+
     def iter_file_key_idx_conformers(self, include_properties: Optional[Sequence[str]] = None,
                                 yield_file_idx: bool = True,
                                 **get_group_kwargs: bool) -> Iterator[Tuple[str, int, MaybeRawProperties]]:
@@ -706,9 +709,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
         inplace_transform = lambda x: x  # noqa: E731
 
     # get all group keys concatenated in a list, with the associated file indexes
-    file_idxs_and_group_keys = [(j, k)
-                  for j, h5ds in enumerate(h5_datasets)
-                  for k in h5ds.group_sizes.keys()]
+    file_idxs_and_group_keys = list(h5_datasets.iter_file_key())
 
     use_pbar = PKBAR_INSTALLED and verbose
     for split_path, indices_of_split in zip(split_paths.values(), conformer_splits):
