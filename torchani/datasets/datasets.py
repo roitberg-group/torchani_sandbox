@@ -215,7 +215,7 @@ class AniH5DatasetList(abc.Sequence):
             yield c
 
     def iter_file_key_idx_conformers(self, include_properties: Optional[Sequence[str]] = None,
-                                yield_file_idx: bool = False,
+                                yield_file_idx: bool = True,
                                 **get_group_kwargs: bool) -> Iterator[Tuple[str, int, MaybeRawProperties]]:
 
         # chain yields key, idx, conformers
