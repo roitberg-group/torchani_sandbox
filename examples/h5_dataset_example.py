@@ -1,5 +1,5 @@
 from torchani.datasets import AniH5Dataset
-import numpy as np
+import torch
 
 # Example usage of the AniH5Dataset class, which supersedes the obsolete
 # anidataloader
@@ -34,11 +34,12 @@ print(conformer)
 conformer = dataset.get_conformers('C10H10', 1)
 print(conformer)
 
-# A numpy array can also be passed for indexing, to fetch multiple conformers
+# A tensor can also be passed for indexing, to fetch multiple conformers
 # from the same group, which is faster.
-# Since I copy the data for simplicity, this allows all of numpy fancy indexing
+# Since I copy the data for simplicity, this allows all fancy indexing
 # operations (directly indexing using h5py does not).
-conformers = dataset.get_conformers('C10H10', np.array([0, 1]))
+# a numpy array or an int can also be used.
+conformers = dataset.get_conformers('C10H10', torch.tensor([0, 1]))
 print(conformers)
 
 # We can also access all the group, same as with [] if we don't pass an index
@@ -49,7 +50,7 @@ print(conformer)
 conformer = dataset.get_conformers('C10H10', include_properties=('species', 'energies'))
 print(conformer)
 
-conformer = dataset.get_conformers('C10H10', np.array([0, 3]), include_properties=('species', 'energies'))
+conformer = dataset.get_conformers('C10H10', torch.tensor([0, 3]), include_properties=('species', 'energies'))
 print(conformer)
 
 # We can iterate over all conformers sequentially by calling iter_conformer,

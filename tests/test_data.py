@@ -485,16 +485,16 @@ class TestAniH5Dataset(TestCase):
 
         self.assertEqual(ds.get_conformers('HOO')['coordinates'], ds['HOO']['coordinates'])
         self.assertEqual(ds.get_conformers('HOO', 0)['coordinates'], ds['HOO']['coordinates'][0])
-        conformers12 = ds.get_conformers('HCHHH', np.array([1, 2]))
-        self.assertEqual(conformers12['coordinates'], ds['HCHHH']['coordinates'][np.array([1, 2])])
+        conformers12 = ds.get_conformers('HCHHH', torch.tensor([1, 2]))
+        self.assertEqual(conformers12['coordinates'], ds['HCHHH']['coordinates'][torch.tensor([1, 2])])
         # note that h5py does not allow this directly
-        conformers12 = ds.get_conformers('HCHHH', np.array([2, 1]))
-        self.assertEqual(conformers12['coordinates'], ds['HCHHH']['coordinates'][np.array([2, 1])])
+        conformers12 = ds.get_conformers('HCHHH', torch.tensor([2, 1]))
+        self.assertEqual(conformers12['coordinates'], ds['HCHHH']['coordinates'][torch.tensor([2, 1])])
         # note that h5py does not allow this directly
-        conformers12 = ds.get_conformers('HCHHH', np.array([1, 1]))
-        self.assertEqual(conformers12['coordinates'], ds['HCHHH']['coordinates'][np.array([1, 1])])
-        conformers124 = ds.get_conformers('HCHHH', np.array([1, 2, 4]), include_properties=('energies',))
-        self.assertEqual(conformers124['energies'], ds['HCHHH']['energies'][np.array([1, 2, 4])])
+        conformers12 = ds.get_conformers('HCHHH', torch.tensor([1, 1]))
+        self.assertEqual(conformers12['coordinates'], ds['HCHHH']['coordinates'][torch.tensor([1, 1])])
+        conformers124 = ds.get_conformers('HCHHH', torch.tensor([1, 2, 4]), include_properties=('energies',))
+        self.assertEqual(conformers124['energies'], ds['HCHHH']['energies'][torch.tensor([1, 2, 4])])
         self.assertTrue(conformers124.get('species', None) is None)
         self.assertTrue(conformers124.get('coordinates', None) is None)
 
