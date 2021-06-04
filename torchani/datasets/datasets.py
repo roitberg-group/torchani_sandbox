@@ -548,7 +548,7 @@ def _divide_into_folds(conformer_indices: Tensor,
         validation_split = conformer_blocks[f]
 
         training_split = torch.cat(conformer_blocks[:f] + conformer_blocks[f + 1:])
-        # afterwards all training folds are reshuffled to get different
+        # Afterwards all training folds are reshuffled to get different
         # batching for different models in the ensemble / cross validation
         # process (it is technically redundant to reshuffle the first one but
         # it is done for simplicity)
