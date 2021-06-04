@@ -296,6 +296,42 @@ class AniH5Dataset(abc.Mapping):
         # because indexing directly into hdf5 is much slower.
         return self._get_group(key, non_element_keys, element_keys, idx, **kwargs)
 
+    def delete_conformers_inplace(self, key: str, idx: Optional[Union[int, ndarray, Tensor]] = None) -> 'AniH5Dataset':
+        # first we fetch all conformers from the group
+        if isinstance(idx, Tensor):
+            idx = idx.cpu()
+            if idx.dim() == 0:
+                idx = [idx.item()]
+        elif isinstance(idx, int):
+            idx = [idx]
+        all_conformers = self.get_conformers(key, raw_output=True, include_properties=self.supported_properties, repeat_element_keys=False)
+        size = _get_properties_size(all_conformers, self._flag_property, self.supported_properties)
+        all_idxs = torch.arange(size)
+        good_idxs = torch.stack([all_idxs != i for i in idx], dim=0).all(dim=0).nonzero().squeeze()
+
+        # if there are any good conformations remaining we delete the dataset and
+        # recreate it using the good conformations, otherwise we just delete the whole group
+        if good_idxs.numel() > 0:
+            # sanity check
+            if good_idxs.dim() == 0:
+                good_idxs = torch.tensor([good_idxs.item()])
+            assert len(good_idxs) <= len(all_idxs)
+            good_idxs = good_idxs.cpu().numpy()
+            good_conformers = {k: all_conformers[k][good_idxs] for k in self._supported_non_element_keys}
+            good_conformers.update({k: all_conformers[k] for k in self._supported_element_keys})
+            with h5py.File(self._store_file, 'r+') as f:
+                del f[key]
+                f.create_group(key)
+                group = f[key]
+                for k, v in good_conformers.items():
+                    try:
+                        group.create_dataset(name=k, data=v)
+                    except TypeError:
+                        group.create_dataset(name=k, data=v.astype(bytes))
+        else:
+            with h5py.File(self._store_file, 'r+') as f:
+                del f[key]
+
     def iter_conformers(self,
                         include_properties: Optional[Sequence[str]] = None,
                         **get_group_kwargs: bool) -> Iterator[MaybeRawProperties]:
