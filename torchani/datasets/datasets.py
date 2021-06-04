@@ -9,7 +9,7 @@ import importlib
 from typing import Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set, Callable
 from collections import OrderedDict, Counter
 from collections.abc import Mapping
-from itertools import chain
+import itertools
 
 import h5py
 import torch
@@ -191,6 +191,50 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         return self._len
 
 
+class AniH5DatasetList:
+    # essentially a wrapper around a list of AniH5Dataset instances
+    # to avoid boilerplate code to chain iterations over the datasets
+    def __init__(self, dataset_paths: Sequence[Union[str, Path]], **kwargs):
+        self._datasets = [AniH5Dataset(p, **kwargs) for p in dataset_paths]
+        self._dataset_paths = [Path(p).resolve() for p in dataset_paths]
+        self.num_conformer_groups = sum(d.num_conformer_groups for d in self._datasets)
+
+    def __getitem__(self, idx: int) -> 'AniH5Dataset':
+        return self._datasets[idx]
+
+    def __len__(self) -> int:
+        return self.num_conformer_groups
+
+    def __iter__(self) -> Iterator[str]:
+        return itertools.chain.from_iterable(d.group_sizes.keys() for d in self._datasets)
+
+    def get_conformers(self,
+                       idx: int, *args, **kwargs) -> MaybeRawProperties:
+        return self._datasets[idx].get_conformers(*args, **kwargs)
+
+    def iter_conformers(self,
+                        include_properties: Optional[Sequence[str]] = None,
+                        **get_group_kwargs: bool) -> Iterator[MaybeRawProperties]:
+        for _, _, _, c in self.iter_fileidx_key_idx_conformers(include_properties, **get_group_kwargs):
+            yield c
+
+    def iter_file_key_idx_conformers(self,
+                                include_properties: Optional[Sequence[str]] = None,
+                                yield_file_idx: bool = False,
+                                **get_group_kwargs: bool) -> Iterator[Tuple[str, int, MaybeRawProperties]]:
+
+        # chain yields key, idx, conformers
+        k_i_c_chain = itertools.chain.from_iterable(d.iter_key_idx_conformers(include_properties, **get_group_kwargs)
+                                              for d in self._datasets)
+        if yield_file_idx:
+            repeats = itertools.chain.from_iterable(itertools.repeat(j, d.num_conformers)
+                                                    for j, d in enumerate(self._datasets))
+        else:
+            repeats = itertools.chain.from_iterable(itertools.repeat(self._dataset_paths[j], d.num_conformers)
+                                                    for j, d in enumerate(self._datasets))
+        yield from ((f, k, i, c) for f, (k, i, c) in zip(repeats, k_i_c_chain))
+
+
 class AniH5Dataset(Mapping):
 
     def __init__(self,
@@ -213,7 +257,10 @@ class AniH5Dataset(Mapping):
 
         # element keys are treated differently because they don't have a batch dimension
         self._supported_element_keys = tuple((k for k in self.supported_properties if k in element_keys))
-        self._supported_non_element_keys = tuple((k for k in self.supported_properties if k not in element_keys))
+        # smiles is not supported until we agree on a format for it, since it can have any strange format
+        # in principle
+        self._supported_non_element_keys = tuple((k for k in self.supported_properties
+                                                  if k not in element_keys and k != 'smiles'))
 
         self.num_conformers = sum(self.group_sizes.values())
         self.num_conformer_groups = len(self.group_sizes.keys())
@@ -268,7 +315,8 @@ class AniH5Dataset(Mapping):
         for k, size in self.group_sizes.items():
             conformer_group = self._get_group(k, non_element_keys, element_keys, None, **get_group_kwargs)
             for idx in range(size):
-                single_conformer = {k: conformer_group[k][idx] for k in chain(element_keys, non_element_keys)}
+                single_conformer = {k: conformer_group[k][idx]
+                                    for k in itertools.chain(element_keys, non_element_keys)}
                 yield k, idx, single_conformer
 
     def _properties_into_keys(self,
@@ -365,7 +413,7 @@ class AniH5Dataset(Mapping):
 
         if repeat_element_keys and not get_single_conformer:
             # here we use any of the non element keys as a flag property
-            num_conformations = _get_properties_size(raw_properties, non_element_keys[0], self.supported_properties)
+            num_conformations = _get_properties_size(raw_properties, None, non_element_keys)
             for k in element_keys:
                 # We skip tiling species if we will not output raw, since they need a special treatment
                 if k == 'species' and not raw_output:
