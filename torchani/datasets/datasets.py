@@ -8,7 +8,7 @@ import warnings
 import importlib
 from typing import Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set, Callable
 from collections import OrderedDict, Counter
-from collections.abc import Mapping
+from collections import abc
 import itertools
 
 import h5py
@@ -191,35 +191,30 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         return self._len
 
 
-class AniH5DatasetList:
+class AniH5DatasetList(abc.Sequence):
     # essentially a wrapper around a list of AniH5Dataset instances
     # to avoid boilerplate code to chain iterations over the datasets
     def __init__(self, dataset_paths: Sequence[Union[str, Path]], **kwargs):
         self._datasets = [AniH5Dataset(p, **kwargs) for p in dataset_paths]
         self._dataset_paths = [Path(p).resolve() for p in dataset_paths]
         self.num_conformer_groups = sum(d.num_conformer_groups for d in self._datasets)
+        self.num_conformers = sum(d.num_conformers for d in self._datasets)
 
     def __getitem__(self, idx: int) -> 'AniH5Dataset':
         return self._datasets[idx]
 
     def __len__(self) -> int:
-        return self.num_conformer_groups
+        return len(self._datasets)
 
-    def __iter__(self) -> Iterator[str]:
-        return itertools.chain.from_iterable(d.group_sizes.keys() for d in self._datasets)
-
-    def get_conformers(self,
-                       idx: int, *args, **kwargs) -> MaybeRawProperties:
+    def get_conformers(self, idx: int, *args, **kwargs) -> MaybeRawProperties:
         return self._datasets[idx].get_conformers(*args, **kwargs)
 
-    def iter_conformers(self,
-                        include_properties: Optional[Sequence[str]] = None,
+    def iter_conformers(self, include_properties: Optional[Sequence[str]] = None,
                         **get_group_kwargs: bool) -> Iterator[MaybeRawProperties]:
         for _, _, _, c in self.iter_fileidx_key_idx_conformers(include_properties, **get_group_kwargs):
             yield c
 
-    def iter_file_key_idx_conformers(self,
-                                include_properties: Optional[Sequence[str]] = None,
+    def iter_file_key_idx_conformers(self, include_properties: Optional[Sequence[str]] = None,
                                 yield_file_idx: bool = False,
                                 **get_group_kwargs: bool) -> Iterator[Tuple[str, int, MaybeRawProperties]]:
 
@@ -235,7 +230,7 @@ class AniH5DatasetList:
         yield from ((f, k, i, c) for f, (k, i, c) in zip(repeats, k_i_c_chain))
 
 
-class AniH5Dataset(Mapping):
+class AniH5Dataset(abc.Mapping):
 
     def __init__(self,
                  store_file: Union[str, Path],
@@ -490,9 +485,9 @@ def create_batched_dataset(h5_path: Union[str, Path],
 
     h5_path = Path(h5_path).resolve()
     if h5_path.is_dir():
-        h5_datasets = [AniH5Dataset(p) for p in h5_path.iterdir() if p.suffix == '.h5']
+        h5_datasets = AniH5DatasetList([p for p in h5_path.iterdir() if p.suffix == '.h5'])
     elif h5_path.is_file():
-        h5_datasets = [AniH5Dataset(h5_path)]
+        h5_datasets = AniH5DatasetList([h5_path])
 
     # (1) Get all indices and shuffle them if needed
     #
@@ -679,7 +674,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                               inplace_transform: Optional[Transform],
                               file_format: str,
                               include_properties: Optional[Sequence[str]],
-                              h5_datasets: Sequence[AniH5Dataset],
+                              h5_datasets: AniH5DatasetList,
                               padding: Optional[Dict[str, float]],
                               batch_size: int,
                               max_batches_per_packet: int,
@@ -760,7 +755,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                 # Important: to prevent possible bugs / errors, that may happen
                 # due to incorrect conversion to indices, species is **always*
                 # converted to atomic numbers when saving the batched dataset.
-                conformers = h5_datasets[file_idx].get_conformers(group_key,
+                conformers = h5_datasets.get_conformers(file_idx, group_key,
                                                                   selected_indices,
                                                                   include_properties)
                 all_conformers.append(conformers)
