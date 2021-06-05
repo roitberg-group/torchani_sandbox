@@ -6,9 +6,8 @@ import math
 import pickle
 import warnings
 import importlib
-from typing import Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set, Callable
+from typing import Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set, Callable, overload, Mapping, Any
 from collections import OrderedDict, Counter
-from collections import abc
 import itertools
 
 import h5py
@@ -25,10 +24,12 @@ if PKBAR_INSTALLED:
 
 # type alias for transform
 Transform = Callable[[Dict[str, Tensor]], Dict[str, Tensor]]
-MaybeRawProperties = Union[Dict[str, Tensor], Dict[str, ndarray]]
+Properties = Dict[str, Tensor]
+NumpyProperties = Dict[str, ndarray]
+MaybeNumpyProperties = Union[Dict[str, Tensor], Dict[str, ndarray]]
 
 
-class AniBatchedDataset(torch.utils.data.Dataset):
+class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
 
     SUPPORTED_FILE_FORMATS = ('numpy', 'hdf5', 'single_hdf5', 'pickle')
     batch_size: Optional[int]
@@ -58,18 +59,18 @@ class AniBatchedDataset(torch.utils.data.Dataset):
 
         self.transform = transform
 
-        def numpy_extractor(idx: int, paths: List[Path]) -> Dict[str, Tensor]:
+        def numpy_extractor(idx: int, paths: List[Path]) -> Properties:
             return {k: torch.as_tensor(v) for k, v in np.load(paths[idx]).items()}
 
-        def pickle_extractor(idx: int, paths: List[Path]) -> Dict[str, Tensor]:
+        def pickle_extractor(idx: int, paths: List[Path]) -> Properties:
             with open(paths[idx], 'rb') as f:
                 return {k: torch.as_tensor(v) for k, v in pickle.load(f).items()}
 
-        def hdf5_extractor(idx: int, paths: List[Path]) -> Dict[str, Tensor]:
+        def hdf5_extractor(idx: int, paths: List[Path]) -> Properties:
             with h5py.File(paths[idx], 'r') as f:
                 return {k: torch.as_tensor(v[()]) for k, v in f['/'].items()}
 
-        def single_hdf5_extractor(idx: int, group_keys: List[str], path: Path) -> Dict[str, Tensor]:
+        def single_hdf5_extractor(idx: int, group_keys: List[str], path: Path) -> Properties:
             k = group_keys[idx]
             with h5py.File(path, 'r') as f:
                 return {k: torch.as_tensor(v[()]) for k, v in f[k].items()}
@@ -142,7 +143,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
             print(f"Cacheing split {self.split} of dataset, this may take some time...")
             print("Important: Cacheing the dataset may use a lot of memory, be careful!")
 
-        def memory_extractor(idx: int, ds: AniBatchedDataset) -> Dict[str, Tensor]:
+        def memory_extractor(idx: int, ds: AniBatchedDataset) -> Properties:
             return ds._data[idx]
 
         self._data = [self.extractor(idx) for idx in range(len(self))]
@@ -170,7 +171,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         self.extractor = partial(memory_extractor, ds=self)
         return self
 
-    def __getitem__(self, idx: int) -> Dict[str, Tensor]:
+    def __getitem__(self, idx: int) -> Properties:
         # integral indices must be provided for compatibility with pytorch
         # DataLoader API
         properties = self.extractor(idx)
@@ -178,7 +179,7 @@ class AniBatchedDataset(torch.utils.data.Dataset):
             properties = self.transform(properties)
         return properties
 
-    def __iter__(self) -> Iterator[Dict[str, Tensor]]:
+    def __iter__(self) -> Iterator[Properties]:
         j = 0
         try:
             while True:
@@ -191,39 +192,47 @@ class AniBatchedDataset(torch.utils.data.Dataset):
         return self._len
 
 
-class AniH5DatasetList(abc.Sequence):
+class AniH5DatasetList(Sequence['AniH5Dataset']):
     # essentially a wrapper around a list of AniH5Dataset instances
     # to avoid boilerplate code to chain iterations over the datasets
-    def __init__(self, dataset_paths: Sequence[Union[str, Path]], **kwargs):
+    def __init__(self, dataset_paths: Sequence[Union[str, Path]], **kwargs: Any):
         self._datasets = [AniH5Dataset(p, **kwargs) for p in dataset_paths]
         self._dataset_paths = [Path(p).resolve() for p in dataset_paths]
         self.num_conformer_groups = sum(d.num_conformer_groups for d in self._datasets)
         self.num_conformers = sum(d.num_conformers for d in self._datasets)
 
+    @overload
     def __getitem__(self, idx: int) -> 'AniH5Dataset':
+        ...
+
+    @overload
+    def __getitem__(self, s: slice) -> Sequence['AniH5Dataset']:
+        ...
+
+    def __getitem__(self, idx: Union[int, slice]) -> Union['AniH5Dataset', Sequence['AniH5Dataset']]:
         return self._datasets[idx]
 
     def __len__(self) -> int:
         return len(self._datasets)
 
-    def get_conformers(self, idx: int, *args, **kwargs) -> MaybeRawProperties:
-        return self._datasets[idx].get_conformers(*args, **kwargs)
+    def get_conformers(self, file_idx: int, *args: Any, numpy_output: bool = False, **kwargs: Any) -> MaybeNumpyProperties:
+        return self._datasets[file_idx].get_conformers(*args, numpy_output=numpy_output, **kwargs)
 
     def iter_conformers(self, include_properties: Optional[Sequence[str]] = None,
-                        **get_group_kwargs: bool) -> Iterator[MaybeRawProperties]:
-        for _, _, _, c in self.iter_fileidx_key_idx_conformers(include_properties, **get_group_kwargs):
+                          numpy_output: bool = False,
+                        **get_group_kwargs: bool) -> Iterator[MaybeNumpyProperties]:
+        for _, _, _, c in self.iter_file_key_idx_conformers(include_properties, numpy_output=numpy_output, **get_group_kwargs):
             yield c
-
-    def iter_file_key(self):
-        yield from ((j, k) for j, d in enumerate(self._datasets) for k in d.group_sizes.keys())
 
     def iter_file_key_idx_conformers(self, include_properties: Optional[Sequence[str]] = None,
                                 yield_file_idx: bool = True,
-                                **get_group_kwargs: bool) -> Iterator[Tuple[str, int, MaybeRawProperties]]:
+                                numpy_output: bool = False,
+                                **get_group_kwargs: bool) -> Iterator[Tuple[Union[int, Path], str, int, MaybeNumpyProperties]]:
 
         # chain yields key, idx, conformers
-        k_i_c_chain = itertools.chain.from_iterable(d.iter_key_idx_conformers(include_properties, **get_group_kwargs)
+        k_i_c_chain = itertools.chain.from_iterable(d.iter_key_idx_conformers(include_properties, numpy_output=numpy_output, **get_group_kwargs)
                                               for d in self._datasets)
+        repeats: Iterator[Union[int, Path]]
         if yield_file_idx:
             repeats = itertools.chain.from_iterable(itertools.repeat(j, d.num_conformers)
                                                     for j, d in enumerate(self._datasets))
@@ -232,8 +241,11 @@ class AniH5DatasetList(abc.Sequence):
                                                     for j, d in enumerate(self._datasets))
         yield from ((f, k, i, c) for f, (k, i, c) in zip(repeats, k_i_c_chain))
 
+    def iter_file_key(self) -> Iterator[Tuple[int, str]]:
+        yield from ((j, k) for j, d in enumerate(self._datasets) for k in d.group_sizes.keys())
 
-class AniH5Dataset(abc.Mapping):
+
+class AniH5Dataset(Mapping[str, Properties]):
 
     def __init__(self,
                  store_file: Union[str, Path],
@@ -265,13 +277,13 @@ class AniH5Dataset(abc.Mapping):
 
         self.symbols_to_atomic_numbers = utils.ChemicalSymbolsToAtomicNumbers()
 
-    def __getitem__(self, key: str) -> Dict[str, Tensor]:
+    def __getitem__(self, key: str) -> Properties:
         # this is a simple extraction that just fetches everything
+        # and always return a Dict[str, Tensor] since numpy_output is set to False
         properties = self._get_group(key, self._supported_non_element_keys,
                                           self._supported_element_keys,
-                                          raw_output=False,
+                                          numpy_output=False,
                                           repeat_element_keys=True)
-        # this will always return a Dict[str, Tensor] since raw_output is set to False
         return properties
 
     def __len__(self) -> int:
@@ -287,10 +299,10 @@ class AniH5Dataset(abc.Mapping):
                        key: str,
                        idx: Optional[Union[int, ndarray, Tensor]] = None,
                        include_properties: Optional[Sequence[str]] = None,
-                       **kwargs: bool) -> MaybeRawProperties:
+                       **kwargs: bool) -> MaybeNumpyProperties:
         if isinstance(idx, Tensor):
             idx = idx.cpu().numpy()
-        # kwargs are flags for _get_group (raw_output, repeat_element_keys and strict
+        # kwargs are flags for _get_group (numpy_output, repeat_element_keys and strict
         element_keys, non_element_keys = self._properties_into_keys(include_properties)
         # fetching a conformer actually copies all the group into memory first,
         # because indexing directly into hdf5 is much slower.
@@ -304,10 +316,13 @@ class AniH5Dataset(abc.Mapping):
                 idx = [idx.item()]
         elif isinstance(idx, int):
             idx = [idx]
-        all_conformers = self.get_conformers(key, raw_output=True, include_properties=self.supported_properties, repeat_element_keys=False)
+        all_conformers = self.get_conformers(key, numpy_output=True, include_properties=tuple(self.supported_properties), repeat_element_keys=False)
         size = _get_properties_size(all_conformers, self._flag_property, self.supported_properties)
         all_idxs = torch.arange(size)
-        good_idxs = torch.stack([all_idxs != i for i in idx], dim=0).all(dim=0).nonzero().squeeze()
+        if idx is not None:
+            good_idxs = torch.stack([all_idxs != i for i in idx], dim=0).all(dim=0).nonzero().squeeze()
+        else:
+            good_idxs = torch.empty(0)
 
         # if there are any good conformations remaining we delete the dataset and
         # recreate it using the good conformations, otherwise we just delete the whole group
@@ -327,20 +342,22 @@ class AniH5Dataset(abc.Mapping):
                     try:
                         group.create_dataset(name=k, data=v)
                     except TypeError:
+                        assert isinstance(v, ndarray)
                         group.create_dataset(name=k, data=v.astype(bytes))
         else:
             with h5py.File(self._store_file, 'r+') as f:
                 del f[key]
+        return self
 
     def iter_conformers(self,
                         include_properties: Optional[Sequence[str]] = None,
-                        **get_group_kwargs: bool) -> Iterator[MaybeRawProperties]:
+                        **get_group_kwargs: bool) -> Iterator[MaybeNumpyProperties]:
         for _, _, c in self.iter_key_idx_conformers(include_properties, **get_group_kwargs):
             yield c
 
     def iter_key_idx_conformers(self,
                                 include_properties: Optional[Sequence[str]] = None,
-                                **get_group_kwargs: bool) -> Iterator[Tuple[str, int, MaybeRawProperties]]:
+                                **get_group_kwargs: bool) -> Iterator[Tuple[str, int, MaybeNumpyProperties]]:
         if 'repeat_element_keys' in get_group_kwargs.keys():
             raise ValueError("Repeat element keys not supported")
         element_keys, non_element_keys = self._properties_into_keys(include_properties)
@@ -419,8 +436,8 @@ class AniH5Dataset(abc.Mapping):
                    element_keys: Tuple[str, ...],
                    idx: Optional[Union[int, ndarray]] = None,
                    strict: bool = False,
-                   raw_output: bool = False,
-                   repeat_element_keys: bool = True) -> MaybeRawProperties:
+                   numpy_output: bool = False,
+                   repeat_element_keys: bool = True) -> MaybeNumpyProperties:
         get_single_conformer = isinstance(idx, int)
 
         # This function is essentially an internal implementation of
@@ -447,21 +464,21 @@ class AniH5Dataset(abc.Mapping):
 
         if repeat_element_keys and not get_single_conformer:
             # here we use any of the non element keys as a flag property
-            num_conformations = _get_properties_size(raw_properties, None, non_element_keys)
+            num_conformations = _get_properties_size(raw_properties, None, set(non_element_keys))
             for k in element_keys:
                 # We skip tiling species if we will not output raw, since they need a special treatment
-                if k == 'species' and not raw_output:
+                if k == 'species' and not numpy_output:
                     continue
                 raw_properties[k] = np.tile(raw_properties[k], (num_conformations, 1))
 
-        # If we want the raw values of the h5 dataset we return at this point,
-        if raw_output:
+        # If we want the raw values of the h5 dataset we return early
+        if numpy_output:
             return raw_properties
 
         # Otherwise we do some more processing to return tensors including
-        # converting species to atomic numbers All non-element-key properties
+        # converting species to atomic numbers. NOTE: All non-element-key properties
         # are assumed to be floats
-        properties: Dict[str, Tensor] = {k: torch.tensor(raw_properties[k], dtype=torch.float)
+        properties: Properties = {k: torch.tensor(raw_properties[k], dtype=torch.float)
                                          for k in non_element_keys}
         # species gets special treatment since it has to be transformed to
         # atomic numbers in order to output a tensor
@@ -474,7 +491,7 @@ class AniH5Dataset(abc.Mapping):
         return properties
 
 
-def _save_batch(path: Path, idx: int, batch: Dict[str, Tensor], file_format: str) -> None:
+def _save_batch(path: Path, idx: int, batch: Properties, file_format: str) -> None:
     # We use pickle, numpy or hdf5 since saving in
     # pytorch format is extremely slow
     batch = {k: v.numpy() for k, v in batch.items()}
@@ -606,7 +623,7 @@ def _get_random_generator(shuffle: bool = False, shuffle_seed: Optional[int] = N
     return rng
 
 
-def _get_properties_size(molecule_group: Union[h5py.Group, Dict[str, ndarray], Dict[str, Tensor]],
+def _get_properties_size(molecule_group: Union[h5py.Group, MaybeNumpyProperties],
                         flag_property: Optional[str] = None,
                         supported_properties: Optional[Set[str]] = None) -> int:
     if flag_property is not None:
@@ -779,7 +796,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                                   f' of split {split_path.name},'
                                   f' in format {file_format}', len(counts_cat))
 
-            all_conformers: List[Dict[str, Tensor]] = []
+            all_conformers: List[Properties] = []
             for step, (group_idx, count, start_index) in enumerate(zip(uniqued_idxs_cat, counts_cat, cumcounts_cat)):
                 # select the specific group from the whole list of files
                 file_idx, group_key = file_idxs_and_group_keys[group_idx.item()]
