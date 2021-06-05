@@ -1,14 +1,14 @@
-from pathlib import Path
-from functools import partial
 import json
 import datetime
 import math
 import pickle
 import warnings
 import importlib
+import itertools
+from pathlib import Path
+from functools import partial
 from typing import Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set, Callable, overload, Mapping, Any
 from collections import OrderedDict, Counter
-import itertools
 
 import h5py
 import torch
@@ -26,7 +26,7 @@ if PKBAR_INSTALLED:
 Transform = Callable[[Dict[str, Tensor]], Dict[str, Tensor]]
 Properties = Dict[str, Tensor]
 NumpyProperties = Dict[str, ndarray]
-MaybeNumpyProperties = Union[Dict[str, Tensor], Dict[str, ndarray]]
+IdxType = Optional[Union[int, ndarray, Tensor]]
 
 
 class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
@@ -215,19 +215,21 @@ class AniH5DatasetList(Sequence['AniH5Dataset']):
     def __len__(self) -> int:
         return len(self._datasets)
 
-    def get_conformers(self, file_idx: int, *args: Any, numpy_output: bool = False, **kwargs: Any) -> MaybeNumpyProperties:
-        return self._datasets[file_idx].get_conformers(*args, numpy_output=numpy_output, **kwargs)
+    def get_conformers(self, file_idx: int, *args: Any, **kwargs: Any) -> Properties:
+        return self._datasets[file_idx].get_conformers(*args, **kwargs)
+
+    def get_numpy_conformers(self, file_idx: int, *args: Any, **kwargs: Any) -> NumpyProperties:
+        return self._datasets[file_idx].get_numpy_conformers(*args, **kwargs)
 
     def iter_conformers(self, include_properties: Optional[Sequence[str]] = None,
-                          numpy_output: bool = False,
-                        **get_group_kwargs: bool) -> Iterator[MaybeNumpyProperties]:
-        for _, _, _, c in self.iter_file_key_idx_conformers(include_properties, numpy_output=numpy_output, **get_group_kwargs):
+                        **get_group_kwargs: bool) -> Iterator[Properties]:
+        for _, _, _, c in self.iter_file_key_idx_conformers(include_properties, **get_group_kwargs):
             yield c
 
     def iter_file_key_idx_conformers(self, include_properties: Optional[Sequence[str]] = None,
                                 yield_file_idx: bool = True,
                                 numpy_output: bool = False,
-                                **get_group_kwargs: bool) -> Iterator[Tuple[Union[int, Path], str, int, MaybeNumpyProperties]]:
+                                **get_group_kwargs: bool) -> Iterator[Tuple[Union[int, Path], str, int, Properties]]:
 
         # chain yields key, idx, conformers
         k_i_c_chain = itertools.chain.from_iterable(d.iter_key_idx_conformers(include_properties, numpy_output=numpy_output, **get_group_kwargs)
@@ -283,6 +285,7 @@ class AniH5Dataset(Mapping[str, Properties]):
         properties = self._get_group(key, self._supported_non_element_keys,
                                           self._supported_element_keys,
                                           numpy_output=False,
+                                          idx=None,
                                           repeat_element_keys=True)
         return properties
 
@@ -297,30 +300,38 @@ class AniH5Dataset(Mapping[str, Properties]):
 
     def get_conformers(self,
                        key: str,
-                       idx: Optional[Union[int, ndarray, Tensor]] = None,
+                       idx: IdxType = None,
                        include_properties: Optional[Sequence[str]] = None,
-                       **kwargs: bool) -> MaybeNumpyProperties:
-        if isinstance(idx, Tensor):
-            idx = idx.cpu().numpy()
-        # kwargs are flags for _get_group (numpy_output, repeat_element_keys and strict
+                       **kwargs: bool) -> Properties:
+        # kwargs are flags for _get_group (numpy_output, repeat_element_keys and strict)
         element_keys, non_element_keys = self._properties_into_keys(include_properties)
         # fetching a conformer actually copies all the group into memory first,
         # because indexing directly into hdf5 is much slower.
-        return self._get_group(key, non_element_keys, element_keys, idx, **kwargs)
+        return self._get_group(key, non_element_keys, element_keys, idx=idx, **kwargs)
 
-    def delete_conformers_inplace(self, key: str, idx: Optional[Union[int, ndarray, Tensor]] = None) -> 'AniH5Dataset':
+    def get_numpy_conformers(self,
+                       key: str,
+                       idx: IdxType = None,
+                       include_properties: Optional[Sequence[str]] = None,
+                       **kwargs: bool) -> NumpyProperties:
+        element_keys, non_element_keys = self._properties_into_keys(include_properties)
+        return self._get_numpy_group(key, non_element_keys, element_keys, idx=idx, **kwargs)
+
+    def delete_conformers_inplace(self, key: str, idx: IdxType = None) -> 'AniH5Dataset':
         # first we fetch all conformers from the group
-        if isinstance(idx, Tensor):
-            idx = idx.cpu()
-            if idx.dim() == 0:
-                idx = [idx.item()]
-        elif isinstance(idx, int):
-            idx = [idx]
-        all_conformers = self.get_conformers(key, numpy_output=True, include_properties=tuple(self.supported_properties), repeat_element_keys=False)
+        all_conformers = self.get_numpy_conformers(key,
+                                             include_properties=tuple(self.supported_properties),
+                                             repeat_element_keys=False)
         size = _get_properties_size(all_conformers, self._flag_property, self.supported_properties)
         all_idxs = torch.arange(size)
+
         if idx is not None:
-            good_idxs = torch.stack([all_idxs != i for i in idx], dim=0).all(dim=0).nonzero().squeeze()
+            if not isinstance(idx, Tensor):
+                idx = torch.tensor(idx)
+            assert isinstance(idx, Tensor)
+            if idx.dim() == 0:
+                idx = idx.unsqueeze(0)
+            good_idxs = torch.stack([all_idxs != i for i in idx.cpu()], dim=0).all(dim=0).nonzero().squeeze()
         else:
             good_idxs = torch.empty(0)
 
@@ -342,7 +353,6 @@ class AniH5Dataset(Mapping[str, Properties]):
                     try:
                         group.create_dataset(name=k, data=v)
                     except TypeError:
-                        assert isinstance(v, ndarray)
                         group.create_dataset(name=k, data=v.astype(bytes))
         else:
             with h5py.File(self._store_file, 'r+') as f:
@@ -351,20 +361,20 @@ class AniH5Dataset(Mapping[str, Properties]):
 
     def iter_conformers(self,
                         include_properties: Optional[Sequence[str]] = None,
-                        **get_group_kwargs: bool) -> Iterator[MaybeNumpyProperties]:
+                        **get_group_kwargs: bool) -> Iterator[Properties]:
         for _, _, c in self.iter_key_idx_conformers(include_properties, **get_group_kwargs):
             yield c
 
     def iter_key_idx_conformers(self,
                                 include_properties: Optional[Sequence[str]] = None,
-                                **get_group_kwargs: bool) -> Iterator[Tuple[str, int, MaybeNumpyProperties]]:
+                                **get_group_kwargs: bool) -> Iterator[Tuple[str, int, Properties]]:
         if 'repeat_element_keys' in get_group_kwargs.keys():
             raise ValueError("Repeat element keys not supported")
         element_keys, non_element_keys = self._properties_into_keys(include_properties)
         # Iterate sequentially over conformers also copies all the group
         # into memory first, so it is also fast
         for k, size in self.group_sizes.items():
-            conformer_group = self._get_group(k, non_element_keys, element_keys, None, **get_group_kwargs)
+            conformer_group = self._get_group(k, non_element_keys, element_keys, idx=None, **get_group_kwargs)
             for idx in range(size):
                 single_conformer = {k: conformer_group[k][idx]
                                     for k in itertools.chain(element_keys, non_element_keys)}
@@ -430,19 +440,28 @@ class AniH5Dataset(Mapping[str, Properties]):
 
         return group_sizes, supported_properties
 
-    def _get_group(self,
-                   key: str,
-                   non_element_keys: Tuple[str, ...],
-                   element_keys: Tuple[str, ...],
-                   idx: Optional[Union[int, ndarray]] = None,
-                   strict: bool = False,
-                   numpy_output: bool = False,
-                   repeat_element_keys: bool = True) -> MaybeNumpyProperties:
-        get_single_conformer = isinstance(idx, int)
-
+    def _get_numpy_group(self,
+                         key: str,
+                         non_element_keys: Tuple[str, ...],
+                         element_keys: Tuple[str, ...],
+                         idx: IdxType = None,
+                         strict: bool = False,
+                         numpy_output: bool = False,
+                         repeat_element_keys: bool = True) -> NumpyProperties:
         # This function is essentially an internal implementation of
         # __getitem__ and get_conformers, it is not meant to be called directly
         # by user code
+
+        # We allow Tensor as an index but it is internally converted to a numpy
+        # array since a numpy array is needed for indexing HDF5 datasets
+        if isinstance(idx, Tensor):
+            idx = idx.cpu().numpy()
+            assert isinstance(idx, ndarray)
+
+        # The index being an int is a special case since it gets rid of a
+        # dimension, this is handled automatically, but we don't need to
+        # repeat element keys in this case.
+        get_single_conformer = isinstance(idx, int)
 
         # NOTE: If some keys are not found then
         # this returns a partial result with the keys that are found, (maybe
@@ -453,41 +472,56 @@ class AniH5Dataset(Mapping[str, Properties]):
                 raise RuntimeError('Some of the requested properties could not '
                                   f'be found in group {key}')
 
-            raw_properties: Dict[str, ndarray] = {k: np.copy(group[k]) for k in element_keys}
+            numpy_properties: NumpyProperties = {k: np.copy(group[k]) for k in element_keys}
             if idx is None:
-                raw_properties.update({k: np.copy(group[k]) for k in non_element_keys})
+                numpy_properties.update({k: np.copy(group[k]) for k in non_element_keys})
             else:
-                raw_properties.update({k: np.copy(group[k])[idx] for k in non_element_keys})
+                numpy_properties.update({k: np.copy(group[k])[idx] for k in non_element_keys})
 
         if 'species' in element_keys:
-            raw_properties['species'] = raw_properties['species'].astype(str)
+            numpy_properties['species'] = numpy_properties['species'].astype(str)
 
         if repeat_element_keys and not get_single_conformer:
             # here we use any of the non element keys as a flag property
-            num_conformations = _get_properties_size(raw_properties, None, set(non_element_keys))
+            num_conformations = _get_properties_size(numpy_properties, None, set(non_element_keys))
             for k in element_keys:
-                # We skip tiling species if we will not output raw, since they need a special treatment
-                if k == 'species' and not numpy_output:
-                    continue
-                raw_properties[k] = np.tile(raw_properties[k], (num_conformations, 1))
+                numpy_properties[k] = np.tile(numpy_properties[k], (num_conformations, 1))
 
         # If we want the raw values of the h5 dataset we return early
-        if numpy_output:
-            return raw_properties
+        return numpy_properties
 
-        # Otherwise we do some more processing to return tensors including
+    def _get_group(self,
+                   key: str,
+                   non_element_keys: Tuple[str, ...],
+                   element_keys: Tuple[str, ...],
+                   **kwargs: Any) -> Properties:
+        # This function together with get_numpy_group is essentially an
+        # internal implementation of __getitem__ and get_conformers, it is not
+        # meant to ever be called directly by user code
+        numpy_properties = self._get_numpy_group(key, non_element_keys, element_keys, **kwargs)
+
+        # Here we do some more processing to return tensors including
         # converting species to atomic numbers. NOTE: All non-element-key properties
         # are assumed to be floats
-        properties: Properties = {k: torch.tensor(raw_properties[k], dtype=torch.float)
-                                         for k in non_element_keys}
-        # species gets special treatment since it has to be transformed to
-        # atomic numbers in order to output a tensor
-        if 'species' in element_keys:
-            properties.update({'species': self.symbols_to_atomic_numbers(raw_properties['species'].tolist())})
-            if repeat_element_keys and not get_single_conformer:
-                properties['species'] = properties['species'].repeat(num_conformations, 1)
-        properties.update({k: torch.tensor(raw_properties[k], dtype=torch.long)
+        properties: Properties = {k: torch.tensor(numpy_properties[k], dtype=torch.float)
+                                  for k in non_element_keys}
+        properties.update({k: torch.tensor(numpy_properties[k], dtype=torch.long)
                            for k in element_keys if k != 'species'})
+
+        # 'species' gets special treatment since it has to be transformed to
+        # atomic numbers in order to output a tensor, and we need a flattened
+        # list to convert to atomic numbers
+        if 'species' in element_keys:
+            tensor_species: Tensor
+            species = numpy_properties['species']
+            if species.ndim == 2:
+                num_molecules = species.shape[0]
+                num_atoms = species.shape[1]
+                tensor_species = self.symbols_to_atomic_numbers(species.ravel().tolist())
+                tensor_species = tensor_species.view(num_molecules, num_atoms)
+            else:
+                tensor_species = self.symbols_to_atomic_numbers(species.tolist())
+            properties.update({'species': tensor_species})
         return properties
 
 
@@ -623,7 +657,7 @@ def _get_random_generator(shuffle: bool = False, shuffle_seed: Optional[int] = N
     return rng
 
 
-def _get_properties_size(molecule_group: Union[h5py.Group, MaybeNumpyProperties],
+def _get_properties_size(molecule_group: Union[h5py.Group, Properties, NumpyProperties],
                         flag_property: Optional[str] = None,
                         supported_properties: Optional[Set[str]] = None) -> int:
     if flag_property is not None:

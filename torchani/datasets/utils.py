@@ -1,4 +1,4 @@
-"""Utilities for working with ANI Datasets"""
+r"""Utilities for working with ANI Datasets"""
 from ..models import BuiltinModel
 from .datasets import AniH5Dataset
 from ..units import hartree2kcalmol
@@ -9,7 +9,8 @@ from typing import List, Tuple, Dict, Optional, Sequence
 from torch import Tensor
 from tqdm import tqdm
 
-KeysIdxs = List[Tuple[str, Tensor]]
+KeyIdx = Tuple[str, Tensor]
+Properties = Dict[str, Tensor]
 
 
 def filter_by_high_force(dataset: AniH5Dataset,
@@ -17,10 +18,10 @@ def filter_by_high_force(dataset: AniH5Dataset,
                          device: str = 'cpu',
                          max_split: int = 2560,
                          delete_inplace: bool = False,
-                         verbose: bool = True) -> Optional[Tuple[Tensor, Tensor, KeysIdxs]]:
+                         verbose: bool = True) -> Optional[Tuple[Tensor, Tensor, List[KeyIdx]]]:
     # Threshold is 2 Ha / Angstrom
-    bad_conformations: List[Dict[str, Tensor]] = []
-    bad_keys_and_idxs: KeysIdxs = []
+    bad_conformations: List[Properties] = []
+    bad_keys_and_idxs: List[KeyIdx] = []
     with torch.no_grad():
         for key, g in tqdm(dataset.items(), total=dataset.num_conformer_groups):
             species, coordinates, forces = _fetch_splitted_properties(g, ('species', 'coordinates', 'forces'), max_split)
@@ -43,9 +44,9 @@ def filter_by_high_energy_error(dataset: AniH5Dataset,
                                 device: str = 'cpu',
                                 max_split: int = 2560,
                                 delete_inplace: bool = False,
-                                verbose: bool = True) -> Optional[Tuple[Tensor, Tensor, KeysIdxs]]:
-    bad_conformations: List[Dict[str, Tensor]] = []
-    bad_keys_and_idxs: KeysIdxs = []
+                                verbose: bool = True) -> Optional[Tuple[Tensor, Tensor, List[KeyIdx]]]:
+    bad_conformations: List[Properties] = []
+    bad_keys_and_idxs: List[KeyIdx] = []
     model = model.to(device)
     assert model.periodic_table_index, "Periodic table index must be True to filter high energy error"
     is_ensemble = isinstance(model.neural_networks, Ensemble)
@@ -75,7 +76,7 @@ def filter_by_high_energy_error(dataset: AniH5Dataset,
     return _return_padded_conformations_or_none(bad_conformations, bad_keys_and_idxs, device)
 
 
-def _delete_bad_conformations(dataset: AniH5Dataset, bad_keys_and_idxs: KeysIdxs, verbose: bool) -> None:
+def _delete_bad_conformations(dataset: AniH5Dataset, bad_keys_and_idxs: List[KeyIdx], verbose: bool) -> None:
     if bad_keys_and_idxs:
         total_filtered = sum([v.numel() for (k, v) in bad_keys_and_idxs])
         for (key, idx) in bad_keys_and_idxs:
@@ -86,7 +87,9 @@ def _delete_bad_conformations(dataset: AniH5Dataset, bad_keys_and_idxs: KeysIdxs
         print(f"Deleted {total_filtered} conformations")
 
 
-def _return_padded_conformations_or_none(bad_conformations: List[Dict[str, Tensor]], bad_keys_and_idxs: KeysIdxs, device: str) -> Optional[Tuple[Tensor, Tensor, KeysIdxs]]:
+def _return_padded_conformations_or_none(bad_conformations: List[Properties],
+                                         bad_keys_and_idxs: List[KeyIdx],
+                                         device: str) -> Optional[Tuple[Tensor, Tensor, List[KeyIdx]]]:
     if bad_conformations:
         properties = pad_atomic_properties(bad_conformations)
         return properties['species'].to(device), properties['coordinates'].to(device), bad_keys_and_idxs
@@ -94,13 +97,13 @@ def _return_padded_conformations_or_none(bad_conformations: List[Dict[str, Tenso
         return None
 
 
-def _fetch_splitted_properties(properties: Dict[str, Tensor], keys_to_split: Sequence[str], max_split: int) -> Tuple[Tuple[Tensor, ...], ...]:
+def _fetch_splitted_properties(properties: Properties, keys_to_split: Sequence[str], max_split: int) -> Tuple[Tuple[Tensor, ...], ...]:
     # NOTE: len of output tuple is the same as len of input keys_to_split
     return tuple(torch.split(properties[k], max_split) for k in keys_to_split)
 
 
 def _append_bad_keys_and_idxs(bad_idxs: Tensor,
-                              bad_keys_and_idxs: KeysIdxs,
+                              bad_keys_and_idxs: List[KeyIdx],
                               key: str,
                               split_idx: int,
                               max_split: int) -> None:
@@ -109,7 +112,7 @@ def _append_bad_keys_and_idxs(bad_idxs: Tensor,
 
 
 def _append_bad_conformations(bad_idxs: Tensor,
-                              bad_conformations: List[Dict[str, Tensor]],
+                              bad_conformations: List[Properties],
                               s: Tensor,
                               c: Tensor) -> None:
     bad_species_of_split = s[bad_idxs].cpu().clone()
