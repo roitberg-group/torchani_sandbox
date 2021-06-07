@@ -1,9 +1,6 @@
 name: 'Install torchani'
 description: 'Checks out and installs torchani together with all necessary dependencies, (this includes CUDA toolkit if requested)'
 inputs:
-    token:
-        description: 'Github access token'
-        required: true
     python-version:
         description: 'Python version to set up'
         required: true
@@ -19,14 +16,6 @@ inputs:
 runs: 
     using: 'composite'
     steps:
-        - name: Cancel Previous Runs
-          uses: styfle/cancel-workflow-action@0.8.0
-          with:
-            access_token: ${{ inputs.token }}
-
-        - name: Checkout TorchANI
-          uses: actions/checkout@v1
-
         - name: Set up Python ${{ inputs.python-version }}
           uses: actions/setup-python@v2
           with:
@@ -34,6 +23,7 @@ runs:
 
         - name: Fetch submodules
           run: git submodule update --init
+
         - name: Install cuda
           if: ${{ inputs.install-cuda-and-ext}}
           run: |
