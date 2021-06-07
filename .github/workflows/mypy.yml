@@ -32,15 +32,15 @@ jobs:
     # would normally do
     - name: Install dependencies
       run: |
-          source /tmp/torchani-unittest/bin/activate
+          source /tmp/torchani-mypy/bin/activate
           ci/install_dependencies.sh
     - name: Install TorchANI
       run: |
-          source /tmp/torchani-unittest/bin/activate
+          source /tmp/torchani-mypy/bin/activate
           python setup.py install
     - name: Install mypy
       run: |
-          source /tmp/torchani-unittest/bin/activate
+          source /tmp/torchani-mypy/bin/activate
           pip install --upgrade --no-cache-dir mypy
     - name: Type checking with mypy
       run: |
