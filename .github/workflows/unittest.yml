@@ -16,21 +16,21 @@ jobs:
         python-version: [3.8]
         cuda: ['no-cuda']
         torch-version: ['stable', 'nightly']
-  steps:
-    - name: Cancel Previous Runs
-      uses: styfle/cancel-workflow-action@0.8.0
-      with:
-        access_token: ${{ github.token }}
-  
-    - name: Checkout TorchANI
-      uses: actions/checkout@v1
-  
-    - name: Install Torchani with ${{ matrix.cuda }}, python ${{ matrix.python-version}} and torch ${{ matrix.torch-version }}
-      uses: ./.github/actions/install_torchani
-      with: 
-        python-version: ${{ matrix.python-version }}
-        cuda: ${{ matrix.cuda }}
-        torch-version: ${{ matrix.torch-version }}
-  
-    - name: Run all tests
-      run: python -m pytest -v tests/*
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.8.0
+        with:
+          access_token: ${{ github.token }}
+    
+      - name: Checkout TorchANI
+        uses: actions/checkout@v1
+    
+      - name: Install Torchani with ${{ matrix.cuda }}, python ${{ matrix.python-version}} and torch ${{ matrix.torch-version }}
+        uses: ./.github/actions/install_torchani
+        with: 
+          python-version: ${{ matrix.python-version }}
+          cuda: ${{ matrix.cuda }}
+          torch-version: ${{ matrix.torch-version }}
+    
+      - name: Run all tests
+        run: python -m pytest -v tests/*
