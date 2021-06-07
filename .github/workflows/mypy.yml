@@ -26,17 +26,16 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - name: create venv
-      run: | 
-          python -m venv /tmp/torchani-ci
-          source /tmp/torchani-ci/bin/activate
+      run: python -m venv /tmp/torchani-ci
     - name: Install dependencies
       run: |
+        source /tmp/torchani-ci/bin/activate
         pip install --upgrade pip
         pip install --upgrade mypy
     - name: Type checking with mypy
-      run: mypy --ignore-missing-imports .
-      if: always()
+      run: |
+        source /tmp/torchani-ci/bin/activate
+        mypy --ignore-missing-imports .
+    if: always()
     - name: remove venv
-      run: | 
-          deactivate
-          rm -rf /tmp/torchani-ci/
+      run: rm -rf /tmp/torchani-ci/
