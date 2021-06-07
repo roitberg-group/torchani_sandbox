@@ -26,7 +26,7 @@ except ImportError:
     warnings.warn("tqdm could not be found, for better progress bars install tqdm")
     from torch.hub import tqdm
 
-PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None
+PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None  # type: ignore
 if PKBAR_INSTALLED:
     import pkbar
 
