@@ -1,4 +1,5 @@
 r"""Utilities for working with ANI Datasets"""
+import warnings
 from ..models import BuiltinModel
 from .datasets import AniH5Dataset
 from ..units import hartree2kcalmol
@@ -7,7 +8,13 @@ from ..nn import Ensemble
 import torch
 from typing import List, Tuple, Dict, Optional, Sequence
 from torch import Tensor
-from tqdm import tqdm
+
+# torch hub has a dummy implementation of tqdm which can be used if tqdm is not installed
+try:
+    from tqdm.auto import tqdm
+    warnings.warn("tqdm could not be found, for better progress bars install tqdm")
+except ImportError:
+    from torch.hub import tqdm
 
 KeyIdx = Tuple[str, Tensor]
 Properties = Dict[str, Tensor]
@@ -23,7 +30,9 @@ def filter_by_high_force(dataset: AniH5Dataset,
     bad_conformations: List[Properties] = []
     bad_keys_and_idxs: List[KeyIdx] = []
     with torch.no_grad():
-        for key, g in tqdm(dataset.items(), total=dataset.num_conformer_groups):
+        for key, g in tqdm(dataset.items(),
+                           total=dataset.num_conformer_groups,
+                           desc=f"Filtering where any force component > {threshold} Ha / Angstrom"):
             species, coordinates, forces = _fetch_splitted_properties(g, ('species', 'coordinates', 'forces'), max_split)
             for split_idx, (s, c, f) in enumerate(zip(species, coordinates, forces)):
                 s, c, f = s.to(device), c.to(device), f.to(device)
@@ -51,7 +60,9 @@ def filter_by_high_energy_error(dataset: AniH5Dataset,
     assert model.periodic_table_index, "Periodic table index must be True to filter high energy error"
     is_ensemble = isinstance(model.neural_networks, Ensemble)
     with torch.no_grad():
-        for key, g in tqdm(dataset.items(), total=dataset.num_conformer_groups):
+        for key, g in tqdm(dataset.items(),
+                           total=dataset.num_conformer_groups,
+                           desc=f"Filtering where any |energy error| > {threshold} kcal / mol"):
             # properties are split into pieces of up to max_split to avoid
             # loading large groups into GPU memory at the same time and
             # calculating over them
