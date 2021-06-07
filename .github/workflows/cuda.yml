@@ -20,7 +20,6 @@ on:
 
 jobs:
   cuda:
-
     runs-on: self-hosted
     strategy:
       fail-fast: false
@@ -28,27 +27,26 @@ jobs:
         python-version: [3.8]
         torch-version: ['stable', 'nightly']
         cuda: ['cuda']
-
-  steps:
-    - name: Cancel Previous Runs
-      uses: styfle/cancel-workflow-action@0.8.0
-      with:
-        access_token: ${{ github.token }}
-    
-    - name: Checkout TorchANI
-      uses: actions/checkout@v1
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
-      with:
-        python-version: ${{ matrix.python-version }}
-    
-    - name: Install Torchani with ${{ matrix.cuda }}, and torch ${{ matrix.torch-version }}
-      uses: ./.github/actions/install_torchani
-      with: 
-        python-version: ${{ matrix.python-version }}
-        cuda: ${{ matrix.cuda }}
-        torch-version: ${{ matrix.torch-version }}
-    
-    - name: Run cuaev test
-      run: pytest tests/test_cuaev.py -v
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.8.0
+        with:
+          access_token: ${{ github.token }}
+      
+      - name: Checkout TorchANI
+        uses: actions/checkout@v1
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install Torchani with ${{ matrix.cuda }}, and torch ${{ matrix.torch-version }}
+        uses: ./.github/actions/install_torchani
+        with: 
+          python-version: ${{ matrix.python-version }}
+          cuda: ${{ matrix.cuda }}
+          torch-version: ${{ matrix.torch-version }}
+      
+      - name: Run cuaev test
+        run: pytest tests/test_cuaev.py -v

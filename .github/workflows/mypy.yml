@@ -8,7 +8,6 @@ on:
 
 jobs:
   mypy:
-
     runs-on: self-hosted
     strategy:
       fail-fast: false
