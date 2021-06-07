@@ -1,4 +1,4 @@
-name: stable-torch
+name: stable-torch-1.8.1
 
 on:
   pull_request:
