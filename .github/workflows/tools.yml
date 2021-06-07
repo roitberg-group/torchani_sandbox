@@ -24,8 +24,13 @@ jobs:
     
       - name: Checkout TorchANI
         uses: actions/checkout@v1
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
     
-      - name: Install Torchani with ${{ matrix.cuda }}, python ${{ matrix.python-version}} and torch ${{ matrix.torch-version }}
+      - name: Install Torchani with ${{ matrix.cuda }}, and torch ${{ matrix.torch-version }}
         uses: ./.github/actions/install_torchani
         with: 
           python-version: ${{ matrix.python-version }}
