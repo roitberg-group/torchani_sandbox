@@ -11,23 +11,22 @@ jobs:
 
     runs-on: self-hosted
     strategy:
-      max-parallel: 4
+      fail-fast: false
       matrix:
         python-version: [3.8]
+        cuda: ['no-cuda']
+        torch-version: ['nightly']
 
-    steps:
-    - name: Cancel Previous Runs
-      uses: styfle/cancel-workflow-action@0.8.0
-      with:
-        access_token: ${{ github.token }}
-    - uses: actions/checkout@v1
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
-      with:
+    - name: Install Torchani with ${{ matrix.cuda }}, python ${{ matrix.python-version}} and torch ${{ matrix.torch-version }}
+      uses: ./.github/actions/install_torchani
+      with: 
+        token: ${{ github.token }}
         python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        pip install --upgrade pip
-        pip install flake8
+        cuda: ${{ matrix.cuda }}
+        torch-version: ${{ matrix.torch-version }}
+
+    - name: Install flake8
+      run: pip install --upgrade flake8
+
     - name: Lint with flake8
       run: flake8 .
