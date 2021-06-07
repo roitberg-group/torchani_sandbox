@@ -15,14 +15,21 @@ import torch
 from torch import Tensor
 import numpy as np
 from numpy import ndarray
+from torchvision.datasets.utils import download_and_extract_archive, list_files, check_integrity
+from torchani.utils import ChemicalSymbolsToAtomicNumbers, pad_atomic_properties, PADDING, cumsum_from_zero
 
-from torchani import utils
+# torch hub has a dummy implementation of tqdm which can be used if tqdm is not installed
+try:
+    from tqdm.auto import tqdm
+    warnings.warn("tqdm could not be found, for better progress bars install tqdm")
+except ImportError:
+    from torch.hub import tqdm
 
 PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None
 if PKBAR_INSTALLED:
     import pkbar
 
-# type alias for transform
+# type aliases
 Transform = Callable[[Dict[str, Tensor]], Dict[str, Tensor]]
 Properties = Dict[str, Tensor]
 NumpyProperties = Dict[str, ndarray]
@@ -193,10 +200,12 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
 
 
 class AniH5DatasetList(Sequence['AniH5Dataset']):
+
     # essentially a wrapper around a list of AniH5Dataset instances
     # to avoid boilerplate code to chain iterations over the datasets
-    def __init__(self, dataset_paths: Sequence[Union[str, Path]], **kwargs: Any):
-        self._datasets = [AniH5Dataset(p, **kwargs) for p in dataset_paths]
+    def __init__(self, dataset_paths: Sequence[Union[str, Path]], **h5_dataset_kwargs: Any):
+
+        self._datasets = [AniH5Dataset(p, **h5_dataset_kwargs) for p in dataset_paths]
         self._dataset_paths = [Path(p).resolve() for p in dataset_paths]
         self.num_conformer_groups = sum(d.num_conformer_groups for d in self._datasets)
         self.num_conformers = sum(d.num_conformers for d in self._datasets)
@@ -221,18 +230,12 @@ class AniH5DatasetList(Sequence['AniH5Dataset']):
     def get_numpy_conformers(self, file_idx: int, *args: Any, **kwargs: Any) -> NumpyProperties:
         return self._datasets[file_idx].get_numpy_conformers(*args, **kwargs)
 
-    def iter_conformers(self, include_properties: Optional[Sequence[str]] = None,
-                        **get_group_kwargs: bool) -> Iterator[Properties]:
-        for _, _, _, c in self.iter_file_key_idx_conformers(include_properties, **get_group_kwargs):
-            yield c
-
     def iter_file_key_idx_conformers(self, include_properties: Optional[Sequence[str]] = None,
                                 yield_file_idx: bool = True,
-                                numpy_output: bool = False,
                                 **get_group_kwargs: bool) -> Iterator[Tuple[Union[int, Path], str, int, Properties]]:
 
         # chain yields key, idx, conformers
-        k_i_c_chain = itertools.chain.from_iterable(d.iter_key_idx_conformers(include_properties, numpy_output=numpy_output, **get_group_kwargs)
+        k_i_c_chain = itertools.chain.from_iterable(d.iter_key_idx_conformers(include_properties, **get_group_kwargs)
                                               for d in self._datasets)
         repeats: Iterator[Union[int, Path]]
         if yield_file_idx:
@@ -243,8 +246,127 @@ class AniH5DatasetList(Sequence['AniH5Dataset']):
                                                     for j, d in enumerate(self._datasets))
         yield from ((f, k, i, c) for f, (k, i, c) in zip(repeats, k_i_c_chain))
 
+    def iter_conformers(self, include_properties: Optional[Sequence[str]] = None,
+                        **get_group_kwargs: bool) -> Iterator[Properties]:
+        for _, _, _, c in self.iter_file_key_idx_conformers(include_properties, **get_group_kwargs):
+            yield c
+
     def iter_file_key(self) -> Iterator[Tuple[int, str]]:
         yield from ((j, k) for j, d in enumerate(self._datasets) for k in d.group_sizes.keys())
+
+
+_BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
+
+
+class _BaseBuiltinBatchedDataset(AniBatchedDataset):
+
+    def __init__(self, root: Union[str, Path],
+                       download: bool = False,
+                       archive: Optional[str] = None,
+                       md5: Optional[str] = None,
+                       **batched_ds_kwargs):
+        root = Path(root).resolve()
+        self._archive: str = '' if archive is None else archive
+        self._md5s: Dict[str, str] = dict() if md5 is None else md5
+        download_and_extract_archive(url=f'{_BASE_URL}{self._archive}', download_root=root, md5=self._md5)
+        super().__init__(root, **batched_ds_kwargs)
+
+
+class ANI1xBatched(_BaseBuiltinBatchedDataset):
+
+    _ARCHIVES_AND_MD5S = {'train-valid': ('batched-ANI-1x-wB97X-6-31Gd-train-valid-2560.tar.gz', 'sdfsfd'),
+                          '8-folds': ('batched-ANI-1x-wB97X-6-31Gd-8-folds-2560.tar.gz', 'sldkfsf'),
+                          '5-folds': ('batched-ANI-1x-wB97X-6-31Gd-5-folds-2560.tar.gz', 'sdfdf')}
+
+    def __init__(self, root: Union[str, Path], download: bool = False, kind='train-valid', **batched_ds_kwargs):
+        if kind not in self._ARCHIVES.keys():
+            raise ValueError(f"kind {kind} should be one of {list(self._ARCHIVES.keys())}")
+        archive, md5 = self._ARCHIVES[kind]
+        super().__init__(root, download, archive=archive, md5=md5, **batched_ds_kwargs)
+
+
+class ANI2xBatched(_BaseBuiltinBatchedDataset):
+
+    _ARCHIVES_AND_MD5S = {'train-valid': ('batched-ANI-2x-wB97X-6-31Gd-train-valid-2560.tar.gz', 'sdfsfd'),
+                          '8-folds': ('batched-ANI-2x-wB97X-6-31Gd-8-folds-2560.tar.gz', 'sldkfsf'),
+                          '5-folds': ('batched-ANI-2x-wB97X-6-31Gd-5-folds-2560.tar.gz', 'sdfdf')}
+
+    def __init__(self, root: Union[str, Path], download: bool = False, kind='train-valid', **batched_ds_kwargs):
+        if kind not in self._ARCHIVES.keys():
+            raise ValueError(f"kind {kind} should be one of {list(self._ARCHIVES.keys())}")
+        archive, md5 = self._ARCHIVES[kind]
+        super().__init__(root, download, archive=archive, md5=md5, **batched_ds_kwargs)
+
+
+class _BaseBuiltinRawDataset(AniH5DatasetList):
+    # NOTE: Code heavily borrows from celeb dataset of torchvision
+
+    def __init__(self, root: Union[str, Path],
+                       download: bool = False,
+                       archive: Optional[str] = None,
+                       files_and_md5s: Optional[Dict[str, str]] = None,
+                       **h5_dataset_list_kwargs):
+
+        self._archive: str = '' if archive is None else archive
+        self._files_and_md5s: Dict[str, str] = dict() if files_and_md5s is None else files_and_md5s
+
+        root = Path(root).resolve()
+        if download:
+            if not self._maybe_download_hdf5_archive_and_check_integrity(root):
+                raise RuntimeError('Dataset could not be download or is corrupted, '
+                                   'please try downloading again')
+        else:
+            if not self._check_hdf5_files_integrity(root):
+                raise RuntimeError('Dataset not found or is corrupted, '
+                                   'you can use "download = True" to download it')
+
+        dataset_paths = list_files(root, suffix='.h5', prefix=True)
+        super().__init__(dataset_paths, flag_property='coordinates', element_keys=('species',), **h5_dataset_list_kwargs)
+
+    def _check_hdf5_files_integrity(self, root: Union[str, Path]) -> bool:
+        # Checks that all HDF5 files in the provided path are equal to the
+        # expected ones and have the correct checksum, other files such as
+        # tar.gz archives are neglected
+        present_files = [Path(f).resolve() for f in list_files(root, suffix='.h5', prefix=True)]
+        expected_file_names = set(self._files_and_md5s.keys())
+        present_file_names = set([f.name for f in present_files])
+        if expected_file_names != present_file_names:
+            print(f"Wrong files found for dataset {self.__class__.__name__}, "
+                  f"expected {expected_file_names} but found {present_file_names}")
+            return False
+        for f in tqdm(present_files, desc=f'Checking integrity of files for dataset {self.__class__.__name__}'):
+            if not check_integrity(f, self._files_and_md5s[f.name]):
+                print(f"All expected files for dataset {self.__class__.__name__} "
+                      f"were found but file {f.name} failed integrity check")
+                return False
+        return True
+
+    def _maybe_download_hdf5_archive_and_check_integrity(self, root: Union[str, Path]) -> None:
+        # Downloads only if the files have not been found or are corrupted
+        root = Path(root).resolve()
+        if root.is_dir() and self._check_hdf5_files_integrity(root):
+            return True
+        download_and_extract_archive(url=f'{_BASE_URL}{self._archive}', download_root=root, md5=None)
+        return self._check_hdf5_files_integrity(root)
+
+
+class RawANI1x(_BaseBuiltinRawDataset):
+    _ARCHIVE = 'ANI-1x-wB97X-6-31Gd-data.tar.gz'
+    _FILES_AND_MD5S = {'ANI-1x-wB97X-6-31Gd.h5': 'c9d63bdbf90d093db9741c94d9b20972'}
+
+    def __init__(self, root: Union[str, Path], download: bool = False, **base_kwargs):
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)
+
+
+class RawANI2x(_BaseBuiltinRawDataset):
+
+    _ARCHIVE = 'ANI-2x-wB97X-6-31Gd-data.tar.gz'
+    _FILES_AND_MD5S = {'ANI-1x-wB97X-6-31Gd.h5': 'c9d63bdbf90d093db9741c94d9b20972',
+                     'ANI-2x-heavy-wB97X-6-31Gd.h5': '49ec3dc5d046f5718802f5d1f102391c',
+                     'ANI-2x-dimers-wB97X-6-31Gd.h5': '3455d82a50c63c389126b68607fb9ca8'}
+
+    def __init__(self, root: Union[str, Path], download: bool = False, **base_kwargs):
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)
 
 
 class AniH5Dataset(Mapping[str, Properties]):
@@ -252,7 +374,8 @@ class AniH5Dataset(Mapping[str, Properties]):
     def __init__(self,
                  store_file: Union[str, Path],
                  flag_property: Optional[str] = None,
-                 element_keys: Sequence[str] = ('species', 'numbers', 'atomic_numbers')):
+                 element_keys: Sequence[str] = ('species', 'numbers', 'atomic_numbers'),
+                 assume_standarized: bool = False):
         store_file = Path(store_file).resolve()
         if not store_file.is_file():
             raise FileNotFoundError(f"The h5 file in {store_file.as_posix()} could not be found")
@@ -262,8 +385,7 @@ class AniH5Dataset(Mapping[str, Properties]):
         # flag key is used to infer size of molecule groups
         # when iterating over the dataset
         self._flag_property = flag_property
-
-        group_sizes, supported_properties = self._cache_group_sizes_and_properties()
+        group_sizes, supported_properties = self._cache_group_sizes_and_properties(assume_standarized)
         self.group_sizes = OrderedDict(group_sizes)
         self.supported_properties = supported_properties
 
@@ -277,7 +399,7 @@ class AniH5Dataset(Mapping[str, Properties]):
         self.num_conformers = sum(self.group_sizes.values())
         self.num_conformer_groups = len(self.group_sizes.keys())
 
-        self.symbols_to_atomic_numbers = utils.ChemicalSymbolsToAtomicNumbers()
+        self.symbols_to_atomic_numbers = ChemicalSymbolsToAtomicNumbers()
 
     def __getitem__(self, key: str) -> Properties:
         # this is a simple extraction that just fetches everything
@@ -393,15 +515,18 @@ class AniH5Dataset(Mapping[str, Properties]):
                              f"in the dataset, which has properties {self.supported_properties}")
         return element_keys, non_element_keys
 
-    def _cache_group_sizes_and_properties(self) -> Tuple[List[Tuple[str, int]], Set[str]]:
+    def _cache_group_sizes_and_properties(self, assume_standarized: bool = False) -> Tuple[List[Tuple[str, int]], Set[str]]:
         # cache paths of all molecule groups into a list
         # and all supported properties into a set
+
         def visitor_fn(name: str,
                        object_: Union[h5py.Dataset, h5py.Group],
                        group_sizes: List[Tuple[str, int]],
                        supported_properties: Set[str],
-                       flag_property: Optional[str] = None) -> None:
-
+                       flag_property: Optional[str] = None,
+                       pbar=None) -> None:
+            if pbar is not None:
+                pbar.update()
             if isinstance(object_, h5py.Dataset):
                 molecule_group = object_.parent
                 # Check if we already visited this group via one of its
@@ -410,12 +535,12 @@ class AniH5Dataset(Mapping[str, Properties]):
                     # Collect properties and check that all the datasets have
                     # the same properties
                     if not supported_properties:
-                        supported_properties.update({k for k in molecule_group.keys()})
+                        supported_properties.update(set(molecule_group.keys()))
                         if flag_property is not None and flag_property not in supported_properties:
                             raise RuntimeError(f"Flag property {flag_property} "
                                                f"not found in {supported_properties}")
                     else:
-                        if not {k for k in molecule_group.keys()} == supported_properties:
+                        if not set(molecule_group.keys()) == supported_properties:
                             raise RuntimeError(f"group {molecule_group.name} has incompatible keys, "
                                                f"which should be {supported_properties}, inferred from other groups")
                     # Check for format correctness
@@ -432,12 +557,36 @@ class AniH5Dataset(Mapping[str, Properties]):
         group_sizes: List[Tuple[str, int]] = []
         supported_properties: Set[str] = set()
 
-        with h5py.File(self._store_file, 'r') as f:
-            f.visititems(partial(visitor_fn,
-                                 group_sizes=group_sizes,
-                                 supported_properties=supported_properties,
-                                 flag_property=self._flag_property))
-
+        if assume_standarized:
+            # This is much faster (x30) than a visitor function but it assumes
+            # the format is somewhat standarized which means that all Groups
+            # have depth 1, with the same number and name of Datasets each
+            # (properties such as species, coordinates, etc), and all Datasets
+            # have depth 2
+            with tqdm(desc='Scanning HDF5 file assuming standard format') as pbar:
+                with h5py.File(self._store_file, 'r') as f:
+                    for j, (k, g) in enumerate(f.items()):
+                        pbar.update()
+                        if j == 0:
+                            supported_properties = set(g.keys())
+                            if self._flag_property is not None and self._flag_property not in supported_properties:
+                                raise RuntimeError(f"Flag property {self._flag_property} "
+                                                   f"not found in {supported_properties}")
+                        group_sizes.append((k, _get_properties_size(g, self._flag_property, supported_properties)))
+        else:
+            with h5py.File(self._store_file, 'r') as f:
+                with tqdm(desc='Scanning HDF5 file and verifying format correctness') as pbar:
+                    f.visititems(partial(visitor_fn,
+                                         pbar=pbar,
+                                         group_sizes=group_sizes,
+                                         supported_properties=supported_properties,
+                                         flag_property=self._flag_property))
+        # By default iteration of HDF5 should be alphanumeric in which case
+        # sorting should not be necessary, this internal assert ensures the
+        # groups were not created with 'track_order=True', and that the visitor
+        # function worked properly, which could make iteration non-alphanumeric
+        # and would be surprising for a user.
+        assert group_sizes == sorted(group_sizes), "Groups were not iterated upon alphanumerically"
         return group_sizes, supported_properties
 
     def _get_numpy_group(self,
@@ -495,9 +644,7 @@ class AniH5Dataset(Mapping[str, Properties]):
                    non_element_keys: Tuple[str, ...],
                    element_keys: Tuple[str, ...],
                    **kwargs: Any) -> Properties:
-        # This function together with get_numpy_group is essentially an
-        # internal implementation of __getitem__ and get_conformers, it is not
-        # meant to ever be called directly by user code
+        # This function is the tensor counterpart of _get_numpy_group
         numpy_properties = self._get_numpy_group(key, non_element_keys, element_keys, **kwargs)
 
         # Here we do some more processing to return tensors including
@@ -626,11 +773,13 @@ def create_batched_dataset(h5_path: Union[str, Path],
                     'source_path': h5_path.as_posix(),
                     'splits': splits,
                     'folds': folds,
-                    'padding': utils.PADDING if padding is None else padding,
+                    'padding': PADDING if padding is None else padding,
                     'is_inplace_transformed': inplace_transform is not None,
                     'shuffle': shuffle,
+                    'shuffle_seed': shuffle_seed,
                     'include_properties': include_properties if include_properties is not None else 'all',
                     'batch_size': batch_size,
+                    'last_batch_sizes': 0,
                     'total_num_conformers': len(conformer_indices),
                     'total_conformer_groups': len(group_sizes_values)}
 
@@ -816,7 +965,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
             sorted_batch_indices_cat = batch_indices_cat[indices_to_sort_batch_indices_cat]
             uniqued_idxs_cat, counts_cat = torch.unique_consecutive(sorted_batch_indices_cat[:, 0],
                                                                     return_counts=True)
-            cumcounts_cat = utils.cumsum_from_zero(counts_cat)
+            cumcounts_cat = cumsum_from_zero(counts_cat)
 
             # batch_sizes and indices_to_unsort are needed for the
             # reverse operation once the conformers have been
@@ -849,7 +998,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                 all_conformers.append(conformers)
                 if use_pbar:
                     pbar.update(step)
-            batches_cat = utils.pad_atomic_properties(all_conformers, padding)
+            batches_cat = pad_atomic_properties(all_conformers, padding)
             # Now we need to reassign the conformers to the specified
             # batches. Since to get here we cat'ed and sorted, to
             # reassign we need to unsort and split.
