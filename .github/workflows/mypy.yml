@@ -27,15 +27,25 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: create venv
       run: python -m venv /tmp/torchani-mypy
+    # mypy changes the way it type checks depending on the installed
+    # dependencies, so even for just type checking we install everything as we
+    # would normally do
     - name: Install dependencies
       run: |
-        source /tmp/torchani-mypy/bin/activate
-        pip install --no-cache-dir --upgrade pip
-        pip install --no-cache-dir --upgrade mypy
+          source /tmp/torchani-unittest/bin/activate
+          ci/install_dependencies.sh
+    - name: Install TorchANI
+      run: |
+          source /tmp/torchani-unittest/bin/activate
+          python setup.py install
+    - name: Install mypy
+      run: |
+          source /tmp/torchani-unittest/bin/activate
+          pip install --upgrade --no-cache-dir mypy
     - name: Type checking with mypy
       run: |
         source /tmp/torchani-mypy/bin/activate
-        mypy --ignore-missing-imports .
+        mypy .
     - name: remove venv
       if: always()
       run: rm -rf /tmp/torchani-mypy/
