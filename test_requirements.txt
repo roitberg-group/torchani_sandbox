@@ -8,4 +8,3 @@ pyyaml
 pytest
 pynvml
 parameterized
-torchvision
