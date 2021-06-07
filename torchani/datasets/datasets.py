@@ -288,9 +288,9 @@ class ANI1xBatched(_BaseBuiltinBatchedDataset):
                           '5-folds': ('batched-ANI-1x-wB97X-6-31Gd-5-folds-2560.tar.gz', 'sdfdf')}
 
     def __init__(self, root: Union[str, Path], download: bool = False, kind='train-valid', **batched_ds_kwargs):
-        if kind not in self._ARCHIVES.keys():
-            raise ValueError(f"kind {kind} should be one of {list(self._ARCHIVES.keys())}")
-        archive, md5 = self._ARCHIVES[kind]
+        if kind not in self._ARCHIVES_AND_MD5S.keys():
+            raise ValueError(f"kind {kind} should be one of {list(self._ARCHIVES_AND_MD5S.keys())}")
+        archive, md5 = self._ARCHIVES_AND_MD5S[kind]
         super().__init__(root, download, archive=archive, md5=md5, **batched_ds_kwargs)
 
 
@@ -301,9 +301,9 @@ class ANI2xBatched(_BaseBuiltinBatchedDataset):
                           '5-folds': ('batched-ANI-2x-wB97X-6-31Gd-5-folds-2560.tar.gz', 'sdfdf')}
 
     def __init__(self, root: Union[str, Path], download: bool = False, kind='train-valid', **batched_ds_kwargs):
-        if kind not in self._ARCHIVES.keys():
-            raise ValueError(f"kind {kind} should be one of {list(self._ARCHIVES.keys())}")
-        archive, md5 = self._ARCHIVES[kind]
+        if kind not in self._ARCHIVES_AND_MD5S.keys():
+            raise ValueError(f"kind {kind} should be one of {list(self._ARCHIVES_AND_MD5S.keys())}")
+        archive, md5 = self._ARCHIVES_AND_MD5S[kind]
         super().__init__(root, download, archive=archive, md5=md5, **batched_ds_kwargs)
 
 
