@@ -283,12 +283,8 @@ class TestAniBatchedDataset(TestCase):
         self.assertTrue(self.train.transform(None) is None)
 
     def testDropLast(self):
-        with warnings.catch_warnings():
-            msg = 'Recalculating batch size is necessary for drop_last and it may take considerable time if your disk is an HDD'
-            warnings.filterwarnings(action='ignore',
-                                    message=msg)
-            train_drop_last = AniBatchedDataset(self.batched_path, split='training', drop_last=True)
-            valid_drop_last = AniBatchedDataset(self.batched_path, split='validation', drop_last=True)
+        train_drop_last = AniBatchedDataset(self.batched_path, split='training', drop_last=True)
+        valid_drop_last = AniBatchedDataset(self.batched_path, split='validation', drop_last=True)
         self.assertEqual(len(train_drop_last), 2)
         self.assertEqual(len(valid_drop_last), 2)
         self.assertEqual(train_drop_last.batch_size, self.batch_size)
