@@ -26,9 +26,9 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - name: create venv
-      run: python -m venv /tmp/torchani-unittest
-    - name: activate venv
-      run: source /tmp/torchani-unittest/activate
+      run: | 
+          python -m venv /tmp/torchani-unittest 
+          source /tmp/torchani-unittest/activate
     - name: Fetch submodules
       run: git submodule update --init
     - name: Install dependencies
@@ -43,6 +43,6 @@ jobs:
       run: python -m pytest -v tests/*
       if: always()
     - name: remove venv
-      run: deactivate && rm -rf /tmp/torchani-unittest/
-
-     
+      run: | 
+          deactivate
+          rm -rf /tmp/torchani-unittest/
