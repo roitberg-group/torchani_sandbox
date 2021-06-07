@@ -27,8 +27,8 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: create venv
       run: | 
-          python -m venv /tmp/torchani-unittest 
-          source /tmp/torchani-unittest/activate
+          python -m venv /tmp/torchani-ci
+          source /tmp/torchani-ci/bin/activate
     - name: Install dependencies
       run: |
         pip install --upgrade pip
@@ -39,4 +39,4 @@ jobs:
     - name: remove venv
       run: | 
           deactivate
-          rm -rf /tmp/torchani-unittest/
+          rm -rf /tmp/torchani-ci/
