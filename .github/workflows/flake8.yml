@@ -17,23 +17,24 @@ jobs:
         cuda: ['no-cuda']
         torch-version: ['nightly']
 
-   - name: Cancel Previous Runs
-     uses: styfle/cancel-workflow-action@0.8.0
-     with:
-       access_token: ${{ github.token }}
+   - steps:
+       - name: Cancel Previous Runs
+         uses: styfle/cancel-workflow-action@0.8.0
+         with:
+           access_token: ${{ github.token }}
 
-   - name: Checkout TorchANI
-     uses: actions/checkout@v1
+       - name: Checkout TorchANI
+         uses: actions/checkout@v1
 
-    - name: Install Torchani with ${{ matrix.cuda }}, python ${{ matrix.python-version}} and torch ${{ matrix.torch-version }}
-      uses: ./.github/actions/install_torchani
-      with: 
-        python-version: ${{ matrix.python-version }}
-        cuda: ${{ matrix.cuda }}
-        torch-version: ${{ matrix.torch-version }}
+       - name: Install Torchani with ${{ matrix.cuda }}, python ${{ matrix.python-version}} and torch ${{ matrix.torch-version }}
+         uses: ./.github/actions/install_torchani
+         with: 
+           python-version: ${{ matrix.python-version }}
+           cuda: ${{ matrix.cuda }}
+           torch-version: ${{ matrix.torch-version }}
 
-    - name: Install flake8
-      run: pip install --upgrade flake8
+       - name: Install flake8
+         run: pip install --upgrade flake8
 
-    - name: Lint with flake8
-      run: flake8 .
+       - name: Lint with flake8
+         run: flake8 .
