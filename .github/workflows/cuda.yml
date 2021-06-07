@@ -29,14 +29,21 @@ jobs:
         torch-version: ['stable', 'nightly']
         cuda: ['cuda']
 
-    steps:
+  steps:
+    - name: Cancel Previous Runs
+      uses: styfle/cancel-workflow-action@0.8.0
+      with:
+        access_token: ${{ github.token }}
+    
+    - name: Checkout TorchANI
+      uses: actions/checkout@v1
+    
     - name: Install Torchani with ${{ matrix.cuda }}, python ${{ matrix.python-version}} and torch ${{ matrix.torch-version }}
       uses: ./.github/actions/install_torchani
       with: 
-        token: ${{ github.token }}
         python-version: ${{ matrix.python-version }}
         cuda: ${{ matrix.cuda }}
         torch-version: ${{ matrix.torch-version }}
-
+    
     - name: Run cuaev test
       run: pytest tests/test_cuaev.py -v
