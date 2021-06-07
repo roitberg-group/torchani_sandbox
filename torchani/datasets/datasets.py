@@ -40,7 +40,7 @@ IdxType = Optional[Union[int, ndarray, Tensor]]
 class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
 
     SUPPORTED_FILE_FORMATS = ('numpy', 'hdf5', 'single_hdf5', 'pickle')
-    batch_size: Optional[int]
+    batch_size: int
 
     def __init__(self, store_dir: Union[str, Path],
                        file_format: Optional[str] = None,
@@ -65,8 +65,15 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
         # sort batches according to batch numbers, batches are assumed to have a name
         # '<chars><number><chars>.suffix' where <chars> has only non numeric characters
         # by default batches are named batch<number>.suffix by create_batched_dataset
-        batch_numbers = [int(re.search(r'\d+', b.with_suffix('').name)[0])
-                         for b in self.batch_paths]
+        batch_numbers: List[int] = []
+        for b in self.batch_paths:
+            matches = re.findall(r'\d+', b.with_suffix('').name)
+            if not len(matches) == 1:
+                raise ValueError(f"Batches must have one and only one number but found {matches} for {b.name}")
+            batch_numbers.append(int(matches[0]))
+        if not len(set(batch_numbers)) == len(batch_numbers):
+            raise ValueError(f"Batch numbers must be unique but found {batch_numbers}")
+
         self.batch_paths = [p for _, p in sorted(zip(batch_numbers, self.batch_paths))]
 
         suffix = self.batch_paths[0].suffix
@@ -269,7 +276,7 @@ class _BaseBuiltinBatchedDataset(AniBatchedDataset):
                        **batched_ds_kwargs):
         root = Path(root).resolve()
         self._archive: str = '' if archive is None else archive
-        self._md5s: Dict[str, str] = dict() if md5 is None else md5
+        self._md5: str = '' if md5 is None else md5
         download_and_extract_archive(url=f'{_BASE_URL}{self._archive}', download_root=root, md5=self._md5)
         super().__init__(root, **batched_ds_kwargs)
 
@@ -343,7 +350,7 @@ class _BaseBuiltinRawDataset(AniH5DatasetList):
                 return False
         return True
 
-    def _maybe_download_hdf5_archive_and_check_integrity(self, root: Union[str, Path]) -> None:
+    def _maybe_download_hdf5_archive_and_check_integrity(self, root: Union[str, Path]) -> bool:
         # Downloads only if the files have not been found or are corrupted
         root = Path(root).resolve()
         if root.is_dir() and self._check_hdf5_files_integrity(root):
