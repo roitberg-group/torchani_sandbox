@@ -141,7 +141,7 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
             last_batch = self[-1]
             last_batch_size = _get_properties_size(last_batch, self._flag_property, set(last_batch.keys()))
             if last_batch_size < self.batch_size:
-                self.batch_paths.remove(-1)
+                self.batch_paths.pop()
 
         self._len = len(self.batch_paths)
 
