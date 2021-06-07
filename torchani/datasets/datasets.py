@@ -22,8 +22,8 @@ from torchani.utils import ChemicalSymbolsToAtomicNumbers, pad_atomic_properties
 # torch hub has a dummy implementation of tqdm which can be used if tqdm is not installed
 try:
     from tqdm.auto import tqdm
-    warnings.warn("tqdm could not be found, for better progress bars install tqdm")
 except ImportError:
+    warnings.warn("tqdm could not be found, for better progress bars install tqdm")
     from torch.hub import tqdm
 
 PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None
