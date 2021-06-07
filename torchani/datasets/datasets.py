@@ -1,4 +1,5 @@
 import json
+import re
 import datetime
 import math
 import pickle
@@ -55,10 +56,18 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
                              f'but the split {split} could not be found')
 
         self.batch_paths = [f for f in self.store_dir.iterdir()]
+
         if not self.batch_paths:
             raise RuntimeError("The path provided has no files")
         if not all([f.is_file() for f in self.batch_paths]):
             raise RuntimeError("Subdirectories were found in path, this is not supported")
+
+        # sort batches according to batch numbers, batches are assumed to have a name
+        # '<chars><number><chars>.suffix' where <chars> has only non numeric characters
+        # by default batches are named batch<number>.suffix by create_batched_dataset
+        batch_numbers = [int(re.search(r'\d+', b.with_suffix('').name)[0])
+                         for b in self.batch_paths]
+        self.batch_paths = [p for _, p in sorted(zip(batch_numbers, self.batch_paths))]
 
         suffix = self.batch_paths[0].suffix
         if not all([f.suffix == suffix for f in self.batch_paths]):
@@ -111,37 +120,30 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
         else:
             raise RuntimeError(f'Format for file with extension {suffix} '
                                 'could not be inferred, please specify explicitly')
+
+        self._flag_property = flag_property
+
         try:
             with open(self.store_dir.parent.joinpath('creation_log.json'), 'r') as logfile:
                 creation_log = json.load(logfile)
             self.is_inplace_transformed = creation_log['is_inplace_transformed']
             self.batch_size = creation_log['batch_size']
         except Exception:
-            warnings.warn("No creation log found, is_inplace_transformed assumed False, and batch_size is set to None")
+            warnings.warn("No creation log found, is_inplace_transformed assumed False")
             self.is_inplace_transformed = False
-            self.batch_size = None
 
-        self._flag_property = flag_property
+            # all batches except the last are assumed to have the same length
+            first_batch = self[-1]
+            self.batch_size = _get_properties_size(first_batch, self._flag_property, set(first_batch.keys()))
+
         if drop_last:
-            self._recalculate_batch_size_and_drop_last()
+            # drops last batch only if it is smallest than the rest
+            last_batch = self[-1]
+            last_batch_size = _get_properties_size(last_batch, self._flag_property, set(last_batch.keys()))
+            if last_batch_size < self.batch_size:
+                self.batch_paths.remove(-1)
 
         self._len = len(self.batch_paths)
-
-    def _recalculate_batch_size_and_drop_last(self) -> None:
-        warnings.warn('Recalculating batch size is necessary for drop_last and it may take considerable time if your disk is an HDD')
-        batch_sizes = {path: _get_properties_size(b, self._flag_property, set(b.keys()))
-                           for b, path in zip(self, self.batch_paths)}
-        batch_size_counts = Counter(batch_sizes.values())
-        # in case that there are more than one batch sizes, self.batch_size
-        # holds the most common one
-        self.batch_size = batch_size_counts.most_common(1)[0][0]
-        # we drop the batch with the smallest size, if there is only one of
-        # them, otherwise this errors out
-        assert len(batch_size_counts) in [1, 2], "More than two different batch lengths found"
-        if len(batch_size_counts) == 2:
-            smallest = min(batch_sizes.items(), key=lambda x: x[1])
-            assert batch_size_counts[smallest[1]] == 1, "There is more than one small batch"
-            self.batch_paths.remove(smallest[0])
 
     def cache(self, pin_memory: bool = True,
                     verbose: bool = True,
@@ -722,7 +724,11 @@ def create_batched_dataset(h5_path: Union[str, Path],
 
     h5_path = Path(h5_path).resolve()
     if h5_path.is_dir():
-        h5_datasets = AniH5DatasetList([p for p in h5_path.iterdir() if p.suffix == '.h5'])
+        # sort paths according to file names for reproducibility
+        paths_list = [p for p in h5_path.iterdir() if p.suffix == '.h5']
+        filenames_list = [p.name for p in paths_list]
+        sorted_paths = [p for _, p in sorted(zip(filenames_list, paths_list))]
+        h5_datasets = AniH5DatasetList(sorted_paths)
     elif h5_path.is_file():
         h5_datasets = AniH5DatasetList([h5_path])
 
@@ -779,7 +785,6 @@ def create_batched_dataset(h5_path: Union[str, Path],
                     'shuffle_seed': shuffle_seed,
                     'include_properties': include_properties if include_properties is not None else 'all',
                     'batch_size': batch_size,
-                    'last_batch_sizes': 0,
                     'total_num_conformers': len(conformer_indices),
                     'total_conformer_groups': len(group_sizes_values)}
 
