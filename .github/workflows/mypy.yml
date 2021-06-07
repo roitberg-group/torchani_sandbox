@@ -25,9 +25,17 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
+    - name: create venv
+      run: python -m venv /tmp/torchani-mypy
     - name: Install dependencies
       run: |
-        pip install --upgrade pip
-        pip install --upgrade mypy
+        source /tmp/torchani-mypy/bin/activate
+        pip install --no-cache-dir --upgrade pip
+        pip install --no-cache-dir --upgrade mypy
     - name: Type checking with mypy
-      run: mypy --ignore-missing-imports .
+      run: |
+        source /tmp/torchani-mypy/bin/activate
+        mypy --ignore-missing-imports .
+    - name: remove venv
+      if: always()
+      run: rm -rf /tmp/torchani-mypy/
