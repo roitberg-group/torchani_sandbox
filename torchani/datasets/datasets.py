@@ -9,7 +9,7 @@ import itertools
 from pathlib import Path
 from functools import partial
 from typing import Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set, Callable, overload, Mapping, Any
-from collections import OrderedDict, Counter
+from collections import OrderedDict
 
 import h5py
 import torch
