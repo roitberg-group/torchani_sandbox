@@ -27,6 +27,7 @@ jobs:
         python-version: [3.8]
         torch-version: ['stable', 'nightly']
         cuda: ['cuda']
+
     steps:
       - name: Cancel Previous Runs
         uses: styfle/cancel-workflow-action@0.8.0
