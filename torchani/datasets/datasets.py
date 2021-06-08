@@ -30,7 +30,7 @@ PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None  # type: ignore
 if PKBAR_INSTALLED:
     import pkbar
 
-# type aliases
+
 Transform = Callable[[Dict[str, Tensor]], Dict[str, Tensor]]
 Properties = Dict[str, Tensor]
 NumpyProperties = Dict[str, ndarray]
@@ -373,6 +373,25 @@ class RawANI2x(_BaseBuiltinRawDataset):
     _FILES_AND_MD5S = {'ANI-1x-wB97X-6-31Gd.h5': 'c9d63bdbf90d093db9741c94d9b20972',
                      'ANI-2x-heavy-wB97X-6-31Gd.h5': '49ec3dc5d046f5718802f5d1f102391c',
                      'ANI-2x-dimers-wB97X-6-31Gd.h5': '3455d82a50c63c389126b68607fb9ca8'}
+
+    def __init__(self, root: Union[str, Path], download: bool = False, **base_kwargs):
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)
+
+
+class RawCOMP6v1(_BaseBuiltinRawDataset):
+    _ARCHIVE = 'COMP6-v1-data.tar.gz'
+    _FILES_AND_MD5S = {'GDB11-07-test-500.h5': '9200755bfc755405e64100a53a9f7468',
+                       'GDB11-08-test-500.h5': '202b078f98a911a7a9bdc21ee0ae1af7',
+                       'GDB11-09-test-500.h5': '5d2f6573c07e01493e4c7f72edabe483',
+                       'GDB11-10-test-500.h5': '96acd0003f6faeacb51b4db483c1d6f8',
+                       'GDB11-11-test-500.h5': 'b7bf4fa7d2f78b8168f243b1a6aa6071',
+                       'GDB13-12-test-1000.h5': '4317beed9425ee63659e41144475115c',
+                       'GDB13-13-test-1000.h5': '4095ae8981a5e4b10fbc1f29669b0af5',
+                       'DrugBank-Testset.h5': 'fae59730172c7849478271dbf585c8ce',
+                       'DrugBank-Testset-SFCl.h5': 'dca0987a6030feca5b8e9a1e24102b44',
+                       'Tripeptides-Full.h5': 'bb7238f3634217e834b7eee94febc816',
+                       'ANI-MD-Bench.h5': '9e3a1327d01730033edeeebd6fac4d6c',
+                       'S66-x8-wB97X-6-31Gd.h5': 'df1a5f3b9b6599d56f1a78631a83b720'}
 
     def __init__(self, root: Union[str, Path], download: bool = False, **base_kwargs):
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)
