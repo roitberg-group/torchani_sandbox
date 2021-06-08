@@ -52,6 +52,6 @@ jobs:
         echo $CUDA_HOME
         echo $LD_LIBRARY_PATH
         nvcc -V
-        pip install -e . --global-option="--ext" --global-option="--only-sm80"  -vvv
+        python setup.py install --ext --only-sm80
     - name: Run cuaev test
       run: pytest tests/test_cuaev.py -v
