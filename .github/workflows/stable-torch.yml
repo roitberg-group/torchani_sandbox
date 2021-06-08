@@ -13,7 +13,7 @@ jobs:
 
     runs-on: self-hosted
     strategy:
-      fail-fast: false
+      fail-fast: true
       max-parallel: 4
       matrix:
         python-version: [3.8]
