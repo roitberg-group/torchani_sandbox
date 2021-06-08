@@ -9,14 +9,14 @@ Checks:
 
 [![CodeFactor](https://www.codefactor.io/repository/github/aiqm/torchani/badge/master)](https://www.codefactor.io/repository/github/aiqm/torchani/overview/master)
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/aiqm/torchani.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/aiqm/torchani/alerts/)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/flake8/badge.svg)](https://github.com/aiqm/torchani/actions)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/clang-format/badge.svg)](https://github.com/aiqm/torchani/actions)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/mypy/badge.svg)](https://github.com/aiqm/torchani/actions)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/unittests/badge.svg)](https://github.com/aiqm/torchani/actions)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/cuda/badge.svg)](https://github.com/aiqm/torchani/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/flake8/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/clang-format/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/mypy/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/unittests/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/cuda/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
 [![Actions Status](https://github.com/aiqm/torchani/workflows/docs/badge.svg)](https://github.com/aiqm/torchani/actions)
 [![Actions Status](https://github.com/aiqm/torchani/workflows/runnable-submodules/badge.svg)](https://github.com/aiqm/torchani/actions)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/tools/badge.svg)](https://github.com/aiqm/torchani/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/tools/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
 
 Deploy:
 
