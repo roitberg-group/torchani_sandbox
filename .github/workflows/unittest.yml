@@ -25,24 +25,15 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
-    - name: create venv
-      run: python -m venv /tmp/torchani-unittest
     - name: Fetch submodules
       run: git submodule update --init
     - name: Install dependencies
-      run: |
-          source /tmp/torchani-unittest/bin/activate
-          ci/install_dependencies.sh
+      run: ci/install_dependencies.sh
     - name: Install TorchANI
-      run: |
-          source /tmp/torchani-unittest/bin/activate
-          python setup.py install
+      run: python setup.py install
     - name: Download data files
       run: ./download.sh
+    - name: install pytest
+      run: pip install pytest
     - name: Run all tests
-      run: |
-          source /tmp/torchani-unittest/bin/activate
-          python -m pytest -v tests/*
-    - name: remove venv
-      if: always()
-      run: rm -rf /tmp/torchani-unittest/
+      run: python -m pytest -v tests/*

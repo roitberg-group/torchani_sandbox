@@ -30,6 +30,4 @@ jobs:
         ci/install_dependencies.sh
         pip install --upgrade mypy
     - name: Type checking with mypy
-      run: |
-        source /tmp/torchani-mypy/bin/activate
-        mypy --ignore-missing-imports .
+      run: mypy --ignore-missing-imports .
