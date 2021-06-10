@@ -17,7 +17,7 @@ from torch import Tensor
 import numpy as np
 from numpy import ndarray
 from torchvision.datasets.utils import download_and_extract_archive, list_files, check_integrity
-from torchani.utils import ChemicalSymbolsToAtomicNumbers, pad_atomic_properties, PADDING, cumsum_from_zero
+from torchani.utils import ChemicalSymbolsToAtomicNumbers, pad_atomic_properties, PADDING, cumsum_from_zero, PERIODIC_TABLE
 
 # torch hub has a dummy implementation of tqdm which can be used if tqdm is not installed
 try:
@@ -412,12 +412,14 @@ class AniH5Dataset(Mapping[str, Properties]):
                  store_file: Union[str, Path],
                  flag_property: Optional[str] = None,
                  element_keys: Sequence[str] = ('species', 'numbers', 'atomic_numbers'),
-                 assume_standarized: bool = False):
+                 assume_standarized: bool = False,
+                 verbose: bool = True):
         store_file = Path(store_file).resolve()
         if not store_file.is_file():
             raise FileNotFoundError(f"The h5 file in {store_file.as_posix()} could not be found")
 
         self._store_file = store_file
+        self._verbose = verbose
 
         # flag key is used to infer size of molecule groups
         # when iterating over the dataset
@@ -457,6 +459,18 @@ class AniH5Dataset(Mapping[str, Properties]):
         # strings)
         return iter(self.group_sizes.keys())
 
+    def present_elements(self, element_key='species', use_numpy_output=True) -> Tuple[str]:
+        present_elements: Set[str] = set()
+        for k in self.keys():
+            if use_numpy_output:
+                group = self._get_numpy_group(k, element_keys=(element_key,), non_element_keys=tuple(), repeat_element_keys=False)
+                elements = group[element_key]
+            else:
+                group = self._get_group(k, element_keys=(element_key,), non_element_keys=tuple(), repeat_element_keys=False)
+                elements = group[element_key].numpy()
+            present_elements.update(set(elements))
+        return sorted(tuple(present_elements))
+
     def get_conformers(self,
                        key: str,
                        idx: IdxType = None,
@@ -475,6 +489,122 @@ class AniH5Dataset(Mapping[str, Properties]):
                        **kwargs: bool) -> NumpyProperties:
         element_keys, non_element_keys = self._properties_into_keys(include_properties)
         return self._get_numpy_group(key, non_element_keys, element_keys, idx=idx, **kwargs)
+
+    def extract_slice_as_new_group_inplace(self, property_to_slice: str, new_property: str, idx_to_slice: int, dim_to_slice: int):
+        # annoyingly some properties are sometimes in this format:
+        # "atomic_charges" with shape (C, A + 1), where charges[:, -1] is
+        # actually the sum of the charges over all atoms. This function solves
+        # the problem of dividing these properties as:
+        # "atomic_charges (C, A + 1) -> "atomic_charges (C, A)", "charges (C, )"
+        if not property_to_slice in self.supported_properties:
+            raise ValueError(f"{property_to_slice} is not in {self.supported_properties}")
+        if new_property in self.supported_properties:
+            raise ValueError(f"{new_property} is already in {self.supported_properties}")
+        with h5py.File(self._store_file, 'r+') as f:
+            for k in self.keys():
+                group = f[k]
+                to_slice = group[property_to_slice][()]
+                assert to_slice.shape[dim_to_slice] > 1, "You can't slice the property if dim_to_slice has size 1 or smaller"
+ 
+                # np.take should automatically squeeze the output along the slice
+                slice_ = np.take(to_slice, indices=idx_to_slice, axis=dim_to_slice)
+                assert slice_.ndim == to_slice.ndim - 1
+
+                # delete should not squeeze even if the resulting dim has size 1, so we sqeeze manually
+                with_slice_deleted = np.delete(to_slice, obj=idx_to_slice, axis=dim_to_slice)
+                assert with_slice_deleted.ndim == to_slice.ndim
+                if with_slice_deleted.shape[dim_to_slice] == 1:
+                    with_slice_deleted = np.squeeze(with_slice_deleted, axis=dim_to_slice)
+
+                del group[property_to_slice]
+                group.create_dataset(new_property, data=slice_)
+                group.create_dataset(property_to_slice, data=with_slice_deleted)
+
+        return self
+
+    def delete_properties_inplace(self, properties: Sequence[str]) -> 'AniH5Dataset':
+        if not set(properties).issubset(self.supported_properties):
+            raise ValueError(f'Requested properties {properties} '
+                             f'are not a subset of the supported properties '
+                             f'{self.supported_properties}')
+        with h5py.File(self._store_file, 'r+') as f:
+            for k in self.keys():
+                group = f[k]
+                for property_ in properties:
+                    del group[property_]
+        return self
+
+    def create_chemical_symbols_from_atomic_numbers_inplace(self, symbols_key: str = 'species', numbers_key: str = 'atomic_numbers') -> 'AniH5Dataset':
+        if not numbers_key in self.supported_properties:
+            raise ValueError(f"{numbers_key} is not in {self.supported_properties}")
+        if symbols_key in self.supported_properties:
+            raise ValueError(f"{symbols_key} is already in {self.supported_properties}")
+        with h5py.File(self._store_file, 'r+') as f:
+            for k in self.keys():
+                group = f[k]
+                symbols = np.asarray([PERIODIC_TABLE[j] for j in group[numbers_key][()]], dtype=str)
+                group.create_dataset(symbols_key, data=symbols.astype(bytes))
+        return self
+
+    def create_atomic_numbers_from_chemical_symbols_inplace(self, symbols_key: str = 'species', numbers_key: str = 'atomic_numbers') -> 'AniH5Dataset':
+        symbols_to_numbers = ChemicalSymbolsToAtomicNumbers()
+        if not symbols_key in self.supported_properties:
+            raise ValueError(f"{symbols_key} is not in {self.supported_properties}")
+        if numbers_key in self.supported_properties:
+            raise ValueError(f"{numbers_key} is already in {self.supported_properties}")
+        with h5py.File(self._store_file, 'r+') as f:
+            for k in self.keys():
+                group = f[k]
+                numbers = symbols_to_numbers(group[symbols_key][()].astype(str).tolist()).numpy()
+                group.create_dataset(numbers_key, data=numbers.astype(bytes))
+        return self
+
+    def rename_properties_inplace(self, old_new_dict: Dict[str, str]) -> 'AniH5Dataset':
+        if not set(old_new_dict.keys()).issubset(self.supported_properties):
+            raise ValueError(f'Requested properties {set(old_new_dict.keys())} '
+                             f'are not a subset of the supported properties '
+                             f'{self.supported_properties}')
+        with h5py.File(self._store_file, 'r+') as f:
+            for k in self.keys():
+                group = f[k]
+                for old_name, new_name in old_new_dict.items():
+                    group.move(old_name, new_name)
+        return self
+
+    def get_level_of_theory(self) -> Tuple[str, str]:
+        with h5py.File(self._store_file, 'r+') as f:
+            functional = f.attrs.get('functional')
+            basis_set = f.attrs.get('basis_set')
+        return functional, basis_set
+
+    def get_units(self) -> Dict[str, str]:
+        with h5py.File(self._store_file, 'r+') as f:
+            units = {k: v  for k, v in f.attrs.items() if k.endswith('units')}
+        return units
+
+    def set_level_of_theory(self, functional: str = '', basis_set: str = '') -> 'AniH5Dataset':
+        assert '*' not in functional and '*' not in basis_set, "please don't include * in the functional or basis set"
+        assert '/' not in functional and '/' not in basis_set, "please don't include / in the functional or basis set"
+        warnings.warn("This will overwrite existing level of theory if it has been set")
+        with h5py.File(self._store_file, 'r+') as f:
+            f.attrs.create('functional', data=functional)
+            f.attrs.create('basis_set', data=basis_set)
+        return self
+
+    def set_units(self, properties_units_dict: Dict[str, str]) -> 'AniH5Dataset':
+        warnings.warn("This will overwrite existing units for the specified if they have been set")
+        assert set(properties_units_dict.keys()).issubset(self.supported_properties)
+        with h5py.File(self._store_file, 'r+') as f:
+            for p, u in properties_units_dict.items():
+                f.attrs.create(f"{p}_units", data=u)
+        return self
+
+    def clear_units(self) -> 'AniH5Dataset':
+        with h5py.File(self._store_file, 'r+') as f:
+            for k in f.attrs.keys():
+                if k.endswith('units'):
+                    del f.attrs[k]
+        return self
 
     def delete_conformers_inplace(self, key: str, idx: IdxType = None) -> 'AniH5Dataset':
         # first we fetch all conformers from the group
@@ -564,11 +694,22 @@ class AniH5Dataset(Mapping[str, Properties]):
                        pbar=None) -> None:
             if pbar is not None:
                 pbar.update()
-            if isinstance(object_, h5py.Dataset):
+            # We avoid Datasets called _meta or _created since in some of the
+            # datasets these store units or other data
+            if isinstance(object_, h5py.Dataset) and not object_.name.lower() in ['/_created', '/_meta']:
                 molecule_group = object_.parent
                 # Check if we already visited this group via one of its
                 # children or not
                 if molecule_group.name not in [tup[0] for tup in group_sizes]:
+
+                    # Check for format correctness
+                    for v in molecule_group.values():
+                        if not isinstance(v, h5py.Dataset):
+                            raise RuntimeError("Invalid dataset format, there "
+                                               "shouldn't be Groups inside Groups "
+                                               f"that have Datasets, but {molecule_group.name},"
+                                               f"parent of the dataset {object_.name}, has group {v.name} as a child")
+
                     # Collect properties and check that all the datasets have
                     # the same properties
                     if not supported_properties:
@@ -577,15 +718,11 @@ class AniH5Dataset(Mapping[str, Properties]):
                             raise RuntimeError(f"Flag property {flag_property} "
                                                f"not found in {supported_properties}")
                     else:
-                        if not set(molecule_group.keys()) == supported_properties:
-                            raise RuntimeError(f"group {molecule_group.name} has incompatible keys, "
-                                               f"which should be {supported_properties}, inferred from other groups")
-                    # Check for format correctness
-                    for v in molecule_group.values():
-                        if not isinstance(v, h5py.Dataset):
-                            raise RuntimeError("Invalid dataset format, there "
-                                               "shouldn't be Groups inside Groups "
-                                               "that have Datasets")
+                        found_properties = set(molecule_group.keys())
+                        if not found_properties == supported_properties:
+                            raise RuntimeError(f"Group {molecule_group.name} has "
+                                               f"incompatible keys, found {found_properties}, "
+                                               f"but {supported_properties} was inferred from other groups")
                     group_sizes.append((molecule_group.name,
                                          _get_properties_size(molecule_group,
                                                               flag_property,
@@ -600,7 +737,9 @@ class AniH5Dataset(Mapping[str, Properties]):
             # have depth 1, with the same number and name of Datasets each
             # (properties such as species, coordinates, etc), and all Datasets
             # have depth 2
-            with tqdm(desc='Scanning HDF5 file assuming standard format') as pbar:
+            #
+            # "Meta" datasets don't bother in this case
+            with tqdm(desc=f'Scanning {self._store_file.name} assuming standard format', disable= not self._verbose) as pbar:
                 with h5py.File(self._store_file, 'r') as f:
                     for j, (k, g) in enumerate(f.items()):
                         pbar.update()
@@ -612,7 +751,7 @@ class AniH5Dataset(Mapping[str, Properties]):
                         group_sizes.append((k, _get_properties_size(g, self._flag_property, supported_properties)))
         else:
             with h5py.File(self._store_file, 'r') as f:
-                with tqdm(desc='Scanning HDF5 file and verifying format correctness') as pbar:
+                with tqdm(desc=f'Scanning {self._store_file.name} and verifying format correctness', disable= not self._verbose) as pbar:
                     f.visititems(partial(visitor_fn,
                                          pbar=pbar,
                                          group_sizes=group_sizes,
