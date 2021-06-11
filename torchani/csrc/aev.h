@@ -250,7 +250,12 @@ struct CuaevComputer : torch::CustomClassHolder {
   // TODO add option for simulation only forward, which will initilize result space, and no need to allocate any more.
   Result forward(const Tensor& coordinates_t, const Tensor& species_t);
 
-  Result forward_with_nbrlist(const Tensor& coordinates_t, const Tensor& species_t, const Tensor& atomIJ_t, const Tensor& deltaJ_t, const Tensor& distJ_t);
+  Result forward_with_nbrlist(
+      const Tensor& coordinates_t,
+      const Tensor& species_t,
+      const Tensor& atomIJ_t,
+      const Tensor& deltaJ_t,
+      const Tensor& distJ_t);
 
   Tensor backward(const Tensor& grad_e_aev, const Result& result);
 
