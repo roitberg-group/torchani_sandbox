@@ -1,3 +1,4 @@
+
 import json
 import re
 import datetime
@@ -6,6 +7,7 @@ import pickle
 import warnings
 import importlib
 import itertools
+from pprint import pformat
 from pathlib import Path
 from functools import partial
 from typing import Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set, Callable, overload, Mapping, Any
@@ -15,6 +17,7 @@ import h5py
 import torch
 from torch import Tensor
 import numpy as np
+from numpy import typing as numpy_typing
 from numpy import ndarray
 from torchvision.datasets.utils import download_and_extract_archive, list_files, check_integrity
 from torchani.utils import ChemicalSymbolsToAtomicNumbers, pad_atomic_properties, PADDING, cumsum_from_zero, PERIODIC_TABLE
@@ -152,26 +155,31 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
 
         self._len = len(self.batch_paths)
 
-    def cache(self, pin_memory: bool = True,
-                    verbose: bool = True,
-                    apply_transform: bool = True) -> 'AniBatchedDataset':
+    def cache(self,
+              pin_memory: bool = True,
+              verbose: bool = True,
+              apply_transform: bool = True) -> 'AniBatchedDataset':
         if verbose:
-            print(f"Cacheing split {self.split} of dataset, this may take some time...")
-            print("Important: Cacheing the dataset may use a lot of memory, be careful!")
+            print(f"Cacheing split {self.split} of dataset, this may take some time...\n"
+                   "Important: Cacheing the dataset may use a lot of memory, be careful!")
 
-        def memory_extractor(idx: int, ds: AniBatchedDataset) -> Properties:
-            return ds._data[idx]
-
-        self._data = [self.extractor(idx) for idx in range(len(self))]
+        self._data = [self.extractor(idx)
+                      for idx in tqdm(range(len(self)),
+                                      total=len(self),
+                                      disable=not verbose,
+                                      desc='Loading data into memory')]
 
         if apply_transform:
             if verbose:
-                print("Applying transforms if they are present...")
-                print("Important: Transformations, if there are any present,"
-                      " will be applied once during cacheing and then discarded.")
-                print("If you want a different behavior pass apply_transform=False")
+                print("Important: Transformations, if there are any present,\n"
+                      "will be applied once during cacheing and then discarded.\n"
+                      "If you want a different behavior pass apply_transform=False")
             with torch.no_grad():
-                self._data = [self.transform(properties) for properties in self._data]
+                self._data = [self.transform(properties)
+                              for properties in tqdm(self._data,
+                                                     total=len(self),
+                                                     disable=not verbose,
+                                                     desc="Applying transforms if present")]
             # discard transform after aplication
             self.transform = lambda x: x
 
@@ -179,10 +187,17 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
         # dataset is not cached memory pinning is done by the torch DataLoader.
         if pin_memory:
             if verbose:
-                print("Pinning memory...")
                 print("Important: Cacheing pins memory automatically.")
                 print("Do **not** use pin_memory=True in torch.utils.data.DataLoader")
-            self._data = [{k: v.pin_memory() for k, v in properties.items()} for properties in self._data]
+            self._data = [{k: v.pin_memory()
+                           for k, v in properties.items()}
+                           for properties in tqdm(self._data,
+                                                  total=len(self),
+                                                  disable=not verbose,
+                                                  desc='Pinning memory')]
+
+        def memory_extractor(idx: int, ds: AniBatchedDataset) -> Properties:
+            return ds._data[idx]
 
         self.extractor = partial(memory_extractor, ds=self)
         return self
@@ -413,6 +428,7 @@ class AniH5Dataset(Mapping[str, Properties]):
                  flag_property: Optional[str] = None,
                  element_keys: Sequence[str] = ('species', 'numbers', 'atomic_numbers'),
                  assume_standarized: bool = False,
+                 validate_metadata: bool = False,
                  verbose: bool = True):
         store_file = Path(store_file).resolve()
         if not store_file.is_file():
@@ -435,10 +451,11 @@ class AniH5Dataset(Mapping[str, Properties]):
         self._supported_non_element_keys = tuple((k for k in self.supported_properties
                                                   if k not in element_keys and k != 'smiles'))
 
+        self._symbols_to_atomic_numbers = ChemicalSymbolsToAtomicNumbers()
         self.num_conformers = sum(self.group_sizes.values())
         self.num_conformer_groups = len(self.group_sizes.keys())
-
-        self.symbols_to_atomic_numbers = ChemicalSymbolsToAtomicNumbers()
+        if validate_metadata:
+            self.validate_metadata()
 
     def __getitem__(self, key: str) -> Properties:
         # this is a simple extraction that just fetches everything
@@ -461,12 +478,18 @@ class AniH5Dataset(Mapping[str, Properties]):
 
     def present_elements(self, element_key='species', use_numpy_output=True) -> Tuple[str]:
         present_elements: Set[str] = set()
-        for k in self.keys():
+        for key in self.keys():
             if use_numpy_output:
-                group = self._get_numpy_group(k, element_keys=(element_key,), non_element_keys=tuple(), repeat_element_keys=False)
+                group = self._get_numpy_group(key,
+                                              element_keys=(element_key,),
+                                              non_element_keys=tuple(),
+                                              repeat_element_keys=False)
                 elements = group[element_key]
             else:
-                group = self._get_group(k, element_keys=(element_key,), non_element_keys=tuple(), repeat_element_keys=False)
+                group = self._get_group(key,
+                                        element_keys=(element_key,),
+                                        non_element_keys=tuple(),
+                                        repeat_element_keys=False)
                 elements = group[element_key].numpy()
             present_elements.update(set(elements))
         return sorted(tuple(present_elements))
@@ -477,26 +500,34 @@ class AniH5Dataset(Mapping[str, Properties]):
                        include_properties: Optional[Sequence[str]] = None,
                        **kwargs: bool) -> Properties:
         # kwargs are flags for _get_group (numpy_output, repeat_element_keys and strict)
-        element_keys, non_element_keys = self._properties_into_keys(include_properties)
         # fetching a conformer actually copies all the group into memory first,
         # because indexing directly into hdf5 is much slower.
+        element_keys, non_element_keys = self._properties_into_keys(include_properties)
         return self._get_group(key, non_element_keys, element_keys, idx=idx, **kwargs)
 
     def get_numpy_conformers(self,
-                       key: str,
-                       idx: IdxType = None,
-                       include_properties: Optional[Sequence[str]] = None,
-                       **kwargs: bool) -> NumpyProperties:
+                             key: str,
+                             idx: IdxType = None,
+                             include_properties: Optional[Sequence[str]] = None,
+                             **kwargs: bool) -> NumpyProperties:
         element_keys, non_element_keys = self._properties_into_keys(include_properties)
         return self._get_numpy_group(key, non_element_keys, element_keys, idx=idx, **kwargs)
 
-    def extract_slice_as_new_group_inplace(self, property_to_slice: str, new_property: str, idx_to_slice: int, dim_to_slice: int):
-        # annoyingly some properties are sometimes in this format:
+    def extract_slice_as_new_group(self,
+                                   property_to_slice: str,
+                                   idx_to_slice: int,
+                                   dim_to_slice: int,
+                                   new_property: Optional[str] = None,
+                                   reinitialize: bool = True,
+                                   strict: bool = True):
+        # Annoyingly some properties are sometimes in this format:
         # "atomic_charges" with shape (C, A + 1), where charges[:, -1] is
         # actually the sum of the charges over all atoms. This function solves
         # the problem of dividing these properties as:
         # "atomic_charges (C, A + 1) -> "atomic_charges (C, A)", "charges (C, )"
-        if not property_to_slice in self.supported_properties:
+        if property_to_slice not in self.supported_properties:
+            if not strict:
+                return self
             raise ValueError(f"{property_to_slice} is not in {self.supported_properties}")
         if new_property in self.supported_properties:
             raise ValueError(f"{new_property} is already in {self.supported_properties}")
@@ -505,7 +536,7 @@ class AniH5Dataset(Mapping[str, Properties]):
                 group = f[k]
                 to_slice = group[property_to_slice][()]
                 assert to_slice.shape[dim_to_slice] > 1, "You can't slice the property if dim_to_slice has size 1 or smaller"
- 
+
                 # np.take should automatically squeeze the output along the slice
                 slice_ = np.take(to_slice, indices=idx_to_slice, axis=dim_to_slice)
                 assert slice_.ndim == to_slice.ndim - 1
@@ -517,96 +548,261 @@ class AniH5Dataset(Mapping[str, Properties]):
                     with_slice_deleted = np.squeeze(with_slice_deleted, axis=dim_to_slice)
 
                 del group[property_to_slice]
-                group.create_dataset(new_property, data=slice_)
+                if new_property is not None:
+                    group.create_dataset(new_property, data=slice_)
                 group.create_dataset(property_to_slice, data=with_slice_deleted)
+        if reinitialize:
+            self.__init__(self._store_file, self._flag_property)
 
         return self
 
-    def delete_properties_inplace(self, properties: Sequence[str]) -> 'AniH5Dataset':
+    def delete_properties(self,
+                          properties: Sequence[str],
+                          reinitialize: bool = True,
+                          strict: bool = True) -> 'AniH5Dataset':
         if not set(properties).issubset(self.supported_properties):
-            raise ValueError(f'Requested properties {properties} '
-                             f'are not a subset of the supported properties '
-                             f'{self.supported_properties}')
+            if not strict:
+                properties = {p for p in properties if p in self.supported_properties}
+                if not properties:
+                    return self
+            else:
+                raise ValueError(f'Requested properties {properties} '
+                                 f'are not a subset of the supported properties '
+                                 f'{self.supported_properties}')
         with h5py.File(self._store_file, 'r+') as f:
             for k in self.keys():
                 group = f[k]
                 for property_ in properties:
                     del group[property_]
+        if reinitialize:
+            self.__init__(self._store_file, self._flag_property)
         return self
 
-    def create_chemical_symbols_from_atomic_numbers_inplace(self, symbols_key: str = 'species', numbers_key: str = 'atomic_numbers') -> 'AniH5Dataset':
-        if not numbers_key in self.supported_properties:
+    def create_chemical_symbols_from_atomic_numbers(self,
+                                                    symbols_key: str = 'species',
+                                                    numbers_key: str = 'atomic_numbers',
+                                                    reinitialize: bool = True,
+                                                    strict: bool = True) -> 'AniH5Dataset':
+        if numbers_key not in self.supported_properties:
             raise ValueError(f"{numbers_key} is not in {self.supported_properties}")
         if symbols_key in self.supported_properties:
+            if not strict:
+                return self
             raise ValueError(f"{symbols_key} is already in {self.supported_properties}")
         with h5py.File(self._store_file, 'r+') as f:
             for k in self.keys():
                 group = f[k]
                 symbols = np.asarray([PERIODIC_TABLE[j] for j in group[numbers_key][()]], dtype=str)
                 group.create_dataset(symbols_key, data=symbols.astype(bytes))
+        if reinitialize:
+            self.__init__(self._store_file, self._flag_property)
         return self
 
-    def create_atomic_numbers_from_chemical_symbols_inplace(self, symbols_key: str = 'species', numbers_key: str = 'atomic_numbers') -> 'AniH5Dataset':
+    def create_atomic_numbers_from_chemical_symbols(self,
+                                                    symbols_key: str = 'species',
+                                                    numbers_key: str = 'atomic_numbers',
+                                                    reinitialize: bool = True,
+                                                    strict: bool = True) -> 'AniH5Dataset':
         symbols_to_numbers = ChemicalSymbolsToAtomicNumbers()
-        if not symbols_key in self.supported_properties:
+        if symbols_key not in self.supported_properties:
             raise ValueError(f"{symbols_key} is not in {self.supported_properties}")
         if numbers_key in self.supported_properties:
+            if not strict:
+                return self
             raise ValueError(f"{numbers_key} is already in {self.supported_properties}")
         with h5py.File(self._store_file, 'r+') as f:
             for k in self.keys():
                 group = f[k]
                 numbers = symbols_to_numbers(group[symbols_key][()].astype(str).tolist()).numpy()
-                group.create_dataset(numbers_key, data=numbers.astype(bytes))
+                group.create_dataset(numbers_key, data=numbers)
+        if reinitialize:
+            self.__init__(self._store_file, self._flag_property)
         return self
 
-    def rename_properties_inplace(self, old_new_dict: Dict[str, str]) -> 'AniH5Dataset':
+    def rename_properties(self,
+                          old_new_dict: Dict[str, str],
+                          reinitialize: bool = True,
+                          strict: bool = True) -> 'AniH5Dataset':
         if not set(old_new_dict.keys()).issubset(self.supported_properties):
-            raise ValueError(f'Requested properties {set(old_new_dict.keys())} '
-                             f'are not a subset of the supported properties '
-                             f'{self.supported_properties}')
+            if not strict:
+                properties = {p for p in old_new_dict.keys() if p in self.supported_properties}
+                if not properties:
+                    return self
+                for p in properties:
+                    del old_new_dict[p]
+            else:
+                raise ValueError(f'Requested properties {set(old_new_dict.keys())} '
+                                 f'are not a subset of the supported properties '
+                                 f'{self.supported_properties}')
         with h5py.File(self._store_file, 'r+') as f:
             for k in self.keys():
                 group = f[k]
                 for old_name, new_name in old_new_dict.items():
                     group.move(old_name, new_name)
+        if reinitialize:
+            self.__init__(self._store_file, self._flag_property)
         return self
 
-    def get_level_of_theory(self) -> Tuple[str, str]:
+    def get_metadata(self) -> Dict[str, Any]:
+        units = self._get_attr_dict('units')
+        dtypes = self._get_attr_dict('dtype')
+        shapes = self._get_attr_dict('shape')
+        properties_metadata: Dict[str, Any] = dict()
+        for k in units.keys():
+            properties_metadata[k] = dict(units=units[k], dtype=dtypes[k], shape=shapes[k])
+        functional, basis_set = self._get_level_of_theory()
+        return functional, basis_set, properties_metadata
+
+    def set_metadata(self,
+                     properties_metadata: Optional[Dict[str, Dict[str, Any]]] = None,
+                     functional: str = '',
+                     basis_set: str = '') -> 'AniH5Dataset':
+        self._set_level_of_theory(functional, basis_set)
+        supported_prefixes = {'units', 'shape', 'dtype'}
+        for prefix in supported_prefixes:
+            attr_dict = dict()
+            if properties_metadata is not None:
+                for property_, dict_ in properties_metadata.items():
+                    if not set(dict_.keys()).issubset(supported_prefixes):
+                        raise ValueError(f'Unsupported metadata {set(dict_.keys())}, must be one of {supported_prefixes}')
+                    attr_dict.update({property_: dict_[prefix]})
+                if prefix == 'units':
+                    self._set_units(attr_dict)
+                elif prefix == 'shape':
+                    self._set_shapes(attr_dict)
+                elif prefix == 'dtype':
+                    self._set_dtypes(attr_dict)
+        return self
+
+    def clear_metadata(self) -> 'AniH5Dataset':
+        with h5py.File(self._store_file, 'r+') as f:
+            for k in f.attrs.keys():
+                del f.attrs[k]
+        return self
+
+    def validate_metadata(self, verbose: bool = True) -> 'AniH5Dataset':
+        # first we fetch all variables that should be the same
+        dtypes = self._get_attr_dict('dtype')
+        shapes = self._get_attr_dict('shape')
+        units = self._get_attr_dict('units')
+        if not self.supported_properties == set(shapes.keys()):
+            raise RuntimeError(f"Present shapes are for properties {set(shapes.keys())} "
+                                "but expected {self.supported_properties}")
+        if not self.supported_properties == set(dtypes.keys()):
+            raise RuntimeError(f"Present dtypes are for properties {set(dtypes.keys())} "
+                                "but expected {self.supported_properties}")
+        if not self.supported_properties == set(units.keys()):
+            raise RuntimeError(f"Present dtypes are for properties {set(units.keys())} "
+                                "but expected {self.supported_properties}")
+        for k in tqdm(self.keys(), total=self.num_conformer_groups, desc='Validating metadata', disable=not verbose):
+            v = self.get_numpy_conformers(k)
+            for property_, expected_dtype_name in dtypes.items():
+                dtype_name = np.dtype(v[property_].dtype).name
+                if not dtype_name == expected_dtype_name:
+                    if not expected_dtype_name == 'str' and expected_dtype_name in dtype_name:
+                        raise RuntimeError(f'{property_} of group {k} has dtype {dtype_name} '
+                                            'but expected {expected_dtype_name}')
+
+            variable_shapes = dict()
+            for property_, shape in shapes.items():
+                for j, expected_size in enumerate(eval(shape)):
+                    try:
+                        size = v[property_].shape[j]
+                    except Exception:
+                        breakpoint()
+                    if isinstance(expected_size, int):
+                        if not expected_size == size:
+                            raise RuntimeError(f'{property_} of group {k} has '
+                                                'dim size {size} but expected {expected_size}')
+                    elif isinstance(expected_size, str):
+                        variable_expected_size = variable_shapes.get(expected_size, None)
+                        if variable_expected_size is None:
+                            variable_shapes[expected_size] = variable_expected_size
+                        else:
+                            if not variable_expected_size == size:
+                                raise RuntimeError(f'{property_} of group {k} has dim size {size} '
+                                                    'but expected {expected_size}')
+                    else:
+                        raise RuntimeError(f"Unexpected type forund as shape {type(expected_size)}")
+        return self
+
+    def __str__(self):
+        str_ = "ANI HDF5 Dataset object:\n"
+        str_ += f"File name {self._store_file.name}\n"
+        str_ += f"Number of conformers: {self.num_conformers}\n"
+        str_ += f"Number of conformer groups: {self.num_conformer_groups}\n"
+        functional, basis_set, metadata = self.get_metadata()
+        str_ += f"Level of theory: {functional}/{basis_set}\n"
+        try:
+            str_ += f"Present species: {self.present_elements(element_key='species')}\n"
+        except Exception:
+            str_ += "Present species: \n"
+        str_ += "Properties, units, dtypes and shapes: \n"
+        str_ += pformat(metadata, compact=True, width=200)
+        return str_
+
+    def _get_level_of_theory(self) -> Tuple[str, str]:
         with h5py.File(self._store_file, 'r+') as f:
             functional = f.attrs.get('functional')
             basis_set = f.attrs.get('basis_set')
         return functional, basis_set
 
-    def get_units(self) -> Dict[str, str]:
-        with h5py.File(self._store_file, 'r+') as f:
-            units = {k: v  for k, v in f.attrs.items() if k.endswith('units')}
-        return units
-
-    def set_level_of_theory(self, functional: str = '', basis_set: str = '') -> 'AniH5Dataset':
-        assert '*' not in functional and '*' not in basis_set, "please don't include * in the functional or basis set"
-        assert '/' not in functional and '/' not in basis_set, "please don't include / in the functional or basis set"
-        warnings.warn("This will overwrite existing level of theory if it has been set")
+    def _set_level_of_theory(self, functional: str = '', basis_set: str = '') -> 'AniH5Dataset':
+        if '*' in functional or '*' in basis_set:
+            raise ValueError("'*' not supported in functional or basis set")
+        if '/' in functional or '/' in basis_set:
+            raise ValueError("'*' not supported in functional or basis set")
         with h5py.File(self._store_file, 'r+') as f:
             f.attrs.create('functional', data=functional)
             f.attrs.create('basis_set', data=basis_set)
         return self
 
-    def set_units(self, properties_units_dict: Dict[str, str]) -> 'AniH5Dataset':
-        warnings.warn("This will overwrite existing units for the specified if they have been set")
-        assert set(properties_units_dict.keys()).issubset(self.supported_properties)
+    def _get_attr_dict(self, prefix: str) -> Dict[str, str]:
         with h5py.File(self._store_file, 'r+') as f:
-            for p, u in properties_units_dict.items():
-                f.attrs.create(f"{p}_units", data=u)
+            attr_dict = {k.split('.')[1]: v for k, v in f.attrs.items() if k.split('.')[0] == prefix}
+        if not attr_dict:
+            raise ValueError(f"The attribute dict with prefix {prefix} was not found.")
+        return attr_dict
+
+    def _set_attr_dict(self, attr_dict: Dict[str, Any], prefix: str) -> 'AniH5Dataset':
+        if not set(attr_dict.keys()).issubset(self.supported_properties):
+            raise ValueError(f"Not supported properties in {set(attr_dict.keys())} "
+                              "must be one of {self.supported_properties}")
+        for k in attr_dict.keys():
+            assert '.' not in k, "character '.' not supported in the properties keys"
+
+        with h5py.File(self._store_file, 'r+') as f:
+            for p, u in attr_dict.items():
+                f.attrs.create(f"{prefix}.{p}", data=u)
         return self
 
-    def clear_units(self) -> 'AniH5Dataset':
-        with h5py.File(self._store_file, 'r+') as f:
-            for k in f.attrs.keys():
-                if k.endswith('units'):
-                    del f.attrs[k]
-        return self
+    def _set_units(self, properties_units_dict: Dict[str, Tuple[Union[int, str], ...]]) -> 'AniH5Dataset':
+        return self._set_attr_dict(properties_units_dict, 'units')
 
-    def delete_conformers_inplace(self, key: str, idx: IdxType = None) -> 'AniH5Dataset':
+    def _set_shapes(self, properties_shapes_dict: Dict[str, Tuple[Union[int, str], ...]]) -> 'AniH5Dataset':
+        # shapes are stored as repr'd tuples, due to a limitation of numpy
+        # dtypes which can't store shapes which have axes of undetermined size.
+        # The tuples can have integers or strings, integers mean those axes are
+        # constant and have to have the exact same size for all properties,
+        # strings mean the axes are variables which can have different values
+        # in different Groups, but the same values should be maintained within
+        # a group, (even in different properties)
+
+        # check input correctness
+        for k in properties_shapes_dict.keys():
+            tuple_ = properties_shapes_dict[k]
+            assert isinstance(tuple_, tuple)
+            for value in tuple_:
+                assert isinstance(value, (int, str))
+            properties_shapes_dict[k] = repr(tuple_)
+        return self._set_attr_dict(properties_shapes_dict, 'shape')
+
+    def _set_dtypes(self, properties_dtypes_dict: Dict[str, numpy_typing.DTypeLike]) -> 'AniH5Dataset':
+        # convert dtypes to their names to be able to accurately store them in HDF5
+        properties_dtypes_dict = {k: np.dtype(v).name for k, v in properties_dtypes_dict.items()}
+        return self._set_attr_dict(properties_dtypes_dict, 'dtype')
+
+    def delete_conformers(self, key: str, idx: IdxType = None, reinitialize: bool = True) -> 'AniH5Dataset':
         # first we fetch all conformers from the group
         all_conformers = self.get_numpy_conformers(key,
                                              include_properties=tuple(self.supported_properties),
@@ -646,6 +842,8 @@ class AniH5Dataset(Mapping[str, Properties]):
         else:
             with h5py.File(self._store_file, 'r+') as f:
                 del f[key]
+        if reinitialize:
+            self.__init__(self._store_file, self._flag_property)
         return self
 
     def iter_conformers(self,
@@ -739,7 +937,8 @@ class AniH5Dataset(Mapping[str, Properties]):
             # have depth 2
             #
             # "Meta" datasets don't bother in this case
-            with tqdm(desc=f'Scanning {self._store_file.name} assuming standard format', disable= not self._verbose) as pbar:
+            with tqdm(desc=f'Scanning {self._store_file.name} assuming standard format',
+                      disable=not self._verbose) as pbar:
                 with h5py.File(self._store_file, 'r') as f:
                     for j, (k, g) in enumerate(f.items()):
                         pbar.update()
@@ -751,12 +950,14 @@ class AniH5Dataset(Mapping[str, Properties]):
                         group_sizes.append((k, _get_properties_size(g, self._flag_property, supported_properties)))
         else:
             with h5py.File(self._store_file, 'r') as f:
-                with tqdm(desc=f'Scanning {self._store_file.name} and verifying format correctness', disable= not self._verbose) as pbar:
+                with tqdm(desc=f'Scanning {self._store_file.name} and verifying format correctness',
+                          disable=not self._verbose) as pbar:
                     f.visititems(partial(visitor_fn,
                                          pbar=pbar,
                                          group_sizes=group_sizes,
                                          supported_properties=supported_properties,
                                          flag_property=self._flag_property))
+
         # By default iteration of HDF5 should be alphanumeric in which case
         # sorting should not be necessary, this internal assert ensures the
         # groups were not created with 'track_order=True', and that the visitor
@@ -840,10 +1041,10 @@ class AniH5Dataset(Mapping[str, Properties]):
             if species.ndim == 2:
                 num_molecules = species.shape[0]
                 num_atoms = species.shape[1]
-                tensor_species = self.symbols_to_atomic_numbers(species.ravel().tolist())
+                tensor_species = self._symbols_to_atomic_numbers(species.ravel().tolist())
                 tensor_species = tensor_species.view(num_molecules, num_atoms)
             else:
-                tensor_species = self.symbols_to_atomic_numbers(species.tolist())
+                tensor_species = self._symbols_to_atomic_numbers(species.tolist())
             properties.update({'species': tensor_species})
         return properties
 
@@ -994,6 +1195,8 @@ def _get_properties_size(molecule_group: Union[h5py.Group, Properties, NumpyProp
         assert supported_properties is not None
         if 'coordinates' in supported_properties:
             size = molecule_group['coordinates'].shape[0]
+        elif 'coord' in supported_properties:
+            size = molecule_group['coord'].shape[0]
         elif 'energies' in supported_properties:
             size = molecule_group['energies'].shape[0]
         elif 'forces' in supported_properties:
