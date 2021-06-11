@@ -1616,7 +1616,12 @@ Result CuaevComputer::forward(const Tensor& coordinates_t, const Tensor& species
   return result;
 }
 
-Result CuaevComputer::forward_with_nbrlist(const Tensor& coordinates_t, const Tensor& species_t, const Tensor& atomIJ_t, const Tensor& deltaJ_t, const Tensor& distJ_t){
+Result CuaevComputer::forward_with_nbrlist(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const Tensor& atomIJ_t,
+    const Tensor& deltaJ_t,
+    const Tensor& distJ_t) {
   Result result(coordinates_t, species_t);
   if (aev_params.use_cos_cutoff)
     cuaev_forward_with_nbrlist<true>(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, aev_params, result);
