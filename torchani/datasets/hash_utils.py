@@ -1,5 +1,5 @@
-from hashlib import md5
 import time
+from hashlib import md5
 import torch
 from torch import Tensor
 from typing import Tuple
@@ -166,7 +166,7 @@ def around(x, decimals=0):
 def hash_all_conformations(dataset, **kwargs):
     hasher = ConformerHasher(**kwargs)
     for k in dataset.keys():
-        g = dataset._get_group(k, non_element_keys=('coordinates',), element_keys=('species',))
+        g = dataset._get_group(k, batch_keys=('coordinates',), nonbatch_keys=('species',))
         hashes = []
         print(g['invariant_hash'])
         exit()
