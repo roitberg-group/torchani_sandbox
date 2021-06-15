@@ -2,7 +2,7 @@ import time
 from hashlib import md5
 import torch
 from torch import Tensor
-from typing import Tuple
+from typing import Tuple, Any, List
 from tqdm import tqdm
 from scipy.spatial.transform import Rotation
 import numpy as np
@@ -11,7 +11,7 @@ import h5py
 
 class ConformerHasher:
 
-    def __init__(self, decimals=6):
+    def __init__(self, decimals: int = 6):
         self._decimals = decimals
         self._similarity = torch.nn.CosineSimilarity(dim=1, eps=1e-10)
         # eigenvectors is lazily calculated by get_conformation_hash if needed
@@ -79,7 +79,7 @@ class ConformerHasher:
                            "due to a limitation of the hashing "
                            "algorithm this molecule can't be hashed")
 
-    def _use_invariant_to_break_ties(self, coordinates, invariant, counts_previous_invariant):
+    def _use_invariant_to_break_ties(self, coordinates: Tensor, invariant: Tensor, counts_previous_invariant: Tensor) -> Tuple[Tensor, Tensor]:
         invariant = around(invariant, decimals=self._decimals)
         split_invariant = torch.split(invariant, counts_previous_invariant.tolist())
         sorted_split_invariant_and_idxs = [torch.sort(s) for s in split_invariant]
@@ -90,7 +90,7 @@ class ConformerHasher:
                                      for invariant_idxs in sorted_split_invariant_and_idxs])
         return coordinates, counts_invariant
 
-    def _get_cosines_with_eigenspace(self, coordinates, eigenspace_idx=0):
+    def _get_cosines_with_eigenspace(self, coordinates: Tensor, eigenspace_idx: int = 0) -> Tensor:
 
         # lazy initialization of eigenvectors
         if self._eigenvectors is None:
@@ -114,7 +114,7 @@ class ConformerHasher:
         # of the requested eigenvector
         return self._similarity(vector.repeat(coordinates.shape[0], 1), coordinates).abs()
 
-    def _hash_from_ordered_atoms(self, species_coordinates):
+    def _hash_from_ordered_atoms(self, species_coordinates: Tuple[Tensor, Tensor]) -> str:
         self._eigenvectors = None
         species, coordinates = species_coordinates
         # As a final step we calculate the distance matrix between all the coordinates
@@ -139,14 +139,14 @@ class ConformerHasher:
         return hasher.hexdigest()
 
     @staticmethod
-    def _reorder_coordinates(coordinates, sorted_vals_and_idxs):
+    def _reorder_coordinates(coordinates: Tensor, sorted_vals_and_idxs: List[Any]) -> Tensor:
         split_coordinates = torch.split(coordinates, [len(s.indices) for s in sorted_vals_and_idxs])
         split_coordinates = [coords[vals_idxs.indices]
                              for coords, vals_idxs in zip(split_coordinates, sorted_vals_and_idxs)]
         return torch.cat(split_coordinates)
 
 
-def cov(x, rowvar=True, bias=False):
+def cov(x: Tensor, rowvar: bool = True, bias: bool = False) -> Tensor:
     """Estimate a covariance matrix (np.cov)
     https://gist.github.com/ModarTensai/5ab449acba9df1a26c12060240773110
     """
@@ -156,17 +156,17 @@ def cov(x, rowvar=True, bias=False):
     return factor * x @ x.transpose(-1, -2).conj()
 
 
-def around(x, decimals=0):
+def around(x: Tensor, decimals: int = 0) -> Tensor:
     """from
     https://discuss.pytorch.org/t/round-tensor-to-x-decimal-places/25832"""
     factor = 10 ** decimals
     return torch.round(x * factor) / factor
 
 
-def hash_all_conformations(dataset, **kwargs):
+def hash_all_conformations(dataset: 'AniH5Dataset', **kwargs: Any):
     hasher = ConformerHasher(**kwargs)
     for k in dataset.keys():
-        g = dataset._get_group(k, batch_keys=('coordinates',), nonbatch_keys=('species',))
+        g = dataset.get_conformers(k, include_properties=('coordinates', 'species'))
         hashes = []
         print(g['invariant_hash'])
         exit()

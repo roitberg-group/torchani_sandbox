@@ -403,6 +403,8 @@ class TestAniH5Dataset(TestCase):
     def setUp(self):
         # create two dummy HDF5 databases, one with 3 groups and one with one
         # group, and fill them with some data
+        self.tmp_path = Path('./tmp_h5_dataset').resolve()
+        self.tmp_path.mkdir(exist_ok=True)
         self.tf_one_group = tempfile.NamedTemporaryFile()
         self.tf_three_groups = tempfile.NamedTemporaryFile()
         self.rng = np.random.default_rng(12345)
@@ -436,6 +438,230 @@ class TestAniH5Dataset(TestCase):
             for k, v in properties3.items():
                 f3['HCHHH'].create_dataset(k, data=v)
 
+        self.new_groups_torch = {'H6': {'species': torch.ones((5, 6), dtype=torch.long),
+                      'coordinates': torch.randn((5, 6, 3)),
+                      'energies': torch.randn((5,))},
+                      'C6': {'species': torch.full((5, 6), fill_value=6, dtype=torch.long),
+                      'coordinates': torch.randn((5, 6, 3)),
+                      'energies': torch.randn((5,))},
+                      'O6': {'species': torch.full((5, 6), fill_value=8, dtype=torch.long),
+                      'coordinates': torch.randn((5, 6, 3)),
+                      'energies': torch.randn((5,))}}
+
+    def testRenameProperty(self):
+        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+                          create=True,
+                          supported_properties=('species', 'energies', 'coordinates'))
+        new_groups = deepcopy(self.new_groups_torch)
+        for k in ('H6', 'C6', 'O6'):
+            ds.append_conformers(new_groups[k], k)
+        ds.rename_properties({'energies': 'renamed_energies'})
+        for k, v in ds.items():
+            self.assertEqual(set(v.keys()), {'species', 'coordinates', 'renamed_energies'})
+        ds.rename_properties({'energies': 'renamed_energies'})
+        for k, v in ds.items():
+            self.assertEqual(set(v.keys()), {'species', 'coordinates', 'renamed_energies'})
+
+        with self.assertRaisesRegex(ValueError, "Cant rename null0 into null1"):
+            ds.rename_properties({'null0': 'null1'})
+
+        with self.assertRaisesRegex(ValueError, "Cant rename species into renamed_energies"):
+            ds.rename_properties({'species': 'renamed_energies'})
+
+    def testDeleteProperty(self):
+        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+                          create=True,
+                          supported_properties=('species', 'energies', 'coordinates'))
+        new_groups = deepcopy(self.new_groups_torch)
+        for k in ('H6', 'C6', 'O6'):
+            ds.append_conformers(new_groups[k], k)
+        ds.delete_properties({'energies'})
+        for k, v in ds.items():
+            self.assertEqual(set(v.keys()), {'species', 'coordinates'})
+            self.assertEqual(v['species'], new_groups[k]['species'])
+            self.assertEqual(v['coordinates'], new_groups[k]['coordinates'])
+
+        # Check for deletion of something that was already deleted
+        ds.delete_properties({'energies'})
+        for k, v in ds.items():
+            self.assertEqual(set(v.keys()), {'species', 'coordinates'})
+            self.assertEqual(v['species'], new_groups[k]['species'])
+            self.assertEqual(v['coordinates'], new_groups[k]['coordinates'])
+
+        # deletion of everything kills all groups
+        ds.delete_properties({'species', 'coordinates'})
+        self.assertEqual(len(ds.items()), 0)
+
+    def testCreation(self):
+        with self.assertRaisesRegex(ValueError, "Please provide supported properties"):
+            AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+                              create=True)
+        with self.assertRaisesRegex(FileNotFoundError, "The h5 file in .* could not be found"):
+            AniH5Dataset(self.tmp_path.joinpath('new.h5'))
+
+    def testNumpyMutable(self):
+        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+                          create=True,
+                          supported_properties=('species', 'energies', 'coordinates'))
+        properties1 = {'species': np.full((5, 6), fill_value='H', dtype=str),
+                      'coordinates': np.random.standard_normal((5, 6, 3)),
+                      'energies': np.random.standard_normal((5,))}
+        properties2 = {'species': np.full((5, 6), fill_value='C', dtype=str),
+                      'coordinates': np.random.standard_normal((5, 6, 3)),
+                      'energies': np.random.standard_normal((5,))}
+        properties3 = {'species': np.full((5, 6), fill_value='O', dtype=str),
+                      'coordinates': np.random.standard_normal((5, 6, 3)),
+                      'energies': np.random.standard_normal((5,))}
+        ds.append_numpy_conformers(properties1, 'H6')
+        ds.append_numpy_conformers(properties2, 'C6')
+        ds.append_numpy_conformers(properties3, 'O6')
+        for k, v in ds.numpy_items():
+            if k == 'H6':
+                self.assertEqual(v, properties1)
+            elif k == 'C6':
+                self.assertEqual(v, properties2)
+            elif k == 'O6':
+                self.assertEqual(v, properties3)
+        for v, (k, v2) in zip(ds.numpy_values(), ds.numpy_items()):
+            self.assertEqual(v, v2)
+        ds.delete_group('H6')
+        ds.delete_group('O6')
+        ds.delete_group('C6')
+        self.assertTrue(len(ds.items()) == 0)
+
+    def testSpeciesFromNumbers(self):
+        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+                          create=True,
+                          supported_properties=('species', 'energies', 'coordinates'))
+        new_groups = deepcopy(self.new_groups_torch)
+        for k in ('H6', 'C6', 'O6'):
+            ds.append_conformers(new_groups[k], k)
+        ds.create_numbers_from_species('species', 'numbers')
+        self.assertEqual(ds.supported_properties, {'species', 'energies', 'coordinates', 'numbers'})
+        for k, v in ds.items():
+            self.assertEqual(v['species'], v['numbers'])
+        numpy_species = ds.get_numpy_conformers('H6', include_properties=('species',), repeat_nonbatch_keys=False)
+        numpy_numbers = ds.get_numpy_conformers('H6', include_properties=('numbers',), repeat_nonbatch_keys=False)
+        self.assertEqual(numpy_numbers['numbers'], np.ones(len(numpy_species['species']), dtype=np.int64))
+
+    def testNumbersFromSpecies(self):
+        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+                          create=True,
+                          supported_properties=('species', 'energies', 'coordinates'))
+        new_groups = deepcopy(self.new_groups_torch)
+        for k in ('H6', 'C6', 'O6'):
+            ds.append_conformers(new_groups[k], k)
+        ds.delete_properties({'species'})
+        ds.create_full_scalar_property('numbers', 1)
+        ds.create_species_from_numbers('numbers', 'species')
+        for k in ('H6', 'C6', 'O6'):
+            species = ds.get_numpy_conformers(k, include_properties=('species',), repeat_nonbatch_keys=False)['species']
+            self.assertEqual(species, np.full(len(species), fill_value='H'))
+
+    def testExtractSlice(self):
+        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+                          create=True,
+                          supported_properties=('species', 'energies', 'coordinates'))
+        new_groups = deepcopy(self.new_groups_torch)
+        for k in ('H6', 'C6', 'O6'):
+            ds.append_conformers(new_groups[k], k)
+        ds.delete_properties({'species'})
+        ds.create_full_scalar_property('numbers', 1)
+        ds.create_species_from_numbers('numbers', 'species')
+        for k in ('H6', 'C6', 'O6'):
+            species = ds.get_numpy_conformers(k, include_properties=('species',), repeat_nonbatch_keys=False)['species']
+            self.assertEqual(species, np.full(len(species), fill_value='H'))
+
+    def testNewScalar(self):
+        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+                          create=True,
+                          supported_properties=('species', 'energies', 'coordinates'))
+        new_groups = deepcopy(self.new_groups_torch)
+        initial_len = len(new_groups['C6']['coordinates'])
+        for k in ('H6', 'C6', 'O6'):
+            ds.append_conformers(new_groups[k], k)
+        ds.create_full_scalar_property('spin_multiplicities', 1)
+        ds.create_full_scalar_property('charges', 0)
+        self.assertEqual(len(ds['H6'].keys()), 5)
+        self.assertEqual(ds.supported_properties, {'species', 'energies', 'coordinates', 'charges', 'spin_multiplicities'})
+        self.assertEqual(ds['H6']['spin_multiplicities'], torch.ones(initial_len, dtype=torch.long))
+        self.assertEqual(ds['C6']['charges'], torch.zeros(initial_len, dtype=torch.long))
+
+    def testMutable(self):
+        # tests delitem and setitem analogues for the dataset
+        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+                          create=True,
+                          supported_properties=('species', 'energies', 'coordinates'))
+
+        # check creation
+        new_groups = deepcopy(self.new_groups_torch)
+        for k in ('H6', 'C6', 'O6'):
+            ds.append_conformers(new_groups[k], k)
+        for k, v in ds.items():
+            self.assertEqual(v, new_groups[k])
+        for k in ('H6', 'C6', 'O6'):
+            ds.delete_group(k)
+        self.assertTrue(len(ds.items()) == 0)
+
+        # check appending
+        new_lengths = dict()
+        for k in ds.keys():
+            new_lengths[k] = len(new_groups[k]['energies']) * 2
+            ds.append_conformers(new_groups[k], k)
+        for k in ds.keys():
+            self.assertEqual(len(ds.get_conformers(k)['energies']), new_lengths[k])
+            self.assertEqual(len(ds.get_conformers(k)['species']), len(new_groups['O6']['species']))
+        for k in deepcopy(ds.keys()):
+            ds.delete_group(k)
+
+        # reset supported properties
+        ds.supported_properties = {'coordinates', 'species', 'energies'}
+        ds._update_private_sets()
+        for k in ('H6', 'C6', 'O6'):
+            ds.append_conformers(new_groups[k], k)
+        with self.assertRaisesRegex(ValueError, 'Attempted to combine groups with different'):
+            ds.append_conformers(new_groups['C6'], 'O6', allow_arbitrary_keys=True)
+        with self.assertRaisesRegex(ValueError, 'Character "/" not supported'):
+            ds.append_conformers(new_groups['O6'], 'O/6')
+
+        with self.assertRaisesRegex(ValueError, 'Expected .* but got .*'):
+            new_groups_copy = deepcopy(new_groups['O6'])
+            del new_groups_copy['energies']
+            ds.append_conformers(new_groups_copy, 'O6')
+
+        with self.assertRaisesRegex(ValueError, '.* must be equal in the batch dimension'):
+            new_groups_copy = deepcopy(new_groups['O6'])
+            new_groups_copy['species'] = torch.randint(size=(5, 6), low=1, high=5, dtype=torch.long)
+            ds.append_conformers(new_groups_copy, 'O6')
+
+        with self.assertRaisesRegex(ValueError, '.* must have 1 or 2 dimensions'):
+            new_groups_copy = deepcopy(new_groups['O6'])
+            new_groups_copy['species'] = torch.ones((5, 6, 1), dtype=torch.long)
+            ds.append_conformers(new_groups_copy, 'O6')
+
+    def testPresentSpecies(self):
+        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+                          create=True,
+                          supported_properties=('species', 'energies', 'coordinates'))
+        new_groups = deepcopy(self.new_groups_torch)
+        for k in ('H6', 'O6', 'C6'):
+            ds.append_conformers(new_groups[k], k)
+        self.assertTrue(ds.present_species(), ('C', 'H', 'O'))
+        with self.assertRaisesRegex(ValueError, 'Cant find present species'):
+            ds.delete_properties({'species'})
+            ds.present_species()
+
+    def testRenameGroupsFormulas(self):
+        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+                          create=True,
+                          supported_properties=('species', 'energies', 'coordinates'))
+        new_groups = deepcopy(self.new_groups_torch)
+        for j, k in enumerate(('H6', 'C6', 'O6')):
+            ds.append_conformers(new_groups[k], str(j), allow_arbitrary_keys=True)
+        ds.rename_groups_to_formulas()
+        for k, v in ds.items():
+            self.assertEqual(v, new_groups[k])
+
     def testSizesOneGroup(self):
         ds = AniH5Dataset(self.tf_one_group.name)
         self.assertEqual(ds.num_conformers, self.num_conformers1)
@@ -453,7 +679,7 @@ class TestAniH5Dataset(TestCase):
         keys = set()
         for k in ds.keys():
             keys.update({k})
-        self.assertTrue(keys == {'/HOO', '/HCNN', '/HCHHH'})
+        self.assertTrue(keys == {'HOO', 'HCNN', 'HCHHH'})
         self.assertEqual(len(ds.keys()), 3)
 
     def testValues(self):
@@ -480,7 +706,6 @@ class TestAniH5Dataset(TestCase):
         ds = AniH5Dataset(self.tf_three_groups.name)
 
         self.assertEqual(ds.get_conformers('HOO')['coordinates'], ds['HOO']['coordinates'])
-        self.assertEqual(ds.get_conformers('HOO', 0)['coordinates'], ds['HOO']['coordinates'][0])
         conformers12 = ds.get_conformers('HCHHH', torch.tensor([1, 2]))
         self.assertEqual(conformers12['coordinates'], ds['HCHHH']['coordinates'][torch.tensor([1, 2])])
         # note that h5py does not allow this directly
@@ -501,6 +726,12 @@ class TestAniH5Dataset(TestCase):
             self.assertTrue(isinstance(c, dict))
             confs.append(c)
         self.assertEqual(len(confs), ds.num_conformers)
+
+    def tearDown(self):
+        try:
+            shutil.rmtree(self.tmp_path)
+        except FileNotFoundError:
+            pass
 
 
 class TestData(TestCase):

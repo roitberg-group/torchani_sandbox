@@ -1,5 +1,4 @@
-r"""Utilities for creating batched datasets"""
-import importlib
+r"""Functions for creating batched datasets"""
 import warnings
 import math
 import json
@@ -14,13 +13,9 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from ..utils import pad_atomic_properties, cumsum_from_zero, PADDING
+from ..utils import pad_atomic_properties, cumsum_from_zero, PADDING, tqdm
 from .datasets import AniH5DatasetList
 from ._annotations import Properties, PathLike, Transform
-
-PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None  # type: ignore
-if PKBAR_INSTALLED:
-    import pkbar
 
 
 def _save_batch(path: Path, idx: int, batch: Properties, file_format: str) -> None:
@@ -280,7 +275,9 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
     # get all group keys concatenated in a list, with the associated file indexes
     file_idxs_and_group_keys = list(h5_datasets.iter_file_key())
 
-    use_pbar = PKBAR_INSTALLED and verbose
+    # Important: to prevent possible bugs / errors, that may happen
+    # due to incorrect conversion to indices, species is **always*
+    # converted to atomic numbers when saving the batched dataset.
     for split_path, indices_of_split in zip(split_paths.values(), conformer_splits):
         all_batch_indices = torch.split(indices_of_split, batch_size)
 
@@ -307,30 +304,25 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
             indices_to_unsort_batch_cat = torch.argsort(indices_to_sort_batch_indices_cat)
             assert len(batch_sizes) <= max_batches_per_packet
 
-            if use_pbar:
-                pbar = pkbar.Pbar(f'=> Saving batch packet {j + 1} of {num_batch_indices_packets}'
-                                  f' of split {split_path.name},'
-                                  f' in format {file_format}', len(counts_cat))
-
             all_conformers: List[Properties] = []
-            for step, (group_idx, count, start_index) in enumerate(zip(uniqued_idxs_cat, counts_cat, cumcounts_cat)):
+            end_idxs = counts_cat + cumcounts_cat
+            groups_ranges = zip(uniqued_idxs_cat, cumcounts_cat, end_idxs)
+            desc = (f'Saving batch packet {j + 1} of {num_batch_indices_packets} '
+                     'of split {split_path.name} in format {file_format}')
+            for step, group_range in tqdm(enumerate(groups_ranges),
+                                          total=len(counts_cat),
+                                          desc=desc,
+                                          disable=not verbose):
+                group_idx, start_idx, end_idx = group_range
                 # select the specific group from the whole list of files
-                file_idx, group_key = file_idxs_and_group_keys[group_idx.item()]
-
-                # get a slice with the indices to extract the necessary
+                # and get a slice with the indices to extract the necessary
                 # conformers from the group for all batches in pack.
-                end_index = start_index + count
-                selected_indices = sorted_batch_indices_cat[start_index:end_index, 1]
-
-                # Important: to prevent possible bugs / errors, that may happen
-                # due to incorrect conversion to indices, species is **always*
-                # converted to atomic numbers when saving the batched dataset.
+                file_idx, group_key = file_idxs_and_group_keys[group_idx.item()]
+                selected_indices = sorted_batch_indices_cat[start_idx:end_idx, 1]
                 conformers = h5_datasets.get_conformers(file_idx, group_key,
                                                                   selected_indices,
                                                                   include_properties)
                 all_conformers.append(conformers)
-                if use_pbar:
-                    pbar.update(step)
             batches_cat = pad_atomic_properties(all_conformers, padding)
             # Now we need to reassign the conformers to the specified
             # batches. Since to get here we cat'ed and sorted, to

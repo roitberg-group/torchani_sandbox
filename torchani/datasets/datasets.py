@@ -1,3 +1,5 @@
+from typing import (Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set,
+                    overload, Mapping, Any, Iterable, Callable)
 import json
 import re
 import pickle
@@ -7,37 +9,68 @@ from copy import deepcopy
 from pprint import pformat
 from pathlib import Path
 from functools import partial, wraps
-from typing import Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set, overload, Mapping, Any, Callable, Iterable, TypeVar
-from collections import OrderedDict, Counter
-from ._annotations import Transform, Properties, NdarrayProperties, PathLike
-from ._utils import _create_numpy_properties_handle_str
+from collections import OrderedDict
 
 import h5py
 import torch
 from torch import Tensor
 import numpy as np
-from numpy import typing as numpy_typing
-from torchani.utils import ChemicalSymbolsToAtomicNumbers, PERIODIC_TABLE
 
-# torch hub has a dummy implementation of tqdm which can be used if tqdm is not installed
-try:
-    from tqdm.auto import tqdm
-except ImportError:
-    warnings.warn("tqdm could not be found, for better progress bars install tqdm")
-    from torch.hub import tqdm
+from ._annotations import Transform, Properties, NumpyProperties, MaybeNumpyProperties, PathLike, DTypeLike
+from ..utils import species_to_formula, ChemicalSymbolsToAtomicNumbers, PERIODIC_TABLE, tqdm
+
 
 DatasetWithFlag = Tuple['AniH5Dataset', bool]
-MaybeNdarrayProperties = TypeVar('MaybeNdarrayProperties', NdarrayProperties, Properties)
 
 
-def species_to_formula(species: Iterable[str]) -> str:
-    symbol_counts: List[Tuple[str, int]] = sorted(Counter(species).items())
-    iterable = (str(i) for i in itertools.chain.from_iterable(symbol_counts))
-    formula = ''.join(iterable)
-    return formula
+def _may_need_cache_update(method: Callable[..., DatasetWithFlag]) -> Callable[..., 'AniH5Dataset']:
+    # Decorator that wraps functions that modify the dataset in place.
+    # After dataset modification cache updating may be needed.
+
+    @wraps(method)
+    def method_with_cache_update(ds: 'AniH5Dataset', *args: Any, **kwargs: Any) -> 'AniH5Dataset':
+        _, update_cache = method(ds, *args, **kwargs)
+        if update_cache:
+            ds._update_internal_cache()
+        return ds
+
+    return method_with_cache_update
 
 
-def _get_properties_size(molecule_group: Union[h5py.Group, Properties, NdarrayProperties],
+def _create_numpy_properties_handle_str(group: h5py.Group, numpy_properties: NumpyProperties) -> None:
+    # creates a dataset with dtype bytes if the array is a string array
+    for k, v in numpy_properties.items():
+        try:
+            group.create_dataset(name=k, data=v)
+        except TypeError:
+            group.create_dataset(name=k, data=v.astype(bytes))
+
+
+def _get_num_atoms(molecule_group: Union[h5py.Group, Properties, NumpyProperties],
+                   flag_property: Optional[str] = None,
+                   supported_properties: Optional[Set[str]] = None) -> int:
+    if flag_property is not None:
+        size = molecule_group[flag_property].shape[1]
+    else:
+        assert supported_properties is not None
+        if 'coordinates' in supported_properties:
+            size = molecule_group['coordinates'].shape[1]
+        elif 'coord' in supported_properties:
+            size = molecule_group['coord'].shape[1]
+        elif 'forces' in supported_properties:
+            size = molecule_group['forces'].shape[1]
+        elif 'dipoles' in supported_properties:
+            size = molecule_group['dipoles'].shape[1]
+        else:
+            msg = ('Could not infer number of atoms in properties since '
+                    '"coordinates", "forces" and "dipoles" dont exist, please '
+                    'provide a key that holds an array/tensor with number of '
+                    'atoms in the axis/dim 1')
+            raise RuntimeError(msg)
+    return size
+
+
+def _get_properties_size(molecule_group: Union[h5py.Group, Properties, NumpyProperties],
                         flag_property: Optional[str] = None,
                         supported_properties: Optional[Set[str]] = None) -> int:
     if flag_property is not None:
@@ -56,7 +89,7 @@ def _get_properties_size(molecule_group: Union[h5py.Group, Properties, NdarrayPr
             msg = ('Could not infer number of molecules in properties since '
                     '"coordinates", "forces" and "energies" dont exist, please '
                     'provide a key that holds an array/tensor with number of '
-                    'molecules in the first axis/dim')
+                    'molecules in the axis/dim 0')
             raise RuntimeError(msg)
     return size
 
@@ -272,7 +305,7 @@ class AniH5DatasetList(Sequence['AniH5Dataset']):
     def get_conformers(self, file_idx: int, *args: Any, **kwargs: Any) -> Properties:
         return self[file_idx].get_conformers(*args, **kwargs)
 
-    def get_numpy_conformers(self, file_idx: int, *args: Any, **kwargs: Any) -> NdarrayProperties:
+    def get_numpy_conformers(self, file_idx: int, *args: Any, **kwargs: Any) -> NumpyProperties:
         return self[file_idx].get_numpy_conformers(*args, **kwargs)
 
     def iter_file_key_idx_conformers(self, include_properties: Optional[Sequence[str]] = None,
@@ -298,20 +331,6 @@ class AniH5DatasetList(Sequence['AniH5Dataset']):
         yield from ((j, k) for j, d in enumerate(self._datasets) for k in d.group_sizes.keys())
 
 
-def _may_need_cache_update(method: Callable[..., DatasetWithFlag]) -> Callable[..., 'AniH5Dataset']:
-    # Decorator that wraps functions that modify the dataset in place.
-    # After dataset modification cache updating may be needed.
-
-    @wraps(method)
-    def method_with_cache_update(self: 'AniH5Dataset', *args: Any, **kwargs: Any) -> 'AniH5Dataset':
-        _, update_cache = method(self, *args, **kwargs)
-        if update_cache:
-            self._update_internal_cache()
-        return self
-
-    return method_with_cache_update
-
-
 class AniH5Dataset(Mapping[str, Properties]):
 
     def __init__(self,
@@ -321,7 +340,7 @@ class AniH5Dataset(Mapping[str, Properties]):
                  assume_standard: bool = False,
                  validate_metadata: bool = False,
                  create: bool = False,
-                 supported_properties: Optional[Sequence[str]] = None,
+                 supported_properties: Optional[Iterable[str]] = None,
                  verbose: bool = True):
 
         self._all_nonbatch_keys = set(nonbatch_keys)
@@ -478,8 +497,8 @@ class AniH5Dataset(Mapping[str, Properties]):
     def __iter__(self) -> Iterator[str]:
         return iter(self.group_sizes.keys())
 
-    def _check_append_input(self, properties: MaybeNdarrayProperties,
-                            group_name: Optional[str] = None) -> Tuple[str, MaybeNdarrayProperties]:
+    def _check_append_input(self, properties: MaybeNumpyProperties,
+                            group_name: Optional[str] = None) -> Tuple[MaybeNumpyProperties, Optional[str]]:
         if group_name is not None and '/' in group_name:
             raise ValueError('Character "/" not supported in group_name')
         if not set(properties.keys()) == self.supported_properties:
@@ -503,7 +522,7 @@ class AniH5Dataset(Mapping[str, Properties]):
 
     @_may_need_cache_update
     def append_numpy_conformers(self,
-                                properties: NdarrayProperties,
+                                properties: NumpyProperties,
                                 group_name: Optional[str] = None,
                                 check_input: bool = True,
                                 allow_arbitrary_keys: bool = False) -> DatasetWithFlag:
@@ -594,11 +613,11 @@ class AniH5Dataset(Mapping[str, Properties]):
         str_ += pformat(self.get_metadata(), compact=True, width=200)
         return str_
 
-    def numpy_items(self, *args: Any, **kwargs: Any) -> Iterator[Tuple[str, NdarrayProperties]]:
+    def numpy_items(self, *args: Any, **kwargs: Any) -> Iterator[Tuple[str, NumpyProperties]]:
         for group_name in self.keys():
             yield group_name, self.get_numpy_conformers(group_name, *args, **kwargs)
 
-    def numpy_values(self, *args: Any, **kwargs: Any) -> Iterator[NdarrayProperties]:
+    def numpy_values(self, *args: Any, **kwargs: Any) -> Iterator[NumpyProperties]:
         for group_name in self.keys():
             yield self.get_numpy_conformers(group_name, *args, **kwargs)
 
@@ -623,7 +642,7 @@ class AniH5Dataset(Mapping[str, Properties]):
                                     dest_key: str,
                                     fill_value: int = 0,
                                     strict: bool = False,
-                                    dtype: numpy_typing.DTypeLike = np.int64) -> DatasetWithFlag:
+                                    dtype: DTypeLike = np.int64) -> DatasetWithFlag:
         should_exit_early = self._check_keys_already_present(dest_key=dest_key, strict=strict)
         if should_exit_early:
             return self, False
@@ -709,15 +728,14 @@ class AniH5Dataset(Mapping[str, Properties]):
                                   desc='Renaming groups to formulas',
                                   disable=not verbose):
             new_name = species_to_formula(properties['species'])
-            needs_cache_update = self._rename_group(group_name, new_name, properties)
+            if group_name != f'/{new_name}':
+                with h5py.File(self._store_file, 'r+') as f:
+                    del f[group_name]
+                # mypy doesn't know that @wrap'ed functions have these attributesj
+                # and fixing this is ugly
+                needs_cache_update = self.append_numpy_conformers.__wrapped__(self, properties, new_name)[1]  # type: ignore
+        assert isinstance(needs_cache_update, bool)
         return self, needs_cache_update
-
-    def _rename_group(self, group_name: str, new_name: str, properties: NdarrayProperties) -> bool:
-        if group_name != f'/{new_name}':
-            with h5py.File(self._store_file, 'r+') as f:
-                del f[group_name]
-            needs_cache_update = self.append_numpy_conformers.__wrapped__(self, properties, new_name)[1]
-        return needs_cache_update
 
     @_may_need_cache_update
     def delete_properties(self, properties: Sequence[str]) -> DatasetWithFlag:
@@ -815,7 +833,7 @@ class AniH5Dataset(Mapping[str, Properties]):
                              key: str,
                              idx: Optional[Tensor] = None,
                              include_properties: Optional[Sequence[str]] = None,
-                             repeat_nonbatch_keys: bool = True) -> NdarrayProperties:
+                             repeat_nonbatch_keys: bool = True) -> NumpyProperties:
         # if the group or any of the properties does not exist this function
         # raises a KeyError through h5py This function behaves correctly if idx
         # has duplicated entries, is out of order, indexes out of bounds or is

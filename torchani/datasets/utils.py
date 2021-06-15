@@ -1,38 +1,35 @@
 r"""Utilities for working with ANI Datasets"""
-import warnings
-from pathlib import Path
-from ..models import BuiltinModel
-from .datasets import AniH5Dataset, AniH5DatasetList
-from ..units import hartree2kcalmol
-from ..utils import pad_atomic_properties
-from ..nn import Ensemble
 import torch
 import h5py
-from typing import List, Tuple, Optional, Sequence
+from pathlib import Path
 from torch import Tensor
+from typing import List, Tuple, Optional, Sequence
+
+from ..units import hartree2kcalmol
+from ..models import BuiltinModel
+from ..utils import pad_atomic_properties, tqdm
+from ..nn import Ensemble
 from ._annotations import KeyIdx, Properties, PathLike
-from ._utils import _create_numpy_properties_handle_str
-
-# torch hub has a dummy implementation of tqdm which can be used if tqdm is not installed
-try:
-    from tqdm.auto import tqdm
-except ImportError:
-    warnings.warn("tqdm could not be found, for better progress bars install tqdm")
-    from torch.hub import tqdm
+from .datasets import (AniH5Dataset,
+                       AniH5DatasetList,
+                       DatasetWithFlag,
+                       _create_numpy_properties_handle_str,
+                       _may_need_cache_update)
 
 
-def copy_linked_data(source: 'AniH5Dataset', dest: PathLike, verbose: bool = True) -> 'AniH5Dataset':
+def copy_linked_data(source: AniH5Dataset, dest: PathLike, verbose: bool = True) -> AniH5Dataset:
     # When a dataset is unlinked from the HDF5 file the underlying buffer
     # is still part of the file, so the file does not reduce its size.
     # After deleting conformations or properties the dataset can be rebuilt
     # on a different location. Since only accessible data is copied the
     # size is reduced.
+    num_groups: int = source.num_conformer_groups
     dest = Path(dest).resolve()
     with h5py.File(dest, 'x') as f:
         # copy all groups
         for key, properties in tqdm(source.numpy_items(repeat_nonbatch_keys=False),
                                     desc='Copying linked data',
-                                    total=source.num_conformer_groups,
+                                    total=num_groups,
                                     disable=not verbose):
             f.create_group(key)
             group = f[key]
@@ -41,7 +38,7 @@ def copy_linked_data(source: 'AniH5Dataset', dest: PathLike, verbose: bool = Tru
         with h5py.File(source._store_file, 'r') as self_file:
             for k, v in self_file.attrs.items():
                 f.attrs.create(k, data=v)
-    # The copied dataset is initialized to ensure it has been copied
+    # The copied dataset is re initialized to ensure it has been copied
     # properly
     return AniH5Dataset(dest,
                         flag_property=source._flag_property,
@@ -49,34 +46,28 @@ def copy_linked_data(source: 'AniH5Dataset', dest: PathLike, verbose: bool = Tru
                         verbose=verbose)
 
 
+@_may_need_cache_update
 def concatenate_datasets(dest: PathLike,
                          datasets: Sequence[PathLike],
                          dest_name: str = '',
-                         verbose: bool = True) -> 'AniH5Dataset':
+                         verbose: bool = True) -> DatasetWithFlag:
 
-    dest_ds = AniH5Dataset(Path(dest).resolve())
-    datasets_list = AniH5DatasetList(datasets)
+    ds_list = AniH5DatasetList(datasets)
+    dest_ds = AniH5Dataset(Path(dest).resolve(),
+                           create=True,
+                           supported_properties=ds_list[0].supported_properties)
+
     with tqdm(desc='Concatenating datasets',
-              total=datasets_list.num_conformer_groups,
+              total=ds_list.num_conformer_groups,
               disable=not verbose) as pbar:
-        for j, ds in enumerate(datasets):
-            if j == 0:
-                dest_ds._register_supported_properties(ds.supported_properties)
-            else:
-                assert dest_ds.supported_properties == ds.supported_properties
-            for k, properties in ds.numpy_items(repeat_nonbatch_keys=False):
-                dest_ds.append_numpy_to_group(k, properties, reinitialize=False)
-                pbar.update()
-    dest_ds._reinitialize()
 
-    with h5py.File(dest_ds._store_file, 'r+') as f:
-        with h5py.File(datasets[0]._store_file, 'r') as model_file:
-            for k, v in model_file.attrs.items():
-                if k == 'name':
-                    continue
-                f.attrs.create(k, data=v)
-            f.attrs.create('name', data=dest_name)
-    return dest_ds
+        for j, ds in enumerate(ds_list):
+            for k, properties in ds.numpy_items(repeat_nonbatch_keys=False):
+                # mypy does not know that @wrap'ed functions have this attribute
+                # and this is ugly to fix
+                needs_update = dest_ds.append_numpy_conformers.__wrapped__(dest_ds, properties, k)[1]  # type: ignore
+                pbar.update()
+    return dest_ds, needs_update
 
 
 def filter_by_high_force(dataset: AniH5Dataset,
@@ -150,7 +141,7 @@ def _delete_bad_conformations(dataset: AniH5Dataset, bad_keys_and_idxs: List[Key
     if bad_keys_and_idxs:
         total_filtered = sum([v.numel() for (k, v) in bad_keys_and_idxs])
         for (key, idx) in bad_keys_and_idxs:
-            dataset.delete_conformers_inplace(key, idx)
+            dataset.delete_conformers(key, idx)
     else:
         total_filtered = 0
     if verbose:

@@ -6,10 +6,19 @@ import torch.utils.data
 import math
 import os
 import warnings
-from collections import defaultdict
-from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
+import itertools
+from collections import defaultdict, Counter
+from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union, Iterable
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
+
+# torch hub has a dummy implementation of tqdm which can be used if tqdm is not
+# installed
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    warnings.warn("tqdm could not be found, for better progress bars install tqdm")
+    from torch.hub import tqdm
 
 PADDING = {
     'species': -1,
@@ -29,6 +38,15 @@ def check_openmp_threads():
         num_threads = int(os.environ["OMP_NUM_THREADS"])
         assert num_threads > 0
         print(f"OMP_NUM_THREADS is set as {num_threads}")
+
+
+def species_to_formula(species: Iterable[str]) -> str:
+    r"""Transforms an iterable of strings into the corresponding formula
+    sorts in alphabetical order e.g. ['H', 'H', 'C'] -> 'CH2'"""
+    symbol_counts: List[Tuple[str, int]] = sorted(Counter(species).items())
+    iterable = (str(i) for i in itertools.chain.from_iterable(symbol_counts))
+    formula = ''.join(iterable)
+    return formula
 
 
 def path_is_writable(path: Union[str, Path]) -> bool:
@@ -517,4 +535,4 @@ ATOMIC_NUMBERS = {symbol: z for z, symbol in enumerate(PERIODIC_TABLE)}
 
 __all__ = ['pad_atomic_properties', 'present_species', 'hessian',
            'vibrational_analysis', 'strip_redundant_padding',
-           'ChemicalSymbolsToInts', 'get_atomic_masses']
+           'ChemicalSymbolsToInts', 'get_atomic_masses', 'tqdm']
