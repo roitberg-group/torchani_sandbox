@@ -18,7 +18,7 @@ from torch import Tensor
 import numpy as np
 
 from ._annotations import Transform, Properties, NumpyProperties, MaybeNumpyProperties, PathLike, DTypeLike
-from ..utils import species_to_formula, ChemicalSymbolsToAtomicNumbers, PERIODIC_TABLE, tqdm
+from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
 
 DatasetWithFlag = Tuple['AniH5Dataset', bool]
@@ -245,7 +245,7 @@ class AniH5DatasetList(Sequence['AniH5Dataset']):
         #     c = ro_ds.get_conformers('CH4')
         # etc
         with ExitStack() as stack:
-            self._datasets = [stack.enter_context(d.keep_open()) for d in self._datasets]
+            self._datasets = [stack.enter_context(d.keep_open(mode)) for d in self._datasets]
             yield self
 
     @overload
@@ -303,12 +303,12 @@ class AniH5Dataset(Mapping[str, Properties]):
                  supported_properties: Optional[Iterable[str]] = None,
                  verbose: bool = True):
 
-        self.hdf5_file = None
+        self.open_hdf5_file = None
         self._all_nonbatch_keys = set(nonbatch_keys)
         self._verbose = verbose
         self._store_file = Path(store_file).resolve()
-        self._symbols_to_numbers = ChemicalSymbolsToAtomicNumbers()
-
+        self._symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
+        self._numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
         # flag property is used to infer size of molecule groups when iterating
         # over the dataset
         self._flag_property = flag_property
@@ -351,11 +351,31 @@ class AniH5Dataset(Mapping[str, Properties]):
         # with ds.keep_open('r') as ro_ds:
         #     c = ro_ds.get_conformers('CH4')
         # etc
-        self.hdf5_file = h5py.File(self._store_file, mode)
+        # this speeds up access in the context of many operations in a block,
+        # e.g.
+        # with ds.keep_open('r') as ro_ds:
+        #     for c in ro_ds.iter_conformers():
+        #         print(c)
+        # may be much faster than directly iterating over conformers
+        self.open_hdf5_file = h5py.File(self._store_file, mode)
         try:
             yield self
         finally:
-            self.hdf5_file.close()
+            self.open_hdf5_file.close()
+
+    def _get_open_file(self, stack, mode: str = 'r'):
+        # This trick makes methods fetch the open file directly
+        # if they are being called from inside a "keep_open" context
+        if self.open_hdf5_file is None:
+            return stack.enter_context(h5py.File(self._store_file, mode))
+        else:
+            current_mode = self.open_hdf5_file.mode
+            assert mode in ['r+', 'r'], f"Unsupported mode {mode}"
+            if mode == 'r+' and current_mode == 'r':
+                msg = ('Tried to open a file with mode "r+" but the dataset is '
+                       'currently keeping its backend open with mode "r"')
+                raise RuntimeError(msg)
+            return self.open_hdf5_file
 
     def _reset_internal_cache(self) -> None:
         self.group_sizes = OrderedDict()
@@ -374,7 +394,8 @@ class AniH5Dataset(Mapping[str, Properties]):
             # bother in this case
             with tqdm(desc=f'Scanning {self._store_file.name} assuming standard format',
                       disable=not self._verbose) as pbar:
-                with h5py.File(self._store_file, 'r') as f:
+                with ExitStack() as stack:
+                    f = self._get_open_file(stack, 'r')
                     for k, g in f.items():
                         pbar.update()
                         self._update_supported_properties_cache(g)
@@ -406,7 +427,8 @@ class AniH5Dataset(Mapping[str, Properties]):
                 dataset._update_supported_properties_cache(g)
                 dataset._update_group_sizes_cache(g)
 
-            with h5py.File(self._store_file, 'r') as f:
+            with ExitStack() as stack:
+                f = self._get_open_file(stack, 'r')
                 with tqdm(desc='Verifying format correctness',
                           disable=not self._verbose) as pbar:
                     f.visititems(partial(visitor_fn, dataset=self, pbar=pbar))
@@ -469,12 +491,34 @@ class AniH5Dataset(Mapping[str, Properties]):
     def __iter__(self) -> Iterator[str]:
         return iter(self.group_sizes.keys())
 
+    def append_conformers(self,
+                          group_name: str,
+                          properties: Properties) -> 'AniH5Dataset':
+        group_name, properties = self._check_append_input(group_name, properties)
+        numpy_properties = {k: properties[k].numpy()
+                            for k in self.supported_properties.difference({'species'})}
+
+        # This correctly handles cases where species is a batch or nonbatch key
+        if 'species' in self.supported_properties:
+            if (properties['species'] <= 0).any():
+                raise ValueError('Species are atomic numbers, must be positive')
+            species = self._numbers_to_symbols(properties['species'].numpy())
+            numpy_properties.update({'species': species})
+
+        return self._append_numpy_conformers_no_check(group_name, numpy_properties)
+
+    def append_numpy_conformers(self, group_name: str, properties: NumpyProperties) -> 'AniH5Dataset':
+        group_name, properties = self._check_append_input(group_name, properties)
+        return self._append_numpy_conformers_no_check(group_name, properties)
+
     def _check_append_input(self, group_name: str, properties: MaybeNumpyProperties) -> Tuple[str, MaybeNumpyProperties]:
+        # check input kills first dimension of nonbatch keys
         if '/' in group_name:
             raise ValueError('Character "/" not supported in group_name')
         if not set(properties.keys()) == self.supported_properties:
             raise ValueError(f'Expected {self.supported_properties} but got {set(properties.keys())}')
 
+        properties = deepcopy(properties)
         for k in self._supported_nonbatch_keys:
             if properties[k].ndim == 2:
                 if not (properties[k] == properties[k][0]).all():
@@ -492,77 +536,33 @@ class AniH5Dataset(Mapping[str, Properties]):
         return group_name, properties
 
     @_may_need_cache_update
-    def append_numpy_conformers(self,
-                                group_name: str,
-                                properties: NumpyProperties,
-                                check_input: bool = True,
-                                allow_arbitrary_keys: bool = False) -> DatasetWithFlag:
-        if check_input:
-            properties = deepcopy(properties)
-            # After check input nonbatch keys are correctly turned into batch
-            # keys
-            group_name, properties = self._check_append_input(group_name, properties)
-
-        if group_name is None:
-            if 'species' in self._supported_nonbatch_keys:
-                group_name = species_to_formula(properties['species'])
-            else:
-                raise ValueError("Cant determine default name for the group, species is missing")
-
-        # NOTE: Appending to datasets is actually allowed in HDF5 but only if
+    def _append_numpy_conformers_no_check(self, group_name: str, properties: NumpyProperties) -> DatasetWithFlag:
+        # NOTE: Appending to datasets is allowed in HDF5 but only if
         # the dataset is created with "resizable" format, since this is not the
         # default  for simplicity we just rebuild the whole group with the new
-        # properties appended
-        with h5py.File(self._store_file, 'r+') as f:
+        # properties appended.
+        # NOTE: This function should never be called by user code since it
+        # modifies properties in place.
+        with ExitStack() as stack:
+            f = self._get_open_file(stack, 'r+')
             try:
                 f.create_group(group_name)
-                group_exists = False
             except ValueError:
-                group_exists = True
-            if not group_exists:
-                _create_numpy_properties_handle_str(f[group_name], properties)
-            else:
-                for k in self._supported_nonbatch_keys:
-                    if not f[group_name][k] == properties[k]:
-                        raise ValueError(f"Attempted to combine groups with different nonbatch key {k}")
-                cated_properties = dict()
-                for k, v in properties.items():
-                    if k in self._supported_nonbatch_keys:
-                        cat_value = v
-                    elif k in self._supported_batch_keys:
-                        new_properties = self.get_numpy_conformers(group_name, repeat_nonbatch_keys=False)
-                        cat_value = np.concatenate((new_properties[k], v), axis=0)
-                    cated_properties[k] = cat_value
+                old_properties = self.get_numpy_conformers(group_name, repeat_nonbatch_keys=False)
+                if not all((old_properties == properties[k]).all() for k in self._supported_nonbatch_keys):
+                    raise ValueError("Attempted to combine groups with different nonbatch key")
+                properties.update({k: np.concatenate((old_properties[k], properties[k]), axis=0)
+                                   for k in self._supported_batch_keys})
                 del f[group_name]
                 f.create_group(group_name)
-                _create_numpy_properties_handle_str(f[group_name], cated_properties)
+            _create_numpy_properties_handle_str(f[group_name], properties)
         return self, True
-
-    def append_conformers(self,
-                          group_name: str,
-                          properties: Properties,
-                          allow_arbitrary_keys: bool = False) -> 'AniH5Dataset':
-        properties = deepcopy(properties)
-        group_name, properties = self._check_append_input(group_name, properties)
-        if 'species' in self.supported_properties:
-            if (properties['species'] <= 0).any():
-                raise ValueError('Species are atomic numbers, must be positive')
-
-        numpy_properties = {k: properties[k].numpy()
-                            for k in self.supported_properties.difference({'species'})}
-
-        if 'species' in self.supported_properties:
-            species = properties['species']
-            numpy_species = np.asarray([PERIODIC_TABLE[j] for j in species], dtype=str)
-            numpy_properties.update({'species': numpy_species})
-        return self.append_numpy_conformers(group_name, numpy_properties,
-                                            check_input=False,
-                                            allow_arbitrary_keys=allow_arbitrary_keys)
 
     def delete_group(self, group_name: str) -> None:
         if group_name not in self.keys():
             raise KeyError(group_name)
-        with h5py.File(self._store_file, 'r+') as f:
+        with ExitStack() as stack:
+            f = self._get_open_file(stack, 'r+')
             del f[group_name]
         self._update_internal_cache()
 
@@ -586,32 +586,16 @@ class AniH5Dataset(Mapping[str, Properties]):
         for group_name in self.keys():
             yield self.get_numpy_conformers(group_name, *args, **kwargs)
 
-    def _check_keys_already_present(self,
-                                    source_key: Optional[str] = None,
-                                    dest_key: Optional[str] = None, strict: bool = False) -> bool:
-        # Some functions need a source and/or a destination key to perform some
-        # operations, this function checks that the source key exists and the
-        # destination key does not, before performing the operation, if the
-        # destination key already exists then the function may return early so
-        # and a fl
-        if source_key is not None and source_key not in self.supported_properties:
-            raise ValueError(f"{source_key} is not in {self.supported_properties}")
-        if dest_key is not None and dest_key in self.supported_properties:
-            if not strict:
-                return True
-            raise ValueError(f"{dest_key} is already in {self.supported_properties}")
-        return False
-
     @_may_need_cache_update
     def create_full_scalar_property(self,
                                     dest_key: str,
                                     fill_value: int = 0,
                                     strict: bool = False,
                                     dtype: DTypeLike = np.int64) -> DatasetWithFlag:
-        should_exit_early = self._check_keys_already_present(dest_key=dest_key, strict=strict)
-        if should_exit_early:
+        if self._should_exit_early(dest_key=dest_key, strict=strict):
             return self, False
-        with h5py.File(self._store_file, 'r+') as f:
+        with ExitStack() as stack:
+            f = self._get_open_file(stack, 'r+')
             for group_name in self.keys():
                 size = _get_num_conformers(f[group_name], self._flag_property, self.supported_properties)
                 data = np.full(size, fill_value=fill_value, dtype=dtype)
@@ -623,10 +607,10 @@ class AniH5Dataset(Mapping[str, Properties]):
                                            source_key: str = 'numbers',
                                            dest_key: str = 'species',
                                            strict: bool = True) -> DatasetWithFlag:
-        should_exit_early = self._check_keys_already_present(source_key, dest_key, strict)
-        if should_exit_early:
+        if self._should_exit_early(source_key, dest_key, strict):
             return self, False
-        with h5py.File(self._store_file, 'r+') as f:
+        with ExitStack() as stack:
+            f = self._get_open_file(stack, 'r+')
             for group_name in self.keys():
                 symbols = np.asarray([PERIODIC_TABLE[j] for j in f[group_name][source_key][()]], dtype=str)
                 f[group_name].create_dataset(dest_key, data=symbols.astype(bytes))
@@ -637,12 +621,12 @@ class AniH5Dataset(Mapping[str, Properties]):
                                            source_key: str = 'species',
                                            dest_key: str = 'numbers',
                                            strict: bool = True) -> DatasetWithFlag:
-        should_exit_early = self._check_keys_already_present(source_key, dest_key, strict)
-        if should_exit_early:
+        if self._should_exit_early(source_key, dest_key, strict):
             return self, False
-        with h5py.File(self._store_file, 'r+') as f:
+        with ExitStack() as stack:
+            f = self._get_open_file(stack, 'r+')
             for group_name in self.keys():
-                numbers = self._symbols_to_numbers(f[group_name][source_key][()].astype(str).tolist()).numpy()
+                numbers = self._symbols_to_numbers(f[group_name][source_key][()].astype(str))
                 f[group_name].create_dataset(dest_key, data=numbers)
         return self, bool(self.keys())
 
@@ -659,17 +643,16 @@ class AniH5Dataset(Mapping[str, Properties]):
         # actually the sum of the charges over all atoms. This function solves
         # the problem of dividing these properties as:
         # "atomic_charges (C, A + 1) -> "atomic_charges (C, A)", "charges (C, )"
-        should_exit_early = self._check_keys_already_present(source_key, dest_key, strict)
-        if should_exit_early:
+        if self._should_exit_early(source_key, dest_key, strict):
             return self, False
-        with h5py.File(self._store_file, 'r+') as f:
+        with ExitStack() as stack:
+            f = self._get_open_file(stack, 'r+')
             for group_name, properties in self.numpy_items(include_properties=('source_key',),
                                                            repeat_nonbatch_keys=False):
                 to_slice = properties[source_key]
                 if to_slice.shape[dim_to_slice] <= 1:
                     raise ValueError("You can't slice the property if "
                                      "dim_to_slice has size 1 or smaller")
-
                 # np.take automatically squeezes the output along the slice but
                 # delete does not squeeze even if the resulting dim has size 1
                 # so we sqeeze manually
@@ -683,22 +666,42 @@ class AniH5Dataset(Mapping[str, Properties]):
                 f[group_name].create_dataset(dest_key, data=slice_)
         return self, True
 
+    def _should_exit_early(self,
+                           source_key: Optional[str] = None,
+                           dest_key: Optional[str] = None, strict: bool = False) -> bool:
+        # Some functions need a source and/or a destination key to perform some
+        # operations, this function checks that the source key exists and the
+        # destination key does not, before performing the operation, if the
+        # destination key already exists then the function should return early
+        if source_key is not None and source_key not in self.supported_properties:
+            raise ValueError(f"{source_key} is not in {self.supported_properties}")
+        if dest_key is not None and dest_key in self.supported_properties:
+            if not strict:
+                return True
+            raise ValueError(f"{dest_key} is already in {self.supported_properties}")
+        return False
+
     @_may_need_cache_update
     def rename_groups_to_formulas(self, verbose: bool = True) -> DatasetWithFlag:
-        if 'species' not in self.supported_properties:
-            raise ValueError('Cant rename groups, species doesnt seem to be supported')
+        if 'species' in self.supported_properties:
+            parser = lambda s: species_to_formula(s['species'])  # noqa E731
+        elif 'numbers' in self.supported_properties:
+            parser = lambda s: species_to_formula(self._numbers_to_symbols(s['numbers']))  # noqa E731
+        else:
+            raise ValueError('"species" or "numbers" must be present to parse formulas')
         needs_cache_update = False
         for group_name, properties in tqdm(self.numpy_items(repeat_nonbatch_keys=False),
-                                  total=self.num_conformer_groups,
-                                  desc='Renaming groups to formulas',
-                                  disable=not verbose):
-            new_name = species_to_formula(properties['species'])
+                                           total=self.num_conformer_groups,
+                                           desc='Renaming groups to formulas',
+                                           disable=not verbose):
+            new_name = parser(properties)
             if group_name != f'/{new_name}':
-                with h5py.File(self._store_file, 'r+') as f:
+                with ExitStack() as stack:
+                    f = self._get_open_file(stack, 'r+')
                     del f[group_name]
-                # mypy doesn't know that @wrap'ed functions have these attributesj
-                # and fixing this is ugly
-                needs_cache_update = self.append_numpy_conformers.__wrapped__(self, new_name, properties)[1]  # type: ignore
+                # mypy doesn't know that @wrap'ed functions have __wrapped__.
+                # No need to check input here since it was inside the ds
+                needs_cache_update = self._append_numpy_conformers_no_check.__wrapped__(self, new_name, properties)[1]  # type: ignore
         assert isinstance(needs_cache_update, bool)
         return self, needs_cache_update
 
@@ -707,7 +710,8 @@ class AniH5Dataset(Mapping[str, Properties]):
         properties_set = {p for p in properties if p in self.supported_properties}
 
         if properties_set:
-            with h5py.File(self._store_file, 'r+') as f:
+            with ExitStack() as stack:
+                f = self._get_open_file(stack, 'r+')
                 for group_key in self.keys():
                     for property_ in properties_set:
                         del f[group_key][property_]
@@ -726,11 +730,12 @@ class AniH5Dataset(Mapping[str, Properties]):
             elif not has_old and not has_new:
                 raise ValueError(f'Cant rename {old} into {new} since neither exists')
             elif not has_old and has_new:
-                # Already renamed
+                # Already renamed this property
                 del old_new_dict[old]
 
         if old_new_dict:
-            with h5py.File(self._store_file, 'r+') as f:
+            with ExitStack() as stack:
+                f = self._get_open_file(stack, 'r+')
                 for k in self.keys():
                     for old_name, new_name in old_new_dict.items():
                         f[k].move(old_name, new_name)
@@ -740,43 +745,37 @@ class AniH5Dataset(Mapping[str, Properties]):
     def delete_conformers(self, group_name: str, idx: Optional[Tensor] = None) -> DatasetWithFlag:
 
         all_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch_keys=False)
-        size = _get_num_conformers(all_conformers, self._flag_property, self.supported_properties)
-
-        # Get the indices that will remain after deletion, duplicated entries
-        # of idx are ignored
-        if idx is not None:
-            assert idx.dim() == 1, "index must be a dim 1 tensor"
-            assert idx.max() < size, "Out of bounds error"
-            # If an empty idx is passed don't delete anything
-            if idx.size(0) == 0:
-                return self, False
-            good_idxs = [i for i in range(size) if i not in idx]
-        else:
-            good_idxs = []
-
-        # If there are any indices remaining we delete the dataset and recreate
-        # it using the indices, otherwise we just delete the whole group
-        with h5py.File(self._store_file, 'r+') as f:
+        with ExitStack() as stack:
+            f = self._get_open_file(stack, 'r+')
             del f[group_name]
-            if good_idxs:
-                good_conformers = {k: all_conformers[k][good_idxs]
-                                   for k in self._supported_batch_keys}
-                good_conformers.update({k: all_conformers[k]
-                                        for k in self._supported_nonbatch_keys})
-                f.create_group(group_name)
-                _create_numpy_properties_handle_str(f[group_name], good_conformers)
+            good_conformers = {k: np.delete(all_conformers[k], obj=idx, axis=0)
+                               for k in self._supported_batch_keys}
+            if all(v.shape[0] == 0 for v in good_conformers.values()):
+                # if we deleted everything in the group then just return,
+                # otherwise we recreate the group using the good conformers
+                return self, True
+            good_conformers.update({k: all_conformers[k]
+                                    for k in self._supported_nonbatch_keys})
+            f.create_group(group_name)
+            _create_numpy_properties_handle_str(f[group_name], good_conformers)
         return self, True
 
     def present_species(self) -> Tuple[str, ...]:
+        if 'species' in self.supported_properties:
+            element_key = 'species'
+            parser = lambda s: set(s['species'])  # noqa E731
+        elif 'numbers' in self.supported_properties:
+            element_key = 'numbers'
+            parser = lambda s: set(self._numbers_to_symbols(s['numbers']))  # noqa E731
+        else:
+            raise ValueError('"species" or "numbers" must be present to parse symbols')
         present_species: Set[str] = set()
-        if 'species' not in self.supported_properties:
-            raise ValueError('Cant find present species, species doesnt seem to be supported')
         for key in self.keys():
             species = self.get_numpy_conformers(key,
-                                                 include_properties=('species',),
-                                                 repeat_nonbatch_keys=False)['species']
-            present_species.update(set(species))
-        return tuple(sorted(tuple(present_species)))
+                                                include_properties=(element_key,),
+                                                repeat_nonbatch_keys=False)
+            present_species.update(parser(species))
+        return tuple(sorted(present_species))
 
     def iter_conformers(self,
                         include_properties: Optional[Sequence[str]] = None) -> Iterator[Properties]:
@@ -785,8 +784,6 @@ class AniH5Dataset(Mapping[str, Properties]):
 
     def iter_key_idx_conformers(self,
                                 include_properties: Optional[Sequence[str]] = None) -> Iterator[Tuple[str, int, Properties]]:
-        # Iterate sequentially over conformers also copies all the group
-        # into memory first, so it is fast
         for k, size in self.group_sizes.items():
             conformer_group = self.get_conformers(k, include_properties=include_properties)
             for idx in range(size):
@@ -794,7 +791,6 @@ class AniH5Dataset(Mapping[str, Properties]):
                                     for k in conformer_group.keys()}
                 yield k, idx, single_conformer
 
-    @profile
     def get_numpy_conformers(self,
                              key: str,
                              idx: Optional[Tensor] = None,
@@ -806,14 +802,10 @@ class AniH5Dataset(Mapping[str, Properties]):
         # empty, since it directly passes index tensors to numpy.
         # If the dataset has no supported properties this just returns and
         # empty dict
-
         nonbatch_keys, batch_keys = self._split_key_kinds(include_properties)
         all_keys = batch_keys.union(nonbatch_keys)
         with ExitStack() as stack:
-            if self.hdf5_file is not None:
-                f = self.hdf5_file
-            else:
-                f = stack.enter_context(h5py.File(self._store_file, 'r'))
+            f = self._get_open_file(stack, 'r')
             numpy_properties = {p: f[key][p][()] for p in all_keys}
             if idx is not None:
                 assert idx.dim() == 1, "index must be a dim 1 tensor"
@@ -827,8 +819,7 @@ class AniH5Dataset(Mapping[str, Properties]):
             numpy_properties.update({k: np.tile(numpy_properties[k], (num_conformers, 1))
                                      for k in nonbatch_keys})
         return numpy_properties
-    
-    @profile
+
     def get_conformers(self,
                        key: str,
                        idx: Optional[Tensor] = None,
@@ -840,22 +831,10 @@ class AniH5Dataset(Mapping[str, Properties]):
         all_keys = nonbatch_keys.union(batch_keys)
         properties = {k: torch.tensor(numpy_properties[k]) for k in all_keys.difference({'species'})}
 
-        # 'species' gets special treatment since it has to be transformed to
-        # atomic numbers in order to output a tensor.
-        # this code works correctly both if species is a "nonbatch key" or a
-        # "batch key", but performs a small optimization if it is a nonbatch
-        # key that must be repeated
+        # This correctly handles cases where species is a batch or nonbatch key
         if 'species' in all_keys:
-            species = numpy_properties['species']
-            if 'species' in nonbatch_keys and repeat_nonbatch_keys:
-                tensor_species = self._symbols_to_numbers(species[0].tolist())
-                tensor_species = tensor_species.repeat(species.shape[0], 1)
-            else:
-                species_shape = species.shape
-                tensor_species = self._symbols_to_numbers(species.ravel().tolist())
-                tensor_species = tensor_species.view(*species_shape)
-            properties.update({'species': tensor_species})
-
+            species = self._symbols_to_numbers(numpy_properties['species'])
+            properties.update({'species': torch.from_numpy(species)})
         return properties
 
     def _split_key_kinds(self, properties: Optional[Sequence[str]] = None) -> Tuple[Set[str], Set[str]]:
@@ -886,7 +865,8 @@ class AniH5Dataset(Mapping[str, Properties]):
         shapes = self._get_attr_dict('shapes')
         metadata = {k: dict(units=units[k], dtype=dtypes[k], shape=shapes[k])
                     for k in units.keys()}
-        with h5py.File(self._store_file, 'r') as f:
+        with ExitStack() as stack:
+            f = self._get_open_file(stack, 'r')
             metadata.update({'functional': f.attrs.get('functional'),
                              'basis_set': f.attrs.get('basis_set')})
         return metadata
@@ -900,7 +880,8 @@ class AniH5Dataset(Mapping[str, Properties]):
         functional = metadata.pop('functional')
         basis_set = metadata.pop('basis_set')
 
-        with h5py.File(self._store_file, 'r+') as f:
+        with ExitStack() as stack:
+            f = self._get_open_file(stack, 'r+')
             f.attrs.create('functional', data=functional)
             f.attrs.create('basis_set', data=basis_set)
         for prefix in {'units', 'shape', 'dtype'}:
@@ -911,13 +892,15 @@ class AniH5Dataset(Mapping[str, Properties]):
             elif prefix == 'dtype':
                 attr_dict = {k: np.dtype(v).name for k, v in attr_dict.items()}
 
-            with h5py.File(self._store_file, 'r+') as f:
+            with ExitStack() as stack:
+                f = self._get_open_file(stack, 'r+')
                 for p, u in attr_dict.items():
                     f.attrs.create(f"{prefix}.{p}", data=u)
         return self
 
     def clear_metadata(self) -> 'AniH5Dataset':
-        with h5py.File(self._store_file, 'r+') as f:
+        with ExitStack() as stack:
+            f = self._get_open_file(stack, 'r+')
             for k in f.attrs.keys():
                 del f.attrs[k]
         return self
@@ -964,6 +947,7 @@ class AniH5Dataset(Mapping[str, Properties]):
         return self
 
     def _get_attr_dict(self, prefix: str) -> Dict[str, str]:
-        with h5py.File(self._store_file, 'r+') as f:
+        with ExitStack() as stack:
+            f = self._get_open_file(stack, 'r+')
             attr_dict = {k.split('.')[1]: v for k, v in f.attrs.items() if k.split('.')[0] == prefix}
         return attr_dict

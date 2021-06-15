@@ -620,7 +620,7 @@ class TestAniH5Dataset(TestCase):
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
         with self.assertRaisesRegex(ValueError, 'Attempted to combine groups with different'):
-            ds.append_conformers('O6', new_groups['C6'], allow_arbitrary_keys=True)
+            ds.append_conformers('O6', new_groups['C6'])
         with self.assertRaisesRegex(ValueError, 'Character "/" not supported'):
             ds.append_conformers('O/6', new_groups['O6'])
 
@@ -647,7 +647,7 @@ class TestAniH5Dataset(TestCase):
         for k in ('H6', 'O6', 'C6'):
             ds.append_conformers(k, new_groups[k])
         self.assertTrue(ds.present_species(), ('C', 'H', 'O'))
-        with self.assertRaisesRegex(ValueError, 'Cant find present species'):
+        with self.assertRaisesRegex(ValueError, 'must be present to parse symbols'):
             ds.delete_properties({'species'})
             ds.present_species()
 
@@ -657,7 +657,7 @@ class TestAniH5Dataset(TestCase):
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for j, k in enumerate(('H6', 'C6', 'O6')):
-            ds.append_conformers(str(j), new_groups[k], allow_arbitrary_keys=True)
+            ds.append_conformers(str(j), new_groups[k])
         ds.rename_groups_to_formulas()
         for k, v in ds.items():
             self.assertEqual(v, new_groups[k])
