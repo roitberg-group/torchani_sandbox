@@ -604,9 +604,9 @@ class AniH5Dataset(Mapping[str, Properties]):
 
     @_may_need_cache_update
     def create_species_from_numbers(self,
-                                           source_key: str = 'numbers',
-                                           dest_key: str = 'species',
-                                           strict: bool = True) -> DatasetWithFlag:
+                                    source_key: str = 'numbers',
+                                    dest_key: str = 'species',
+                                    strict: bool = True) -> DatasetWithFlag:
         if self._should_exit_early(source_key, dest_key, strict):
             return self, False
         with ExitStack() as stack:
@@ -618,9 +618,9 @@ class AniH5Dataset(Mapping[str, Properties]):
 
     @_may_need_cache_update
     def create_numbers_from_species(self,
-                                           source_key: str = 'species',
-                                           dest_key: str = 'numbers',
-                                           strict: bool = True) -> DatasetWithFlag:
+                                    source_key: str = 'species',
+                                    dest_key: str = 'numbers',
+                                    strict: bool = True) -> DatasetWithFlag:
         if self._should_exit_early(source_key, dest_key, strict):
             return self, False
         with ExitStack() as stack:
@@ -848,106 +848,3 @@ class AniH5Dataset(Mapping[str, Properties]):
             raise ValueError(f"Some of the properties demanded {set(properties)} are not "
                              f"in the dataset, which has properties {self.supported_properties}")
         return nonbatch_keys, batch_keys
-
-    # Metadata:
-    #
-    # shapes, dtypes, units, functional and basis set are metadata
-    # shapes are stored as repr'd tuples, which can have
-    # integers or strings, integers mean those axes are
-    # constant and have to have the exact same size for all
-    # properties, strings mean the axes are variables which can
-    # have different values in different Groups, but the same
-    # values should be maintained within a Group, (even in
-    # different properties)
-    def get_metadata(self) -> Dict[str, Any]:
-        units = self._get_attr_dict('units')
-        dtypes = self._get_attr_dict('dtype')
-        shapes = self._get_attr_dict('shapes')
-        metadata = {k: dict(units=units[k], dtype=dtypes[k], shape=shapes[k])
-                    for k in units.keys()}
-        with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r')
-            metadata.update({'functional': f.attrs.get('functional'),
-                             'basis_set': f.attrs.get('basis_set')})
-        return metadata
-
-    def set_metadata(self, metadata: Dict[str, Any]) -> 'AniH5Dataset':
-        metadata = deepcopy(metadata)
-        for k in metadata.keys():
-            for c in {'*', '/', '.'}:
-                assert c not in k, f"character {c} not supported"
-
-        functional = metadata.pop('functional')
-        basis_set = metadata.pop('basis_set')
-
-        with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r+')
-            f.attrs.create('functional', data=functional)
-            f.attrs.create('basis_set', data=basis_set)
-        for prefix in {'units', 'shape', 'dtype'}:
-            attr_dict = {p: d[prefix] for p, d in metadata.items()}
-
-            if prefix == 'shape':
-                attr_dict = {k: repr(tuple_) for k, tuple_ in attr_dict.items()}
-            elif prefix == 'dtype':
-                attr_dict = {k: np.dtype(v).name for k, v in attr_dict.items()}
-
-            with ExitStack() as stack:
-                f = self._get_open_file(stack, 'r+')
-                for p, u in attr_dict.items():
-                    f.attrs.create(f"{prefix}.{p}", data=u)
-        return self
-
-    def clear_metadata(self) -> 'AniH5Dataset':
-        with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r+')
-            for k in f.attrs.keys():
-                del f.attrs[k]
-        return self
-
-    def validate_metadata(self, verbose: bool = True) -> 'AniH5Dataset':
-        # Metadata keys should be the same as the supported properties
-        metadata = self.get_metadata()
-        metadata.pop('functional')
-        metadata.pop('basis_set')
-        if not self.supported_properties == set(metadata.keys()):
-            raise RuntimeError(f"Metadata has properties {set(metadata.keys())} "
-                               f"but expected {self.supported_properties}")
-
-        for group_name, properties in tqdm(self.numpy_items(repeat_nonbatch_keys=False),
-                                  total=self.num_conformer_groups,
-                                  desc='Validating metadata',
-                                  disable=not verbose):
-
-            variable_shapes: Dict[str, int] = dict()
-            for property_, meta in metadata.items():
-                # check dtype
-                expected_dtype = meta['dtype']
-                dtype = np.dtype(properties[property_].dtype).name
-                if not dtype == expected_dtype and not expected_dtype == 'str':
-                    raise RuntimeError(f'{property_} of {group_name} has dtype {dtype} '
-                                       f'but expected {expected_dtype}')
-                # check ndims
-                expected_shape = eval(meta['shape'])
-                shape = properties[property_].shape
-                if not len(shape) == len(expected_shape):
-                    raise RuntimeError(f'{property_} of {group_name} has {len(shape)} dims '
-                                       f' but expected {len(expected_shape)}')
-                # check shape
-                for j, (s, size) in enumerate(zip(expected_shape, shape)):
-                    if isinstance(s, int):
-                        expected_size = s
-                    elif isinstance(s, str) and s in variable_shapes.keys():
-                        expected_size = variable_shapes[s]
-                    else:
-                        variable_shapes[s] = size
-                    if not expected_size == size:
-                        raise RuntimeError(f'{property_} of {group_name} has dim size {size} '
-                                           f' but expected {expected_size} on dim {j}')
-        return self
-
-    def _get_attr_dict(self, prefix: str) -> Dict[str, str]:
-        with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r+')
-            attr_dict = {k.split('.')[1]: v for k, v in f.attrs.items() if k.split('.')[0] == prefix}
-        return attr_dict
