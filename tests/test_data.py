@@ -454,7 +454,7 @@ class TestAniH5Dataset(TestCase):
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
-            ds.append_conformers(new_groups[k], k)
+            ds.append_conformers(k, new_groups[k])
         ds.rename_properties({'energies': 'renamed_energies'})
         for k, v in ds.items():
             self.assertEqual(set(v.keys()), {'species', 'coordinates', 'renamed_energies'})
@@ -474,7 +474,7 @@ class TestAniH5Dataset(TestCase):
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
-            ds.append_conformers(new_groups[k], k)
+            ds.append_conformers(k, new_groups[k])
         ds.delete_properties({'energies'})
         for k, v in ds.items():
             self.assertEqual(set(v.keys()), {'species', 'coordinates'})
@@ -512,9 +512,9 @@ class TestAniH5Dataset(TestCase):
         properties3 = {'species': np.full((5, 6), fill_value='O', dtype=str),
                       'coordinates': np.random.standard_normal((5, 6, 3)),
                       'energies': np.random.standard_normal((5,))}
-        ds.append_numpy_conformers(properties1, 'H6')
-        ds.append_numpy_conformers(properties2, 'C6')
-        ds.append_numpy_conformers(properties3, 'O6')
+        ds.append_numpy_conformers('H6', properties1)
+        ds.append_numpy_conformers('C6', properties2)
+        ds.append_numpy_conformers('O6', properties3)
         for k, v in ds.numpy_items():
             if k == 'H6':
                 self.assertEqual(v, properties1)
@@ -535,7 +535,7 @@ class TestAniH5Dataset(TestCase):
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
-            ds.append_conformers(new_groups[k], k)
+            ds.append_conformers(k, new_groups[k])
         ds.create_numbers_from_species('species', 'numbers')
         self.assertEqual(ds.supported_properties, {'species', 'energies', 'coordinates', 'numbers'})
         for k, v in ds.items():
@@ -550,7 +550,7 @@ class TestAniH5Dataset(TestCase):
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
-            ds.append_conformers(new_groups[k], k)
+            ds.append_conformers(k, new_groups[k])
         ds.delete_properties({'species'})
         ds.create_full_scalar_property('numbers', 1)
         ds.create_species_from_numbers('numbers', 'species')
@@ -564,7 +564,7 @@ class TestAniH5Dataset(TestCase):
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
-            ds.append_conformers(new_groups[k], k)
+            ds.append_conformers(k, new_groups[k])
         ds.delete_properties({'species'})
         ds.create_full_scalar_property('numbers', 1)
         ds.create_species_from_numbers('numbers', 'species')
@@ -579,7 +579,7 @@ class TestAniH5Dataset(TestCase):
         new_groups = deepcopy(self.new_groups_torch)
         initial_len = len(new_groups['C6']['coordinates'])
         for k in ('H6', 'C6', 'O6'):
-            ds.append_conformers(new_groups[k], k)
+            ds.append_conformers(k, new_groups[k])
         ds.create_full_scalar_property('spin_multiplicities', 1)
         ds.create_full_scalar_property('charges', 0)
         self.assertEqual(len(ds['H6'].keys()), 5)
@@ -596,7 +596,7 @@ class TestAniH5Dataset(TestCase):
         # check creation
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
-            ds.append_conformers(new_groups[k], k)
+            ds.append_conformers(k, new_groups[k])
         for k, v in ds.items():
             self.assertEqual(v, new_groups[k])
         for k in ('H6', 'C6', 'O6'):
@@ -607,7 +607,7 @@ class TestAniH5Dataset(TestCase):
         new_lengths = dict()
         for k in ds.keys():
             new_lengths[k] = len(new_groups[k]['energies']) * 2
-            ds.append_conformers(new_groups[k], k)
+            ds.append_conformers(k, new_groups[k])
         for k in ds.keys():
             self.assertEqual(len(ds.get_conformers(k)['energies']), new_lengths[k])
             self.assertEqual(len(ds.get_conformers(k)['species']), len(new_groups['O6']['species']))
@@ -618,26 +618,26 @@ class TestAniH5Dataset(TestCase):
         ds.supported_properties = {'coordinates', 'species', 'energies'}
         ds._update_private_sets()
         for k in ('H6', 'C6', 'O6'):
-            ds.append_conformers(new_groups[k], k)
+            ds.append_conformers(k, new_groups[k])
         with self.assertRaisesRegex(ValueError, 'Attempted to combine groups with different'):
-            ds.append_conformers(new_groups['C6'], 'O6', allow_arbitrary_keys=True)
+            ds.append_conformers('O6', new_groups['C6'], allow_arbitrary_keys=True)
         with self.assertRaisesRegex(ValueError, 'Character "/" not supported'):
-            ds.append_conformers(new_groups['O6'], 'O/6')
+            ds.append_conformers('O/6', new_groups['O6'])
 
         with self.assertRaisesRegex(ValueError, 'Expected .* but got .*'):
             new_groups_copy = deepcopy(new_groups['O6'])
             del new_groups_copy['energies']
-            ds.append_conformers(new_groups_copy, 'O6')
+            ds.append_conformers('O6', new_groups_copy)
 
         with self.assertRaisesRegex(ValueError, '.* must be equal in the batch dimension'):
             new_groups_copy = deepcopy(new_groups['O6'])
             new_groups_copy['species'] = torch.randint(size=(5, 6), low=1, high=5, dtype=torch.long)
-            ds.append_conformers(new_groups_copy, 'O6')
+            ds.append_conformers('O6', new_groups_copy)
 
         with self.assertRaisesRegex(ValueError, '.* must have 1 or 2 dimensions'):
             new_groups_copy = deepcopy(new_groups['O6'])
             new_groups_copy['species'] = torch.ones((5, 6, 1), dtype=torch.long)
-            ds.append_conformers(new_groups_copy, 'O6')
+            ds.append_conformers('O6', new_groups_copy)
 
     def testPresentSpecies(self):
         ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
@@ -645,7 +645,7 @@ class TestAniH5Dataset(TestCase):
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'O6', 'C6'):
-            ds.append_conformers(new_groups[k], k)
+            ds.append_conformers(k, new_groups[k])
         self.assertTrue(ds.present_species(), ('C', 'H', 'O'))
         with self.assertRaisesRegex(ValueError, 'Cant find present species'):
             ds.delete_properties({'species'})
@@ -657,7 +657,7 @@ class TestAniH5Dataset(TestCase):
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for j, k in enumerate(('H6', 'C6', 'O6')):
-            ds.append_conformers(new_groups[k], str(j), allow_arbitrary_keys=True)
+            ds.append_conformers(str(j), new_groups[k], allow_arbitrary_keys=True)
         ds.rename_groups_to_formulas()
         for k, v in ds.items():
             self.assertEqual(v, new_groups[k])

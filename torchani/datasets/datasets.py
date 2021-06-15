@@ -344,9 +344,8 @@ class AniH5Dataset(Mapping[str, Properties]):
                  verbose: bool = True):
 
         self._all_nonbatch_keys = set(nonbatch_keys)
-        store_file = Path(store_file).resolve()
         self._verbose = verbose
-        self._store_file = store_file
+        self._store_file = Path(store_file).resolve()
         self._symbols_to_numbers = ChemicalSymbolsToAtomicNumbers()
 
         # flag property is used to infer size of molecule groups when iterating
@@ -368,7 +367,7 @@ class AniH5Dataset(Mapping[str, Properties]):
         if create:
             if supported_properties is None:
                 raise ValueError("Please provide supported properties to create the dataset")
-            open(store_file, 'x').close()
+            open(self._store_file, 'x').close()
             self._has_homogeneous_properties = True
             self._has_standard_format = True
             self.supported_properties = set(supported_properties)
@@ -376,8 +375,8 @@ class AniH5Dataset(Mapping[str, Properties]):
         else:
             # In general all supported properties of the dataset should be equal
             # for all groups.
-            if not store_file.is_file():
-                raise FileNotFoundError(f"The h5 file in {store_file.as_posix()} could not be found")
+            if not self._store_file.is_file():
+                raise FileNotFoundError(f"The h5 file in {self._store_file.as_posix()} could not be found")
             self._has_standard_format = assume_standard
             self._has_homogeneous_properties = False
             self._update_internal_cache()
@@ -497,9 +496,8 @@ class AniH5Dataset(Mapping[str, Properties]):
     def __iter__(self) -> Iterator[str]:
         return iter(self.group_sizes.keys())
 
-    def _check_append_input(self, properties: MaybeNumpyProperties,
-                            group_name: Optional[str] = None) -> Tuple[MaybeNumpyProperties, Optional[str]]:
-        if group_name is not None and '/' in group_name:
+    def _check_append_input(self, group_name: str, properties: MaybeNumpyProperties) -> Tuple[str, MaybeNumpyProperties]:
+        if '/' in group_name:
             raise ValueError('Character "/" not supported in group_name')
         if not set(properties.keys()) == self.supported_properties:
             raise ValueError(f'Expected {self.supported_properties} but got {set(properties.keys())}')
@@ -518,31 +516,25 @@ class AniH5Dataset(Mapping[str, Properties]):
             if not properties[k].shape[0] == properties[any_batch_key].shape[0]:
                 raise ValueError(f"All batch keys {self._supported_batch_keys} must have the same batch dimension")
 
-        return properties, group_name
+        return group_name, properties
 
     @_may_need_cache_update
     def append_numpy_conformers(self,
+                                group_name: str,
                                 properties: NumpyProperties,
-                                group_name: Optional[str] = None,
                                 check_input: bool = True,
                                 allow_arbitrary_keys: bool = False) -> DatasetWithFlag:
         if check_input:
             properties = deepcopy(properties)
             # After check input nonbatch keys are correctly turned into batch
             # keys
-            properties, group_name = self._check_append_input(properties, group_name)
+            group_name, properties = self._check_append_input(group_name, properties)
 
         if group_name is None:
             if 'species' in self._supported_nonbatch_keys:
                 group_name = species_to_formula(properties['species'])
             else:
                 raise ValueError("Cant determine default name for the group, species is missing")
-
-        if 'species' in self._supported_nonbatch_keys and not allow_arbitrary_keys:
-            species = properties['species']
-            if species_to_formula(species) != group_name:
-                raise ValueError(f'Inappropriate key, append restricts valid keys to formulas and the formula for '
-                                 f'{group_name} is {species_to_formula(species)}')
 
         # NOTE: Appending to datasets is actually allowed in HDF5 but only if
         # the dataset is created with "resizable" format, since this is not the
@@ -574,23 +566,23 @@ class AniH5Dataset(Mapping[str, Properties]):
         return self, True
 
     def append_conformers(self,
+                          group_name: str,
                           properties: Properties,
-                          group_name: Optional[str] = None,
                           allow_arbitrary_keys: bool = False) -> 'AniH5Dataset':
         properties = deepcopy(properties)
-        properties, group_name = self._check_append_input(properties, group_name)
+        group_name, properties = self._check_append_input(group_name, properties)
         if 'species' in self.supported_properties:
             if (properties['species'] <= 0).any():
-                raise ValueError('Species are atomic numbers, so they must be positive')
+                raise ValueError('Species are atomic numbers, must be positive')
 
         numpy_properties = {k: properties[k].numpy()
-                      for k in self.supported_properties.difference({'species'})}
+                            for k in self.supported_properties.difference({'species'})}
 
         if 'species' in self.supported_properties:
             species = properties['species']
             numpy_species = np.asarray([PERIODIC_TABLE[j] for j in species], dtype=str)
             numpy_properties.update({'species': numpy_species})
-        return self.append_numpy_conformers(numpy_properties, group_name,
+        return self.append_numpy_conformers(group_name, numpy_properties,
                                             check_input=False,
                                             allow_arbitrary_keys=allow_arbitrary_keys)
 
@@ -733,7 +725,7 @@ class AniH5Dataset(Mapping[str, Properties]):
                     del f[group_name]
                 # mypy doesn't know that @wrap'ed functions have these attributesj
                 # and fixing this is ugly
-                needs_cache_update = self.append_numpy_conformers.__wrapped__(self, properties, new_name)[1]  # type: ignore
+                needs_cache_update = self.append_numpy_conformers.__wrapped__(self, new_name, properties)[1]  # type: ignore
         assert isinstance(needs_cache_update, bool)
         return self, needs_cache_update
 
