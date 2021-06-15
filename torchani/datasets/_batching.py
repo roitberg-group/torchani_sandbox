@@ -288,6 +288,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                     # conformers from the group for all batches in pack.
                     file_idx, group_key = file_idxs_and_group_keys[group_idx.item()]
                     selected_indices = sorted_batch_indices_cat[start:end, 1]
+                    assert selected_indices.dim() == 1
                     conformers = ro_h5_datasets.get_conformers(file_idx, group_key,
                                                                       selected_indices,
                                                                       include_properties)

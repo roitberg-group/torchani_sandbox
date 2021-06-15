@@ -38,7 +38,8 @@ def _may_need_cache_update(method: Callable[..., DatasetWithFlag]) -> Callable[.
 
 
 def _create_numpy_properties_handle_str(group: h5py.Group, numpy_properties: NumpyProperties) -> None:
-    # creates a dataset with dtype bytes if the array is a string array,
+    # Fills a group with a dict of ndarrays; creates a dataset with dtype bytes
+    # if the array is a string array,
     for k, v in numpy_properties.items():
         try:
             group.create_dataset(name=k, data=v)
@@ -63,6 +64,9 @@ def _get_dim_size(common_keys: Set[str], dim: int,
                   flag_property: Optional[str] = None,
                   supported_properties: Optional[Set[str]] = None) -> int:
     # Calculates the dimension size in a set of properties
+    # If a flag property is passed it gets the dimension from that property,
+    # otherwise it tries to get it from one of a number of common keys that
+    # have the dimension
     if flag_property is not None:
         size = molecule_group[flag_property].shape[dim]
     else:
@@ -165,13 +169,11 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
                 self.batch_paths.pop()
         self._len = len(self.batch_paths)
 
-    def cache(self,
-              pin_memory: bool = True,
+    def cache(self, pin_memory: bool = True,
               verbose: bool = True,
               apply_transform: bool = True) -> 'AniBatchedDataset':
         r"""Saves the full dataset into RAM"""
-
-        desc = f'Cacheing {self.split}, Warning: this may take a lot of RAM!'
+        desc = f'Cacheing {self.split}, Warning: this may use a lot of RAM!'
         self._data = [self._extractor(idx) for idx in tqdm(range(len(self)),
                                                           total=len(self),
                                                           disable=not verbose,
@@ -185,18 +187,14 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
                                                               desc=desc)]
             self.transform = lambda x: x
         if pin_memory:
-            desc = 'Pinning memory, dont use pin_memory=True in the torch DataLoader'
+            desc = 'Pinning memory; dont pin memory in torch DataLoader!'
             self._data = [{k: v.pin_memory()
                            for k, v in properties.items()}
                            for properties in tqdm(self._data,
                                                   total=len(self),
                                                   disable=not verbose,
                                                   desc=desc)]
-
-        def memory_extractor(idx: int, ds: 'AniBatchedDataset') -> Properties:
-            return ds._data[idx]
-
-        self._extractor = partial(memory_extractor, ds=self)
+        self._extractor = lambda idx: self._data[idx]
         return self
 
     def __getitem__(self, idx: int) -> Properties:
@@ -735,7 +733,7 @@ class AniH5Dataset(Mapping[str, Properties]):
         with ExitStack() as stack:
             f = self._get_open_file(stack, 'r+')
             del f[group_name]
-            good_conformers = {k: np.delete(all_conformers[k], obj=idx, axis=0)
+            good_conformers = {k: np.delete(all_conformers[k], obj=idx.cpu().numpy(), axis=0)
                                for k in self._supported_batch_keys}
             if all(v.shape[0] == 0 for v in good_conformers.values()):
                 # if we deleted everything in the group then just return,
@@ -782,10 +780,6 @@ class AniH5Dataset(Mapping[str, Properties]):
                              idx: Optional[Tensor] = None,
                              include_properties: Optional[Sequence[str]] = None,
                              repeat_nonbatch_keys: bool = True) -> NumpyProperties:
-        # If the group or any of the properties does not exist this function
-        # raises a KeyError through h5py This function behaves correctly if idx
-        # has duplicated entries, is out of order, indexes out of bounds or is
-        # empty, since it directly passes index tensors to numpy.
         # If the dataset has no supported properties this just returns and
         # empty dict
         nonbatch_keys, batch_keys = self._split_key_kinds(include_properties)
@@ -794,15 +788,17 @@ class AniH5Dataset(Mapping[str, Properties]):
             f = self._get_open_file(stack, 'r')
             numpy_properties = {p: f[key][p][()] for p in all_keys}
             if idx is not None:
-                assert idx.dim() == 1, "index must be a dim 1 tensor"
+                assert idx.dim() <= 1, "index must be a 0 or 1 dim tensor"
                 numpy_properties.update({k: numpy_properties[k][idx.cpu().numpy()] for k in batch_keys})
 
         if 'species' in all_keys:
             numpy_properties['species'] = numpy_properties['species'].astype(str)
 
         if repeat_nonbatch_keys:
-            num_conformers = _get_num_conformers(numpy_properties, self._flag_property, batch_keys)
-            numpy_properties.update({k: np.tile(numpy_properties[k], (num_conformers, 1))
+            num_conformers = len(idx) if idx is not None else _get_num_conformers(numpy_properties, self._flag_property, batch_keys)
+            tile_shape = (num_conformers, 1) if idx is None or idx.dim() == 1 or idx is None else (1, )
+            # num_conformers =
+            numpy_properties.update({k: np.tile(numpy_properties[k], tile_shape)
                                      for k in nonbatch_keys})
         return numpy_properties
 
@@ -817,7 +813,6 @@ class AniH5Dataset(Mapping[str, Properties]):
         all_keys = nonbatch_keys.union(batch_keys)
         properties = {k: torch.tensor(numpy_properties[k]) for k in all_keys.difference({'species'})}
 
-        # This correctly handles cases where species is a batch or nonbatch key
         if 'species' in all_keys:
             species = self._symbols_to_numbers(numpy_properties['species'])
             properties.update({'species': torch.from_numpy(species)})
