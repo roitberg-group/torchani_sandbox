@@ -9,6 +9,7 @@ from copy import deepcopy
 from pprint import pformat
 from pathlib import Path
 from functools import partial, wraps
+from contextlib import ExitStack, contextmanager
 from collections import OrderedDict
 
 import h5py
@@ -24,8 +25,8 @@ DatasetWithFlag = Tuple['AniH5Dataset', bool]
 
 
 def _may_need_cache_update(method: Callable[..., DatasetWithFlag]) -> Callable[..., 'AniH5Dataset']:
-    # Decorator that wraps functions that modify the dataset in place.
-    # After dataset modification cache updating may be needed.
+    # Decorator that wraps functions that modify the dataset in place.  Makes
+    # sure that cache updating happens after dataset modification if needed
 
     @wraps(method)
     def method_with_cache_update(ds: 'AniH5Dataset', *args: Any, **kwargs: Any) -> 'AniH5Dataset':
@@ -46,57 +47,40 @@ def _create_numpy_properties_handle_str(group: h5py.Group, numpy_properties: Num
             group.create_dataset(name=k, data=v.astype(bytes))
 
 
-def _get_num_atoms(molecule_group: Union[h5py.Group, Properties, NumpyProperties],
-                   flag_property: Optional[str] = None,
-                   supported_properties: Optional[Set[str]] = None) -> int:
-    if flag_property is not None:
-        size = molecule_group[flag_property].shape[1]
-    else:
-        assert supported_properties is not None
-        if 'coordinates' in supported_properties:
-            size = molecule_group['coordinates'].shape[1]
-        elif 'coord' in supported_properties:
-            size = molecule_group['coord'].shape[1]
-        elif 'forces' in supported_properties:
-            size = molecule_group['forces'].shape[1]
-        elif 'dipoles' in supported_properties:
-            size = molecule_group['dipoles'].shape[1]
-        else:
-            msg = ('Could not infer number of atoms in properties since '
-                    '"coordinates", "forces" and "dipoles" dont exist, please '
-                    'provide a key that holds an array/tensor with number of '
-                    'atoms in the axis/dim 1')
-            raise RuntimeError(msg)
-    return size
+def _get_num_conformers(*args: Any, **kwargs: Any) -> int:
+    # calculates number of conformers in some properties
+    common_keys = {'coordinates', 'coord', 'energies', 'forces'}
+    return _get_dim_size(common_keys, 0, *args, **kwargs)
 
 
-def _get_properties_size(molecule_group: Union[h5py.Group, Properties, NumpyProperties],
-                        flag_property: Optional[str] = None,
-                        supported_properties: Optional[Set[str]] = None) -> int:
+def _get_num_atoms(*args: Any, **kwargs: Any) -> int:
+    # calculates number of atoms in some properties
+    common_keys = {'coordinates', 'coord', 'forces'}
+    return _get_dim_size(common_keys, 1, *args, **kwargs)
+
+
+def _get_dim_size(common_keys: Set[str], dim: int,
+                  molecule_group: Union[h5py.Group, Properties, NumpyProperties],
+                  flag_property: Optional[str] = None,
+                  supported_properties: Optional[Set[str]] = None) -> int:
+    # Calculates the dimension size in a set of properties
     if flag_property is not None:
-        size = molecule_group[flag_property].shape[0]
+        size = molecule_group[flag_property].shape[dim]
     else:
         assert supported_properties is not None
-        if 'coordinates' in supported_properties:
-            size = molecule_group['coordinates'].shape[0]
-        elif 'coord' in supported_properties:
-            size = molecule_group['coord'].shape[0]
-        elif 'energies' in supported_properties:
-            size = molecule_group['energies'].shape[0]
-        elif 'forces' in supported_properties:
-            size = molecule_group['forces'].shape[0]
+        present_keys = common_keys.intersection(supported_properties)
+        if present_keys:
+            size = molecule_group[tuple(present_keys)[0]].shape[dim]
         else:
-            msg = ('Could not infer number of molecules in properties since '
-                    '"coordinates", "forces" and "energies" dont exist, please '
-                    'provide a key that holds an array/tensor with number of '
-                    'molecules in the axis/dim 0')
+            msg = (f'Could not infer dimension size of dim {dim} in properties '
+                   f' since {common_keys} are missing')
             raise RuntimeError(msg)
     return size
 
 
 class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
 
-    SUPPORTED_FILE_FORMATS = ('numpy', 'hdf5', 'single_hdf5', 'pickle')
+    SUPPORTED_FILE_FORMATS = ('numpy', 'hdf5', 'pickle')
     batch_size: int
 
     def __init__(self, store_dir: PathLike,
@@ -139,6 +123,8 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
 
         self.transform = transform
 
+        # We use pickle or numpy or hdf5 since saving in
+        # pytorch format is extremely slow
         def numpy_extractor(idx: int, paths: List[Path]) -> Properties:
             return {k: torch.as_tensor(v) for k, v in np.load(paths[idx]).items()}
 
@@ -150,41 +136,19 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
             with h5py.File(paths[idx], 'r') as f:
                 return {k: torch.as_tensor(v[()]) for k, v in f['/'].items()}
 
-        def single_hdf5_extractor(idx: int, group_keys: List[str], path: Path) -> Properties:
-            k = group_keys[idx]
-            with h5py.File(path, 'r') as f:
-                return {k: torch.as_tensor(v[()]) for k, v in f[k].items()}
+        extractor_dict = {'numpy': partial(numpy_extractor, paths=self.batch_paths),
+                          'pickle': partial(pickle_extractor, paths=self.batch_paths),
+                          'hdf5': partial(hdf5_extractor, paths=self.batch_paths)}
 
-        # We use pickle or numpy or hdf5 since saving in
-        # pytorch format is extremely slow
         if file_format is None:
             format_suffix_map = {'.npz': 'numpy', '.pkl': 'pickle', '.h5': 'hdf5'}
             file_format = format_suffix_map[suffix]
-            if file_format == 'hdf5' and ('single' in self.batch_paths[0].name):
-                file_format = 'single_hdf5'
 
         if file_format not in self.SUPPORTED_FILE_FORMATS:
             raise ValueError(f"The file format {file_format} is not in the"
                              f"supported formats {self.SUPPORTED_FILE_FORMATS}")
 
-        if file_format == 'numpy':
-            self.extractor = partial(numpy_extractor, paths=self.batch_paths)
-        elif file_format == 'pickle':
-            self.extractor = partial(pickle_extractor, paths=self.batch_paths)
-        elif file_format == 'hdf5':
-            self.extractor = partial(hdf5_extractor, paths=self.batch_paths)
-        elif file_format == 'single_hdf5':
-            warnings.warn('Depending on the implementation, a single HDF5 file '
-                          'may not support parallel reads, so using num_workers > 1 '
-                          'may have a detrimental effect on performance')
-            with h5py.File(self.batch_paths[0], 'r') as f:
-                keys = list(f.keys())
-                self._len = len(keys)
-                self.extractor = partial(single_hdf5_extractor, group_keys=keys, path=self.batch_paths[0])
-        else:
-            raise RuntimeError(f'Format for file with extension {suffix} '
-                                'could not be inferred, please specify explicitly')
-
+        self.extractor = extractor_dict[file_format]
         self._flag_property = flag_property
 
         try:
@@ -195,15 +159,14 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
         except Exception:
             warnings.warn("No creation log found, is_inplace_transformed assumed False")
             self.is_inplace_transformed = False
-
-            # all batches except the last are assumed to have the same length
+            # All batches except the last are assumed to have the same length
             first_batch = self[-1]
-            self.batch_size = _get_properties_size(first_batch, self._flag_property, set(first_batch.keys()))
+            self.batch_size = _get_num_conformers(first_batch, self._flag_property, set(first_batch.keys()))
 
         if drop_last:
-            # drops last batch only if it is smallest than the rest
+            # Drops last batch only if it is smallest than the rest
             last_batch = self[-1]
-            last_batch_size = _get_properties_size(last_batch, self._flag_property, set(last_batch.keys()))
+            last_batch_size = _get_num_conformers(last_batch, self._flag_property, set(last_batch.keys()))
             if last_batch_size < self.batch_size:
                 self.batch_paths.pop()
 
@@ -213,42 +176,29 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
               pin_memory: bool = True,
               verbose: bool = True,
               apply_transform: bool = True) -> 'AniBatchedDataset':
-        if verbose:
-            print(f"Cacheing split {self.split} of dataset, this may take some time...\n"
-                   "Important: Cacheing the dataset may use a lot of memory, be careful!")
+        r"""Save the complete dataset into RAM"""
 
-        self._data = [self.extractor(idx)
-                      for idx in tqdm(range(len(self)),
-                                      total=len(self),
-                                      disable=not verbose,
-                                      desc='Loading data into memory')]
-
+        desc = f'Cacheing {self.split}, Warning: this may take a lot of RAM!'
+        self._data = [self.extractor(idx) for idx in tqdm(range(len(self)),
+                                                          total=len(self),
+                                                          disable=not verbose,
+                                                          desc=desc)]
         if apply_transform:
-            if verbose:
-                print("Important: Transformations, if there are any present,\n"
-                      "will be applied once during cacheing and then discarded.\n"
-                      "If you want a different behavior pass apply_transform=False")
+            desc = "Applying transforms once and discarding"
             with torch.no_grad():
-                self._data = [self.transform(properties)
-                              for properties in tqdm(self._data,
-                                                     total=len(self),
-                                                     disable=not verbose,
-                                                     desc="Applying transforms if present")]
-            # discard transform after aplication
+                self._data = [self.transform(p) for p in tqdm(self._data,
+                                                              total=len(self),
+                                                              disable=not verbose,
+                                                              desc=desc)]
             self.transform = lambda x: x
-
-        # When the dataset is cached memory pinning is done here. When the
-        # dataset is not cached memory pinning is done by the torch DataLoader.
         if pin_memory:
-            if verbose:
-                print("Important: Cacheing pins memory automatically.\n"
-                      "Do **not** use pin_memory=True in torch.utils.data.DataLoader")
+            desc = 'Pinning memory, dont use pin_memory=True in the torch DataLoader'
             self._data = [{k: v.pin_memory()
                            for k, v in properties.items()}
                            for properties in tqdm(self._data,
                                                   total=len(self),
                                                   disable=not verbose,
-                                                  desc='Pinning memory')]
+                                                  desc=desc)]
 
         def memory_extractor(idx: int, ds: 'AniBatchedDataset') -> Properties:
             return ds._data[idx]
@@ -287,6 +237,16 @@ class AniH5DatasetList(Sequence['AniH5Dataset']):
         self._dataset_paths = [Path(p).resolve() for p in dataset_paths]
         self.num_conformer_groups = sum(d.num_conformer_groups for d in self._datasets)
         self.num_conformers = sum(d.num_conformers for d in self._datasets)
+
+    @contextmanager
+    def keep_open(self, mode='r'):
+        # Usage:
+        # with ds.keep_open('r') as ro_ds:
+        #     c = ro_ds.get_conformers('CH4')
+        # etc
+        with ExitStack() as stack:
+            self._datasets = [stack.enter_context(d.keep_open()) for d in self._datasets]
+            yield self
 
     @overload
     def __getitem__(self, idx: int) -> 'AniH5Dataset':
@@ -343,6 +303,7 @@ class AniH5Dataset(Mapping[str, Properties]):
                  supported_properties: Optional[Iterable[str]] = None,
                  verbose: bool = True):
 
+        self.hdf5_file = None
         self._all_nonbatch_keys = set(nonbatch_keys)
         self._verbose = verbose
         self._store_file = Path(store_file).resolve()
@@ -383,6 +344,18 @@ class AniH5Dataset(Mapping[str, Properties]):
 
         if validate_metadata:
             self.validate_metadata()
+
+    @contextmanager
+    def keep_open(self, mode='r'):
+        # Usage:
+        # with ds.keep_open('r') as ro_ds:
+        #     c = ro_ds.get_conformers('CH4')
+        # etc
+        self.hdf5_file = h5py.File(self._store_file, mode)
+        try:
+            yield self
+        finally:
+            self.hdf5_file.close()
 
     def _reset_internal_cache(self) -> None:
         self.group_sizes = OrderedDict()
@@ -478,7 +451,7 @@ class AniH5Dataset(Mapping[str, Properties]):
     def _update_group_sizes_cache(self, molecule_group: h5py.Group) -> None:
         # updates "group_sizes" which holds the batch dimension (number of
         # molecules) of all grups in the dataset.
-        group_size = _get_properties_size(molecule_group,
+        group_size = _get_num_conformers(molecule_group,
                                           self._flag_property,
                                           self.supported_properties)
         self.group_sizes.update({molecule_group.name[1:]: group_size})
@@ -640,7 +613,7 @@ class AniH5Dataset(Mapping[str, Properties]):
             return self, False
         with h5py.File(self._store_file, 'r+') as f:
             for group_name in self.keys():
-                size = _get_properties_size(f[group_name], self._flag_property, self.supported_properties)
+                size = _get_num_conformers(f[group_name], self._flag_property, self.supported_properties)
                 data = np.full(size, fill_value=fill_value, dtype=dtype)
                 f[group_name].create_dataset(dest_key, data=data)
         return self, bool(self.keys())
@@ -767,7 +740,7 @@ class AniH5Dataset(Mapping[str, Properties]):
     def delete_conformers(self, group_name: str, idx: Optional[Tensor] = None) -> DatasetWithFlag:
 
         all_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch_keys=False)
-        size = _get_properties_size(all_conformers, self._flag_property, self.supported_properties)
+        size = _get_num_conformers(all_conformers, self._flag_property, self.supported_properties)
 
         # Get the indices that will remain after deletion, duplicated entries
         # of idx are ignored
@@ -821,12 +794,13 @@ class AniH5Dataset(Mapping[str, Properties]):
                                     for k in conformer_group.keys()}
                 yield k, idx, single_conformer
 
+    @profile
     def get_numpy_conformers(self,
                              key: str,
                              idx: Optional[Tensor] = None,
                              include_properties: Optional[Sequence[str]] = None,
                              repeat_nonbatch_keys: bool = True) -> NumpyProperties:
-        # if the group or any of the properties does not exist this function
+        # If the group or any of the properties does not exist this function
         # raises a KeyError through h5py This function behaves correctly if idx
         # has duplicated entries, is out of order, indexes out of bounds or is
         # empty, since it directly passes index tensors to numpy.
@@ -835,8 +809,11 @@ class AniH5Dataset(Mapping[str, Properties]):
 
         nonbatch_keys, batch_keys = self._split_key_kinds(include_properties)
         all_keys = batch_keys.union(nonbatch_keys)
-
-        with h5py.File(self._store_file, 'r') as f:
+        with ExitStack() as stack:
+            if self.hdf5_file is not None:
+                f = self.hdf5_file
+            else:
+                f = stack.enter_context(h5py.File(self._store_file, 'r'))
             numpy_properties = {p: f[key][p][()] for p in all_keys}
             if idx is not None:
                 assert idx.dim() == 1, "index must be a dim 1 tensor"
@@ -846,18 +823,18 @@ class AniH5Dataset(Mapping[str, Properties]):
             numpy_properties['species'] = numpy_properties['species'].astype(str)
 
         if repeat_nonbatch_keys:
-            assert batch_keys, "Element keys can't be repeated since there are no batch keys"
-            num_conformations = _get_properties_size(numpy_properties, self._flag_property, batch_keys)
-            for k in nonbatch_keys:
-                numpy_properties[k] = np.tile(numpy_properties[k], (num_conformations, 1))
+            num_conformers = _get_num_conformers(numpy_properties, self._flag_property, batch_keys)
+            numpy_properties.update({k: np.tile(numpy_properties[k], (num_conformers, 1))
+                                     for k in nonbatch_keys})
         return numpy_properties
-
+    
+    @profile
     def get_conformers(self,
                        key: str,
                        idx: Optional[Tensor] = None,
                        include_properties: Optional[Sequence[str]] = None,
                        repeat_nonbatch_keys: bool = True) -> Properties:
-        # This function is the tensor counterpart of get_numpy_conformers
+        # The tensor counterpart of get_numpy_conformers
         numpy_properties = self.get_numpy_conformers(key, idx, include_properties, repeat_nonbatch_keys)
         nonbatch_keys, batch_keys = self._split_key_kinds(include_properties)
         all_keys = nonbatch_keys.union(batch_keys)
@@ -865,14 +842,20 @@ class AniH5Dataset(Mapping[str, Properties]):
 
         # 'species' gets special treatment since it has to be transformed to
         # atomic numbers in order to output a tensor.
+        # this code works correctly both if species is a "nonbatch key" or a
+        # "batch key", but performs a small optimization if it is a nonbatch
+        # key that must be repeated
         if 'species' in all_keys:
             species = numpy_properties['species']
-            if repeat_nonbatch_keys:
+            if 'species' in nonbatch_keys and repeat_nonbatch_keys:
                 tensor_species = self._symbols_to_numbers(species[0].tolist())
                 tensor_species = tensor_species.repeat(species.shape[0], 1)
             else:
-                tensor_species = self._symbols_to_numbers(species.tolist())
+                species_shape = species.shape
+                tensor_species = self._symbols_to_numbers(species.ravel().tolist())
+                tensor_species = tensor_species.view(*species_shape)
             properties.update({'species': tensor_species})
+
         return properties
 
     def _split_key_kinds(self, properties: Optional[Sequence[str]] = None) -> Tuple[Set[str], Set[str]]:

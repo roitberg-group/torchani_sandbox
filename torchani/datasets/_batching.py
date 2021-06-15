@@ -18,27 +18,6 @@ from .datasets import AniH5DatasetList
 from ._annotations import Properties, PathLike, Transform
 
 
-def _save_batch(path: Path, idx: int, batch: Properties, file_format: str) -> None:
-    # We use pickle, numpy or hdf5 since saving in
-    # pytorch format is extremely slow
-    batch = {k: v.numpy() for k, v in batch.items()}
-    if file_format == 'pickle':
-        with open(path.joinpath(f'batch{idx}.pkl'), 'wb') as batch_file:
-            pickle.dump(batch, batch_file)
-    elif file_format == 'numpy':
-        np.savez(path.joinpath(f'batch{idx}'), **batch)
-    elif file_format == 'hdf5':
-        with h5py.File(path.joinpath(f'batch{idx}.h5'), 'w-') as f:
-            for k, v in batch.items():
-                f.create_dataset(k, data=v)
-    elif file_format == 'single_hdf5':
-        with h5py.File(path.joinpath(f'{path.name}_single.h5'), 'a') as f:
-            f.create_group(f'batch{idx}')
-            g = f[f'batch{idx}']
-            for k, v in batch.items():
-                g.create_dataset(k, data=v)
-
-
 def create_batched_dataset(h5_path: PathLike,
                            dest_path: Optional[PathLike] = None,
                            shuffle: bool = True,
@@ -57,18 +36,13 @@ def create_batched_dataset(h5_path: PathLike,
         raise ValueError('Only one of ["folds", "splits"] should be specified')
 
     # NOTE: All the tensor manipulation in this function is handled in CPU
-    if file_format == 'single_hdf5':
-        warnings.warn('Depending on the implementation, a single HDF5 file may'
-                      'not support parallel reads, so using num_workers > 1 may'
-                      'have a detrimental effect on performance, its probably better'
-                      'to save in many hdf5 files with file_format=hdf5')
     if dest_path is None:
         dest_path = Path(f'./batched_dataset_{file_format}').resolve()
     dest_path = Path(dest_path).resolve()
 
     h5_path = Path(h5_path).resolve()
     if h5_path.is_dir():
-        # sort paths according to file names for reproducibility
+        # Sort paths according to file names for reproducibility
         paths_list = [p for p in h5_path.iterdir() if p.suffix == '.h5']
         filenames_list = [p.name for p in paths_list]
         sorted_paths = [p for _, p in sorted(zip(filenames_list, paths_list))]
@@ -142,17 +116,11 @@ def _get_random_generator(shuffle: bool = False, shuffle_seed: Optional[int] = N
         assert shuffle
         seed = shuffle_seed
     else:
-        # non deterministic seed
         seed = torch.random.seed()
 
-    rng: Optional[torch.Generator]
-
     if shuffle:
-        rng = torch.random.manual_seed(seed)
-    else:
-        rng = None
-
-    return rng
+        return torch.random.manual_seed(seed)
+    return None
 
 
 def _maybe_shuffle_indices(conformer_indices: Tensor,
@@ -278,61 +246,79 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
     # Important: to prevent possible bugs / errors, that may happen
     # due to incorrect conversion to indices, species is **always*
     # converted to atomic numbers when saving the batched dataset.
-    for split_path, indices_of_split in zip(split_paths.values(), conformer_splits):
-        all_batch_indices = torch.split(indices_of_split, batch_size)
+    with h5_datasets.keep_open() as ro_h5_datasets:
+        for split_path, indices_of_split in zip(split_paths.values(), conformer_splits):
+            all_batch_indices = torch.split(indices_of_split, batch_size)
 
-        all_batch_indices_packets = [all_batch_indices[j:j + max_batches_per_packet]
-                                    for j in range(0, len(all_batch_indices), max_batches_per_packet)]
-        num_batch_indices_packets = len(all_batch_indices_packets)
+            all_batch_indices_packets = [all_batch_indices[j:j + max_batches_per_packet]
+                                        for j in range(0, len(all_batch_indices), max_batches_per_packet)]
+            num_batch_indices_packets = len(all_batch_indices_packets)
 
-        overall_batch_idx = 0
-        for j, batch_indices_packet in enumerate(all_batch_indices_packets):
-            num_batches_in_packet = len(batch_indices_packet)
-            # Now first we cat and sort according to the first index in order to
-            # fetch all conformers of the same group simultaneously
-            batch_indices_cat = torch.cat(batch_indices_packet, 0)
-            indices_to_sort_batch_indices_cat = torch.argsort(batch_indices_cat[:, 0])
-            sorted_batch_indices_cat = batch_indices_cat[indices_to_sort_batch_indices_cat]
-            uniqued_idxs_cat, counts_cat = torch.unique_consecutive(sorted_batch_indices_cat[:, 0],
-                                                                    return_counts=True)
-            cumcounts_cat = cumsum_from_zero(counts_cat)
+            overall_batch_idx = 0
+            for j, batch_indices_packet in enumerate(all_batch_indices_packets):
+                num_batches_in_packet = len(batch_indices_packet)
+                # Now first we cat and sort according to the first index in order to
+                # fetch all conformers of the same group simultaneously
+                batch_indices_cat = torch.cat(batch_indices_packet, 0)
+                indices_to_sort_batch_indices_cat = torch.argsort(batch_indices_cat[:, 0])
+                sorted_batch_indices_cat = batch_indices_cat[indices_to_sort_batch_indices_cat]
+                uniqued_idxs_cat, counts_cat = torch.unique_consecutive(sorted_batch_indices_cat[:, 0],
+                                                                        return_counts=True)
+                cumcounts_cat = cumsum_from_zero(counts_cat)
 
-            # batch_sizes and indices_to_unsort are needed for the
-            # reverse operation once the conformers have been
-            # extracted
-            batch_sizes = [len(batch_indices) for batch_indices in batch_indices_packet]
-            indices_to_unsort_batch_cat = torch.argsort(indices_to_sort_batch_indices_cat)
-            assert len(batch_sizes) <= max_batches_per_packet
+                # batch_sizes and indices_to_unsort are needed for the
+                # reverse operation once the conformers have been
+                # extracted
+                batch_sizes = [len(batch_indices) for batch_indices in batch_indices_packet]
+                indices_to_unsort_batch_cat = torch.argsort(indices_to_sort_batch_indices_cat)
+                assert len(batch_sizes) <= max_batches_per_packet
 
-            all_conformers: List[Properties] = []
-            end_idxs = counts_cat + cumcounts_cat
-            groups_ranges = zip(uniqued_idxs_cat, cumcounts_cat, end_idxs)
-            desc = (f'Saving batch packet {j + 1} of {num_batch_indices_packets} '
-                     'of split {split_path.name} in format {file_format}')
-            for step, group_range in tqdm(enumerate(groups_ranges),
-                                          total=len(counts_cat),
-                                          desc=desc,
-                                          disable=not verbose):
-                group_idx, start_idx, end_idx = group_range
-                # select the specific group from the whole list of files
-                # and get a slice with the indices to extract the necessary
-                # conformers from the group for all batches in pack.
-                file_idx, group_key = file_idxs_and_group_keys[group_idx.item()]
-                selected_indices = sorted_batch_indices_cat[start_idx:end_idx, 1]
-                conformers = h5_datasets.get_conformers(file_idx, group_key,
-                                                                  selected_indices,
-                                                                  include_properties)
-                all_conformers.append(conformers)
-            batches_cat = pad_atomic_properties(all_conformers, padding)
-            # Now we need to reassign the conformers to the specified
-            # batches. Since to get here we cat'ed and sorted, to
-            # reassign we need to unsort and split.
-            # The format of this is {'species': (batch1, batch2, ...), 'coordinates': (batch1, batch2, ...)}
-            batch_packet_dict = {k: torch.split(t[indices_to_unsort_batch_cat], batch_sizes)
-                                 for k, t in batches_cat.items()}
+                all_conformers: List[Properties] = []
+                end_idxs = counts_cat + cumcounts_cat
+                groups_slices = zip(uniqued_idxs_cat, cumcounts_cat, end_idxs)
+                desc = (f'Saving batch packet {j + 1} of {num_batch_indices_packets} '
+                        f'of split {split_path.name} in format {file_format}')
+                for step, group_slice in tqdm(enumerate(groups_slices),
+                                              total=len(counts_cat),
+                                              desc=desc,
+                                              disable=not verbose):
+                    group_idx, start, end = group_slice
+                    # select the specific group from the whole list of files
+                    # and get a slice with the indices to extract the necessary
+                    # conformers from the group for all batches in pack.
+                    file_idx, group_key = file_idxs_and_group_keys[group_idx.item()]
+                    selected_indices = sorted_batch_indices_cat[start:end, 1]
+                    conformers = ro_h5_datasets.get_conformers(file_idx, group_key,
+                                                                      selected_indices,
+                                                                      include_properties)
+                    all_conformers.append(conformers)
+                batches_cat = pad_atomic_properties(all_conformers, padding)
+                # Now we need to reassign the conformers to the specified
+                # batches. Since to get here we cat'ed and sorted, to
+                # reassign we need to unsort and split.
+                # The format of this is {'species': (batch1, batch2, ...), 'coordinates': (batch1, batch2, ...)}
+                batch_packet_dict = {k: torch.split(t[indices_to_unsort_batch_cat], batch_sizes)
+                                     for k, t in batches_cat.items()}
 
-            for packet_batch_idx in range(num_batches_in_packet):
-                batch = {k: v[packet_batch_idx] for k, v in batch_packet_dict.items()}
-                batch = inplace_transform(batch)
-                _save_batch(split_path, overall_batch_idx, batch, file_format)
-                overall_batch_idx += 1
+                for packet_batch_idx in range(num_batches_in_packet):
+                    batch = {k: v[packet_batch_idx] for k, v in batch_packet_dict.items()}
+                    batch = inplace_transform(batch)
+                    _save_batch(split_path, overall_batch_idx, batch, file_format)
+                    overall_batch_idx += 1
+
+
+def _save_batch(path: Path, idx: int, batch: Properties, file_format: str) -> None:
+    # We use pickle, numpy or hdf5 since saving in
+    # pytorch format is extremely slow
+    batch = {k: v.numpy() for k, v in batch.items()}
+    if file_format == 'pickle':
+        with open(path.joinpath(f'batch{idx}.pkl'), 'wb') as batch_file:
+            pickle.dump(batch, batch_file)
+    elif file_format == 'numpy':
+        np.savez(path.joinpath(f'batch{idx}'), **batch)
+    elif file_format == 'hdf5':
+        with h5py.File(path.joinpath(f'batch{idx}.h5'), 'w-') as f:
+            for k, v in batch.items():
+                f.create_dataset(k, data=v)
+    else:
+        raise ValueError("Unknown file format")
