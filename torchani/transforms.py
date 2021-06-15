@@ -162,7 +162,7 @@ def calculate_saes(dataset: Union[DataLoader, AniBatchedDataset],
         dataset.transform = AtomicNumbersToIndices(elements)
         wrapped_ds = dataset
 
-    if wrapped_ds.is_inplace_transformed:
+    if wrapped_ds._is_inplace_transformed:
         warnings.warn("Dataset is inplace transformed, "
                       "SAE calculation may be incorrect "
                       "depending on the inplace transforms applied")

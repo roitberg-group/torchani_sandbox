@@ -368,7 +368,7 @@ class TestAniBatchedDataset(TestCase):
 
     def testFileFormats(self):
         # check that batches created with all file formats are equal
-        for ff in AniBatchedDataset.SUPPORTED_FILE_FORMATS:
+        for ff in AniBatchedDataset._SUFFIXES_AND_FORMATS.values():
 
             with warnings.catch_warnings():
                 ignore_unshuffled_warning()

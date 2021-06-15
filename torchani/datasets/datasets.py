@@ -6,7 +6,6 @@ import pickle
 import warnings
 import itertools
 from copy import deepcopy
-from pprint import pformat
 from pathlib import Path
 from functools import partial, wraps
 from contextlib import ExitStack, contextmanager
@@ -39,7 +38,7 @@ def _may_need_cache_update(method: Callable[..., DatasetWithFlag]) -> Callable[.
 
 
 def _create_numpy_properties_handle_str(group: h5py.Group, numpy_properties: NumpyProperties) -> None:
-    # creates a dataset with dtype bytes if the array is a string array
+    # creates a dataset with dtype bytes if the array is a string array,
     for k, v in numpy_properties.items():
         try:
             group.create_dataset(name=k, data=v)
@@ -80,7 +79,7 @@ def _get_dim_size(common_keys: Set[str], dim: int,
 
 class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
 
-    SUPPORTED_FILE_FORMATS = ('numpy', 'hdf5', 'pickle')
+    _SUFFIXES_AND_FORMATS = {'.npz': 'numpy', '.h5': 'hdf5', '.pkl': 'pickle'}
     batch_size: int
 
     def __init__(self, store_dir: PathLike,
@@ -114,17 +113,22 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
             batch_numbers.append(int(matches[0]))
         if not len(set(batch_numbers)) == len(batch_numbers):
             raise ValueError(f"Batch numbers must be unique but found {batch_numbers}")
-
         self.batch_paths = [p for _, p in sorted(zip(batch_numbers, self.batch_paths))]
 
         suffix = self.batch_paths[0].suffix
-        if not all([f.suffix == suffix for f in self.batch_paths]):
+        if not all(f.suffix == suffix for f in self.batch_paths):
             raise RuntimeError("Different file extensions were found in path, not supported")
 
         self.transform = transform
 
         # We use pickle or numpy or hdf5 since saving in
         # pytorch format is extremely slow
+        if file_format is None:
+            file_format = self._SUFFIXES_AND_FORMATS[suffix]
+        elif file_format not in self._SUFFIXES_AND_FORMATS.values():
+            raise ValueError(f"The file format {file_format} is not one of the"
+                             f"supported formats {self._SUFFIXES_AND_FORMATS.values()}")
+
         def numpy_extractor(idx: int, paths: List[Path]) -> Properties:
             return {k: torch.as_tensor(v) for k, v in np.load(paths[idx]).items()}
 
@@ -136,29 +140,19 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
             with h5py.File(paths[idx], 'r') as f:
                 return {k: torch.as_tensor(v[()]) for k, v in f['/'].items()}
 
-        extractor_dict = {'numpy': partial(numpy_extractor, paths=self.batch_paths),
+        self._extractor = {'numpy': partial(numpy_extractor, paths=self.batch_paths),
                           'pickle': partial(pickle_extractor, paths=self.batch_paths),
-                          'hdf5': partial(hdf5_extractor, paths=self.batch_paths)}
+                          'hdf5': partial(hdf5_extractor, paths=self.batch_paths)}[file_format]
 
-        if file_format is None:
-            format_suffix_map = {'.npz': 'numpy', '.pkl': 'pickle', '.h5': 'hdf5'}
-            file_format = format_suffix_map[suffix]
-
-        if file_format not in self.SUPPORTED_FILE_FORMATS:
-            raise ValueError(f"The file format {file_format} is not in the"
-                             f"supported formats {self.SUPPORTED_FILE_FORMATS}")
-
-        self.extractor = extractor_dict[file_format]
         self._flag_property = flag_property
-
         try:
             with open(self.store_dir.parent.joinpath('creation_log.json'), 'r') as logfile:
                 creation_log = json.load(logfile)
-            self.is_inplace_transformed = creation_log['is_inplace_transformed']
+            self._is_inplace_transformed = creation_log['is_inplace_transformed']
             self.batch_size = creation_log['batch_size']
-        except Exception:
+        except FileNotFoundError:
             warnings.warn("No creation log found, is_inplace_transformed assumed False")
-            self.is_inplace_transformed = False
+            self._is_inplace_transformed = False
             # All batches except the last are assumed to have the same length
             first_batch = self[-1]
             self.batch_size = _get_num_conformers(first_batch, self._flag_property, set(first_batch.keys()))
@@ -169,17 +163,16 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
             last_batch_size = _get_num_conformers(last_batch, self._flag_property, set(last_batch.keys()))
             if last_batch_size < self.batch_size:
                 self.batch_paths.pop()
-
         self._len = len(self.batch_paths)
 
     def cache(self,
               pin_memory: bool = True,
               verbose: bool = True,
               apply_transform: bool = True) -> 'AniBatchedDataset':
-        r"""Save the complete dataset into RAM"""
+        r"""Saves the full dataset into RAM"""
 
         desc = f'Cacheing {self.split}, Warning: this may take a lot of RAM!'
-        self._data = [self.extractor(idx) for idx in tqdm(range(len(self)),
+        self._data = [self._extractor(idx) for idx in tqdm(range(len(self)),
                                                           total=len(self),
                                                           disable=not verbose,
                                                           desc=desc)]
@@ -203,13 +196,13 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
         def memory_extractor(idx: int, ds: 'AniBatchedDataset') -> Properties:
             return ds._data[idx]
 
-        self.extractor = partial(memory_extractor, ds=self)
+        self._extractor = partial(memory_extractor, ds=self)
         return self
 
     def __getitem__(self, idx: int) -> Properties:
         # integral indices must be provided for compatibility with pytorch
         # DataLoader API
-        properties = self.extractor(idx)
+        properties = self._extractor(idx)
         with torch.no_grad():
             properties = self.transform(properties)
         return properties
@@ -298,7 +291,6 @@ class AniH5Dataset(Mapping[str, Properties]):
                  flag_property: Optional[str] = None,
                  nonbatch_keys: Sequence[str] = ('species', 'numbers'),
                  assume_standard: bool = False,
-                 validate_metadata: bool = False,
                  create: bool = False,
                  supported_properties: Optional[Iterable[str]] = None,
                  verbose: bool = True):
@@ -341,9 +333,6 @@ class AniH5Dataset(Mapping[str, Properties]):
             self._has_standard_format = assume_standard
             self._has_homogeneous_properties = False
             self._update_internal_cache()
-
-        if validate_metadata:
-            self.validate_metadata()
 
     @contextmanager
     def keep_open(self, mode='r'):
@@ -491,6 +480,16 @@ class AniH5Dataset(Mapping[str, Properties]):
     def __iter__(self) -> Iterator[str]:
         return iter(self.group_sizes.keys())
 
+    def __str__(self) -> str:
+        str_ = "ANI HDF5 Dataset object:\n"
+        str_ += f"Number of conformers: {self.num_conformers}\n"
+        str_ += f"Number of conformer groups: {self.num_conformer_groups}\n"
+        try:
+            str_ += f"Present elements: {self.present_species()}\n"
+        except ValueError:
+            str_ += "Present elements: Unknown\n"
+        return str_
+
     def append_conformers(self,
                           group_name: str,
                           properties: Properties) -> 'AniH5Dataset':
@@ -566,18 +565,6 @@ class AniH5Dataset(Mapping[str, Properties]):
             del f[group_name]
         self._update_internal_cache()
 
-    def __str__(self) -> str:
-        str_ = "ANI HDF5 Dataset object:\n"
-        str_ += f"Number of conformers: {self.num_conformers}\n"
-        str_ += f"Number of conformer groups: {self.num_conformer_groups}\n"
-        try:
-            str_ += f"Present elements: {self.present_species()}\n"
-        except ValueError:
-            str_ += "Present elements: Unknown\n"
-        str_ += "Metadata: \n"
-        str_ += pformat(self.get_metadata(), compact=True, width=200)
-        return str_
-
     def numpy_items(self, *args: Any, **kwargs: Any) -> Iterator[Tuple[str, NumpyProperties]]:
         for group_name in self.keys():
             yield group_name, self.get_numpy_conformers(group_name, *args, **kwargs)
@@ -612,8 +599,8 @@ class AniH5Dataset(Mapping[str, Properties]):
         with ExitStack() as stack:
             f = self._get_open_file(stack, 'r+')
             for group_name in self.keys():
-                symbols = np.asarray([PERIODIC_TABLE[j] for j in f[group_name][source_key][()]], dtype=str)
-                f[group_name].create_dataset(dest_key, data=symbols.astype(bytes))
+                symbols = np.asarray([PERIODIC_TABLE[j] for j in f[group_name][source_key][()]], dtype=bytes)
+                f[group_name].create_dataset(dest_key, data=symbols)
         return self, bool(self.keys())
 
     @_may_need_cache_update
@@ -754,8 +741,7 @@ class AniH5Dataset(Mapping[str, Properties]):
                 # if we deleted everything in the group then just return,
                 # otherwise we recreate the group using the good conformers
                 return self, True
-            good_conformers.update({k: all_conformers[k]
-                                    for k in self._supported_nonbatch_keys})
+            good_conformers.update({k: all_conformers[k] for k in self._supported_nonbatch_keys})
             f.create_group(group_name)
             _create_numpy_properties_handle_str(f[group_name], good_conformers)
         return self, True
