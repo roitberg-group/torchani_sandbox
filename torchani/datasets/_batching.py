@@ -46,9 +46,9 @@ def create_batched_dataset(h5_path: PathLike,
         paths_list = [p for p in h5_path.iterdir() if p.suffix == '.h5']
         filenames_list = [p.name for p in paths_list]
         sorted_paths = [p for _, p in sorted(zip(filenames_list, paths_list))]
-        h5_datasets = AniH5DatasetList(sorted_paths)
+        h5_dict = AniH5DatasetList(sorted_paths)
     elif h5_path.is_file():
-        h5_datasets = AniH5DatasetList([h5_path])
+        h5_dict = AniH5DatasetList([h5_path])
 
     # (1) Get all indices and shuffle them if needed
     #
@@ -56,8 +56,10 @@ def create_batched_dataset(h5_path: PathLike,
     # specific conformer, it is possible to just use one index for
     # everything but this is simpler at the cost of slightly more memory.
     # First we get all group sizes for all datasets concatenated in a tensor, in the same
-    # order as h5_datasets
-    group_sizes_values = torch.cat([torch.tensor(list(h5ds.group_sizes.values()), dtype=torch.long) for h5ds in h5_datasets])
+    # order as h5_map
+
+    group_sizes_values = torch.cat([torch.tensor(list(ds.group_sizes.values()), dtype=torch.long)
+                                   for ds in h5_dict._datasets.values()])
     conformer_indices = torch.cat([torch.stack((torch.full(size=(s.item(),), fill_value=j, dtype=torch.long),
                                      (torch.arange(0, s.item(), dtype=torch.long))), dim=-1)
                                      for j, s in enumerate(group_sizes_values)])
@@ -86,7 +88,7 @@ def create_batched_dataset(h5_path: PathLike,
                               inplace_transform,
                               file_format,
                               include_properties,
-                              h5_datasets,
+                              h5_dict,
                               padding,
                               batch_size,
                               max_batches_per_packet,
@@ -209,7 +211,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                               inplace_transform: Optional[Transform],
                               file_format: str,
                               include_properties: Optional[Sequence[str]],
-                              h5_datasets: AniH5DatasetList,
+                              h5_dict: AniH5DatasetList,
                               padding: Optional[Dict[str, float]],
                               batch_size: int,
                               max_batches_per_packet: int,
@@ -241,12 +243,12 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
         inplace_transform = lambda x: x  # noqa: E731
 
     # get all group keys concatenated in a list, with the associated file indexes
-    file_idxs_and_group_keys = list(h5_datasets.iter_file_key())
+    key_list = list(h5_dict.keys())
 
     # Important: to prevent possible bugs / errors, that may happen
     # due to incorrect conversion to indices, species is **always*
     # converted to atomic numbers when saving the batched dataset.
-    with h5_datasets.keep_open() as ro_h5_datasets:
+    with h5_dict.keep_open() as ro_h5_dict:
         for split_path, indices_of_split in zip(split_paths.values(), conformer_splits):
             all_batch_indices = torch.split(indices_of_split, batch_size)
 
@@ -286,10 +288,9 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                     # select the specific group from the whole list of files
                     # and get a slice with the indices to extract the necessary
                     # conformers from the group for all batches in pack.
-                    file_idx, group_key = file_idxs_and_group_keys[group_idx.item()]
                     selected_indices = sorted_batch_indices_cat[start:end, 1]
                     assert selected_indices.dim() == 1
-                    conformers = ro_h5_datasets.get_conformers(file_idx, group_key,
+                    conformers = ro_h5_dict.get_conformers(key_list[group_idx.item()],
                                                                       selected_indices,
                                                                       include_properties)
                     all_conformers.append(conformers)

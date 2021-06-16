@@ -1,10 +1,9 @@
 from typing import (Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set,
-                    overload, Mapping, Any, Iterable, Callable)
+                    Mapping, Any, Iterable, Callable)
 import json
 import re
 import pickle
 import warnings
-import itertools
 from copy import deepcopy
 from pathlib import Path
 from functools import partial, wraps
@@ -21,6 +20,7 @@ from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
 
 DatasetWithFlag = Tuple['AniH5Dataset', bool]
+KeyIdxProperties = Tuple[str, int, Properties]
 
 
 def _may_need_cache_update(method: Callable[..., DatasetWithFlag]) -> Callable[..., 'AniH5Dataset']:
@@ -103,7 +103,7 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
 
         if not self.batch_paths:
             raise RuntimeError("The path provided has no files")
-        if not all([f.is_file() for f in self.batch_paths]):
+        if not all(f.is_file() for f in self.batch_paths):
             raise RuntimeError("Subdirectories were found in path, this is not supported")
 
         # sort batches according to batch numbers, batches are assumed to have a name
@@ -218,68 +218,124 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
         return self._len
 
 
-class AniH5DatasetList(Sequence['AniH5Dataset']):
-
-    # essentially a wrapper around a list of AniH5Dataset instances
+class AniH5DatasetList(Mapping[str, Properties]):
+    # essentially a wrapper around a set of AniH5Dataset instances
     # to avoid boilerplate code to chain iterations over the datasets
-    def __init__(self, dataset_paths: Sequence[PathLike], **h5_dataset_kwargs: Any):
+    def __init__(self, dataset_paths: Union[PathLike, 'OrderedDict[str, PathLike]', Sequence[PathLike]],
+                 **h5_dataset_kwargs: Any):
 
-        self._datasets = [AniH5Dataset(p, **h5_dataset_kwargs) for p in dataset_paths]
-        self._dataset_paths = [Path(p).resolve() for p in dataset_paths]
-        self.num_conformer_groups = sum(d.num_conformer_groups for d in self._datasets)
-        self.num_conformers = sum(d.num_conformers for d in self._datasets)
+        if isinstance(dataset_paths, (Path, str)):
+            dataset_paths = [Path(dataset_paths).resolve()]
+
+        if isinstance(dataset_paths, OrderedDict):
+            od = [(k, AniH5Dataset(v, **h5_dataset_kwargs)) for k, v in dataset_paths]
+        else:
+            od = [(str(j), AniH5Dataset(v, **h5_dataset_kwargs)) for j, v in enumerate(dataset_paths)]
+
+        self._datasets = OrderedDict(od)
+        self._dataset_paths = [d._store_file for d in self._datasets.values()]
+        self.num_conformer_groups = sum(d.num_conformer_groups for d in self._datasets.values())
+        self.num_conformers = sum(d.num_conformers for d in self._datasets.values())
 
     @contextmanager
     def keep_open(self, mode='r'):
-        # Usage:
-        # with ds.keep_open('r') as ro_ds:
-        #     c = ro_ds.get_conformers('CH4')
-        # etc
         with ExitStack() as stack:
-            self._datasets = [stack.enter_context(d.keep_open(mode)) for d in self._datasets]
+            for k in self._datasets.keys():
+                self._datasets[k] = stack.enter_context(self._datasets[k].keep_open(mode))
             yield self
 
-    @overload
-    def __getitem__(self, idx: int) -> 'AniH5Dataset':
-        ...
-
-    @overload
-    def __getitem__(self, s: slice) -> Sequence['AniH5Dataset']:
-        ...
-
-    def __getitem__(self, idx: Union[int, slice]) -> Union['AniH5Dataset', Sequence['AniH5Dataset']]:
-        return self._datasets[idx]
+    def __getitem__(self, key: str) -> Properties:
+        name, k = self._parse_key(key)
+        return self._datasets[name][k]
 
     def __len__(self) -> int:
-        return len(self._datasets)
+        return self.num_conformer_groups
 
-    def get_conformers(self, file_idx: int, *args: Any, **kwargs: Any) -> Properties:
-        return self[file_idx].get_conformers(*args, **kwargs)
+    def __iter__(self) -> Iterator[str]:
+        for name, ds in self._datasets.items():
+            for k in ds:
+                yield f'{name}/{k}'
 
-    def get_numpy_conformers(self, file_idx: int, *args: Any, **kwargs: Any) -> NumpyProperties:
-        return self[file_idx].get_numpy_conformers(*args, **kwargs)
+    def present_species(self) -> Tuple[str, ...]:
+        present_species = {s for ds in self._datasets.values() for s in ds.present_species()}
+        return tuple(sorted(present_species))
 
-    def iter_file_key_idx_conformers(self, include_properties: Optional[Sequence[str]] = None,
-                                yield_file_idx: bool = True) -> Iterator[Tuple[Union[int, Path], str, int, Properties]]:
+    def append_conformers(self, key: str, *args: Any, **kwargs: Any) -> 'AniH5Dataset':
+        name, k = self._parse_key(key)
+        return self._datasets[name].append_conformers(k, *args, **kwargs)
 
-        # chain yields key, idx, conformers
-        k_i_c_chain = itertools.chain.from_iterable(d.iter_key_idx_conformers(include_properties)
-                                              for d in self._datasets)
-        repeats: Iterator[Union[int, Path]]
-        if yield_file_idx:
-            repeats = itertools.chain.from_iterable(itertools.repeat(j, d.num_conformers)
-                                                    for j, d in enumerate(self._datasets))
-        else:
-            repeats = itertools.chain.from_iterable(itertools.repeat(self._dataset_paths[j], d.num_conformers)
-                                                    for j, d in enumerate(self._datasets))
-        yield from ((f, k, i, c) for f, (k, i, c) in zip(repeats, k_i_c_chain))
+    def append_numpy_conformers(self, key: str, *args: Any, **kwargs: Any) -> 'AniH5Dataset':
+        name, k = self._parse_key(key)
+        return self._datasets[name].append_conformers(k, *args, **kwargs)
 
-    def iter_conformers(self, include_properties: Optional[Sequence[str]] = None) -> Iterator[Properties]:
-        for _, _, _, c in self.iter_file_key_idx_conformers(include_properties):
+    def get_conformers(self, key: str, *args: Any, **kwargs: Any) -> Properties:
+        name, k = self._parse_key(key)
+        return self._datasets[name].get_conformers(k, *args, **kwargs)
+
+    def get_numpy_conformers(self, key: str, *args: Any, **kwargs: Any) -> NumpyProperties:
+        name, k = self._parse_key(key)
+        return self._datasets[name].get_numpy_conformers(k, *args, **kwargs)
+
+    def delete_conformers(self, group_name: str, **kwargs) -> 'AniH5DatasetList':
+        name, k = self._parse_key(group_name)
+        self._datasets[name].delete_conformers(k)
+        return self
+
+    def delete_group(self, group_name: str) -> 'AniH5DatasetList':
+        name, k = self._parse_key(group_name)
+        self._datasets[name].delete_group(k)
+        return self
+
+    def iter_key_idx_conformers(self, *args: Any, **kwargs: Any) -> Iterator[KeyIdxProperties]:
+        for name, ds in self._datasets.items():
+            for k, i, c in ds.iter_key_idx_conformers(*args, **kwargs):
+                yield f'{name}/{k}', i, c
+
+    def iter_conformers(self, *args: Any, **kwargs: Any) -> Iterator[Properties]:
+        for _, _, c in self.iter_key_idx_conformers(*args, **kwargs):
             yield c
 
-    def iter_file_key(self) -> Iterator[Tuple[int, str]]:
-        yield from ((j, k) for j, d in enumerate(self._datasets) for k in d.group_sizes.keys())
+    def numpy_items(self, *args: Any, **kwargs: Any) -> Iterator[Tuple[str, NumpyProperties]]:
+        for group_name in self.keys():
+            yield group_name, self.get_numpy_conformers(group_name, *args, **kwargs)
+
+    def numpy_values(self, *args: Any, **kwargs: Any) -> Iterator[NumpyProperties]:
+        for group_name in self.keys():
+            yield self.get_numpy_conformers(group_name, *args, **kwargs)
+
+    def create_species_from_numbers(self, *args, **kwargs) -> 'AniH5DatasetList':
+        for ds in self._datasets.values():
+            ds.create_species_from_numbers(*args, **kwargs)
+        return self
+
+    def create_numbers_from_species(self, *args, **kwargs) -> 'AniH5DatasetList':
+        for ds in self._datasets.values():
+            ds.create_numbers_from_species(*args, **kwargs)
+        return self
+
+    def extract_slice_as_new_group(self, *args, **kwargs) -> 'AniH5DatasetList':
+        for ds in self._datasets.values():
+            ds.extract_slice_as_new_group(*args, **kwargs)
+        return self
+
+    def rename_groups_to_formulas(self, *args, **kwargs) -> 'AniH5DatasetList':
+        for ds in self._datasets.values():
+            ds.rename_groups_to_formulas(*args, **kwargs)
+        return self
+
+    def delete_properties(self, *args, **kwargs) -> 'AniH5DatasetList':
+        for ds in self._datasets.values():
+            ds.delete_properties(*args, **kwargs)
+        return self
+
+    def rename_properties(self, *args, **kwargs) -> 'AniH5DatasetList':
+        for ds in self._datasets.values():
+            ds.rename_properties(*args, **kwargs)
+        return self
+
+    def _parse_key(self, key: str) -> Tuple[str, str]:
+        tokens = key.split('/')
+        return tokens[0], '/'.join(tokens[1:])
 
 
 class AniH5Dataset(Mapping[str, Properties]):
@@ -422,7 +478,7 @@ class AniH5Dataset(Mapping[str, Properties]):
 
             # If the visitor function succeeded and this condition is met the
             # dataset must be in standard format
-            self._has_standard_format = not any(['/' in k[1:] for k in self.group_sizes.keys()])
+            self._has_standard_format = not any('/' in k[1:] for k in self.group_sizes.keys())
 
         self._has_homogeneous_properties = True
         self._update_counters_cache()
@@ -540,6 +596,21 @@ class AniH5Dataset(Mapping[str, Properties]):
         # properties appended.
         # NOTE: This function should never be called by user code since it
         # modifies properties in place.
+
+        # check for correct sorting which is necessary if conformers are
+        # grouped with nonbatch keys
+        if self._supported_nonbatch_keys:
+            if 'numbers' in properties.keys():
+                numbers = properties['numbers']
+            elif 'species' in properties.keys():
+                numbers = self._symbols_to_numbers(properties['species'])
+            else:
+                raise ValueError('Either species or numbers need to be present to append')
+            if not (np.sort(numbers) == numbers).all():
+                raise ValueError('Atomic numbers, species and all other properties that are'
+                                  ' atomic (such as coordinates and forces) must'
+                                  ' be sorted by atomic number before appending')
+
         with ExitStack() as stack:
             f = self._get_open_file(stack, 'r+')
             try:
@@ -555,13 +626,14 @@ class AniH5Dataset(Mapping[str, Properties]):
             _create_numpy_properties_handle_str(f[group_name], properties)
         return self, True
 
-    def delete_group(self, group_name: str) -> None:
+    def delete_group(self, group_name: str) -> 'AniH5Dataset':
         if group_name not in self.keys():
             raise KeyError(group_name)
         with ExitStack() as stack:
             f = self._get_open_file(stack, 'r+')
             del f[group_name]
         self._update_internal_cache()
+        return self
 
     def numpy_items(self, *args: Any, **kwargs: Any) -> Iterator[Tuple[str, NumpyProperties]]:
         for group_name in self.keys():
@@ -761,13 +833,11 @@ class AniH5Dataset(Mapping[str, Properties]):
             present_species.update(parser(species))
         return tuple(sorted(present_species))
 
-    def iter_conformers(self,
-                        include_properties: Optional[Sequence[str]] = None) -> Iterator[Properties]:
+    def iter_conformers(self, include_properties: Optional[Sequence[str]] = None) -> Iterator[Properties]:
         for _, _, c in self.iter_key_idx_conformers(include_properties):
             yield c
 
-    def iter_key_idx_conformers(self,
-                                include_properties: Optional[Sequence[str]] = None) -> Iterator[Tuple[str, int, Properties]]:
+    def iter_key_idx_conformers(self, include_properties: Optional[Sequence[str]] = None) -> Iterator[KeyIdxProperties]:
         for k, size in self.group_sizes.items():
             conformer_group = self.get_conformers(k, include_properties=include_properties)
             for idx in range(size):
@@ -795,9 +865,8 @@ class AniH5Dataset(Mapping[str, Properties]):
             numpy_properties['species'] = numpy_properties['species'].astype(str)
 
         if repeat_nonbatch_keys:
-            num_conformers = len(idx) if idx is not None else _get_num_conformers(numpy_properties, self._flag_property, batch_keys)
-            tile_shape = (num_conformers, 1) if idx is None or idx.dim() == 1 or idx is None else (1, )
-            # num_conformers =
+            num_conformers = _get_num_conformers(numpy_properties, self._flag_property, batch_keys)
+            tile_shape = (num_conformers, 1) if idx is None or idx.dim() == 1 else (1,)
             numpy_properties.update({k: np.tile(numpy_properties[k], tile_shape)
                                      for k in nonbatch_keys})
         return numpy_properties
