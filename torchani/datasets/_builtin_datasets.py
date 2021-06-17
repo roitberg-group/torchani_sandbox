@@ -69,7 +69,7 @@ class _BaseBuiltinRawDataset(AniH5Dataset):
                        download: bool = False,
                        archive: Optional[str] = None,
                        files_and_md5s: Optional['OrderedDict[str, str]'] = None,
-                       **h5_dataset_list_kwargs: Any):
+                       **h5_dataset_kwargs: Any):
         assert isinstance(files_and_md5s, OrderedDict)
 
         self._archive: str = '' if archive is None else archive
@@ -88,10 +88,10 @@ class _BaseBuiltinRawDataset(AniH5Dataset):
 
         # Order dataset paths using the order given in "files and md5s"
         filenames_order = {k: j for j, k in enumerate(self._files_and_md5s.keys())}
-        dataset_filenames_and_paths = sorted([(p.name, p) for p in dataset_paths], key=lambda tup: filenames_order[tup[0]])
-        dataset_paths = [p for _, p in dataset_filenames_and_paths]
-
-        super().__init__(dataset_paths, flag_property='coordinates', nonbatch_keys=('species',), **h5_dataset_list_kwargs)
+        filenames_and_paths = sorted([(p.with_suffix('').name, p) for p in dataset_paths],
+                                     key=lambda tup: filenames_order[tup[0]])
+        filenames_and_paths = OrderedDict(filenames_and_paths)
+        super().__init__(filenames_and_paths, flag_property='coordinates', nonbatch_keys=('species',), **h5_dataset_kwargs)
 
     def _check_hdf5_files_integrity(self, root: PathLike) -> bool:
         # Checks that all HDF5 files in the provided path are equal to the

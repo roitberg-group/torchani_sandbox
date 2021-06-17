@@ -22,7 +22,7 @@ from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 DatasetWithFlag = Tuple['_AniH5FileWrapper', bool]
 KeyIdxProperties = Tuple[str, int, Properties]
 Extractor = Callable[[int], Properties]
-T_ = TypeVar('T')
+T_ = TypeVar('T_')
 
 
 def _may_need_cache_update(method: Callable[..., DatasetWithFlag]) -> Callable[..., '_AniH5FileWrapper']:
@@ -256,7 +256,7 @@ class _AniDatasetBase(Mapping[str, Properties]):
 
     def __init__(self, *args, **kwargs) -> None:
         self.group_sizes: 'OrderedDict[str, int]' = OrderedDict()
-        self.supported_properties = set()
+        self.supported_properties: Set[str] = set()
         self.num_conformers = 0
         self.num_conformer_groups = 0
 
@@ -269,10 +269,10 @@ class _AniDatasetBase(Mapping[str, Properties]):
     def __iter__(self) -> Iterator[str]:
         return iter(self.group_sizes.keys())
 
-    def get_conformers(key: str, *args, **kwargs) -> Properties:
+    def get_conformers(self, key: str, *args, **kwargs) -> Properties:
         raise NotImplementedError
 
-    def get_numpy_conformers(key: str, *args, **kwargs) -> NumpyProperties:
+    def get_numpy_conformers(self, key: str, *args, **kwargs) -> NumpyProperties:
         raise NotImplementedError
 
     def numpy_items(self, *args, **kwargs) -> Iterator[Tuple[str, NumpyProperties]]:
@@ -309,7 +309,7 @@ class AniH5Dataset(_AniDatasetBase):
             dataset_paths = [Path(dataset_paths).resolve()]
 
         if isinstance(dataset_paths, OrderedDict):
-            od = [(k, _AniH5FileWrapper(v, **kwargs)) for k, v in dataset_paths]
+            od = [(k, _AniH5FileWrapper(v, **kwargs)) for k, v in dataset_paths.items()]
         else:
             od = [(str(j), _AniH5FileWrapper(v, **kwargs)) for j, v in enumerate(dataset_paths)]
         self._datasets = OrderedDict(od)
@@ -461,6 +461,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         try:
             yield self
         finally:
+            assert self.open_hdf5_file is not None
             self.open_hdf5_file.close()
 
     def _get_open_file(self, stack, mode: str = 'r'):
@@ -663,7 +664,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
                 f.create_group(group_name)
             except ValueError:
                 old_properties = self.get_numpy_conformers(group_name, repeat_nonbatch_keys=False)
-                if not all((old_properties == properties[k]).all() for k in self._supported_nonbatch_keys):
+                if not all((old_properties[k] == properties[k]).all() for k in self._supported_nonbatch_keys):
                     raise ValueError("Attempted to combine groups with different nonbatch key")
                 properties.update({k: np.concatenate((old_properties[k], properties[k]), axis=0)
                                    for k in self._supported_batch_keys})
