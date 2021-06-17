@@ -585,6 +585,8 @@ class _AniH5FileWrapper(_AniDatasetBase):
         # molecules) of all grups in the dataset.
         if self._flag_property is not None:
             raw_flag_property = self._alias_to_property.get(self._flag_property, self._flag_property)
+        else:
+            raw_flag_property = None
         raw_supported_properties = {self._alias_to_property.get(p, p) for p in self.supported_properties}
         group_size = _get_num_conformers(molecule_group,
                                          raw_flag_property,
@@ -719,7 +721,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
-                symbols = np.asarray([PERIODIC_TABLE[j] for j in f[group_name][source_key][()]])
+                symbols = np.asarray([PERIODIC_TABLE[j] for j in f[group_name][source_key]])
                 f[group_name].create_numpy_property(dest_key, data=symbols)
         return self, bool(self.keys())
 
@@ -733,7 +735,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
-                numbers = self._symbols_to_numbers(f[group_name][source_key][()].astype(str))
+                numbers = self._symbols_to_numbers(f[group_name][source_key].astype(str))
                 f[group_name].create_numpy_property(dest_key, data=numbers)
         return self, bool(self.keys())
 
@@ -896,7 +898,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         all_keys = batch_keys.union(nonbatch_keys)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r')
-            numpy_properties = {p: f[key][p][()] for p in all_keys}
+            numpy_properties = {p: f[key][p] for p in all_keys}
             if idx is not None:
                 assert idx.dim() <= 1, "index must be a 0 or 1 dim tensor"
                 numpy_properties.update({k: numpy_properties[k][idx.cpu().numpy()] for k in batch_keys})
@@ -1006,9 +1008,9 @@ class _ConformerGroupFacade(Mapping):
     def __delitem__(self, k: str):
         del self._group_obj[k]
 
-    def __getitem__(self, p: str):
+    def __getitem__(self, p: str) -> np.ndarray:
         p = self._property_to_alias.get(p, p)
-        return self._group_obj[p]
+        return self._group_obj[p][()]
 
     def __len__(self) -> int:
         return len(self._group_obj)
