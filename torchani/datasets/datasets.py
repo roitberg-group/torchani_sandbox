@@ -408,7 +408,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         # Private wrapper over HDF5 Files, with some modifications it could be
         # used for directories with npz files. It should never ever be used
         # directly by user code
-        self._open_store: Optional['_DatasetStoreFacade'] = None
+        self._open_store: Optional['_DatasetStoreAdaptor'] = None
         self._all_nonbatch_keys = set(nonbatch_keys)
         self._verbose = verbose
         self._store_file = Path(store_file).resolve()
@@ -462,18 +462,18 @@ class _AniH5FileWrapper(_AniDatasetBase):
             for c in ro_ds.iter_conformers():
                 print(c)
         may be much faster than directly iterating over conformers"""
-        self._open_store = _DatasetStoreFacade(h5py.File(self._store_file, mode), self._property_to_alias)
+        self._open_store = _DatasetStoreAdaptor(h5py.File(self._store_file, mode), self._property_to_alias)
         try:
             yield self
         finally:
             assert self._open_store is not None
             self._open_store.close()
 
-    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_DatasetStoreFacade':
+    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_DatasetStoreAdaptor':
         # This trick makes methods fetch the open file directly
         # if they are being called from inside a "keep_open" context
         if self._open_store is None:
-            return stack.enter_context(_DatasetStoreFacade(h5py.File(self._store_file, mode)))
+            return stack.enter_context(_DatasetStoreAdaptor(h5py.File(self._store_file, mode)))
         else:
             current_mode = self._open_store.mode
             assert mode in ['r+', 'r'], f"Unsupported mode {mode}"
@@ -942,7 +942,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         return nonbatch_keys, batch_keys
 
 
-class _DatasetStoreFacade(ContextManager['_DatasetStoreFacade'], Mapping[str, '_ConformerGroupFacade']):
+class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, '_ConformerGroupAdaptor']):
     # wrapper around an open hdf5 file object that
     # returns ConformerGroup facades which renames properties on access and
     # creation
@@ -955,7 +955,7 @@ class _DatasetStoreFacade(ContextManager['_DatasetStoreFacade'], Mapping[str, '_
     def __delitem__(self, k: str) -> None:
         del self._store_obj[k]
 
-    def create_conformer_group(self, name) -> '_ConformerGroupFacade':
+    def create_conformer_group(self, name) -> '_ConformerGroupAdaptor':
         # this wraps create_group
         self._store_obj.create_group(name)
         return self[name]
@@ -963,15 +963,15 @@ class _DatasetStoreFacade(ContextManager['_DatasetStoreFacade'], Mapping[str, '_
     def close(self) -> None:
         self._store_obj.close()
 
-    def __enter__(self) -> '_DatasetStoreFacade':
+    def __enter__(self) -> '_DatasetStoreAdaptor':
         self._store_obj.__enter__()
         return self
 
     def __exit__(self, *args) -> None:
         self._store_obj.__exit__(*args)
 
-    def __getitem__(self, name) -> '_ConformerGroupFacade':
-        return _ConformerGroupFacade(self._store_obj[name], self._property_to_alias)
+    def __getitem__(self, name) -> '_ConformerGroupAdaptor':
+        return _ConformerGroupAdaptor(self._store_obj[name], self._property_to_alias)
 
     def __len__(self) -> int:
         return len(self._store_obj)
@@ -980,7 +980,7 @@ class _DatasetStoreFacade(ContextManager['_DatasetStoreFacade'], Mapping[str, '_
         return iter(self._store_obj)
 
 
-class _ConformerGroupFacade(Mapping[str, np.ndarray]):
+class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
     def __init__(self, group_obj: h5py.Group, property_to_alias: Optional[Dict[str, str]] = None):
         self._group_obj = group_obj
         self._property_to_alias = property_to_alias if property_to_alias is not None else dict()
