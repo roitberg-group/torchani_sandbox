@@ -10,8 +10,7 @@ from ..models import BuiltinModel
 from ..utils import pad_atomic_properties, tqdm
 from ..nn import Ensemble
 from ._annotations import KeyIdx, Properties, PathLike, PathLikeODict
-from .datasets import (_AniH5FileWrapper,
-                       AniH5Dataset)
+from .datasets import AniH5Dataset
 
 
 def concatenate(*args, **kwargs):

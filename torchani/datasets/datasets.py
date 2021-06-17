@@ -43,7 +43,7 @@ def _broadcast(method: Callable[..., 'AniH5Dataset']) -> Callable[..., 'AniH5Dat
     # Decorator that wraps functions from AniH5Dataset that should be
     # delegated to all of its "_AniH5FileWrapper" members in a loop.
     @wraps(method)
-    def delegated_method_call(self, *args, **kwargs):
+    def delegated_method_call(self: 'AniH5Dataset', *args, **kwargs) -> 'AniH5Dataset':
         for ds in self._datasets.values():
             getattr(ds, method.__name__)(*args, **kwargs)
         return self._update_internal_cache()
@@ -54,7 +54,7 @@ def _delegate(method: Callable[..., 'AniH5Dataset']) -> Callable[..., 'AniH5Data
     # Decorator that wraps functions from AniH5Dataset that should be
     # delegated to one of its "_AniH5FileWrapper" members,
     @wraps(method)
-    def delegated_method_call(self, group_name: str, *args, **kwargs):
+    def delegated_method_call(self: 'AniH5Dataset', group_name: str, *args, **kwargs) -> 'AniH5Dataset':
         name, k = self._parse_key(group_name)
         getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
         return self._update_internal_cache()
@@ -65,7 +65,7 @@ def _delegate_with_return(method: Callable[..., T_]) -> Callable[..., T_]:
     # Decorator that wraps functions from AniH5Dataset that should be
     # delegated to one of its "_AniH5FileWrapper" members.
     @wraps(method)
-    def delegated_method_call(self, group_name: str, *args, **kwargs):
+    def delegated_method_call(self: 'AniH5Dataset', group_name: str, *args, **kwargs) -> Any:
         name, k = self._parse_key(group_name)
         return getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
     return delegated_method_call
@@ -263,7 +263,7 @@ class _AniDatasetBase(Mapping[str, Properties]):
     def __getitem__(self, key: str) -> Properties:
         return self.get_conformers(key)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.num_conformer_groups
 
     def __iter__(self) -> Iterator[str]:
@@ -328,7 +328,7 @@ class AniH5Dataset(_AniDatasetBase):
         self._update_internal_cache()
 
     @contextmanager
-    def keep_open(self, mode: str = 'r'):
+    def keep_open(self, mode: str = 'r') -> Iterator['AniH5Dataset']:
         with ExitStack() as stack:
             for k in self._datasets.keys():
                 self._datasets[k] = stack.enter_context(self._datasets[k].keep_open(mode))
@@ -453,7 +453,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
             self._update_internal_cache()
 
     @contextmanager
-    def keep_open(self, mode: str = 'r'):
+    def keep_open(self, mode: str = 'r') -> Iterator['_AniH5FileWrapper']:
         r"""Context manager to keep dataset open while iterating over it
         Usage:
         with ds.keep_open('r') as ro_ds:
