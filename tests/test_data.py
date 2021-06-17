@@ -615,8 +615,9 @@ class TestAniH5Dataset(TestCase):
             ds.delete_group(k)
 
         # reset supported properties
-        ds.supported_properties = {'coordinates', 'species', 'energies'}
-        ds._update_private_sets()
+        for fw in ds._datasets.values():
+            fw.supported_properties = {'coordinates', 'species', 'energies'}
+            fw._update_private_sets()
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
         with self.assertRaisesRegex(ValueError, 'Attempted to combine groups with different'):
