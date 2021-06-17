@@ -469,7 +469,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
             assert self._open_store is not None
             self._open_store.close()
 
-    def _get_open_store(self, stack, mode: str = 'r') -> '_DatasetStoreFacade':
+    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_DatasetStoreFacade':
         # This trick makes methods fetch the open file directly
         # if they are being called from inside a "keep_open" context
         if self._open_store is None:
@@ -980,10 +980,7 @@ class _DatasetStoreFacade(ContextManager['_DatasetStoreFacade'], Mapping[str, '_
         return iter(self._store_obj)
 
 
-class _ConformerGroupFacade(Mapping):
-    # I'm not sure what the output of this is, it is kind of like a numpy
-    # memmapped array wrapped in hdf5
-
+class _ConformerGroupFacade(Mapping[str, np.ndarray]):
     def __init__(self, group_obj: h5py.Group, property_to_alias: Optional[Dict[str, str]] = None):
         self._group_obj = group_obj
         self._property_to_alias = property_to_alias if property_to_alias is not None else dict()
@@ -1006,12 +1003,14 @@ class _ConformerGroupFacade(Mapping):
         dest = self._property_to_alias.get(dest, dest)
         self._group_obj.move(src, dest)
 
-    def __delitem__(self, k: str):
+    def __delitem__(self, k: str) -> None:
         del self._group_obj[k]
 
     def __getitem__(self, p: str) -> np.ndarray:
         p = self._property_to_alias.get(p, p)
-        return self._group_obj[p][()]
+        array = self._group_obj[p][()]
+        assert isinstance(array, np.ndarray)
+        return array
 
     def __len__(self) -> int:
         return len(self._group_obj)
