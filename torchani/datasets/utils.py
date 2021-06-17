@@ -13,16 +13,18 @@ from ._annotations import KeyIdx, Properties, PathLike, PathLikeODict
 from .datasets import AniH5Dataset
 
 
-def concatenate(*args, **kwargs):
-    return _copy_to_new_store(*args, **kwargs, concatenate=True)
+def concatenate(*args, **kwargs) -> 'AniH5Dataset':
+    kwargs['concatenate'] = True
+    return _copy_to_new_store(*args, **kwargs)
 
 
-def copy_linked_only(*args, **kwargs):
-    return _copy_to_new_store(*args, **kwargs, concatenate=False)
+def copy_linked_only(*args, **kwargs) -> 'AniH5Dataset':
+    kwargs['concatenate'] = False
+    return _copy_to_new_store(*args, **kwargs)
 
 
 def _copy_to_new_store(source: AniH5Dataset,
-                       dest_path: PathLike,
+                       dest_path: PathLike, *,
                        concatenate: bool = False,
                        verbose: bool = True,
                        delete_originals: bool = False) -> AniH5Dataset:

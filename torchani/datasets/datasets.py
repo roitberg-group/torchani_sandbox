@@ -1,5 +1,5 @@
 from typing import (Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set,
-                    Mapping, Any, Iterable, Callable, TypeVar)
+                    Mapping, Any, Iterable, Callable, TypeVar, ContextManager)
 import json
 import re
 import pickle
@@ -469,7 +469,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
             assert self._open_store is not None
             self._open_store.close()
 
-    def _get_open_store(self, stack, mode: str = 'r'):
+    def _get_open_store(self, stack, mode: str = 'r') -> '_DatasetStoreFacade':
         # This trick makes methods fetch the open file directly
         # if they are being called from inside a "keep_open" context
         if self._open_store is None:
@@ -583,6 +583,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
     def _update_group_sizes_cache(self, molecule_group: h5py.Group) -> None:
         # updates "group_sizes" which holds the batch dimension (number of
         # molecules) of all grups in the dataset.
+        raw_flag_property: Optional[str]
         if self._flag_property is not None:
             raw_flag_property = self._alias_to_property.get(self._flag_property, self._flag_property)
         else:
@@ -941,7 +942,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         return nonbatch_keys, batch_keys
 
 
-class _DatasetStoreFacade(Mapping[str, '_ConformerGroupFacade']):
+class _DatasetStoreFacade(ContextManager['_DatasetStoreFacade'], Mapping[str, '_ConformerGroupFacade']):
     # wrapper around an open hdf5 file object that
     # returns ConformerGroup facades which renames properties on access and
     # creation
