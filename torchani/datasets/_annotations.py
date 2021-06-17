@@ -15,4 +15,4 @@ NumpyProperties = Dict[str, 'ndarray[Any, Any]']
 MaybeNumpyProperties = TypeVar('MaybeNumpyProperties', NumpyProperties, Properties)
 
 PathLike = Union[str, Path]
-PathLikeODict = Union[OrderedDict[str, str], OrderedDict[str, Path]]
+PathLikeODict = Union['OrderedDict[str, str]', 'OrderedDict[str, Path]']
