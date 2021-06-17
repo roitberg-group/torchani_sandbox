@@ -408,7 +408,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         # Private wrapper over HDF5 Files, with some modifications it could be
         # used for directories with npz files. It should never ever be used
         # directly by user code
-        self._open_store = None
+        self._open_store: Optional['_DatasetStoreFacade'] = None
         self._all_nonbatch_keys = set(nonbatch_keys)
         self._verbose = verbose
         self._store_file = Path(store_file).resolve()
@@ -428,7 +428,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
             self._property_to_alias = dict()
         else:
             self._property_to_alias = property_aliases
-        self._alias_to_property = {v: k for k, v in self._property_to_alias}
+        self._alias_to_property = {v: k for k, v in self._property_to_alias.items()}
 
         if create:
             if supported_properties is None:
@@ -583,7 +583,8 @@ class _AniH5FileWrapper(_AniDatasetBase):
     def _update_group_sizes_cache(self, molecule_group: h5py.Group) -> None:
         # updates "group_sizes" which holds the batch dimension (number of
         # molecules) of all grups in the dataset.
-        raw_flag_property = self._alias_to_property.get(self._flag_property, self._flag_property)
+        if self._flag_property is not None:
+            raw_flag_property = self._alias_to_property.get(self._flag_property, self._flag_property)
         raw_supported_properties = {self._alias_to_property.get(p, p) for p in self.supported_properties}
         group_size = _get_num_conformers(molecule_group,
                                          raw_flag_property,
