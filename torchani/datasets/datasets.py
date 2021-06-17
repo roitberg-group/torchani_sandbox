@@ -22,7 +22,7 @@ from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 DatasetWithFlag = Tuple['_AniH5FileWrapper', bool]
 KeyIdxProperties = Tuple[str, int, Properties]
 Extractor = Callable[[int], Properties]
-T_ = TypeVar('T_')
+_T = TypeVar('_T')
 
 
 def _may_need_cache_update(method: Callable[..., DatasetWithFlag]) -> Callable[..., '_AniH5FileWrapper']:
@@ -61,7 +61,7 @@ def _delegate(method: Callable[..., 'AniH5Dataset']) -> Callable[..., 'AniH5Data
     return delegated_method_call
 
 
-def _delegate_with_return(method: Callable[..., T_]) -> Callable[..., T_]:
+def _delegate_with_return(method: Callable[..., _T]) -> Callable[..., _T]:
     # Decorator that wraps functions from AniH5Dataset that should be
     # delegated to one of its "_AniH5FileWrapper" members.
     @wraps(method)
