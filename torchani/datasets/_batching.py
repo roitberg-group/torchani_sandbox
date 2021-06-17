@@ -14,7 +14,7 @@ from torch import Tensor
 import numpy as np
 
 from ..utils import pad_atomic_properties, cumsum_from_zero, PADDING, tqdm
-from .datasets import AniH5DatasetList
+from .datasets import AniH5Dataset
 from ._annotations import Properties, PathLike, Transform
 
 
@@ -46,9 +46,9 @@ def create_batched_dataset(h5_path: PathLike,
         paths_list = [p for p in h5_path.iterdir() if p.suffix == '.h5']
         filenames_list = [p.name for p in paths_list]
         sorted_paths = [p for _, p in sorted(zip(filenames_list, paths_list))]
-        h5_dict = AniH5DatasetList(sorted_paths)
+        h5_dict = AniH5Dataset(sorted_paths)
     elif h5_path.is_file():
-        h5_dict = AniH5DatasetList([h5_path])
+        h5_dict = AniH5Dataset([h5_path])
 
     # (1) Get all indices and shuffle them if needed
     #
@@ -211,7 +211,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                               inplace_transform: Optional[Transform],
                               file_format: str,
                               include_properties: Optional[Sequence[str]],
-                              h5_dict: AniH5DatasetList,
+                              h5_dict: AniH5Dataset,
                               padding: Optional[Dict[str, float]],
                               batch_size: int,
                               max_batches_per_packet: int,

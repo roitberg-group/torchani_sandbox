@@ -10,8 +10,8 @@ from ..models import BuiltinModel
 from ..utils import pad_atomic_properties, tqdm
 from ..nn import Ensemble
 from ._annotations import KeyIdx, Properties, PathLike
-from .datasets import (AniH5Dataset,
-                       AniH5DatasetList,
+from .datasets import (_AniH5FileWrapper,
+                       AniH5Dataset,
                        DatasetWithFlag,
                        _create_numpy_properties_handle_str,
                        _may_need_cache_update)
@@ -34,33 +34,28 @@ def copy_linked_data(source: AniH5Dataset, dest: PathLike, verbose: bool = True)
             f.create_group(key)
             group = f[key]
             _create_numpy_properties_handle_str(group, properties)
-        # copy metadata
-        with h5py.File(source._store_file, 'r') as self_file:
-            for k, v in self_file.attrs.items():
-                f.attrs.create(k, data=v)
     # The copied dataset is re initialized to ensure it has been copied
     # properly
-    return AniH5Dataset(dest,
-                        flag_property=source._flag_property,
-                        validate_metadata=True,
-                        verbose=verbose)
+    return AniH5Dataset(dest, verbose=verbose)
+
+
+def concatenate_datasets(dest: PathLike, datasets: Sequence[PathLike], *args, **kwargs) -> '_AniH5FileWrapper':
+    ds_list = AniH5Dataset(datasets)
+    dest_ds = _AniH5FileWrapper(Path(dest).resolve(),
+                           create=True,
+                           supported_properties=ds_list[0].supported_properties)
+    return _concatenate_datasets(dest_ds, ds_list, *args, **kwargs)
 
 
 @_may_need_cache_update
-def concatenate_datasets(dest: PathLike,
-                         datasets: Sequence[PathLike],
-                         dest_name: str = '',
-                         verbose: bool = True) -> DatasetWithFlag:
-
-    ds_list = AniH5DatasetList(datasets)
-    dest_ds = AniH5Dataset(Path(dest).resolve(),
-                           create=True,
-                           supported_properties=ds_list[0].supported_properties)
+def _concatenate_datasets(dest_ds: _AniH5FileWrapper,
+                          ds_list: AniH5Dataset,
+                          dest_name: str = '',
+                          verbose: bool = True) -> DatasetWithFlag:
 
     with tqdm(desc='Concatenating datasets',
               total=ds_list.num_conformer_groups,
               disable=not verbose) as pbar:
-
         for j, ds in enumerate(ds_list):
             for k, properties in ds.numpy_items(repeat_nonbatch_keys=False):
                 # mypy does not know that @wrap'ed functions have this attribute
@@ -82,7 +77,8 @@ def filter_by_high_force(dataset: AniH5Dataset,
     with torch.no_grad():
         for key, g in tqdm(dataset.items(),
                            total=dataset.num_conformer_groups,
-                           desc=f"Filtering where any force component > {threshold} Ha / Angstrom"):
+                           desc=f"Filtering where any force component > {threshold} Ha / Angstrom",
+                           disable=not verbose):
             species, coordinates, forces = _fetch_splitted_properties(g, ('species', 'coordinates', 'forces'), max_split)
             for split_idx, (s, c, f) in enumerate(zip(species, coordinates, forces)):
                 s, c, f = s.to(device), c.to(device), f.to(device)
@@ -137,7 +133,7 @@ def filter_by_high_energy_error(dataset: AniH5Dataset,
     return _return_padded_conformations_or_none(bad_conformations, bad_keys_and_idxs, device)
 
 
-def _delete_bad_conformations(dataset: AniH5Dataset, bad_keys_and_idxs: List[KeyIdx], verbose: bool) -> None:
+def _delete_bad_conformations(dataset: _AniH5FileWrapper, bad_keys_and_idxs: List[KeyIdx], verbose: bool) -> None:
     if bad_keys_and_idxs:
         total_filtered = sum([v.numel() for (k, v) in bad_keys_and_idxs])
         for (key, idx) in bad_keys_and_idxs:
