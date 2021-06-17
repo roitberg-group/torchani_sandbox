@@ -1,95 +1,117 @@
 r"""Utilities for working with ANI Datasets"""
 import torch
-import h5py
 from pathlib import Path
 from torch import Tensor
-from typing import List, Tuple, Optional, Sequence
+from collections import OrderedDict
+from typing import List, Tuple, Optional, Sequence, Union
 
 from ..units import hartree2kcalmol
 from ..models import BuiltinModel
 from ..utils import pad_atomic_properties, tqdm
 from ..nn import Ensemble
-from ._annotations import KeyIdx, Properties, PathLike
+from ._annotations import KeyIdx, Properties, PathLike, PathLikeODict
 from .datasets import (_AniH5FileWrapper,
-                       AniH5Dataset,
-                       DatasetWithFlag,
-                       _create_numpy_properties_handle_str,
-                       _may_need_cache_update)
+                       AniH5Dataset)
 
 
-def copy_linked_data(source: AniH5Dataset, dest: PathLike, verbose: bool = True) -> AniH5Dataset:
-    # When a dataset is unlinked from the HDF5 file the underlying buffer
-    # is still part of the file, so the file does not reduce its size.
-    # After deleting conformations or properties the dataset can be rebuilt
-    # on a different location. Since only accessible data is copied the
-    # size is reduced.
-    num_groups: int = source.num_conformer_groups
-    dest = Path(dest).resolve()
-    with h5py.File(dest, 'x') as f:
-        # copy all groups
-        for key, properties in tqdm(source.numpy_items(repeat_nonbatch_keys=False),
-                                    desc='Copying linked data',
-                                    total=num_groups,
-                                    disable=not verbose):
-            f.create_group(key)
-            group = f[key]
-            _create_numpy_properties_handle_str(group, properties)
-    # The copied dataset is re initialized to ensure it has been copied
-    # properly
-    return AniH5Dataset(dest, verbose=verbose)
+def concatenate(*args, **kwargs):
+    return _copy_to_new_store(*args, **kwargs, concatenate=True)
 
 
-def concatenate_datasets(dest: PathLike, datasets: Sequence[PathLike], *args, **kwargs) -> '_AniH5FileWrapper':
-    ds_list = AniH5Dataset(datasets)
-    dest_ds = _AniH5FileWrapper(Path(dest).resolve(),
-                           create=True,
-                           supported_properties=ds_list[0].supported_properties)
-    return _concatenate_datasets(dest_ds, ds_list, *args, **kwargs)
+def copy_linked_only(*args, **kwargs):
+    return _copy_to_new_store(*args, **kwargs, concatenate=False)
 
 
-@_may_need_cache_update
-def _concatenate_datasets(dest_ds: _AniH5FileWrapper,
-                          ds_list: AniH5Dataset,
-                          dest_name: str = '',
-                          verbose: bool = True) -> DatasetWithFlag:
+def _copy_to_new_store(source: AniH5Dataset,
+                       dest_path: PathLike,
+                       concatenate: bool = False,
+                       verbose: bool = True,
+                       delete_originals: bool = False) -> AniH5Dataset:
+    # When a dataset or group is unlinked from the HDF5 file the underlying
+    # buffer is still part of the file, so the file does not reduce its size.
+    # After deleting conformations or properties the dataset can be rebuilt on
+    # a different location.
+    # Since only accessible data is copied the size is reduced. Even if
+    # multiple backends are supported in the future, copying without
+    # concatenating will always be specific to the HDF5 backend
+    source_names_and_paths = [(name, sub_ds._store_file)
+                              for name, sub_ds in source._datasets.items()]
+    source_od = OrderedDict(source_names_and_paths)
+    dest_path = Path(dest_path).resolve()
 
-    with tqdm(desc='Concatenating datasets',
-              total=ds_list.num_conformer_groups,
-              disable=not verbose) as pbar:
-        for j, ds in enumerate(ds_list):
-            for k, properties in ds.numpy_items(repeat_nonbatch_keys=False):
-                # mypy does not know that @wrap'ed functions have this attribute
-                # and this is ugly to fix
-                needs_update = dest_ds.append_numpy_conformers.__wrapped__(dest_ds, properties, k)[1]  # type: ignore
-                pbar.update()
-    return dest_ds, needs_update
+    dest_paths: Union[PathLikeODict, PathLike]
+    if concatenate:
+        if dest_path.exists():
+            raise ValueError('Destination path must be a new file name')
+        if not source._num_subds > 1:
+            raise ValueError("Need more than one subdataset to concatenate")
+        desc = 'Concatenating datasets'
+        dest_paths = dest_path
+    else:
+        if not dest_path.is_dir():
+            raise ValueError('Destination path must be a directory')
+        desc = 'Copying data to new store'
+        dest_paths = source_od
+
+    dest = AniH5Dataset(dest_paths, create=True, supported_properties=source.supported_properties)
+    for k, v in tqdm(source.numpy_items(repeat_nonbatch_keys=False),
+                     desc=desc,
+                     total=source.num_conformer_groups,
+                     disable=not verbose):
+        if concatenate:
+            k = k.split('/')[-1]
+        dest.append_numpy_conformers(k, v)
+    if delete_originals:
+        for p in tqdm(source_od.values(),
+                      desc='Deleting original store',
+                      total=len(source_od),
+                      disable=not verbose):
+            p.unlink()
+    return dest
 
 
 def filter_by_high_force(dataset: AniH5Dataset,
-                         threshold: int = 2,
+                         threshold: float = 2.0,
+                         criteria: str = 'components',
                          device: str = 'cpu',
                          max_split: int = 2560,
                          delete_inplace: bool = False,
                          verbose: bool = True) -> Optional[Tuple[Tensor, Tensor, List[KeyIdx]]]:
-    # Threshold is 2 Ha / Angstrom
+    if criteria == 'magnitude':
+        desc = f"Filtering where force magnitude > {threshold} Ha / Angstrom"
+    elif criteria == 'components':
+        desc = f"Filtering where any force component > {threshold} Ha / Angstrom"
+    else:
+        raise ValueError('Criteria must be one of "magnitude" or "components"')
+
+    # Threshold is by default 2 Ha / Angstrom
     bad_conformations: List[Properties] = []
     bad_keys_and_idxs: List[KeyIdx] = []
     with torch.no_grad():
         for key, g in tqdm(dataset.items(),
                            total=dataset.num_conformer_groups,
-                           desc=f"Filtering where any force component > {threshold} Ha / Angstrom",
+                           desc=desc,
                            disable=not verbose):
-            species, coordinates, forces = _fetch_splitted_properties(g, ('species', 'coordinates', 'forces'), max_split)
+            # properties are split into pieces of up to max_split to avoid
+            # loading large groups into GPU memory at the same time and
+            # calculating over them
+            species, coordinates, forces = _fetch_splitted(g, ('species', 'coordinates', 'forces'), max_split)
             for split_idx, (s, c, f) in enumerate(zip(species, coordinates, forces)):
                 s, c, f = s.to(device), c.to(device), f.to(device)
-                # any over atoms and over x y z
-                bad_idxs = (f.abs() > threshold).any(dim=-1).any(dim=-1).nonzero().squeeze()
+                if criteria == 'components':
+                    # any over atoms and over x y z
+                    bad_idxs = (f.abs() > threshold).any(dim=-1).any(dim=-1).nonzero().squeeze()
+                elif criteria == 'magnitude':
+                    # any over atoms
+                    bad_idxs = (f.norm(-1) > threshold).any(dim=-1).nonzero().squeeze()
                 if bad_idxs.numel() > 0:
                     _append_bad_keys_and_idxs(bad_idxs, bad_keys_and_idxs, key, split_idx, max_split)
                     _append_bad_conformations(bad_idxs, bad_conformations, s, c)
                 del s, c, f
     if delete_inplace:
         _delete_bad_conformations(dataset, bad_keys_and_idxs, verbose)
+    # None is returned if no bad_idxs are found (bad_conformations is an empty
+    # list in this case)
     return _return_padded_conformations_or_none(bad_conformations, bad_keys_and_idxs, device)
 
 
@@ -103,16 +125,14 @@ def filter_by_high_energy_error(dataset: AniH5Dataset,
     bad_conformations: List[Properties] = []
     bad_keys_and_idxs: List[KeyIdx] = []
     model = model.to(device)
-    assert model.periodic_table_index, "Periodic table index must be True to filter high energy error"
+    if not model.periodic_table_index:
+        raise ValueError("Periodic table index must be True to filter high energy error")
     is_ensemble = isinstance(model.neural_networks, Ensemble)
     with torch.no_grad():
         for key, g in tqdm(dataset.items(),
                            total=dataset.num_conformer_groups,
                            desc=f"Filtering where any |energy error| > {threshold} kcal / mol"):
-            # properties are split into pieces of up to max_split to avoid
-            # loading large groups into GPU memory at the same time and
-            # calculating over them
-            species, coordinates, target_energies = _fetch_splitted_properties(g, ('species', 'coordinates', 'energies'), max_split)
+            species, coordinates, target_energies = _fetch_splitted(g, ('species', 'coordinates', 'energies'), max_split)
             for split_idx, (s, c, ta) in enumerate(zip(species, coordinates, target_energies)):
                 s, c, ta = s.to(device), c.to(device), ta.to(device)
                 if is_ensemble:
@@ -128,15 +148,16 @@ def filter_by_high_energy_error(dataset: AniH5Dataset,
                 del s, c, ta
     if delete_inplace:
         _delete_bad_conformations(dataset, bad_keys_and_idxs, verbose)
-    # None is returned if no bad_idxs are found (bad_conformations is an empty
-    # list in this case)
     return _return_padded_conformations_or_none(bad_conformations, bad_keys_and_idxs, device)
 
 
-def _delete_bad_conformations(dataset: _AniH5FileWrapper, bad_keys_and_idxs: List[KeyIdx], verbose: bool) -> None:
+def _delete_bad_conformations(dataset: AniH5Dataset, bad_keys_and_idxs: List[KeyIdx], verbose: bool) -> None:
     if bad_keys_and_idxs:
         total_filtered = sum([v.numel() for (k, v) in bad_keys_and_idxs])
-        for (key, idx) in bad_keys_and_idxs:
+        for (key, idx) in tqdm(bad_keys_and_idxs,
+                               total=len(bad_keys_and_idxs),
+                               desc='Deleting filtered conformers',
+                               disable=not verbose):
             dataset.delete_conformers(key, idx)
     else:
         total_filtered = 0
@@ -154,7 +175,7 @@ def _return_padded_conformations_or_none(bad_conformations: List[Properties],
         return None
 
 
-def _fetch_splitted_properties(properties: Properties, keys_to_split: Sequence[str], max_split: int) -> Tuple[Tuple[Tensor, ...], ...]:
+def _fetch_splitted(properties: Properties, keys_to_split: Sequence[str], max_split: int) -> Tuple[Tuple[Tensor, ...], ...]:
     # NOTE: len of output tuple is the same as len of input keys_to_split
     return tuple(torch.split(properties[k], max_split) for k in keys_to_split)
 

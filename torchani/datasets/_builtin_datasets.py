@@ -88,9 +88,9 @@ class _BaseBuiltinRawDataset(AniH5Dataset):
 
         # Order dataset paths using the order given in "files and md5s"
         filenames_order = {k: j for j, k in enumerate(self._files_and_md5s.keys())}
-        filenames_and_paths = sorted([(p.with_suffix('').name, p) for p in dataset_paths],
+        _filenames_and_paths = sorted([(p.with_suffix('').name, p) for p in dataset_paths],
                                      key=lambda tup: filenames_order[tup[0]])
-        filenames_and_paths = OrderedDict(filenames_and_paths)
+        filenames_and_paths = OrderedDict(_filenames_and_paths)
         super().__init__(filenames_and_paths, flag_property='coordinates', nonbatch_keys=('species',), **h5_dataset_kwargs)
 
     def _check_hdf5_files_integrity(self, root: PathLike) -> bool:

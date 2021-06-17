@@ -15,7 +15,7 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from ._annotations import Transform, Properties, NumpyProperties, MaybeNumpyProperties, PathLike, DTypeLike
+from ._annotations import Transform, Properties, NumpyProperties, MaybeNumpyProperties, PathLike, DTypeLike, PathLikeODict
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
 
@@ -269,10 +269,18 @@ class _AniDatasetBase(Mapping[str, Properties]):
     def __iter__(self) -> Iterator[str]:
         return iter(self.group_sizes.keys())
 
-    def get_conformers(self, key: str, *args, **kwargs) -> Properties:
+    def get_conformers(self,
+                       key: str,
+                       idx: Optional[Tensor] = None,
+                       include_properties: Optional[Sequence[str]] = None,
+                       repeat_nonbatch_keys: bool = True) -> Properties:
         raise NotImplementedError
 
-    def get_numpy_conformers(self, key: str, *args, **kwargs) -> NumpyProperties:
+    def get_numpy_conformers(self,
+                             key: str,
+                             idx: Optional[Tensor] = None,
+                             include_properties: Optional[Sequence[str]] = None,
+                             repeat_nonbatch_keys: bool = True) -> NumpyProperties:
         raise NotImplementedError
 
     def numpy_items(self, *args, **kwargs) -> Iterator[Tuple[str, NumpyProperties]]:
@@ -302,7 +310,7 @@ class AniH5Dataset(_AniDatasetBase):
     # method in one specific FileWrapper "_broadcast" calls method in all the
     # FileWrappers and "_delegate_with_return" is like "_delegate" but has a
     # return value other than self, so it can't be chained
-    def __init__(self, dataset_paths: Union[PathLike, 'OrderedDict[str, PathLike]', Sequence[PathLike]], **kwargs):
+    def __init__(self, dataset_paths: Union[PathLike, PathLikeODict, Sequence[PathLike]], **kwargs):
         super().__init__()
 
         if isinstance(dataset_paths, (Path, str)):
