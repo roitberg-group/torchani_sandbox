@@ -71,16 +71,6 @@ def _delegate_with_return(method: Callable[..., T_]) -> Callable[..., T_]:
     return delegated_method_call
 
 
-def _create_numpy_properties_handle_str(group: h5py.Group, numpy_properties: NumpyProperties) -> None:
-    # Fills a group with a dict of ndarrays; creates a dataset with dtype bytes
-    # if the array is a string array,
-    for k, v in numpy_properties.items():
-        try:
-            group.create_dataset(name=k, data=v)
-        except TypeError:
-            group.create_dataset(name=k, data=v.astype(bytes))
-
-
 def _get_num_conformers(*args, **kwargs) -> int:
     # calculates number of conformers in some properties
     common_keys = {'coordinates', 'coord', 'energies', 'forces'}
@@ -412,12 +402,13 @@ class _AniH5FileWrapper(_AniDatasetBase):
                  assume_standard: bool = False,
                  create: bool = False,
                  supported_properties: Optional[Iterable[str]] = None,
+                 property_aliases: Optional[Dict[str, str]] = None,
                  verbose: bool = True):
         super().__init__()
         # Private wrapper over HDF5 Files, with some modifications it could be
         # used for directories with npz files. It should never ever be used
         # directly by user code
-        self.open_hdf5_file = None
+        self._open_store = None
         self._all_nonbatch_keys = set(nonbatch_keys)
         self._verbose = verbose
         self._store_file = Path(store_file).resolve()
@@ -432,6 +423,12 @@ class _AniH5FileWrapper(_AniDatasetBase):
         # something in the dataset changes, and when it is initialized
         self._supported_batch_keys: Set[str] = set()
         self._supported_nonbatch_keys: Set[str] = set()
+
+        if property_aliases is None:
+            self._property_to_alias = dict()
+        else:
+            self._property_to_alias = property_aliases
+        self._alias_to_property = {v: k for k, v in self._property_to_alias}
 
         if create:
             if supported_properties is None:
@@ -465,26 +462,26 @@ class _AniH5FileWrapper(_AniDatasetBase):
             for c in ro_ds.iter_conformers():
                 print(c)
         may be much faster than directly iterating over conformers"""
-        self.open_hdf5_file = h5py.File(self._store_file, mode)
+        self._open_store = _DatasetStoreFacade(h5py.File(self._store_file, mode), self._property_to_alias)
         try:
             yield self
         finally:
-            assert self.open_hdf5_file is not None
-            self.open_hdf5_file.close()
+            assert self._open_store is not None
+            self._open_store.close()
 
-    def _get_open_file(self, stack, mode: str = 'r'):
+    def _get_open_store(self, stack, mode: str = 'r'):
         # This trick makes methods fetch the open file directly
         # if they are being called from inside a "keep_open" context
-        if self.open_hdf5_file is None:
-            return stack.enter_context(h5py.File(self._store_file, mode))
+        if self._open_store is None:
+            return stack.enter_context(_DatasetStoreFacade(h5py.File(self._store_file, mode)))
         else:
-            current_mode = self.open_hdf5_file.mode
+            current_mode = self._open_store.mode
             assert mode in ['r+', 'r'], f"Unsupported mode {mode}"
             if mode == 'r+' and current_mode == 'r':
                 msg = ('Tried to open a file with mode "r+" but the dataset is'
                        ' currently keeping its store file open with mode "r"')
                 raise RuntimeError(msg)
-            return self.open_hdf5_file
+            return self._open_store
 
     def _reset_internal_cache(self) -> None:
         self.group_sizes = OrderedDict()
@@ -504,8 +501,9 @@ class _AniH5FileWrapper(_AniDatasetBase):
             with tqdm(desc=f'Scanning {self._store_file.name} assuming standard format',
                       disable=not self._verbose) as pbar:
                 with ExitStack() as stack:
-                    f = self._get_open_file(stack, 'r')
-                    for k, g in f.items():
+                    # get the raw hdf5 file object for manipulations inside this function
+                    raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
+                    for k, g in raw_hdf5_store.items():
                         pbar.update()
                         self._update_supported_properties_cache(g)
                         self._update_group_sizes_cache(g)
@@ -537,10 +535,10 @@ class _AniH5FileWrapper(_AniDatasetBase):
                 dataset._update_group_sizes_cache(g)
 
             with ExitStack() as stack:
-                f = self._get_open_file(stack, 'r')
+                raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
                 with tqdm(desc='Verifying format correctness',
                           disable=not self._verbose) as pbar:
-                    f.visititems(partial(visitor_fn, dataset=self, pbar=pbar))
+                    raw_hdf5_store.visititems(partial(visitor_fn, dataset=self, pbar=pbar))
 
             # If the visitor function succeeded and this condition is met the
             # dataset must be in standard format
@@ -561,12 +559,14 @@ class _AniH5FileWrapper(_AniDatasetBase):
         # "_supported_batch_keys" variables. "element keys" are keys that
         # don't have a batch dimension, their shape must be (atoms,)
         if not self.supported_properties:
-            self.supported_properties = set(molecule_group.keys())
+            raw_supported_properties = set(molecule_group.keys())
+            self.supported_properties = {self._property_to_alias.get(p, p) for p in raw_supported_properties}
             if self._flag_property is not None and self._flag_property not in self.supported_properties:
                 msg = f"Flag property {self._flag_property} not found in {self.supported_properties}"
                 raise RuntimeError(msg)
         elif not self._checked_homogeneous_properties:
-            found_properties = set(molecule_group.keys())
+            raw_found_properties = set(molecule_group.keys())
+            found_properties = {self._property_to_alias.get(p, p) for p in raw_found_properties}
             if not found_properties == self.supported_properties:
                 msg = (f"Group {molecule_group.name} has bad keys, "
                        f"found {found_properties}, but expected "
@@ -583,9 +583,11 @@ class _AniH5FileWrapper(_AniDatasetBase):
     def _update_group_sizes_cache(self, molecule_group: h5py.Group) -> None:
         # updates "group_sizes" which holds the batch dimension (number of
         # molecules) of all grups in the dataset.
+        raw_flag_property = self._alias_to_property.get(self._flag_property, self._flag_property)
+        raw_supported_properties = {self._alias_to_property.get(p, p) for p in self.supported_properties}
         group_size = _get_num_conformers(molecule_group,
-                                         self._flag_property,
-                                         self.supported_properties)
+                                         raw_flag_property,
+                                         raw_supported_properties)
         self.group_sizes.update({molecule_group.name[1:]: group_size})
 
     def __str__(self) -> str:
@@ -667,9 +669,9 @@ class _AniH5FileWrapper(_AniDatasetBase):
                                   ' be sorted by atomic number before appending')
 
         with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r+')
+            f = self._get_open_store(stack, 'r+')
             try:
-                f.create_group(group_name)
+                group = f.create_conformer_group(group_name)
             except ValueError:
                 old_properties = self.get_numpy_conformers(group_name, repeat_nonbatch_keys=False)
                 if not all((old_properties[k] == properties[k]).all() for k in self._supported_nonbatch_keys):
@@ -677,8 +679,8 @@ class _AniH5FileWrapper(_AniDatasetBase):
                 properties.update({k: np.concatenate((old_properties[k], properties[k]), axis=0)
                                    for k in self._supported_batch_keys})
                 del f[group_name]
-                f.create_group(group_name)
-            _create_numpy_properties_handle_str(f[group_name], properties)
+                group = f.create_conformer_group(group_name)
+            group.create_numpy_properties(properties)
         return self, True
 
     @_may_need_cache_update
@@ -686,7 +688,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         if group_name not in self.keys():
             raise KeyError(group_name)
         with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r+')
+            f = self._get_open_store(stack, 'r+')
             del f[group_name]
         return self, True
 
@@ -699,11 +701,11 @@ class _AniH5FileWrapper(_AniDatasetBase):
         if self._should_exit_early(dest_key=dest_key, strict=strict):
             return self, False
         with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r+')
+            f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
                 size = _get_num_conformers(f[group_name], self._flag_property, self.supported_properties)
                 data = np.full(size, fill_value=fill_value, dtype=dtype)
-                f[group_name].create_dataset(dest_key, data=data)
+                f[group_name].create_numpy_property(dest_key, data=data)
         return self, bool(self.keys())
 
     @_may_need_cache_update
@@ -714,10 +716,10 @@ class _AniH5FileWrapper(_AniDatasetBase):
         if self._should_exit_early(source_key, dest_key, strict):
             return self, False
         with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r+')
+            f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
-                symbols = np.asarray([PERIODIC_TABLE[j] for j in f[group_name][source_key][()]], dtype=bytes)
-                f[group_name].create_dataset(dest_key, data=symbols)
+                symbols = np.asarray([PERIODIC_TABLE[j] for j in f[group_name][source_key][()]])
+                f[group_name].create_numpy_property(dest_key, data=symbols)
         return self, bool(self.keys())
 
     @_may_need_cache_update
@@ -728,10 +730,10 @@ class _AniH5FileWrapper(_AniDatasetBase):
         if self._should_exit_early(source_key, dest_key, strict):
             return self, False
         with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r+')
+            f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
                 numbers = self._symbols_to_numbers(f[group_name][source_key][()].astype(str))
-                f[group_name].create_dataset(dest_key, data=numbers)
+                f[group_name].create_numpy_property(dest_key, data=numbers)
         return self, bool(self.keys())
 
     @_may_need_cache_update
@@ -750,7 +752,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         if self._should_exit_early(source_key, dest_key, strict):
             return self, False
         with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r+')
+            f = self._get_open_store(stack, 'r+')
             for group_name, properties in self.numpy_items(include_properties=('source_key',),
                                                            repeat_nonbatch_keys=False):
                 to_slice = properties[source_key]
@@ -766,8 +768,8 @@ class _AniH5FileWrapper(_AniDatasetBase):
                     with_slice_deleted = np.squeeze(with_slice_deleted, axis=dim_to_slice)
 
                 del f[group_name][source_key]
-                f[group_name].create_dataset(source_key, data=with_slice_deleted)
-                f[group_name].create_dataset(dest_key, data=slice_)
+                f[group_name].create_numpy_property(source_key, data=with_slice_deleted)
+                f[group_name].create_numpy_property(dest_key, data=slice_)
         return self, True
 
     def _should_exit_early(self,
@@ -801,7 +803,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
             new_name = parser(properties)
             if group_name != f'/{new_name}':
                 with ExitStack() as stack:
-                    f = self._get_open_file(stack, 'r+')
+                    f = self._get_open_store(stack, 'r+')
                     del f[group_name]
                 # mypy doesn't know that @wrap'ed functions have __wrapped__.
                 # No need to check input here since it was inside the ds
@@ -814,7 +816,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
 
         if _properties:
             with ExitStack() as stack:
-                f = self._get_open_file(stack, 'r+')
+                f = self._get_open_store(stack, 'r+')
                 for group_key in tqdm(self.keys(),
                                       total=self.num_conformer_groups,
                                       desc='Deleting properties',
@@ -829,6 +831,8 @@ class _AniH5FileWrapper(_AniDatasetBase):
     def rename_properties(self, old_new_dict: Dict[str, str]) -> DatasetWithFlag:
         old_new_dict = old_new_dict.copy()
         for old, new in old_new_dict.copy().items():
+            if old == new:
+                raise ValueError(f'Cant rename property {old} to the same name')
             has_old = old in self.supported_properties
             has_new = new in self.supported_properties
             if has_old and has_new:
@@ -841,7 +845,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
 
         if old_new_dict:
             with ExitStack() as stack:
-                f = self._get_open_file(stack, 'r+')
+                f = self._get_open_store(stack, 'r+')
                 for k in self.keys():
                     for old_name, new_name in old_new_dict.items():
                         f[k].move(old_name, new_name)
@@ -852,7 +856,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         # this function is guaranteed to need a cache update
         all_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch_keys=False)
         with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r+')
+            f = self._get_open_store(stack, 'r+')
             del f[group_name]
             good_conformers = {k: np.delete(all_conformers[k], obj=idx.cpu().numpy(), axis=0)
                                for k in self._supported_batch_keys}
@@ -861,8 +865,8 @@ class _AniH5FileWrapper(_AniDatasetBase):
                 # otherwise we recreate the group using the good conformers
                 return self, True
             good_conformers.update({k: all_conformers[k] for k in self._supported_nonbatch_keys})
-            f.create_group(group_name)
-            _create_numpy_properties_handle_str(f[group_name], good_conformers)
+            group = f.create_conformer_group(group_name)
+            group.create_numpy_properties(good_conformers)
         return self, True
 
     def present_species(self) -> Tuple[str, ...]:
@@ -890,7 +894,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         nonbatch_keys, batch_keys = self._split_key_kinds(include_properties)
         all_keys = batch_keys.union(nonbatch_keys)
         with ExitStack() as stack:
-            f = self._get_open_file(stack, 'r')
+            f = self._get_open_store(stack, 'r')
             numpy_properties = {p: f[key][p][()] for p in all_keys}
             if idx is not None:
                 assert idx.dim() <= 1, "index must be a 0 or 1 dim tensor"
@@ -932,3 +936,82 @@ class _AniH5FileWrapper(_AniDatasetBase):
         nonbatch_keys = self._supported_nonbatch_keys.intersection(_properties)
         batch_keys = self._supported_batch_keys.intersection(_properties)
         return nonbatch_keys, batch_keys
+
+
+class _DatasetStoreFacade(Mapping[str, '_ConformerGroupFacade']):
+    # wrapper around an open hdf5 file object that
+    # returns ConformerGroup facades which renames properties on access and
+    # creation
+    def __init__(self, store_obj: h5py.File, property_to_alias: Optional[Dict[str, str]] = None):
+        # an open h5py file object
+        self._store_obj = store_obj
+        self._property_to_alias = property_to_alias if property_to_alias is not None else dict()
+        self.mode = self._store_obj.mode
+
+    def __delitem__(self, k: str) -> None:
+        del self._store_obj[k]
+
+    def create_conformer_group(self, name) -> '_ConformerGroupFacade':
+        # this wraps create_group
+        self._store_obj.create_group(name)
+        return self[name]
+
+    def close(self) -> None:
+        self._store_obj.close()
+
+    def __enter__(self) -> '_DatasetStoreFacade':
+        self._store_obj.__enter__()
+        return self
+
+    def __exit__(self, *args) -> None:
+        self._store_obj.__exit__(*args)
+
+    def __getitem__(self, name) -> '_ConformerGroupFacade':
+        return _ConformerGroupFacade(self._store_obj[name], self._property_to_alias)
+
+    def __len__(self) -> int:
+        return len(self._store_obj)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._store_obj)
+
+
+class _ConformerGroupFacade(Mapping):
+    # I'm not sure what the output of this is, it is kind of like a numpy
+    # memmapped array wrapped in hdf5
+
+    def __init__(self, group_obj: h5py.Group, property_to_alias: Optional[Dict[str, str]] = None):
+        self._group_obj = group_obj
+        self._property_to_alias = property_to_alias if property_to_alias is not None else dict()
+
+    def create_numpy_property(self, p: str, data: np.ndarray) -> None:
+        # this wraps create_dataset, correctly handling strings (species and _id) and
+        # key aliases
+        p = self._property_to_alias.get(p, p)
+        try:
+            self._group_obj.create_dataset(name=p, data=data)
+        except TypeError:
+            self._group_obj.create_dataset(name=p, data=data.astype(bytes))
+
+    def create_numpy_properties(self, properties: NumpyProperties) -> None:
+        for p, v in properties.items():
+            self.create_numpy_property(p, v)
+
+    def move(self, src: str, dest: str) -> None:
+        src = self._property_to_alias.get(src, src)
+        dest = self._property_to_alias.get(dest, dest)
+        self._group_obj.move(src, dest)
+
+    def __delitem__(self, k: str):
+        del self._group_obj[k]
+
+    def __getitem__(self, p: str):
+        p = self._property_to_alias.get(p, p)
+        return self._group_obj[p]
+
+    def __len__(self) -> int:
+        return len(self._group_obj)
+
+    def __iter__(self) -> Iterator[str]:
+        for k in self._group_obj.keys():
+            yield self._property_to_alias.get(k, k)
