@@ -250,7 +250,7 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Properties]):
         return self._len
 
 
-class _AniDatasetBase(Mapping[str, Properties]):
+class _ANIDatasetBase(Mapping[str, Properties]):
 
     def __init__(self, *args, **kwargs) -> None:
         self.group_sizes: 'OrderedDict[str, int]' = OrderedDict()
@@ -333,7 +333,7 @@ class _AniDatasetBase(Mapping[str, Properties]):
             yield c
 
 
-class ANIDataset(_AniDatasetBase):
+class ANIDataset(_ANIDatasetBase):
     # Essentially a container of _ANISubdataset instances that forwards
     # calls to the corresponding files in an appropriate way Methods are
     # decorated depending on the forward manner, "_delegate" just calls the
@@ -444,7 +444,7 @@ class AniBatchedDataset(ANIBatchedDataset):
         super().__init__(*args, **kwargs)
 
 
-class _ANISubdataset(_AniDatasetBase):
+class _ANISubdataset(_ANIDatasetBase):
 
     def __init__(self,
                  store_location: PathLike,
