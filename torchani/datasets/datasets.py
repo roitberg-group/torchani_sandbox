@@ -255,8 +255,14 @@ class _AniDatasetBase(Mapping[str, Properties]):
     def __init__(self, *args, **kwargs) -> None:
         self.group_sizes: 'OrderedDict[str, int]' = OrderedDict()
         self.supported_properties: Set[str] = set()
-        self.num_conformers = 0
-        self.num_conformer_groups = 0
+
+    @property
+    def num_conformers(self):
+        return sum(self.group_sizes.values())
+
+    @property
+    def num_conformer_groups(self):
+        return len(self.group_sizes.keys())
 
     def __getitem__(self, key: str) -> Properties:
         return self.get_conformers(key)
@@ -381,8 +387,6 @@ class ANIDataset(_AniDatasetBase):
         else:
             od_args = [(k, v) for ds in self._datasets.values() for k, v in ds.group_sizes.items()]
         self.group_sizes = OrderedDict(od_args)
-        self.num_conformer_groups = sum(d.num_conformer_groups for d in self._datasets.values())
-        self.num_conformers = sum(d.num_conformers for d in self._datasets.values())
         first_supported_properties = self._first_subds.supported_properties
         for name, ds in self._datasets.items():
             if not ds.supported_properties == first_supported_properties:
@@ -443,7 +447,7 @@ class _ANISubdataset(_AniDatasetBase):
         # flag property is used to infer size of conformer groups
         self._flag_property = flag_property
 
-        # group_sizes, supported properties and num_conformers(_groups) are
+        # group_sizes, supported properties  are
         # needed as internal cache variables, this cache is updated if
         # something in the dataset changes, and when it is initialized
         self._supported_batch_keys: Set[str] = set()
@@ -518,8 +522,6 @@ class _ANISubdataset(_AniDatasetBase):
 
     def _reset_internal_cache(self) -> None:
         self.group_sizes = OrderedDict()
-        self.num_conformers = 0
-        self.num_conformer_groups = 0
         self.supported_properties = set()
         self._supported_nonbatch_keys = set()
         self._supported_batch_keys = set()
@@ -581,8 +583,6 @@ class _ANISubdataset(_AniDatasetBase):
             raise RuntimeError(f"Bad backend {self._backend}")
 
         self._checked_homogeneous_properties = True
-        self.num_conformers = sum(self.group_sizes.values())
-        self.num_conformer_groups = len(self.group_sizes.keys())
 
         # By default iteration of HDF5 should be alphanumeric in which case
         # sorting should not be necessary, this internal assert ensures the
