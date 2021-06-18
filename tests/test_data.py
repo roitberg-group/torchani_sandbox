@@ -451,7 +451,7 @@ class TestANIDataset(TestCase):
     def testRenameProperty(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
-                          supported_properties=('species', 'energies', 'coordinates'))
+                          properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
@@ -471,7 +471,7 @@ class TestANIDataset(TestCase):
     def testDeleteProperty(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
-                          supported_properties=('species', 'energies', 'coordinates'))
+                          properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
@@ -502,7 +502,7 @@ class TestANIDataset(TestCase):
     def testNumpyMutable(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
-                          supported_properties=('species', 'energies', 'coordinates'))
+                          properties=('species', 'energies', 'coordinates'))
         properties1 = {'species': np.full((5, 6), fill_value='H', dtype=str),
                       'coordinates': np.random.standard_normal((5, 6, 3)),
                       'energies': np.random.standard_normal((5,))}
@@ -532,22 +532,22 @@ class TestANIDataset(TestCase):
     def testSpeciesFromNumbers(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
-                          supported_properties=('species', 'energies', 'coordinates'))
+                          properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
         ds.create_numbers_from_species('species', 'numbers')
-        self.assertEqual(ds.supported_properties, {'species', 'energies', 'coordinates', 'numbers'})
+        self.assertEqual(ds.properties, {'species', 'energies', 'coordinates', 'numbers'})
         for k, v in ds.items():
             self.assertEqual(v['species'], v['numbers'])
-        numpy_species = ds.get_numpy_conformers('H6', include_properties=('species',), repeat_nonbatch_keys=False)
-        numpy_numbers = ds.get_numpy_conformers('H6', include_properties=('numbers',), repeat_nonbatch_keys=False)
+        numpy_species = ds.get_numpy_conformers('H6', include_properties=('species',), repeat_nonbatch=False)
+        numpy_numbers = ds.get_numpy_conformers('H6', include_properties=('numbers',), repeat_nonbatch=False)
         self.assertEqual(numpy_numbers['numbers'], np.ones(len(numpy_species['species']), dtype=np.int64))
 
     def testNumbersFromSpecies(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
-                          supported_properties=('species', 'energies', 'coordinates'))
+                          properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
@@ -555,13 +555,13 @@ class TestANIDataset(TestCase):
         ds.create_full_scalar_property('numbers', 1)
         ds.create_species_from_numbers('numbers', 'species')
         for k in ('H6', 'C6', 'O6'):
-            species = ds.get_numpy_conformers(k, include_properties=('species',), repeat_nonbatch_keys=False)['species']
+            species = ds.get_numpy_conformers(k, include_properties=('species',), repeat_nonbatch=False)['species']
             self.assertEqual(species, np.full(len(species), fill_value='H'))
 
     def testExtractSlice(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
-                          supported_properties=('species', 'energies', 'coordinates'))
+                          properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
@@ -569,13 +569,13 @@ class TestANIDataset(TestCase):
         ds.create_full_scalar_property('numbers', 1)
         ds.create_species_from_numbers('numbers', 'species')
         for k in ('H6', 'C6', 'O6'):
-            species = ds.get_numpy_conformers(k, include_properties=('species',), repeat_nonbatch_keys=False)['species']
+            species = ds.get_numpy_conformers(k, include_properties=('species',), repeat_nonbatch=False)['species']
             self.assertEqual(species, np.full(len(species), fill_value='H'))
 
     def testNewScalar(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
-                          supported_properties=('species', 'energies', 'coordinates'))
+                          properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         initial_len = len(new_groups['C6']['coordinates'])
         for k in ('H6', 'C6', 'O6'):
@@ -583,7 +583,7 @@ class TestANIDataset(TestCase):
         ds.create_full_scalar_property('spin_multiplicities', 1)
         ds.create_full_scalar_property('charges', 0)
         self.assertEqual(len(ds['H6'].keys()), 5)
-        self.assertEqual(ds.supported_properties, {'species', 'energies', 'coordinates', 'charges', 'spin_multiplicities'})
+        self.assertEqual(ds.properties, {'species', 'energies', 'coordinates', 'charges', 'spin_multiplicities'})
         self.assertEqual(ds['H6']['spin_multiplicities'], torch.ones(initial_len, dtype=torch.long))
         self.assertEqual(ds['C6']['charges'], torch.zeros(initial_len, dtype=torch.long))
 
@@ -591,7 +591,7 @@ class TestANIDataset(TestCase):
         # tests delitem and setitem analogues for the dataset
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
-                          supported_properties=('species', 'energies', 'coordinates'))
+                          properties=('species', 'energies', 'coordinates'))
 
         # check creation
         new_groups = deepcopy(self.new_groups_torch)
@@ -615,9 +615,8 @@ class TestANIDataset(TestCase):
             ds.delete_group(k)
 
         # reset supported properties
-        for fw in ds._datasets.values():
-            fw.supported_properties = {'coordinates', 'species', 'energies'}
-            fw._update_private_sets()
+        for subds in ds._datasets.values():
+            subds._properties = {'coordinates', 'species', 'energies'}
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
         with self.assertRaisesRegex(ValueError, 'Attempted to combine groups with different'):
@@ -643,7 +642,7 @@ class TestANIDataset(TestCase):
     def testPresentSpecies(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
-                          supported_properties=('species', 'energies', 'coordinates'))
+                          properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'O6', 'C6'):
             ds.append_conformers(k, new_groups[k])
@@ -655,7 +654,7 @@ class TestANIDataset(TestCase):
     def testRenameGroupsFormulas(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
-                          supported_properties=('species', 'energies', 'coordinates'))
+                          properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
         for j, k in enumerate(('H6', 'C6', 'O6')):
             ds.append_conformers(str(j), new_groups[k])

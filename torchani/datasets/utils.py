@@ -54,8 +54,8 @@ def _copy_to_new_store(source: ANIDataset,
         desc = 'Copying data to new store'
         dest_paths = source_od
 
-    dest = ANIDataset(dest_paths, create=True, supported_properties=source.supported_properties)
-    for k, v in tqdm(source.numpy_items(repeat_nonbatch_keys=False),
+    dest = ANIDataset(dest_paths, create=True, properties=source.properties)
+    for k, v in tqdm(source.numpy_items(repeat_nonbatch=False),
                      desc=desc,
                      total=source.num_conformer_groups,
                      disable=not verbose):

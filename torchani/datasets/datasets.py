@@ -90,7 +90,7 @@ def _get_num_atoms(*args, **kwargs) -> int:
 def _get_dim_size(common_keys: Set[str], dim: int,
                   molecule_group: Union[H5Group, Properties, NumpyProperties],
                   flag_property: Optional[str] = None,
-                  supported_properties: Optional[Set[str]] = None) -> int:
+                  properties: Optional[Set[str]] = None) -> int:
     # Calculates the dimension size in a set of properties
     # If a flag property is passed it gets the dimension from that property,
     # otherwise it tries to get it from one of a number of common keys that
@@ -98,8 +98,8 @@ def _get_dim_size(common_keys: Set[str], dim: int,
     if flag_property is not None:
         size = molecule_group[flag_property].shape[dim]
     else:
-        assert supported_properties is not None
-        present_keys = common_keys.intersection(supported_properties)
+        assert properties is not None
+        present_keys = common_keys.intersection(properties)
         if present_keys:
             size = molecule_group[tuple(present_keys)[0]].shape[dim]
         else:
@@ -254,7 +254,25 @@ class _AniDatasetBase(Mapping[str, Properties]):
 
     def __init__(self, *args, **kwargs) -> None:
         self.group_sizes: 'OrderedDict[str, int]' = OrderedDict()
-        self.supported_properties: Set[str] = set()
+        self._properties: Set[str] = set()
+        self._possible_nonbatch_properties: Set[str] = set()
+
+    @property
+    def properties(self) -> Set[str]:
+        # read-only, can be called by user code
+        return self._properties
+
+    @property
+    def _batch_properties(self) -> Set[str]:
+        batch_properties = {k for k in self.properties
+                            if k not in self._possible_nonbatch_properties}
+        return batch_properties
+
+    @property
+    def _nonbatch_properties(self) -> Set[str]:
+        batch_properties = {k for k in self.properties
+                            if k in self._possible_nonbatch_properties}
+        return batch_properties
 
     @property
     def num_conformers(self):
@@ -277,14 +295,14 @@ class _AniDatasetBase(Mapping[str, Properties]):
                        key: str,
                        idx: Optional[Tensor] = None,
                        include_properties: Optional[Sequence[str]] = None,
-                       repeat_nonbatch_keys: bool = True) -> Properties:
+                       repeat_nonbatch: bool = True) -> Properties:
         raise NotImplementedError
 
     def get_numpy_conformers(self,
                              key: str,
                              idx: Optional[Tensor] = None,
                              include_properties: Optional[Sequence[str]] = None,
-                             repeat_nonbatch_keys: bool = True) -> NumpyProperties:
+                             repeat_nonbatch: bool = True) -> NumpyProperties:
         raise NotImplementedError
 
     def numpy_items(self, *args, **kwargs) -> Iterator[Tuple[str, NumpyProperties]]:
@@ -387,14 +405,13 @@ class ANIDataset(_AniDatasetBase):
         else:
             od_args = [(k, v) for ds in self._datasets.values() for k, v in ds.group_sizes.items()]
         self.group_sizes = OrderedDict(od_args)
-        first_supported_properties = self._first_subds.supported_properties
         for name, ds in self._datasets.items():
-            if not ds.supported_properties == first_supported_properties:
+            if not ds.properties == self._first_subds.properties:
                 raise ValueError('Supported properties are different for the'
                                  ' component subdatasets, got'
-                                 f' {first_supported_properties} for {self._first_name}'
-                                 f' and {ds.supported_properties} for {name}')
-        self.supported_properties = first_supported_properties
+                                 f' {self._first_subds.properties} for {self._first_name}'
+                                 f' and {ds.properties} for {name}')
+        self._properties = self._first_subds.properties
         return self
 
     def _parse_key(self, key: str) -> Tuple[str, str]:
@@ -423,11 +440,11 @@ class _ANISubdataset(_AniDatasetBase):
 
     def __init__(self,
                  store_location: PathLike,
-                 flag_property: Optional[str] = None,
-                 nonbatch_keys: Sequence[str] = ('species', 'numbers'),
                  assume_standard: bool = False,
                  create: bool = False,
-                 supported_properties: Optional[Iterable[str]] = None,
+                 flag_property: Optional[str] = None,
+                 properties: Optional[Iterable[str]] = None,
+                 nonbatch_properties: Iterable[str] = ('species', 'numbers'),
                  property_aliases: Optional[Dict[str, str]] = None,
                  verbose: bool = True):
         super().__init__()
@@ -438,7 +455,7 @@ class _ANISubdataset(_AniDatasetBase):
         if self._backend == 'h5py' and not _H5PY_AVAILABLE:
             raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
         self._open_store: Optional['_DatasetStoreAdaptor'] = None
-        self._all_nonbatch_keys = set(nonbatch_keys)
+        self._possible_nonbatch_properties = set(nonbatch_properties)
         self._verbose = verbose
         self._store_location = Path(store_location).resolve()
         self._symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
@@ -449,9 +466,7 @@ class _ANISubdataset(_AniDatasetBase):
 
         # group_sizes, supported properties  are
         # needed as internal cache variables, this cache is updated if
-        # something in the dataset changes, and when it is initialized
-        self._supported_batch_keys: Set[str] = set()
-        self._supported_nonbatch_keys: Set[str] = set()
+        # something in the dataset changes
 
         if property_aliases is None:
             self._property_to_alias = dict()
@@ -460,13 +475,12 @@ class _ANISubdataset(_AniDatasetBase):
         self._alias_to_property = {v: k for k, v in self._property_to_alias.items()}
 
         if create:
-            if supported_properties is None:
+            if properties is None:
                 raise ValueError("Please provide supported properties to create the dataset")
             open(self._store_location, 'x').close()
             self._checked_homogeneous_properties = True
             self._has_standard_format = True
-            self.supported_properties = set(supported_properties)
-            self._update_private_sets()
+            self._properties = set(properties)
         else:
             # In general all supported properties of the dataset should be
             # equal for all groups, first we check that this is the case, if it
@@ -520,14 +534,9 @@ class _ANISubdataset(_AniDatasetBase):
                 raise RuntimeError(msg)
             return self._open_store
 
-    def _reset_internal_cache(self) -> None:
-        self.group_sizes = OrderedDict()
-        self.supported_properties = set()
-        self._supported_nonbatch_keys = set()
-        self._supported_batch_keys = set()
-
     def _update_internal_cache(self) -> None:
-        self._reset_internal_cache()
+        self.group_sizes = OrderedDict()
+        self._properties = set()
         if self._backend == 'h5py':
             if self._has_standard_format:
                 # This is much faster (x30) than a visitor function but it assumes
@@ -591,30 +600,20 @@ class _ANISubdataset(_AniDatasetBase):
         assert list(self.group_sizes) == sorted(self.group_sizes), "Groups were not iterated upon alphanumerically"
 
     def _update_properties_cache_h5py(self, molecule_group: H5Group) -> None:
-        # Updates the "supported_properties", "_supported_nonbatch_keys" and
-        # "_supported_batch_keys" variables. "element keys" are keys that
+        # Updates the "_properties", variables. "_nonbatch_properties" are keys that
         # don't have a batch dimension, their shape must be (atoms,)
-        if not self.supported_properties:
-            raw_supported_properties = set(molecule_group.keys())
-            self.supported_properties = {self._property_to_alias.get(p, p) for p in raw_supported_properties}
-            if self._flag_property is not None and self._flag_property not in self.supported_properties:
-                msg = f"Flag property {self._flag_property} not found in {self.supported_properties}"
+        if not self.properties:
+            self._properties = {self._property_to_alias.get(p, p) for p in set(molecule_group.keys())}
+            if self._flag_property is not None and self._flag_property not in self.properties:
+                msg = f"Flag property {self._flag_property} not found in {self.properties}"
                 raise RuntimeError(msg)
         elif not self._checked_homogeneous_properties:
-            raw_found_properties = set(molecule_group.keys())
-            found_properties = {self._property_to_alias.get(p, p) for p in raw_found_properties}
-            if not found_properties == self.supported_properties:
+            found_properties = {self._property_to_alias.get(p, p) for p in set(molecule_group.keys())}
+            if not found_properties == self.properties:
                 msg = (f"Group {molecule_group.name} has bad keys, "
                        f"found {found_properties}, but expected "
-                       f"{self.supported_properties}")
+                       f"{self.properties}")
                 raise RuntimeError(msg)
-        self._update_private_sets()
-
-    def _update_private_sets(self) -> None:
-        self._supported_nonbatch_keys = {k for k in self.supported_properties
-                                        if k in self._all_nonbatch_keys}
-        self._supported_batch_keys = {k for k in self.supported_properties
-                                      if k not in self._all_nonbatch_keys}
 
     def _update_groups_cache_h5py(self, molecule_group: H5Group) -> None:
         # updates "group_sizes" which holds the batch dimension (number of
@@ -624,15 +623,15 @@ class _ANISubdataset(_AniDatasetBase):
             raw_flag_property = self._alias_to_property.get(self._flag_property, self._flag_property)
         else:
             raw_flag_property = None
-        raw_supported_properties = {self._alias_to_property.get(p, p) for p in self.supported_properties}
+        raw_properties = {self._alias_to_property.get(p, p) for p in self.properties}
         group_size = _get_num_conformers(molecule_group,
                                          raw_flag_property,
-                                         raw_supported_properties)
+                                         raw_properties)
         self.group_sizes.update({molecule_group.name[1:]: group_size})
 
     def __str__(self) -> str:
         str_ = "ANI HDF5 File:\n"
-        str_ += f"Supported properties: {self.supported_properties}\n"
+        str_ += f"Supported properties: {self.properties}\n"
         str_ += f"Number of conformers: {self.num_conformers}\n"
         str_ += f"Number of conformer groups: {self.num_conformer_groups}\n"
         try:
@@ -646,10 +645,10 @@ class _ANISubdataset(_AniDatasetBase):
                           properties: Properties) -> '_ANISubdataset':
         group_name, properties = self._check_append_input(group_name, properties)
         numpy_properties = {k: properties[k].numpy()
-                            for k in self.supported_properties.difference({'species'})}
+                            for k in self.properties.difference({'species'})}
 
         # This correctly handles cases where species is a batch or nonbatch key
-        if 'species' in self.supported_properties:
+        if 'species' in self.properties:
             if (properties['species'] <= 0).any():
                 raise ValueError('Species are atomic numbers, must be positive')
             species = self._numbers_to_symbols(properties['species'].numpy())
@@ -665,11 +664,11 @@ class _ANISubdataset(_AniDatasetBase):
         # check input kills first dimension of nonbatch keys
         if '/' in group_name:
             raise ValueError('Character "/" not supported in group_name')
-        if not set(properties.keys()) == self.supported_properties:
-            raise ValueError(f'Expected {self.supported_properties} but got {set(properties.keys())}')
+        if not set(properties.keys()) == self.properties:
+            raise ValueError(f'Expected {self.properties} but got {set(properties.keys())}')
 
         properties = deepcopy(properties)
-        for k in self._supported_nonbatch_keys:
+        for k in self._nonbatch_properties:
             if properties[k].ndim == 2:
                 if not (properties[k] == properties[k][0]).all():
                     raise ValueError(f'All {k} must be equal in the batch dimension')
@@ -678,10 +677,10 @@ class _ANISubdataset(_AniDatasetBase):
             if properties[k].ndim != 1:
                 raise ValueError(f'{k} must have 1 or 2 dimensions')
 
-        any_batch_key = tuple(self._supported_batch_keys)[0]
-        for k in self._supported_batch_keys:
-            if not properties[k].shape[0] == properties[any_batch_key].shape[0]:
-                raise ValueError(f"All batch keys {self._supported_batch_keys} must have the same batch dimension")
+        any_batch_property = next(iter(self._batch_properties))
+        for k in self._batch_properties:
+            if not properties[k].shape[0] == properties[any_batch_property].shape[0]:
+                raise ValueError(f"All batch keys {self._batch_properties} must have the same batch dimension")
 
         return group_name, properties
 
@@ -696,7 +695,7 @@ class _ANISubdataset(_AniDatasetBase):
 
         # check for correct sorting which is necessary if conformers are
         # grouped with nonbatch keys
-        if self._supported_nonbatch_keys:
+        if self._nonbatch_properties:
             if 'numbers' in properties.keys():
                 numbers = properties['numbers']
             elif 'species' in properties.keys():
@@ -713,11 +712,11 @@ class _ANISubdataset(_AniDatasetBase):
             try:
                 group = f.create_conformer_group(group_name)
             except ValueError:
-                old_properties = self.get_numpy_conformers(group_name, repeat_nonbatch_keys=False)
-                if not all((old_properties[k] == properties[k]).all() for k in self._supported_nonbatch_keys):
+                old_properties = self.get_numpy_conformers(group_name, repeat_nonbatch=False)
+                if not all((old_properties[k] == properties[k]).all() for k in self._nonbatch_properties):
                     raise ValueError("Attempted to combine groups with different nonbatch key")
                 properties.update({k: np.concatenate((old_properties[k], properties[k]), axis=0)
-                                   for k in self._supported_batch_keys})
+                                   for k in self._batch_properties})
                 del f[group_name]
                 group = f.create_conformer_group(group_name)
             group.create_numpy_properties(properties)
@@ -743,7 +742,7 @@ class _ANISubdataset(_AniDatasetBase):
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
-                size = _get_num_conformers(f[group_name], self._flag_property, self.supported_properties)
+                size = _get_num_conformers(f[group_name], self._flag_property, self.properties)
                 data = np.full(size, fill_value=fill_value, dtype=dtype)
                 f[group_name].create_numpy_property(dest_key, data=data)
         return self, bool(self.keys())
@@ -794,7 +793,7 @@ class _ANISubdataset(_AniDatasetBase):
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name, properties in self.numpy_items(include_properties=('source_key',),
-                                                           repeat_nonbatch_keys=False):
+                                                           repeat_nonbatch=False):
                 to_slice = properties[source_key]
                 if to_slice.shape[dim_to_slice] <= 1:
                     raise ValueError("You can't slice the property if "
@@ -819,24 +818,24 @@ class _ANISubdataset(_AniDatasetBase):
         # operations, this function checks that the source key exists and the
         # destination key does not, before performing the operation, if the
         # destination key already exists then the function should return early
-        if source_key is not None and source_key not in self.supported_properties:
-            raise ValueError(f"{source_key} is not in {self.supported_properties}")
-        if dest_key is not None and dest_key in self.supported_properties:
+        if source_key is not None and source_key not in self.properties:
+            raise ValueError(f"{source_key} is not in {self.properties}")
+        if dest_key is not None and dest_key in self.properties:
             if not strict:
                 return True
-            raise ValueError(f"{dest_key} is already in {self.supported_properties}")
+            raise ValueError(f"{dest_key} is already in {self.properties}")
         return False
 
     @_may_need_cache_update
     def rename_groups_to_formulas(self, verbose: bool = True) -> SubdsWithFlag:
         # This function is guaranteed to need cache update if there are any groups present at all
-        if 'species' in self.supported_properties:
+        if 'species' in self.properties:
             parser = lambda s: species_to_formula(s['species'])  # noqa E731
-        elif 'numbers' in self.supported_properties:
+        elif 'numbers' in self.properties:
             parser = lambda s: species_to_formula(self._numbers_to_symbols(s['numbers']))  # noqa E731
         else:
             raise ValueError('"species" or "numbers" must be present to parse formulas')
-        for group_name, properties in tqdm(self.numpy_items(repeat_nonbatch_keys=False),
+        for group_name, properties in tqdm(self.numpy_items(repeat_nonbatch=False),
                                            total=self.num_conformer_groups,
                                            desc='Renaming groups to formulas',
                                            disable=not verbose):
@@ -852,20 +851,20 @@ class _ANISubdataset(_AniDatasetBase):
 
     @_may_need_cache_update
     def delete_properties(self, properties: Sequence[str], verbose: bool = True) -> SubdsWithFlag:
-        _properties = self.supported_properties.intersection(set(properties))
+        properties_to_delete = self.properties.intersection(set(properties))
 
-        if _properties:
+        if properties_to_delete:
             with ExitStack() as stack:
                 f = self._get_open_store(stack, 'r+')
                 for group_key in tqdm(self.keys(),
                                       total=self.num_conformer_groups,
                                       desc='Deleting properties',
                                       disable=not verbose):
-                    for property_ in _properties:
+                    for property_ in properties_to_delete:
                         del f[group_key][property_]
                     if not f[group_key].keys():
                         del f[group_key]
-        return self, bool(_properties)
+        return self, bool(properties_to_delete)
 
     @_may_need_cache_update
     def rename_properties(self, old_new_dict: Dict[str, str]) -> SubdsWithFlag:
@@ -873,8 +872,8 @@ class _ANISubdataset(_AniDatasetBase):
         for old, new in old_new_dict.copy().items():
             if old == new:
                 raise ValueError(f'Cant rename property {old} to the same name')
-            has_old = old in self.supported_properties
-            has_new = new in self.supported_properties
+            has_old = old in self.properties
+            has_new = new in self.properties
             if has_old and has_new:
                 raise ValueError(f'Cant rename {old} into {new} since {new} already exists')
             elif not has_old and not has_new:
@@ -894,26 +893,26 @@ class _ANISubdataset(_AniDatasetBase):
     @_may_need_cache_update
     def delete_conformers(self, group_name: str, idx: Tensor) -> SubdsWithFlag:
         # this function is guaranteed to need a cache update
-        all_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch_keys=False)
+        all_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch=False)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             del f[group_name]
             good_conformers = {k: np.delete(all_conformers[k], obj=idx.cpu().numpy(), axis=0)
-                               for k in self._supported_batch_keys}
+                               for k in self._batch_properties}
             if all(v.shape[0] == 0 for v in good_conformers.values()):
                 # if we deleted everything in the group then just return,
                 # otherwise we recreate the group using the good conformers
                 return self, True
-            good_conformers.update({k: all_conformers[k] for k in self._supported_nonbatch_keys})
+            good_conformers.update({k: all_conformers[k] for k in self._nonbatch_properties})
             group = f.create_conformer_group(group_name)
             group.create_numpy_properties(good_conformers)
         return self, True
 
     def present_species(self) -> Tuple[str, ...]:
-        if 'species' in self.supported_properties:
+        if 'species' in self.properties:
             element_key = 'species'
             parser = lambda s: set(s['species'])  # noqa E731
-        elif 'numbers' in self.supported_properties:
+        elif 'numbers' in self.properties:
             element_key = 'numbers'
             parser = lambda s: set(self._numbers_to_symbols(s['numbers']))  # noqa E731
         else:
@@ -922,7 +921,7 @@ class _ANISubdataset(_AniDatasetBase):
         for key in self.keys():
             species = self.get_numpy_conformers(key,
                                                 include_properties=(element_key,),
-                                                repeat_nonbatch_keys=False)
+                                                repeat_nonbatch=False)
             present_species.update(parser(species))
         return tuple(sorted(present_species))
 
@@ -930,52 +929,57 @@ class _ANISubdataset(_AniDatasetBase):
                              key: str,
                              idx: Optional[Tensor] = None,
                              include_properties: Optional[Sequence[str]] = None,
-                             repeat_nonbatch_keys: bool = True) -> NumpyProperties:
-        nonbatch_keys, batch_keys = self._split_key_kinds(include_properties)
-        all_keys = batch_keys.union(nonbatch_keys)
+                             repeat_nonbatch: bool = True) -> NumpyProperties:
+        nonbatch_batch = self._split_key_kinds(include_properties)
+        requested_nonbatch_properties, requested_batch_properties = nonbatch_batch
+        requested_properties = nonbatch_batch[0].union(nonbatch_batch[1])
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r')
-            numpy_properties = {p: f[key][p] for p in all_keys}
+            numpy_properties = {p: f[key][p] for p in requested_properties}
             if idx is not None:
                 assert idx.dim() <= 1, "index must be a 0 or 1 dim tensor"
-                numpy_properties.update({k: numpy_properties[k][idx.cpu().numpy()] for k in batch_keys})
+                numpy_properties.update({k: numpy_properties[k][idx.cpu().numpy()]
+                                        for k in requested_batch_properties})
 
-        if 'species' in all_keys:
+        if 'species' in requested_properties:
             numpy_properties['species'] = numpy_properties['species'].astype(str)
 
-        if repeat_nonbatch_keys:
-            num_conformers = _get_num_conformers(numpy_properties, self._flag_property, batch_keys)
+        if repeat_nonbatch:
+            num_conformers = _get_num_conformers(numpy_properties, self._flag_property, requested_batch_properties)
             tile_shape = (num_conformers, 1) if idx is None or idx.dim() == 1 else (1,)
             numpy_properties.update({k: np.tile(numpy_properties[k], tile_shape)
-                                     for k in nonbatch_keys})
+                                     for k in requested_nonbatch_properties})
         return numpy_properties
 
     def get_conformers(self,
                        key: str,
                        idx: Optional[Tensor] = None,
                        include_properties: Optional[Sequence[str]] = None,
-                       repeat_nonbatch_keys: bool = True) -> Properties:
+                       repeat_nonbatch: bool = True) -> Properties:
         # The tensor counterpart of get_numpy_conformers
-        numpy_properties = self.get_numpy_conformers(key, idx, include_properties, repeat_nonbatch_keys)
-        nonbatch_keys, batch_keys = self._split_key_kinds(include_properties)
-        all_keys = nonbatch_keys.union(batch_keys)
-        properties = {k: torch.tensor(numpy_properties[k]) for k in all_keys.difference({'species'})}
+        numpy_properties = self.get_numpy_conformers(key, idx, include_properties, repeat_nonbatch)
+        nonbatch_batch = self._split_key_kinds(include_properties)
+        requested_properties = nonbatch_batch[0].union(nonbatch_batch[1])
+        properties = {k: torch.tensor(numpy_properties[k]) for k in requested_properties.difference({'species'})}
 
-        if 'species' in all_keys:
+        if 'species' in requested_properties:
             species = self._symbols_to_numbers(numpy_properties['species'])
             properties.update({'species': torch.from_numpy(species)})
         return properties
 
-    def _split_key_kinds(self, properties: Optional[Sequence[str]] = None) -> Tuple[Set[str], Set[str]]:
-        # determine which of the properties passed are batched and which are
-        # nonbatch keys
-        _properties = self.supported_properties if properties is None else set(properties)
-        if not _properties:
-            raise ValueError(f"Some of the properties requested {_properties} are not "
-                             f"in the dataset, which has properties {self.supported_properties}")
-        nonbatch_keys = self._supported_nonbatch_keys.intersection(_properties)
-        batch_keys = self._supported_batch_keys.intersection(_properties)
-        return nonbatch_keys, batch_keys
+    def _split_key_kinds(self, requested_properties: Optional[Sequence[str]] = None) -> Tuple[Set[str], Set[str]]:
+        # Determine which of the properties passed are batched and which are nonbatch
+        if requested_properties is None:
+            properties = self.properties
+        else:
+            properties = set(requested_properties).intersection(self.properties)
+
+        if not properties:
+            raise ValueError(f"Some of the properties requested {properties} are not"
+                             f" in the dataset, which has properties {self.properties}")
+        nonbatch_properties = self._nonbatch_properties.intersection(properties)
+        batch_properties = self._batch_properties.intersection(properties)
+        return nonbatch_properties, batch_properties
 
 
 class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, '_ConformerGroupAdaptor']):

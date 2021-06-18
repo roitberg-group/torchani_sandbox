@@ -91,7 +91,7 @@ class _BaseBuiltinRawDataset(ANIDataset):
         _filenames_and_paths = sorted([(p.with_suffix('').name, p) for p in dataset_paths],
                                      key=lambda tup: filenames_order[tup[0]])
         filenames_and_paths = OrderedDict(_filenames_and_paths)
-        super().__init__(filenames_and_paths, flag_property='coordinates', nonbatch_keys=('species',), **h5_dataset_kwargs)
+        super().__init__(filenames_and_paths, flag_property='coordinates', **h5_dataset_kwargs)
 
     def _check_hdf5_files_integrity(self, root: PathLike) -> bool:
         # Checks that all HDF5 files in the provided path are equal to the
