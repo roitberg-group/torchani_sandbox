@@ -4,14 +4,14 @@ from typing import Optional, Any
 from collections import OrderedDict
 
 from torchvision.datasets.utils import download_and_extract_archive, list_files, check_integrity
-from .datasets import AniBatchedDataset, AniH5Dataset
+from .datasets import ANIBatchedDataset, ANIDataset
 from ._annotations import PathLike
 from ..utils import tqdm
 
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
 
 
-class _BaseBuiltinBatchedDataset(AniBatchedDataset):
+class _BaseBuiltinBatchedDataset(ANIBatchedDataset):
 
     def __init__(self, root: PathLike,
                        download: bool = False,
@@ -62,7 +62,7 @@ class BatchedCOMP6v1(_BaseBuiltinBatchedDataset):
         super().__init__(root, download, archive=archive, md5=md5, **batched_ds_kwargs)
 
 
-class _BaseBuiltinRawDataset(AniH5Dataset):
+class _BaseBuiltinRawDataset(ANIDataset):
     # NOTE: Code heavily borrows from celeb dataset of torchvision
 
     def __init__(self, root: PathLike,

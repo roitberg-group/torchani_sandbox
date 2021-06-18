@@ -11,7 +11,7 @@ import warnings
 from copy import deepcopy
 from torchani.transforms import AtomicNumbersToIndices, SubtractSAE, Compose, calculate_saes
 from torchani.testing import TestCase
-from torchani.datasets import AniH5Dataset, AniBatchedDataset, create_batched_dataset
+from torchani.datasets import ANIDataset, ANIBatchedDataset, create_batched_dataset
 
 path = os.path.dirname(os.path.realpath(__file__))
 dataset_path = os.path.join(path, '../dataset/ani-1x/sample.h5')
@@ -33,8 +33,8 @@ class TestFineGrainedShuffle(TestCase):
         num_conformers_per_group = 12
         self._create_dummy_controlled_dataset(num_groups, num_conformers_per_group, use_energy_ranges=False)
 
-        self.train = AniBatchedDataset(self.batched_path, split='training')
-        self.valid = AniBatchedDataset(self.batched_path, split='validation')
+        self.train = ANIBatchedDataset(self.batched_path, split='training')
+        self.valid = ANIBatchedDataset(self.batched_path, split='validation')
         for b, b_valid in zip(self.train, self.valid):
             self.assertNotEqual(b['species'], b_valid['species'])
             self.assertNotEqual(b['energies'], b_valid['energies'])
@@ -55,8 +55,8 @@ class TestFineGrainedShuffle(TestCase):
                 self._test_for_batch_diversity(b)
                 self._test_for_batch_diversity(b_valid)
         for j in range(folds):
-            train = AniBatchedDataset(self.batched_path, split=f'training{j}')
-            valid = AniBatchedDataset(self.batched_path, split=f'validation{j}')
+            train = ANIBatchedDataset(self.batched_path, split=f'training{j}')
+            valid = ANIBatchedDataset(self.batched_path, split=f'validation{j}')
             check_train_valid(train, valid)
 
     def testDisjointFolds(self):
@@ -81,8 +81,8 @@ class TestFineGrainedShuffle(TestCase):
         self._check_disjoint_and_nonduplicates('training', 'validation')
 
     def _check_disjoint_and_nonduplicates(self, name1, name2):
-        train = AniBatchedDataset(self.batched_path, split=name1)
-        valid = AniBatchedDataset(self.batched_path, split=name2)
+        train = ANIBatchedDataset(self.batched_path, split=name1)
+        valid = ANIBatchedDataset(self.batched_path, split=name2)
         all_train_energies = []
         all_valid_energies = []
         for b, b_valid in zip(train, valid):
@@ -167,7 +167,7 @@ class TestEstimationSAE(TestCase):
         self.batch_size = 2560
         create_batched_dataset(h5_path=dataset_path_gdb, dest_path=self.batched_path, shuffle=True,
                 splits={'training': 1.0}, batch_size=self.batch_size, shuffle_seed=12345)
-        self.train = AniBatchedDataset(self.batched_path, split='training')
+        self.train = ANIBatchedDataset(self.batched_path, split='training')
 
     def testExactSAE(self):
         with warnings.catch_warnings():
@@ -241,8 +241,8 @@ class TestTransforms(TestCase):
                     splits={'training': 0.5, 'validation': 0.5}, batch_size=2560, inplace_transform=compose)
             create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path2, shuffle=False,
                     splits={'training': 0.5, 'validation': 0.5}, batch_size=2560)
-        train_inplace = AniBatchedDataset(self.batched_path, split='training')
-        train = AniBatchedDataset(self.batched_path2, transform=compose, split='training')
+        train_inplace = ANIBatchedDataset(self.batched_path, split='training')
+        train = ANIBatchedDataset(self.batched_path2, transform=compose, split='training')
         for b, inplace_b in zip(train, train_inplace):
             for k in b.keys():
                 self.assertEqual(b[k], inplace_b[k])
@@ -258,7 +258,7 @@ class TestTransforms(TestCase):
             pass
 
 
-class TestAniBatchedDataset(TestCase):
+class TestANIBatchedDataset(TestCase):
 
     def setUp(self):
         self.batched_path = Path('./tmp_dataset').resolve()
@@ -269,8 +269,8 @@ class TestAniBatchedDataset(TestCase):
             ignore_unshuffled_warning()
             create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path, shuffle=False,
                     splits={'training': 0.5, 'validation': 0.5}, batch_size=self.batch_size)
-        self.train = AniBatchedDataset(self.batched_path, split='training')
-        self.valid = AniBatchedDataset(self.batched_path, split='validation')
+        self.train = ANIBatchedDataset(self.batched_path, split='training')
+        self.valid = ANIBatchedDataset(self.batched_path, split='validation')
 
     def testInit(self):
         self.assertTrue(self.train.split == 'training')
@@ -283,8 +283,8 @@ class TestAniBatchedDataset(TestCase):
         self.assertTrue(self.train.transform(None) is None)
 
     def testDropLast(self):
-        train_drop_last = AniBatchedDataset(self.batched_path, split='training', drop_last=True)
-        valid_drop_last = AniBatchedDataset(self.batched_path, split='validation', drop_last=True)
+        train_drop_last = ANIBatchedDataset(self.batched_path, split='training', drop_last=True)
+        valid_drop_last = ANIBatchedDataset(self.batched_path, split='validation', drop_last=True)
         self.assertEqual(len(train_drop_last), 2)
         self.assertEqual(len(valid_drop_last), 2)
         self.assertEqual(train_drop_last.batch_size, self.batch_size)
@@ -302,7 +302,7 @@ class TestAniBatchedDataset(TestCase):
 
     def testNumConformers(self):
         # check that the number of conformers is consistent
-        h5 = AniH5Dataset(dataset_path)
+        h5 = ANIDataset(dataset_path)
         num_conformers_batched = [len(b['species']) for b in self.train] + [len(b['species']) for b in self.valid]
         num_conformers_batched = sum(num_conformers_batched)
         self.assertEqual(h5.num_conformers, num_conformers_batched)
@@ -312,8 +312,8 @@ class TestAniBatchedDataset(TestCase):
         create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path_shuffled, shuffle=True,
                 shuffle_seed=12345,
                 splits={'training': 0.5, 'validation': 0.5}, batch_size=self.batch_size)
-        train = AniBatchedDataset(self.batched_path_shuffled, split='training')
-        valid = AniBatchedDataset(self.batched_path_shuffled, split='validation')
+        train = ANIBatchedDataset(self.batched_path_shuffled, split='training')
+        valid = ANIBatchedDataset(self.batched_path_shuffled, split='validation')
         # shuffling mixes the conformers a lot, so all batches have pads with -1
         for batch in train:
             self.assertTrue((batch['species'] == -1).any())
@@ -368,15 +368,15 @@ class TestAniBatchedDataset(TestCase):
 
     def testFileFormats(self):
         # check that batches created with all file formats are equal
-        for ff in AniBatchedDataset._SUFFIXES_AND_FORMATS.values():
+        for ff in ANIBatchedDataset._SUFFIXES_AND_FORMATS.values():
 
             with warnings.catch_warnings():
                 ignore_unshuffled_warning()
                 create_batched_dataset(h5_path=dataset_path,
                         dest_path=self.batched_path2, shuffle=False,
                         splits={'training': 0.5, 'validation': 0.5}, batch_size=self.batch_size)
-            train = AniBatchedDataset(self.batched_path2, split='training')
-            valid = AniBatchedDataset(self.batched_path2, split='validation')
+            train = ANIBatchedDataset(self.batched_path2, split='training')
+            valid = ANIBatchedDataset(self.batched_path2, split='validation')
             for batch_ref, batch in zip(self.train, train):
                 for k_ref in batch_ref:
                     self.assertEqual(batch_ref[k_ref], batch[k_ref])
@@ -398,7 +398,7 @@ class TestAniBatchedDataset(TestCase):
             pass
 
 
-class TestAniH5Dataset(TestCase):
+class TestANIDataset(TestCase):
 
     def setUp(self):
         # create two dummy HDF5 databases, one with 3 groups and one with one
@@ -449,7 +449,7 @@ class TestAniH5Dataset(TestCase):
                       'energies': torch.randn((5,))}}
 
     def testRenameProperty(self):
-        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+        ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
@@ -469,7 +469,7 @@ class TestAniH5Dataset(TestCase):
             ds.rename_properties({'species': 'renamed_energies'})
 
     def testDeleteProperty(self):
-        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+        ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
@@ -494,13 +494,13 @@ class TestAniH5Dataset(TestCase):
 
     def testCreation(self):
         with self.assertRaisesRegex(ValueError, "Please provide supported properties"):
-            AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+            ANIDataset(self.tmp_path.joinpath('new.h5'),
                               create=True)
         with self.assertRaisesRegex(FileNotFoundError, "The h5 file in .* could not be found"):
-            AniH5Dataset(self.tmp_path.joinpath('new.h5'))
+            ANIDataset(self.tmp_path.joinpath('new.h5'))
 
     def testNumpyMutable(self):
-        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+        ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
                           supported_properties=('species', 'energies', 'coordinates'))
         properties1 = {'species': np.full((5, 6), fill_value='H', dtype=str),
@@ -530,7 +530,7 @@ class TestAniH5Dataset(TestCase):
         self.assertTrue(len(ds.items()) == 0)
 
     def testSpeciesFromNumbers(self):
-        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+        ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
@@ -545,7 +545,7 @@ class TestAniH5Dataset(TestCase):
         self.assertEqual(numpy_numbers['numbers'], np.ones(len(numpy_species['species']), dtype=np.int64))
 
     def testNumbersFromSpecies(self):
-        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+        ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
@@ -559,7 +559,7 @@ class TestAniH5Dataset(TestCase):
             self.assertEqual(species, np.full(len(species), fill_value='H'))
 
     def testExtractSlice(self):
-        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+        ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
@@ -573,7 +573,7 @@ class TestAniH5Dataset(TestCase):
             self.assertEqual(species, np.full(len(species), fill_value='H'))
 
     def testNewScalar(self):
-        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+        ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
@@ -589,7 +589,7 @@ class TestAniH5Dataset(TestCase):
 
     def testMutable(self):
         # tests delitem and setitem analogues for the dataset
-        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+        ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
                           supported_properties=('species', 'energies', 'coordinates'))
 
@@ -641,7 +641,7 @@ class TestAniH5Dataset(TestCase):
             ds.append_conformers('O6', new_groups_copy)
 
     def testPresentSpecies(self):
-        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+        ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
@@ -653,7 +653,7 @@ class TestAniH5Dataset(TestCase):
             ds.present_species()
 
     def testRenameGroupsFormulas(self):
-        ds = AniH5Dataset(self.tmp_path.joinpath('new.h5'),
+        ds = ANIDataset(self.tmp_path.joinpath('new.h5'),
                           create=True,
                           supported_properties=('species', 'energies', 'coordinates'))
         new_groups = deepcopy(self.new_groups_torch)
@@ -664,19 +664,19 @@ class TestAniH5Dataset(TestCase):
             self.assertEqual(v, new_groups[k])
 
     def testSizesOneGroup(self):
-        ds = AniH5Dataset(self.tf_one_group.name)
+        ds = ANIDataset(self.tf_one_group.name)
         self.assertEqual(ds.num_conformers, self.num_conformers1)
         self.assertEqual(ds.num_conformer_groups, 1)
         self.assertEqual(len(ds), ds.num_conformer_groups)
 
     def testSizesThreeGroups(self):
-        ds = AniH5Dataset(self.tf_three_groups.name)
+        ds = ANIDataset(self.tf_three_groups.name)
         self.assertEqual(ds.num_conformers, self.num_conformers1 + self.num_conformers2 + self.num_conformers3)
         self.assertEqual(ds.num_conformer_groups, 3)
         self.assertEqual(len(ds), ds.num_conformer_groups)
 
     def testKeys(self):
-        ds = AniH5Dataset(self.tf_three_groups.name)
+        ds = ANIDataset(self.tf_three_groups.name)
         keys = set()
         for k in ds.keys():
             keys.update({k})
@@ -684,7 +684,7 @@ class TestAniH5Dataset(TestCase):
         self.assertEqual(len(ds.keys()), 3)
 
     def testValues(self):
-        ds = AniH5Dataset(self.tf_three_groups.name)
+        ds = ANIDataset(self.tf_three_groups.name)
         for d in ds.values():
             self.assertTrue('species' in d.keys())
             self.assertTrue('coordinates' in d.keys())
@@ -694,7 +694,7 @@ class TestAniH5Dataset(TestCase):
         self.assertEqual(len(ds.values()), 3)
 
     def testItems(self):
-        ds = AniH5Dataset(self.tf_three_groups.name)
+        ds = ANIDataset(self.tf_three_groups.name)
         for k, v in ds.items():
             self.assertTrue(isinstance(k, str))
             self.assertTrue(isinstance(v, dict))
@@ -704,7 +704,7 @@ class TestAniH5Dataset(TestCase):
         self.assertEqual(len(ds.items()), 3)
 
     def testGetConformers(self):
-        ds = AniH5Dataset(self.tf_three_groups.name)
+        ds = ANIDataset(self.tf_three_groups.name)
 
         self.assertEqual(ds.get_conformers('HOO')['coordinates'], ds['HOO']['coordinates'])
         conformers12 = ds.get_conformers('HCHHH', torch.tensor([1, 2]))
@@ -721,7 +721,7 @@ class TestAniH5Dataset(TestCase):
         self.assertTrue(conformers124.get('coordinates', None) is None)
 
     def testIterConformers(self):
-        ds = AniH5Dataset(self.tf_three_groups.name)
+        ds = ANIDataset(self.tf_three_groups.name)
         confs = []
         for c in ds.iter_conformers():
             self.assertTrue(isinstance(c, dict))

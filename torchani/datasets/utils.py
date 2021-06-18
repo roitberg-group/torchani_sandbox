@@ -10,24 +10,24 @@ from ..models import BuiltinModel
 from ..utils import pad_atomic_properties, tqdm
 from ..nn import Ensemble
 from ._annotations import KeyIdx, Properties, PathLike, PathLikeODict
-from .datasets import AniH5Dataset
+from .datasets import ANIDataset
 
 
-def concatenate(*args, **kwargs) -> 'AniH5Dataset':
+def concatenate(*args, **kwargs) -> 'ANIDataset':
     kwargs['concatenate'] = True
     return _copy_to_new_store(*args, **kwargs)
 
 
-def copy_linked_only(*args, **kwargs) -> 'AniH5Dataset':
+def copy_linked_only(*args, **kwargs) -> 'ANIDataset':
     kwargs['concatenate'] = False
     return _copy_to_new_store(*args, **kwargs)
 
 
-def _copy_to_new_store(source: AniH5Dataset,
+def _copy_to_new_store(source: ANIDataset,
                        dest_path: PathLike, *,
                        concatenate: bool = False,
                        verbose: bool = True,
-                       delete_originals: bool = False) -> AniH5Dataset:
+                       delete_originals: bool = False) -> ANIDataset:
     # When a dataset or group is unlinked from the HDF5 file the underlying
     # buffer is still part of the file, so the file does not reduce its size.
     # After deleting conformations or properties the dataset can be rebuilt on
@@ -54,7 +54,7 @@ def _copy_to_new_store(source: AniH5Dataset,
         desc = 'Copying data to new store'
         dest_paths = source_od
 
-    dest = AniH5Dataset(dest_paths, create=True, supported_properties=source.supported_properties)
+    dest = ANIDataset(dest_paths, create=True, supported_properties=source.supported_properties)
     for k, v in tqdm(source.numpy_items(repeat_nonbatch_keys=False),
                      desc=desc,
                      total=source.num_conformer_groups,
@@ -71,7 +71,7 @@ def _copy_to_new_store(source: AniH5Dataset,
     return dest
 
 
-def filter_by_high_force(dataset: AniH5Dataset,
+def filter_by_high_force(dataset: ANIDataset,
                          threshold: float = 2.0,
                          criteria: str = 'components',
                          device: str = 'cpu',
@@ -116,7 +116,7 @@ def filter_by_high_force(dataset: AniH5Dataset,
     return _return_padded_conformations_or_none(bad_conformations, bad_keys_and_idxs, device)
 
 
-def filter_by_high_energy_error(dataset: AniH5Dataset,
+def filter_by_high_energy_error(dataset: ANIDataset,
                                 model: BuiltinModel,
                                 threshold: int = 100,
                                 device: str = 'cpu',
@@ -152,7 +152,7 @@ def filter_by_high_energy_error(dataset: AniH5Dataset,
     return _return_padded_conformations_or_none(bad_conformations, bad_keys_and_idxs, device)
 
 
-def _delete_bad_conformations(dataset: AniH5Dataset, bad_keys_and_idxs: List[KeyIdx], verbose: bool) -> None:
+def _delete_bad_conformations(dataset: ANIDataset, bad_keys_and_idxs: List[KeyIdx], verbose: bool) -> None:
     if bad_keys_and_idxs:
         total_filtered = sum([v.numel() for (k, v) in bad_keys_and_idxs])
         for (key, idx) in tqdm(bad_keys_and_idxs,

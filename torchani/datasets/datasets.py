@@ -23,18 +23,18 @@ if _H5PY_AVAILABLE:
     import h5py
 
 
-DatasetWithFlag = Tuple['_AniH5FileWrapper', bool]
+SubdsWithFlag = Tuple['_ANISubdataset', bool]
 KeyIdxProperties = Tuple[str, int, Properties]
 Extractor = Callable[[int], Properties]
 _T = TypeVar('_T')
 
 
-def _may_need_cache_update(method: Callable[..., DatasetWithFlag]) -> Callable[..., '_AniH5FileWrapper']:
+def _may_need_cache_update(method: Callable[..., SubdsWithFlag]) -> Callable[..., '_ANISubdataset']:
     # Decorator that wraps functions that modify the dataset in place.  Makes
     # sure that cache updating happens after dataset modification if needed
 
     @wraps(method)
-    def method_with_cache_update(ds: '_AniH5FileWrapper', *args, **kwargs) -> '_AniH5FileWrapper':
+    def method_with_cache_update(ds: '_ANISubdataset', *args, **kwargs) -> '_ANISubdataset':
         _, update_cache = method(ds, *args, **kwargs)
         if update_cache:
             ds._update_internal_cache()
@@ -43,22 +43,22 @@ def _may_need_cache_update(method: Callable[..., DatasetWithFlag]) -> Callable[.
     return method_with_cache_update
 
 
-def _broadcast(method: Callable[..., 'AniH5Dataset']) -> Callable[..., 'AniH5Dataset']:
-    # Decorator that wraps functions from AniH5Dataset that should be
-    # delegated to all of its "_AniH5FileWrapper" members in a loop.
+def _broadcast(method: Callable[..., 'ANIDataset']) -> Callable[..., 'ANIDataset']:
+    # Decorator that wraps functions from ANIDataset that should be
+    # delegated to all of its "_ANISubdataset" members in a loop.
     @wraps(method)
-    def delegated_method_call(self: 'AniH5Dataset', *args, **kwargs) -> 'AniH5Dataset':
+    def delegated_method_call(self: 'ANIDataset', *args, **kwargs) -> 'ANIDataset':
         for ds in self._datasets.values():
             getattr(ds, method.__name__)(*args, **kwargs)
         return self._update_internal_cache()
     return delegated_method_call
 
 
-def _delegate(method: Callable[..., 'AniH5Dataset']) -> Callable[..., 'AniH5Dataset']:
-    # Decorator that wraps functions from AniH5Dataset that should be
-    # delegated to one of its "_AniH5FileWrapper" members,
+def _delegate(method: Callable[..., 'ANIDataset']) -> Callable[..., 'ANIDataset']:
+    # Decorator that wraps functions from ANIDataset that should be
+    # delegated to one of its "_ANISubdataset" members,
     @wraps(method)
-    def delegated_method_call(self: 'AniH5Dataset', group_name: str, *args, **kwargs) -> 'AniH5Dataset':
+    def delegated_method_call(self: 'ANIDataset', group_name: str, *args, **kwargs) -> 'ANIDataset':
         name, k = self._parse_key(group_name)
         getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
         return self._update_internal_cache()
@@ -66,10 +66,10 @@ def _delegate(method: Callable[..., 'AniH5Dataset']) -> Callable[..., 'AniH5Data
 
 
 def _delegate_with_return(method: Callable[..., _T]) -> Callable[..., _T]:
-    # Decorator that wraps functions from AniH5Dataset that should be
-    # delegated to one of its "_AniH5FileWrapper" members.
+    # Decorator that wraps functions from ANIDataset that should be
+    # delegated to one of its "_ANISubdataset" members.
     @wraps(method)
-    def delegated_method_call(self: 'AniH5Dataset', group_name: str, *args, **kwargs) -> Any:
+    def delegated_method_call(self: 'ANIDataset', group_name: str, *args, **kwargs) -> Any:
         name, k = self._parse_key(group_name)
         return getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
     return delegated_method_call
@@ -109,7 +109,7 @@ def _get_dim_size(common_keys: Set[str], dim: int,
     return size
 
 
-class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
+class ANIBatchedDataset(torch.utils.data.Dataset[Properties]):
 
     _SUFFIXES_AND_FORMATS = {'.npz': 'numpy', '.h5': 'hdf5', '.pkl': 'pickle'}
     batch_size: int
@@ -203,7 +203,7 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
 
     def cache(self, pin_memory: bool = True,
               verbose: bool = True,
-              apply_transform: bool = True) -> 'AniBatchedDataset':
+              apply_transform: bool = True) -> 'ANIBatchedDataset':
         r"""Saves the full dataset into RAM"""
         desc = f'Cacheing {self.split}, Warning: this may use a lot of RAM!'
         self._data = [self._extractor(idx) for idx in tqdm(range(len(self)),
@@ -301,8 +301,8 @@ class _AniDatasetBase(Mapping[str, Properties]):
             yield c
 
 
-class AniH5Dataset(_AniDatasetBase):
-    # Essentially a container of _AniH5FileWrapper instances that forwards
+class ANIDataset(_AniDatasetBase):
+    # Essentially a container of _ANISubdataset instances that forwards
     # calls to the corresponding files in an appropriate way Methods are
     # decorated depending on the forward manner, "_delegate" just calls the
     # method in one specific FileWrapper "_broadcast" calls method in all the
@@ -315,9 +315,9 @@ class AniH5Dataset(_AniDatasetBase):
             dataset_paths = [Path(dataset_paths).resolve()]
 
         if isinstance(dataset_paths, OrderedDict):
-            od = [(k, _AniH5FileWrapper(v, **kwargs)) for k, v in dataset_paths.items()]
+            od = [(k, _ANISubdataset(v, **kwargs)) for k, v in dataset_paths.items()]
         else:
-            od = [(str(j), _AniH5FileWrapper(v, **kwargs)) for j, v in enumerate(dataset_paths)]
+            od = [(str(j), _ANISubdataset(v, **kwargs)) for j, v in enumerate(dataset_paths)]
         self._datasets = OrderedDict(od)
         self._num_subds = len(self._datasets)
 
@@ -326,7 +326,7 @@ class AniH5Dataset(_AniDatasetBase):
         self._update_internal_cache()
 
     @contextmanager
-    def keep_open(self, mode: str = 'r') -> Iterator['AniH5Dataset']:
+    def keep_open(self, mode: str = 'r') -> Iterator['ANIDataset']:
         with ExitStack() as stack:
             for k in self._datasets.keys():
                 self._datasets[k] = stack.enter_context(self._datasets[k].keep_open(mode))
@@ -343,39 +343,39 @@ class AniH5Dataset(_AniDatasetBase):
     def get_numpy_conformers(self, key: str, *args, **kwargs) -> NumpyProperties: ...  # noqa E704
 
     @_delegate
-    def append_conformers(self, key: str, *args, **kwargs) -> 'AniH5Dataset': ...  # noqa E704
+    def append_conformers(self, key: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_delegate
-    def append_numpy_conformers(self, key: str, *args, **kwargs) -> 'AniH5Dataset': ...  # noqa E704
+    def append_numpy_conformers(self, key: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_delegate
-    def delete_conformers(self, group_name: str, *args, **kwargs) -> 'AniH5Dataset': ...  # noqa E704
+    def delete_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_delegate
-    def delete_group(self, group_name: str, *args, **kwargs) -> 'AniH5Dataset': ...  # noqa E704
+    def delete_group(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_broadcast
-    def create_species_from_numbers(self, *args, **kwargs) -> 'AniH5Dataset': ...  # noqa E704
+    def create_species_from_numbers(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_broadcast
-    def create_numbers_from_species(self, *args, **kwargs) -> 'AniH5Dataset': ...  # noqa E704
+    def create_numbers_from_species(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_broadcast
-    def extract_slice_as_new_group(self, *args, **kwargs) -> 'AniH5Dataset': ...  # noqa E704
+    def extract_slice_as_new_group(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_broadcast
-    def create_full_scalar_property(self, *args, **kwargs) -> 'AniH5Dataset': ...  # noqa E704
+    def create_full_scalar_property(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_broadcast
-    def rename_groups_to_formulas(self, *args, **kwargs) -> 'AniH5Dataset': ...  # noqa E704
+    def rename_groups_to_formulas(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_broadcast
-    def delete_properties(self, *args, **kwargs) -> 'AniH5Dataset': ...  # noqa E704
+    def delete_properties(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_broadcast
-    def rename_properties(self, *args, **kwargs) -> 'AniH5Dataset': ...  # noqa E704
+    def rename_properties(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
-    def _update_internal_cache(self) -> 'AniH5Dataset':
+    def _update_internal_cache(self) -> 'ANIDataset':
         if self._num_subds > 1:
             od_args = [(f'{name}/{k}', v) for name, ds in self._datasets.items() for k, v in ds.group_sizes.items()]
         else:
@@ -401,7 +401,21 @@ class AniH5Dataset(_AniDatasetBase):
             return self._first_name, '/'.join(tokens)
 
 
-class _AniH5FileWrapper(_AniDatasetBase):
+class AniH5Dataset(ANIDataset):
+
+    def __init__(self, *args, **kwargs) -> None:
+        warnings.warn("AniH5Dataset has been renamed to ANIDataset, please use ANIDataset instead")
+        super().__init__(*args, **kwargs)
+
+
+class AniBatchedDataset(ANIBatchedDataset):
+
+    def __init__(self, *args, **kwargs) -> None:
+        warnings.warn("AniBatchedDataset has been renamed to ANIBatchedDataset, please use ANIBatchedDataset instead")
+        super().__init__(*args, **kwargs)
+
+
+class _ANISubdataset(_AniDatasetBase):
 
     def __init__(self,
                  store_location: PathLike,
@@ -461,7 +475,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
             self._update_internal_cache()
 
     @contextmanager
-    def keep_open(self, mode: str = 'r') -> Iterator['_AniH5FileWrapper']:
+    def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
         r"""Context manager to keep dataset open while iterating over it
         Usage:
         with ds.keep_open('r') as ro_ds:
@@ -530,7 +544,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
             else:
                 def visitor_fn(name: str,
                                object_: Union[H5Dataset, H5Group],
-                               dataset: '_AniH5FileWrapper',
+                               dataset: '_ANISubdataset',
                                pbar: Any) -> None:
                     pbar.update()
                     # We make sure the node is a Dataset, and We avoid Datasets
@@ -629,7 +643,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
 
     def append_conformers(self,
                           group_name: str,
-                          properties: Properties) -> '_AniH5FileWrapper':
+                          properties: Properties) -> '_ANISubdataset':
         group_name, properties = self._check_append_input(group_name, properties)
         numpy_properties = {k: properties[k].numpy()
                             for k in self.supported_properties.difference({'species'})}
@@ -643,7 +657,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
 
         return self._append_numpy_conformers_no_check(group_name, numpy_properties)
 
-    def append_numpy_conformers(self, group_name: str, properties: NumpyProperties) -> '_AniH5FileWrapper':
+    def append_numpy_conformers(self, group_name: str, properties: NumpyProperties) -> '_ANISubdataset':
         group_name, properties = self._check_append_input(group_name, properties)
         return self._append_numpy_conformers_no_check(group_name, properties)
 
@@ -672,7 +686,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         return group_name, properties
 
     @_may_need_cache_update
-    def _append_numpy_conformers_no_check(self, group_name: str, properties: NumpyProperties) -> DatasetWithFlag:
+    def _append_numpy_conformers_no_check(self, group_name: str, properties: NumpyProperties) -> SubdsWithFlag:
         # NOTE: Appending to datasets is allowed in HDF5 but only if
         # the dataset is created with "resizable" format, since this is not the
         # default  for simplicity we just rebuild the whole group with the new
@@ -710,7 +724,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         return self, True
 
     @_may_need_cache_update
-    def delete_group(self, group_name: str) -> DatasetWithFlag:
+    def delete_group(self, group_name: str) -> SubdsWithFlag:
         if group_name not in self.keys():
             raise KeyError(group_name)
         with ExitStack() as stack:
@@ -723,7 +737,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
                                     dest_key: str,
                                     fill_value: int = 0,
                                     strict: bool = False,
-                                    dtype: DTypeLike = np.int64) -> DatasetWithFlag:
+                                    dtype: DTypeLike = np.int64) -> SubdsWithFlag:
         if self._should_exit_early(dest_key=dest_key, strict=strict):
             return self, False
         with ExitStack() as stack:
@@ -738,7 +752,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
     def create_species_from_numbers(self,
                                     source_key: str = 'numbers',
                                     dest_key: str = 'species',
-                                    strict: bool = True) -> DatasetWithFlag:
+                                    strict: bool = True) -> SubdsWithFlag:
         if self._should_exit_early(source_key, dest_key, strict):
             return self, False
         with ExitStack() as stack:
@@ -752,7 +766,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
     def create_numbers_from_species(self,
                                     source_key: str = 'species',
                                     dest_key: str = 'numbers',
-                                    strict: bool = True) -> DatasetWithFlag:
+                                    strict: bool = True) -> SubdsWithFlag:
         if self._should_exit_early(source_key, dest_key, strict):
             return self, False
         with ExitStack() as stack:
@@ -769,7 +783,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
                                    idx_to_slice: int,
                                    dim_to_slice: int,
                                    squeeze_dest_key: bool = True,
-                                   strict: bool = True) -> DatasetWithFlag:
+                                   strict: bool = True) -> SubdsWithFlag:
         # Annoyingly some properties are sometimes in this format:
         # "atomic_charges" with shape (C, A + 1), where charges[:, -1] is
         # actually the sum of the charges over all atoms. This function solves
@@ -814,7 +828,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         return False
 
     @_may_need_cache_update
-    def rename_groups_to_formulas(self, verbose: bool = True) -> DatasetWithFlag:
+    def rename_groups_to_formulas(self, verbose: bool = True) -> SubdsWithFlag:
         # This function is guaranteed to need cache update if there are any groups present at all
         if 'species' in self.supported_properties:
             parser = lambda s: species_to_formula(s['species'])  # noqa E731
@@ -837,7 +851,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         return self, bool(self.keys())
 
     @_may_need_cache_update
-    def delete_properties(self, properties: Sequence[str], verbose: bool = True) -> DatasetWithFlag:
+    def delete_properties(self, properties: Sequence[str], verbose: bool = True) -> SubdsWithFlag:
         _properties = self.supported_properties.intersection(set(properties))
 
         if _properties:
@@ -854,7 +868,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         return self, bool(_properties)
 
     @_may_need_cache_update
-    def rename_properties(self, old_new_dict: Dict[str, str]) -> DatasetWithFlag:
+    def rename_properties(self, old_new_dict: Dict[str, str]) -> SubdsWithFlag:
         old_new_dict = old_new_dict.copy()
         for old, new in old_new_dict.copy().items():
             if old == new:
@@ -878,7 +892,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         return self, bool(old_new_dict)
 
     @_may_need_cache_update
-    def delete_conformers(self, group_name: str, idx: Tensor) -> DatasetWithFlag:
+    def delete_conformers(self, group_name: str, idx: Tensor) -> SubdsWithFlag:
         # this function is guaranteed to need a cache update
         all_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch_keys=False)
         with ExitStack() as stack:

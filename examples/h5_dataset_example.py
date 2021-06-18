@@ -1,13 +1,13 @@
-from torchani.datasets import AniH5Dataset
+from torchani.datasets import ANIDataset
 import torch
 
-# Example usage of the AniH5Dataset class, which supersedes the obsolete
+# Example usage of the ANIDataset class, which supersedes the obsolete
 # anidataloader
 
-dataset = AniH5Dataset('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
+dataset = ANIDataset('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
 
 # ############## Conformer groups:  ###########################
-# To access groups of conformers we can just use the dataset as a dictionary
+# To access groups of conformers we can just use the dataset as an ordered
 group = dataset['C10H10']
 print(group)
 

@@ -64,12 +64,12 @@ if not Path(batched_dataset_path).resolve().is_dir():
 # This batched datasets can be directly iterated upon, but it may be more
 # practical to wrap it with a torch DataLoader
 if not folds:
-    training = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='training')
-    validation = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='validation')
+    training = torchani.datasets.ANIBatchedDataset(batched_dataset_path, split='training')
+    validation = torchani.datasets.ANIBatchedDataset(batched_dataset_path, split='validation')
 
 else:
-    training = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='training0')
-    validation = torchani.datasets.AniBatchedDataset(batched_dataset_path, split='validation0')
+    training = torchani.datasets.ANIBatchedDataset(batched_dataset_path, split='training0')
+    validation = torchani.datasets.ANIBatchedDataset(batched_dataset_path, split='validation0')
 
 cache = False
 if not cache:
@@ -131,7 +131,7 @@ elif cache:
 # https://pytorch.org/vision/stable/transforms.html with the difference that
 # the transforms are applied to both target and inputs in all cases.
 #
-# A transform can be passed to the "transform" argument of AniBatchedDataset to
+# A transform can be passed to the "transform" argument of ANIBatchedDataset to
 # perform the transforms on CPU after fetching the batches. If you do this and
 # cache the dataset afterwards, the transform is applied only once, so there is
 # no overhead at all.
