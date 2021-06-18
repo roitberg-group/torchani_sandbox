@@ -254,6 +254,14 @@ class _AniDatasetBase(Mapping[str, Properties]):
 
     def __init__(self, *args, **kwargs) -> None:
         self.group_sizes: 'OrderedDict[str, int]' = OrderedDict()
+        # "properties" is a persistent attribute needed for validation of
+        # inputs, and may change if a property in the dataset is renamed or is
+        # deleted
+        #
+        # "properties" is a read only and backed by _properties.
+        # The variables _batch_properties, _nonbatch_properties, num_conformers
+        # and num_conformer_groups are all calculated on the fly to guarantee
+        # synchronization with "properties".
         self._properties: Set[str] = set()
         self._possible_nonbatch_properties: Set[str] = set()
 
@@ -443,7 +451,6 @@ class _ANISubdataset(_AniDatasetBase):
                  assume_standard: bool = False,
                  create: bool = False,
                  flag_property: Optional[str] = None,
-                 properties: Optional[Iterable[str]] = None,
                  nonbatch_properties: Iterable[str] = ('species', 'numbers'),
                  property_aliases: Optional[Dict[str, str]] = None,
                  verbose: bool = True):
@@ -451,23 +458,23 @@ class _ANISubdataset(_AniDatasetBase):
         # Private wrapper over HDF5 Files, with some modifications it could be
         # used for directories with npz files. It should never ever be used
         # directly by user code
+
         self._backend = 'h5py'  # the only backend allowed currently
         if self._backend == 'h5py' and not _H5PY_AVAILABLE:
             raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
+
+        self._store_location = Path(store_location).resolve()
         self._open_store: Optional['_DatasetStoreAdaptor'] = None
         self._possible_nonbatch_properties = set(nonbatch_properties)
         self._verbose = verbose
-        self._store_location = Path(store_location).resolve()
         self._symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
         self._numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
         # flag property is used to infer size of conformer groups
         self._flag_property = flag_property
 
-        # group_sizes, supported properties  are
-        # needed as internal cache variables, this cache is updated if
-        # something in the dataset changes
-
+        # group_sizes and supported properties are needed as internal cache
+        # variables, this cache is updated if something in the dataset changes
         if property_aliases is None:
             self._property_to_alias = dict()
         else:
@@ -475,17 +482,16 @@ class _ANISubdataset(_AniDatasetBase):
         self._alias_to_property = {v: k for k, v in self._property_to_alias.items()}
 
         if create:
-            if properties is None:
-                raise ValueError("Please provide supported properties to create the dataset")
+            # create the file
             open(self._store_location, 'x').close()
             self._checked_homogeneous_properties = True
             self._has_standard_format = True
-            self._properties = set(properties)
         else:
             # In general all supported properties of the dataset should be
-            # equal for all groups, first we check that this is the case, if it
-            # isn't then we raise an error, if the check passes we set
-            # _checked_homogeneous_properties = True
+            # equal for all groups, first we check that this is the case inside
+            # _update_internal_cache, if it isn't then we raise an error, if
+            # the check passes we set _checked_homogeneous_properties = True,
+            # so that we don't run the test again
             if not self._store_location.is_file():
                 raise FileNotFoundError(f"The h5 file in {self._store_location.as_posix()} could not be found")
             self._has_standard_format = assume_standard
@@ -662,6 +668,11 @@ class _ANISubdataset(_AniDatasetBase):
 
     def _check_append_input(self, group_name: str, properties: MaybeNumpyProperties) -> Tuple[str, MaybeNumpyProperties]:
         # check input kills first dimension of nonbatch keys
+        if not self.properties:
+            # if this is the first conformer ever added update the dataset to
+            # support these properties
+            self._properties = set(properties.keys())
+
         if '/' in group_name:
             raise ValueError('Character "/" not supported in group_name')
         if not set(properties.keys()) == self.properties:
