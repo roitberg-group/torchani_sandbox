@@ -35,7 +35,7 @@ def _copy_to_new_store(source: AniH5Dataset,
     # Since only accessible data is copied the size is reduced. Even if
     # multiple backends are supported in the future, copying without
     # concatenating will always be specific to the HDF5 backend
-    source_names_and_paths = [(name, sub_ds._store_file)
+    source_names_and_paths = [(name, sub_ds._store_location)
                               for name, sub_ds in source._datasets.items()]
     source_od = OrderedDict(source_names_and_paths)
     dest_path = Path(dest_path).resolve()

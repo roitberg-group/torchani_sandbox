@@ -10,13 +10,17 @@ from functools import partial, wraps
 from contextlib import ExitStack, contextmanager
 from collections import OrderedDict
 
-import h5py
 import torch
 from torch import Tensor
 import numpy as np
 
-from ._annotations import Transform, Properties, NumpyProperties, MaybeNumpyProperties, PathLike, DTypeLike, PathLikeODict
+from ._backends import _H5PY_AVAILABLE
+from ._annotations import (Transform, Properties, NumpyProperties, MaybeNumpyProperties, PathLike, DTypeLike,
+                           PathLikeODict, H5Group, H5File, H5Dataset)
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
+
+if _H5PY_AVAILABLE:
+    import h5py
 
 
 DatasetWithFlag = Tuple['_AniH5FileWrapper', bool]
@@ -84,7 +88,7 @@ def _get_num_atoms(*args, **kwargs) -> int:
 
 
 def _get_dim_size(common_keys: Set[str], dim: int,
-                  molecule_group: Union[h5py.Group, Properties, NumpyProperties],
+                  molecule_group: Union[H5Group, Properties, NumpyProperties],
                   flag_property: Optional[str] = None,
                   supported_properties: Optional[Set[str]] = None) -> int:
     # Calculates the dimension size in a set of properties
@@ -156,6 +160,10 @@ class AniBatchedDataset(torch.utils.data.Dataset[Properties]):
         elif file_format not in self._SUFFIXES_AND_FORMATS.values():
             raise ValueError(f"The file format {file_format} is not one of the"
                              f"supported formats {self._SUFFIXES_AND_FORMATS.values()}")
+        if file_format == 'hdf5' and not _H5PY_AVAILABLE:
+            raise ValueError("File format hdf5 was specified but h5py could not"
+                             " be found, please install h5py or specify a "
+                             " different file format")
 
         def numpy_extractor(idx: int, paths: List[Path]) -> Properties:
             return {k: torch.as_tensor(v) for k, v in np.load(paths[idx]).items()}
@@ -379,7 +387,7 @@ class AniH5Dataset(_AniDatasetBase):
         for name, ds in self._datasets.items():
             if not ds.supported_properties == first_supported_properties:
                 raise ValueError('Supported properties are different for the'
-                                 ' component HDF5 files, got'
+                                 ' component subdatasets, got'
                                  f' {first_supported_properties} for {self._first_name}'
                                  f' and {ds.supported_properties} for {name}')
         self.supported_properties = first_supported_properties
@@ -396,7 +404,7 @@ class AniH5Dataset(_AniDatasetBase):
 class _AniH5FileWrapper(_AniDatasetBase):
 
     def __init__(self,
-                 store_file: PathLike,
+                 store_location: PathLike,
                  flag_property: Optional[str] = None,
                  nonbatch_keys: Sequence[str] = ('species', 'numbers'),
                  assume_standard: bool = False,
@@ -408,10 +416,13 @@ class _AniH5FileWrapper(_AniDatasetBase):
         # Private wrapper over HDF5 Files, with some modifications it could be
         # used for directories with npz files. It should never ever be used
         # directly by user code
+        self._backend = 'h5py'  # the only backend allowed currently
+        if self._backend == 'h5py' and not _H5PY_AVAILABLE:
+            raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
         self._open_store: Optional['_DatasetStoreAdaptor'] = None
         self._all_nonbatch_keys = set(nonbatch_keys)
         self._verbose = verbose
-        self._store_file = Path(store_file).resolve()
+        self._store_location = Path(store_location).resolve()
         self._symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
         self._numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
@@ -433,7 +444,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         if create:
             if supported_properties is None:
                 raise ValueError("Please provide supported properties to create the dataset")
-            open(self._store_file, 'x').close()
+            open(self._store_location, 'x').close()
             self._checked_homogeneous_properties = True
             self._has_standard_format = True
             self.supported_properties = set(supported_properties)
@@ -443,8 +454,8 @@ class _AniH5FileWrapper(_AniDatasetBase):
             # equal for all groups, first we check that this is the case, if it
             # isn't then we raise an error, if the check passes we set
             # _checked_homogeneous_properties = True
-            if not self._store_file.is_file():
-                raise FileNotFoundError(f"The h5 file in {self._store_file.as_posix()} could not be found")
+            if not self._store_location.is_file():
+                raise FileNotFoundError(f"The h5 file in {self._store_location.as_posix()} could not be found")
             self._has_standard_format = assume_standard
             self._checked_homogeneous_properties = False
             self._update_internal_cache()
@@ -462,7 +473,11 @@ class _AniH5FileWrapper(_AniDatasetBase):
             for c in ro_ds.iter_conformers():
                 print(c)
         may be much faster than directly iterating over conformers"""
-        self._open_store = _DatasetStoreAdaptor(h5py.File(self._store_file, mode), self._property_to_alias)
+        if self._backend == 'h5py':
+            context_manager = h5py.File(self._store_location, mode)
+        else:
+            raise RuntimeError(f"Bad backend {self._backend}")
+        self._open_store = _DatasetStoreAdaptor(context_manager, self._property_to_alias)
         try:
             yield self
         finally:
@@ -473,7 +488,11 @@ class _AniH5FileWrapper(_AniDatasetBase):
         # This trick makes methods fetch the open file directly
         # if they are being called from inside a "keep_open" context
         if self._open_store is None:
-            return stack.enter_context(_DatasetStoreAdaptor(h5py.File(self._store_file, mode)))
+            if self._backend == 'h5py':
+                context_manager = h5py.File(self._store_location, mode)
+            else:
+                raise RuntimeError(f"Bad backend {self._backend}")
+            return stack.enter_context(_DatasetStoreAdaptor(context_manager))
         else:
             current_mode = self._open_store.mode
             assert mode in ['r+', 'r'], f"Unsupported mode {mode}"
@@ -493,56 +512,59 @@ class _AniH5FileWrapper(_AniDatasetBase):
 
     def _update_internal_cache(self) -> None:
         self._reset_internal_cache()
-        if self._has_standard_format:
-            # This is much faster (x30) than a visitor function but it assumes
-            # the format is somewhat standard which means that all Groups have
-            # depth 1, and all Datasets have depth 2. "Meta" datasets don't
-            # bother in this case
-            with tqdm(desc=f'Scanning {self._store_file.name} assuming standard format',
-                      disable=not self._verbose) as pbar:
-                with ExitStack() as stack:
-                    # get the raw hdf5 file object for manipulations inside this function
-                    raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
-                    for k, g in raw_hdf5_store.items():
-                        pbar.update()
-                        self._update_supported_properties_cache(g)
-                        self._update_group_sizes_cache(g)
-        else:
-            def visitor_fn(name: str,
-                           object_: Union[h5py.Dataset, h5py.Group],
-                           dataset: '_AniH5FileWrapper',
-                           pbar: Any) -> None:
-                pbar.update()
-                # We make sure the node is a Dataset, and We avoid Datasets
-                # called _meta or _created since if present these store units
-                # or other metadata. We also check if we already visited this
-                # group via one of its children.
-                if not isinstance(object_, h5py.Dataset) or\
-                       object_.name.lower() in ['/_created', '/_meta'] or\
-                       object_.parent.name in dataset.group_sizes.keys():
-                    return
-                g = object_.parent
-                # Check for format correctness
-                for v in g.values():
-                    if isinstance(v, h5py.Group):
-                        msg = (f"Invalid dataset format, there shouldn't be "
-                                "Groups inside Groups that have Datasets, "
-                                f"but {g.name}, parent of the dataset "
-                                f"{object_.name}, has group {v.name} as a "
-                                "child")
-                        raise RuntimeError(msg)
-                dataset._update_supported_properties_cache(g)
-                dataset._update_group_sizes_cache(g)
-
-            with ExitStack() as stack:
-                raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
-                with tqdm(desc='Verifying format correctness',
+        if self._backend == 'h5py':
+            if self._has_standard_format:
+                # This is much faster (x30) than a visitor function but it assumes
+                # the format is somewhat standard which means that all Groups have
+                # depth 1, and all Datasets have depth 2. "Meta" datasets don't
+                # bother in this case
+                with tqdm(desc=f'Scanning {self._store_location.name} assuming standard format',
                           disable=not self._verbose) as pbar:
-                    raw_hdf5_store.visititems(partial(visitor_fn, dataset=self, pbar=pbar))
+                    with ExitStack() as stack:
+                        # get the raw hdf5 file object for manipulations inside this function
+                        raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
+                        for k, g in raw_hdf5_store.items():
+                            pbar.update()
+                            self._update_properties_cache_h5py(g)
+                            self._update_groups_cache_h5py(g)
+            else:
+                def visitor_fn(name: str,
+                               object_: Union[H5Dataset, H5Group],
+                               dataset: '_AniH5FileWrapper',
+                               pbar: Any) -> None:
+                    pbar.update()
+                    # We make sure the node is a Dataset, and We avoid Datasets
+                    # called _meta or _created since if present these store units
+                    # or other metadata. We also check if we already visited this
+                    # group via one of its children.
+                    if not isinstance(object_, H5Dataset) or\
+                           object_.name.lower() in ['/_created', '/_meta'] or\
+                           object_.parent.name in dataset.group_sizes.keys():
+                        return
+                    g = object_.parent
+                    # Check for format correctness
+                    for v in g.values():
+                        if isinstance(v, h5py.Group):
+                            msg = (f"Invalid dataset format, there shouldn't be "
+                                    "Groups inside Groups that have Datasets, "
+                                    f"but {g.name}, parent of the dataset "
+                                    f"{object_.name}, has group {v.name} as a "
+                                    "child")
+                            raise RuntimeError(msg)
+                    dataset._update_properties_cache_h5py(g)
+                    dataset._update_groups_cache_h5py(g)
 
-            # If the visitor function succeeded and this condition is met the
-            # dataset must be in standard format
-            self._has_standard_format = not any('/' in k[1:] for k in self.group_sizes.keys())
+                with ExitStack() as stack:
+                    raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
+                    with tqdm(desc='Verifying format correctness',
+                              disable=not self._verbose) as pbar:
+                        raw_hdf5_store.visititems(partial(visitor_fn, dataset=self, pbar=pbar))
+
+                # If the visitor function succeeded and this condition is met the
+                # dataset must be in standard format
+                self._has_standard_format = not any('/' in k[1:] for k in self.group_sizes.keys())
+        else:
+            raise RuntimeError(f"Bad backend {self._backend}")
 
         self._checked_homogeneous_properties = True
         self.num_conformers = sum(self.group_sizes.values())
@@ -554,7 +576,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         # function worked properly.
         assert list(self.group_sizes) == sorted(self.group_sizes), "Groups were not iterated upon alphanumerically"
 
-    def _update_supported_properties_cache(self, molecule_group: h5py.Group) -> None:
+    def _update_properties_cache_h5py(self, molecule_group: H5Group) -> None:
         # Updates the "supported_properties", "_supported_nonbatch_keys" and
         # "_supported_batch_keys" variables. "element keys" are keys that
         # don't have a batch dimension, their shape must be (atoms,)
@@ -580,7 +602,7 @@ class _AniH5FileWrapper(_AniDatasetBase):
         self._supported_batch_keys = {k for k in self.supported_properties
                                       if k not in self._all_nonbatch_keys}
 
-    def _update_group_sizes_cache(self, molecule_group: h5py.Group) -> None:
+    def _update_groups_cache_h5py(self, molecule_group: H5Group) -> None:
         # updates "group_sizes" which holds the batch dimension (number of
         # molecules) of all grups in the dataset.
         raw_flag_property: Optional[str]
@@ -946,7 +968,7 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
     # wrapper around an open hdf5 file object that
     # returns ConformerGroup facades which renames properties on access and
     # creation
-    def __init__(self, store_obj: h5py.File, property_to_alias: Optional[Dict[str, str]] = None):
+    def __init__(self, store_obj: H5File, property_to_alias: Optional[Dict[str, str]] = None):
         # an open h5py file object
         self._store_obj = store_obj
         self._property_to_alias = property_to_alias if property_to_alias is not None else dict()
@@ -981,7 +1003,7 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
 
 
 class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
-    def __init__(self, group_obj: h5py.Group, property_to_alias: Optional[Dict[str, str]] = None):
+    def __init__(self, group_obj: H5Group, property_to_alias: Optional[Dict[str, str]] = None):
         self._group_obj = group_obj
         self._property_to_alias = property_to_alias if property_to_alias is not None else dict()
 
