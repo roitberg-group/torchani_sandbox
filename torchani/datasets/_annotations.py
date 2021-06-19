@@ -30,7 +30,7 @@ KeyIdx = Tuple[str, Tensor]
 Transform = Callable[[Dict[str, Tensor]], Dict[str, Tensor]]
 
 Conformers = Dict[str, Tensor]
-NumpyConformers = Dict[str, 'ndarray[Any, Any]']
+NumpyConformers = Dict[str, ndarray]
 MaybeNumpyConformers = TypeVar('MaybeNumpyConformers', NumpyConformers, Conformers)
 
 PathLike = Union[str, Path]
