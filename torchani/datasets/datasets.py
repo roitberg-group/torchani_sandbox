@@ -84,6 +84,17 @@ _T = TypeVar('_T')
 #
 # This mechanism is currently achieved by decorating dummy methods but there
 # may be some more elegant way.
+#
+# ContextManager usage:
+# ----------------
+# You can turn the dataset into a context manager that keeps all HDF5 files
+# open simultaneously by using with ds.keep_open('r') as ro_ds:, for example.
+# It seems that HDF5 is quite slow when opening files, it has to aqcuire locks,
+# and do other things, so this speeds up iteration by 12 - 13 % usually. Since
+# many files may need to be opened at the same time then ExitStack is needed to
+# properly clean up everything. Each time a method needs to open a file it first
+# checks if it is already open (i.e. we are inside a 'keep_open' context) in that
+# case it just fetches the already opened file.
 
 
 def _get_num_conformers(*args, **kwargs) -> int:
@@ -380,10 +391,10 @@ def _delegate_with_return(method: Callable[..., _T]) -> Callable[..., _T]:
 
 class ANIDataset(_ANIDatasetBase):
     # Essentially a container of _ANISubdataset instances that forwards
-    # calls to the corresponding files in an appropriate way Methods are
+    # calls to the corresponding files in an appropriate way methods are
     # decorated depending on the forward manner, "_delegate" just calls the
-    # method in one specific FileWrapper "_broadcast" calls method in all the
-    # FileWrappers and "_delegate_with_return" is like "_delegate" but has a
+    # method in one specific Subdataset "_broadcast" calls method in all the
+    # Subdataset and "_delegate_with_return" is like "_delegate" but has a
     # return value other than self, so it can't be chained
     def __init__(self, dataset_paths: Union[PathLike, PathLikeODict, Sequence[PathLike]], **kwargs):
         super().__init__()
