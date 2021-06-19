@@ -14,13 +14,16 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from ._backends import _H5PY_AVAILABLE
-from ._annotations import (Transform, Properties, NumpyProperties, MaybeNumpyProperties, PathLike, DTypeLike,
-                           PathLikeODict, H5Group, H5File, H5Dataset)
+from ._backends import _H5PY_AVAILABLE, _CUDF_AVAILABLE, H5Group, H5File, H5Dataset
+from ._annotations import Transform, Properties, NumpyProperties, MaybeNumpyProperties, PathLike, DTypeLike, PathLikeODict
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
 if _H5PY_AVAILABLE:
     import h5py
+    from ._backends import _H5DatasetStoreAdaptor
+if _CUDF_AVAILABLE:
+    import cudf  # noqa
+    from ._backends import _CUDFDatasetStoreAdaptor
 
 
 SubdsWithFlag = Tuple['_ANISubdataset', bool]
@@ -453,15 +456,18 @@ class _ANISubdataset(_ANIDatasetBase):
                  flag_property: Optional[str] = None,
                  nonbatch_properties: Iterable[str] = ('species', 'numbers'),
                  property_aliases: Optional[Dict[str, str]] = None,
+                 backend: str = 'h5py',
                  verbose: bool = True):
         super().__init__()
         # Private wrapper over HDF5 Files, with some modifications it could be
         # used for directories with npz files. It should never ever be used
         # directly by user code
 
-        self._backend = 'h5py'  # the only backend allowed currently
+        self._backend = backend
         if self._backend == 'h5py' and not _H5PY_AVAILABLE:
             raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
+        elif self._backend == 'cudf' and not _CUDF_AVAILABLE:
+            raise ValueError('cudf backend was specified but cudf could not be found, please install cudf')
 
         self._store_location = Path(store_location).resolve()
         self._open_store: Optional['_DatasetStoreAdaptor'] = None
@@ -512,10 +518,11 @@ class _ANISubdataset(_ANIDatasetBase):
                 print(c)
         may be much faster than directly iterating over conformers"""
         if self._backend == 'h5py':
-            context_manager = h5py.File(self._store_location, mode)
+            self._open_store = _H5DatasetStoreAdaptor(h5py.File(self._store_location, mode), self._property_to_alias)
+        elif self._backend == 'cudf':
+            self._open_store = _CUDFDatasetStoreAdaptor(cudf.read_parquet(self._store_location), self._property_to_alias)
         else:
             raise RuntimeError(f"Bad backend {self._backend}")
-        self._open_store = _DatasetStoreAdaptor(context_manager, self._property_to_alias)
         try:
             yield self
         finally:
@@ -527,10 +534,11 @@ class _ANISubdataset(_ANIDatasetBase):
         # if they are being called from inside a "keep_open" context
         if self._open_store is None:
             if self._backend == 'h5py':
-                context_manager = h5py.File(self._store_location, mode)
+                return stack.enter_context(_H5DatasetStoreAdaptor(h5py.File(self._store_location, mode)))
+            elif self._backend == 'cudf':
+                return stack.enter_context(_CUDFDatasetStoreAdaptor(cudf.read_parquet(self._store_location)))
             else:
                 raise RuntimeError(f"Bad backend {self._backend}")
-            return stack.enter_context(_DatasetStoreAdaptor(context_manager))
         else:
             current_mode = self._open_store.mode
             assert mode in ['r+', 'r'], f"Unsupported mode {mode}"
@@ -594,6 +602,12 @@ class _ANISubdataset(_ANIDatasetBase):
                 # If the visitor function succeeded and this condition is met the
                 # dataset must be in standard format
                 self._has_standard_format = not any('/' in k[1:] for k in self.group_sizes.keys())
+        elif self._backend == 'cudf':
+            df = cudf.read_parquet(self._store_location)
+            group_sizes_ud = df['group_key'].groupby('group_key').count().to_pandas()
+            od_args = sorted([(k, v) for k, v in group_sizes_ud.to_dict().items()])
+            self.group_sizes = OrderedDict(od_args)
+            self._properties = set(k for k in df.columns.tolist() if not k.endswith('shape') and k != 'group_key')
         else:
             raise RuntimeError(f"Bad backend {self._backend}")
 

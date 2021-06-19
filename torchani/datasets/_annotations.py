@@ -5,17 +5,6 @@ from torch import Tensor
 from pathlib import Path
 from numpy import ndarray, dtype
 from collections import OrderedDict
-from ._backends import _H5PY_AVAILABLE
-
-if _H5PY_AVAILABLE:
-    import h5py
-    H5Group = h5py.Group
-    H5Dataset = h5py.Dataset
-    H5File = h5py.File
-else:
-    H5Group = Any
-    H5Dataset = Any
-    H5File = Any
 
 # This is needed for compatibility with python 3.6, where numpy typing doesn't
 # work correctly
