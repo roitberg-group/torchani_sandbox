@@ -1,6 +1,7 @@
 name: stable-torch-1.9.0
 
 on:
+  pull_request:
   push:
     branches:
       - master
