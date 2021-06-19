@@ -29,9 +29,9 @@ else:
 KeyIdx = Tuple[str, Tensor]
 Transform = Callable[[Dict[str, Tensor]], Dict[str, Tensor]]
 
-Properties = Dict[str, Tensor]
-NumpyProperties = Dict[str, 'ndarray[Any, Any]']
-MaybeNumpyProperties = TypeVar('MaybeNumpyProperties', NumpyProperties, Properties)
+Conformers = Dict[str, Tensor]
+NumpyConformers = Dict[str, 'ndarray[Any, Any]']
+MaybeNumpyConformers = TypeVar('MaybeNumpyConformers', NumpyConformers, Conformers)
 
 PathLike = Union[str, Path]
 PathLikeODict = Union['OrderedDict[str, str]', 'OrderedDict[str, Path]']

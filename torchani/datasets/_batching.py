@@ -15,7 +15,7 @@ import numpy as np
 
 from ..utils import pad_atomic_properties, cumsum_from_zero, PADDING, tqdm
 from .datasets import ANIDataset
-from ._annotations import Properties, PathLike, Transform
+from ._annotations import Conformers, PathLike, Transform
 
 
 def create_batched_dataset(h5_path: PathLike,
@@ -271,7 +271,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                 indices_to_unsort_batch_cat = torch.argsort(indices_to_sort_batch_indices_cat)
                 assert len(batch_sizes) <= max_batches_per_packet
 
-                all_conformers: List[Properties] = []
+                all_conformers: List[Conformers] = []
                 end_idxs = counts_cat + cumcounts_cat
                 groups_slices = zip(uniqued_idxs_cat, cumcounts_cat, end_idxs)
                 desc = (f'Saving batch packet {j + 1} of {num_batch_indices_packets} '
@@ -305,7 +305,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                     overall_batch_idx += 1
 
 
-def _save_batch(path: Path, idx: int, batch: Properties, file_format: str) -> None:
+def _save_batch(path: Path, idx: int, batch: Conformers, file_format: str) -> None:
     # We use pickle, numpy or hdf5 since saving in
     # pytorch format is extremely slow
     batch = {k: v.numpy() for k, v in batch.items()}

@@ -9,7 +9,7 @@ from ..units import hartree2kcalmol
 from ..models import BuiltinModel
 from ..utils import pad_atomic_properties, tqdm
 from ..nn import Ensemble
-from ._annotations import KeyIdx, Properties, PathLike, PathLikeODict
+from ._annotations import KeyIdx, Conformers, PathLike, PathLikeODict
 from .datasets import ANIDataset
 
 
@@ -86,14 +86,14 @@ def filter_by_high_force(dataset: ANIDataset,
         raise ValueError('Criteria must be one of "magnitude" or "components"')
 
     # Threshold is by default 2 Ha / Angstrom
-    bad_conformations: List[Properties] = []
+    bad_conformations: List[Conformers] = []
     bad_keys_and_idxs: List[KeyIdx] = []
     with torch.no_grad():
         for key, g in tqdm(dataset.items(),
                            total=dataset.num_conformer_groups,
                            desc=desc,
                            disable=not verbose):
-            # properties are split into pieces of up to max_split to avoid
+            # conformers are split into pieces of up to max_split to avoid
             # loading large groups into GPU memory at the same time and
             # calculating over them
             species, coordinates, forces = _fetch_splitted(g, ('species', 'coordinates', 'forces'), max_split)
@@ -123,7 +123,7 @@ def filter_by_high_energy_error(dataset: ANIDataset,
                                 max_split: int = 2560,
                                 delete_inplace: bool = False,
                                 verbose: bool = True) -> Optional[Tuple[Tensor, Tensor, List[KeyIdx]]]:
-    bad_conformations: List[Properties] = []
+    bad_conformations: List[Conformers] = []
     bad_keys_and_idxs: List[KeyIdx] = []
     model = model.to(device)
     if not model.periodic_table_index:
@@ -166,19 +166,19 @@ def _delete_bad_conformations(dataset: ANIDataset, bad_keys_and_idxs: List[KeyId
         print(f"Deleted {total_filtered} conformations")
 
 
-def _return_padded_conformations_or_none(bad_conformations: List[Properties],
+def _return_padded_conformations_or_none(bad_conformations: List[Conformers],
                                          bad_keys_and_idxs: List[KeyIdx],
                                          device: str) -> Optional[Tuple[Tensor, Tensor, List[KeyIdx]]]:
     if bad_conformations:
-        properties = pad_atomic_properties(bad_conformations)
-        return properties['species'].to(device), properties['coordinates'].to(device), bad_keys_and_idxs
+        conformers = pad_atomic_properties(bad_conformations)
+        return conformers['species'].to(device), conformers['coordinates'].to(device), bad_keys_and_idxs
     else:
         return None
 
 
-def _fetch_splitted(properties: Properties, keys_to_split: Sequence[str], max_split: int) -> Tuple[Tuple[Tensor, ...], ...]:
+def _fetch_splitted(conformers: Conformers, keys_to_split: Sequence[str], max_split: int) -> Tuple[Tuple[Tensor, ...], ...]:
     # NOTE: len of output tuple is the same as len of input keys_to_split
-    return tuple(torch.split(properties[k], max_split) for k in keys_to_split)
+    return tuple(torch.split(conformers[k], max_split) for k in keys_to_split)
 
 
 def _append_bad_keys_and_idxs(bad_idxs: Tensor,
@@ -191,7 +191,7 @@ def _append_bad_keys_and_idxs(bad_idxs: Tensor,
 
 
 def _append_bad_conformations(bad_idxs: Tensor,
-                              bad_conformations: List[Properties],
+                              bad_conformations: List[Conformers],
                               s: Tensor,
                               c: Tensor) -> None:
     bad_species_of_split = s[bad_idxs].cpu().clone()
