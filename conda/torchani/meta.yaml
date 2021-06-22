@@ -1,5 +1,5 @@
 package:
-  name: torchani-sandbox
+  name: sandbox
   version: "{{ environ.get('BUILD_VERSION') }}"
 
 source:
@@ -11,7 +11,7 @@ requirements:
     - {{ compiler('cxx') }}
 
   host:
-    - python
+    - python {{ python }}
     - setuptools_scm
     - cmake
     - ninja
@@ -24,7 +24,7 @@ requirements:
     {{ environ.get('CONDA_CUDATOOLKIT_CONSTRAINT') }}
 
   run:
-    - python
+    - python {{ python }}
     - setuptools
     - importlib_metadata
     - lark-parser
@@ -36,7 +36,7 @@ requirements:
 
 build:
   number: 1
-  string: py{{py}}
+  string: py{{py}}_torch1.9.0_cuda11.1
   script:
     - "{{ PYTHON }} setup.py install --ext-all-sms"
 
@@ -46,7 +46,7 @@ test:
     - torchani.cuaev
 
 about:
-  home: https://github.com/aiqm/torchani
+  home: https://roitberg.chem.ufl.edu
   license: MIT
   license_file: LICENSE
-  summary: 'Accurate Neural Network Potential on PyTorch'
+  summary: 'Roiberg Group Sandbox'
