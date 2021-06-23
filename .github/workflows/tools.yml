@@ -43,5 +43,5 @@ jobs:
       run: python tools/training-benchmark-nsys-profile.py --dry-run dataset/ani1-up_to_gdb4/ani_gdb_s01.h5
 
 concurrency:
-  group: build-linux-conda-${{ github.event.pull_request.number || github.sha }}
+  group: tools-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true

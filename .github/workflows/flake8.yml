@@ -33,5 +33,5 @@ jobs:
       run: flake8 .
 
 concurrency:
-  group: build-linux-conda-${{ github.event.pull_request.number || github.sha }}
+  group: flake8-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true

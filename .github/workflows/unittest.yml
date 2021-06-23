@@ -39,5 +39,5 @@ jobs:
       run: python -m pytest -v tests/*
 
 concurrency:
-  group: build-linux-conda-${{ github.event.pull_request.number || github.sha }}
+  group: unittest-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true

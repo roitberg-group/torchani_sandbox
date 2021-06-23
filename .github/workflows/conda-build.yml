@@ -58,5 +58,5 @@ jobs:
         ./conda/build_conda.sh
 
 concurrency:
-  group: build-linux-conda-${{ github.event.pull_request.number || github.sha }}
+  group: conda-build-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true

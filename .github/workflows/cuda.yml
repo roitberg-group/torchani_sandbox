@@ -57,5 +57,5 @@ jobs:
       run: pytest tests/test_cuaev.py -v
 
 concurrency:
-  group: build-linux-conda-${{ github.event.pull_request.number || github.sha }}
+  group: cuda-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
