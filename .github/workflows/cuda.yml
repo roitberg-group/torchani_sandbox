@@ -55,3 +55,7 @@ jobs:
         python setup.py install --ext --only-sm80
     - name: Run cuaev test
       run: pytest tests/test_cuaev.py -v
+
+concurrency:
+  group: build-linux-conda-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
