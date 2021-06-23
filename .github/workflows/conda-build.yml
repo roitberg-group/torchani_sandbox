@@ -53,8 +53,6 @@ jobs:
       run: |
         echo $CUDA_HOME
         echo $LD_LIBRARY_PATH
-        which python
-        python -V
         nvcc -V
         ./conda/build_conda.sh
 
