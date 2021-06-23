@@ -15,6 +15,7 @@ setup_conda_pytorch_constraint
 setup_conda_cudatoolkit_constraint
 
 # build
+conda install conda-build
 conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload "$script_dir/torchani"
 # conda install anaconda-client
 # anaconda upload *.tar.bz2
