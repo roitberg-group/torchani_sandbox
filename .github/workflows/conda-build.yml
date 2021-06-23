@@ -1,0 +1,51 @@
+name: conda-build
+
+on:
+  pull_request:
+    paths:
+      - 'setup.py'
+      - 'torchani/csrc/**'
+      - 'torchani/aev/**'
+      - 'ci/**'
+      - 'test/test_cuaev.py'
+  push:
+    branches:
+      - master
+    paths:
+      - 'setup.py'
+      - 'torchani/cuaev/**'
+      - 'torchani/aev.py'
+      - 'ci/**'
+      - 'test/test_cuaev.py'
+
+jobs:
+  conda-build:
+
+    runs-on: self-hosted
+    strategy:
+      max-parallel: 4
+
+    steps:
+    - name: Cancel Previous Runs
+      uses: styfle/cancel-workflow-action@0.8.0
+      with:
+        access_token: ${{ github.token }}
+    - uses: actions/checkout@v1
+    - name: Set up conda
+      uses: s-weigand/setup-conda@v1
+    - name: Fetch submodules
+      run: git submodule update --init
+    - name: Install cuda
+      run: |
+        source ci/install_cuda.sh
+        echo "CUDA_HOME=${CUDA_HOME}" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+        echo "PATH=${CUDA_HOME}/bin:$PATH" >> $GITHUB_ENV
+    - name: Conda Build
+      run: |
+        echo $CUDA_HOME
+        echo $LD_LIBRARY_PATH
+        which python
+        python -V
+        nvcc -V
+        ./conda/build_conda.sh
