@@ -31,9 +31,9 @@ jobs:
     - uses: actions/checkout@v2
     - name: Use Cached pkgs
       run: |
-      if [ ! -d /root/conda_pkgs_dir_saved ]; then
-        mv /root/conda_pkgs_dir_saved /root/conda_pkgs_dir
-      fi
+        if [ ! -d /root/conda_pkgs_dir_saved ]; then
+          mv /root/conda_pkgs_dir_saved /root/conda_pkgs_dir
+        fi
     - name: Set up conda path prefix
       run: |
         mkdir -p /root/miniconda3
