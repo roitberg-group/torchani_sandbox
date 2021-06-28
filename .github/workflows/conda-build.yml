@@ -60,7 +60,7 @@ jobs:
         echo $CUDA_HOME
         echo $LD_LIBRARY_PATH
         nvcc -V
-        ./conda/build_conda.sh
+        ./conda/build_conda.sh release ${{ secrets.CONDA_TOKEN }}
     - name: Save pkgs to avoid to be removed
       # Waiting feature to be added: https://github.com/conda-incubator/setup-miniconda/issues/181
       run: mv /root/conda_pkgs_dir /root/conda_pkgs_dir_saved
