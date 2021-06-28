@@ -33,17 +33,18 @@ export PATH="${CONDA_PREFIX}/bin:${CONDA}/bin:$PATH"  # anaconda bin location
 which anaconda
 
 # do not upload
-if [[ $1 == "test" ]]; then
+if [[ $1 == test ]]; then
     conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload "$script_dir/torchani"
     echo test
 fi
 
 # upload to anaconda.org
-if [[ $1 == "release" ]]; then
+if [[ $1 == release ]]; then
     if (( $# < 2 )); then
         >&2 echo "No conda token provided "
         exit 1
     fi
+    echo "${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PY_VERSION}_torch1.9.0_cuda11.1.tar.bz2"
     conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload "$script_dir/torchani"
     CONDA_TOKEN=$2
     anaconda -t $CONDA_TOKEN upload -u USER "${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PY_VERSION}_torch1.9.0_cuda11.1.tar.bz2" --force
