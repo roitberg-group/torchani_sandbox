@@ -29,10 +29,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+    - name: Use Cached pkgs
+      run: mv /root/conda_pkgs_dir_saved /root/conda_pkgs_dir
     - name: Set up conda path prefix
       run: |
-        mkdir -p /root/miniconda
-        echo "CONDA=/root/miniconda" >> $GITHUB_ENV
+        mkdir -p /root/miniconda3
+        echo "CONDA=/root/miniconda3" >> $GITHUB_ENV
     - name: Set up conda
       uses: conda-incubator/setup-miniconda@v2
       with:
@@ -57,6 +59,8 @@ jobs:
         echo $LD_LIBRARY_PATH
         nvcc -V
         ./conda/build_conda.sh
+    - name: Use Cached pkgs
+      run: mv /root/conda_pkgs_dir /root/conda_pkgs_dir_saved
 
 concurrency:
   group: conda-build-${{ github.event.pull_request.number || github.sha }}
