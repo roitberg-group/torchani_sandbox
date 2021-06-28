@@ -43,6 +43,6 @@ if [[ $1 == "release" ]]; then
         exit 1
     fi
     CONDA_TOKEN=$2
-    anaconda -t $CONDA_TOKEN
+    anaconda -t afjlakdjflkadjf
     conda build $CONDA_CHANNEL_FLAGS "$script_dir/torchani"
 fi
