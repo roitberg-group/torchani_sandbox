@@ -1,5 +1,5 @@
 package:
-  name: sandbox
+  name: "{{ environ.get('PACKAGE_NAME') }}"
   version: "{{ environ.get('BUILD_VERSION') }}"
 
 source:
@@ -38,13 +38,14 @@ build:
   number: 1
   string: py{{py}}_torch1.9.0_cuda11.1
   script:
-    - "{{ PYTHON }} setup.py install --ext-all-sms"
+    # - "{{ PYTHON }} setup.py install --ext-all-sms"
+    - "{{ PYTHON }} setup.py install"
 
 test:
   imports:
     - torchani
-    - torchani.cuaev
-    - torchani.mnp
+    # - torchani.cuaev
+    # - torchani.mnp
 
 about:
   home: https://roitberg.chem.ufl.edu

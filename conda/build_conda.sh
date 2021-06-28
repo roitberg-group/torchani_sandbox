@@ -19,6 +19,8 @@ setup_build_version 2.2
 setup_cuda_home
 setup_conda_pytorch_constraint
 setup_conda_cudatoolkit_constraint
+export PACKAGE_NAME=sandbox
+export USER=roitberg-group
 
 if (( $# == 0 )); then
     >&2 echo "Illegal number of parameters"
@@ -42,7 +44,7 @@ if [[ $1 == "release" ]]; then
         >&2 echo "No conda token provided "
         exit 1
     fi
+    conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload "$script_dir/torchani"
     CONDA_TOKEN=$2
-    anaconda -t afjlakdjflkadjf
-    conda build $CONDA_CHANNEL_FLAGS "$script_dir/torchani"
+    anaconda -t $CONDA_TOKEN upload -u USER "${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PY_VERSION}_torch1.9.0_cuda11.1.tar.bz2" --force
 fi
