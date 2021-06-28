@@ -44,6 +44,7 @@ test:
   imports:
     - torchani
     - torchani.cuaev
+    - torchani.mnp
 
 about:
   home: https://roitberg.chem.ufl.edu
