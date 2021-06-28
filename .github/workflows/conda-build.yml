@@ -29,10 +29,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Set up conda
+    - name: Set up conda path prefix
       run: |
         mkdir -p /root/miniconda
         echo "CONDA=/root/miniconda" >> $GITHUB_ENV
+    - name: Set up conda
       uses: conda-incubator/setup-miniconda@v2
       with:
         miniconda-version: "latest"
