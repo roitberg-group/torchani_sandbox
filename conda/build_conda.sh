@@ -27,7 +27,7 @@ fi
 
 # conda-build dependency
 conda install conda-build conda-verify anaconda-client -y
-export PATH="$PREFIX/bin:$PATH"  # anaconda bin location
+export PATH="$PREFIX/envs/foo/bin:$PATH"  # anaconda bin location
 
 # do not upload
 if [[ $1 == "test" ]]; then
