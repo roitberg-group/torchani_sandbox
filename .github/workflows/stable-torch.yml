@@ -1,7 +1,6 @@
 name: stable-torch-1.9.0
 
 on:
-  pull_request:
   push:
     branches:
       - master
@@ -11,10 +10,7 @@ on:
 jobs:
   stable-torch:
 
-    runs-on: [self-hosted, miniconda]
-    defaults:
-      run:
-        shell: bash -l {0}
+    runs-on: self-hosted
     strategy:
       fail-fast: true
       max-parallel: 4
@@ -22,25 +18,15 @@ jobs:
         python-version: [3.8]
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Use saved pkgs
-      run: |
-        if [ -d /root/conda_pkgs_dir_saved ]; then
-          mv /root/conda_pkgs_dir_saved /root/conda_pkgs_dir
-        fi
-    - name: Set up conda path prefix
-      run: |
-        echo "CONDA=/root/miniconda" >> $GITHUB_ENV
-    - name: Set up conda
-      uses: conda-incubator/setup-miniconda@v2
+    - name: Cancel Previous Runs
+      uses: styfle/cancel-workflow-action@0.8.0
       with:
-        miniconda-version: "latest"
-        activate-environment: foo${{ matrix.python-version }}
-        auto-update-conda: false
+        access_token: ${{ github.token }}
+    - uses: actions/checkout@v1
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
         python-version: ${{ matrix.python-version }}
-    - name: Conda info
-      shell: bash -l {0}
-      run: conda info
     - name: Fetch submodules
       run: git submodule update --init
     - name: Install cuda
@@ -51,22 +37,15 @@ jobs:
         echo "PATH=${CUDA_HOME}/bin:$PATH" >> $GITHUB_ENV
     - name: Install dependencies
       run: ci/install_stable_dependencies.sh
-    - name: Pytorch info
-      run: python -c 'from torch.utils.collect_env import get_pretty_env_info; print(get_pretty_env_info())'
     - name: Install TorchANI
       run: |
         echo $CUDA_HOME
         echo $LD_LIBRARY_PATH
         nvcc -V
         python setup.py install --ext --only-sm80
-        python -c "import torchani; print(torchani.__file__)"
     - name: Download data files
       run: ./download.sh
     - name: install pytest
       run: pip install pytest
     - name: Run all tests
-      run: python -m pytest -v tests/*
-
-concurrency:
-  group: stable-torch-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+      run: cd tests; python -m pytest -v *  # import torchani in root dir will not import the compiled one
