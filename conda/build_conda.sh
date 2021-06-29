@@ -21,6 +21,8 @@ setup_conda_pytorch_constraint
 setup_conda_cudatoolkit_constraint
 export PACKAGE_NAME=sandbox
 export USER=roitberg-group
+# default python version is 3.8 if it's not set
+PYTHON_VERSION="${PYTHON_VERSION:-3.8}"
 
 # conda-build dependency
 conda install conda-build conda-verify anaconda-client -y
@@ -28,7 +30,7 @@ export PATH="${CONDA_PREFIX}/bin:${CONDA}/bin:$PATH"  # anaconda bin location
 which anaconda
 
 # do not upload
-conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload --python "$PYTHON_VERSION" "$script_dir/torchani"
+conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload --no-copy-test-source-files --python "$PYTHON_VERSION" "$script_dir/torchani"
 
 # upload to anaconda.org
 if [[ $1 == release ]]; then
