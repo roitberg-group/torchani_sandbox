@@ -11,7 +11,7 @@ on:
 jobs:
   stable-torch:
 
-    runs-on: self-hosted
+    runs-on: [self-hosted, miniconda]
     defaults:
       run:
         shell: bash -l {0}
@@ -58,6 +58,7 @@ jobs:
         echo $CUDA_HOME
         echo $LD_LIBRARY_PATH
         nvcc -V
+        # python setup.py install --ext --only-sm80
         pip install -e . --global-option="--ext" --global-option="--only-sm80"
         python -c "import torchani; print(torchani.__file__)"
     - name: Download data files
