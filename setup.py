@@ -171,7 +171,6 @@ setup(
         'torch',
         'lark-parser',
         'requests',
-        'expecttest',  # workaround for bug in torch nightly
         'importlib_metadata',
     ],
     **ext_kwargs()
