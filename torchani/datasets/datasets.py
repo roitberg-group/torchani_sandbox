@@ -939,18 +939,18 @@ class _ANISubdataset(_ANIDatasetBase):
                                            total=self.num_conformer_groups,
                                            desc='Renaming groups to formulas',
                                            disable=not verbose):
-            new_name = _get_num_atoms(conformers, None, self._nonbatch_properties)
-            new_name = f'num_atoms_{new_name}'
+            num = _get_num_atoms(conformers, None, self._nonbatch_properties)
+            new_name = f'num_atoms_{num}'
             if group_name != f'{new_name}':
                 with ExitStack() as stack:
                     f = self._get_open_store(stack, 'r+')
                     del f[group_name]
-                self._append_numpy_conformers_no_check.__wrapped__(self,
+                self._append_numpy_conformers_no_check.__wrapped__(self,  # type: ignore
                                                                    new_name,
                                                                    conformers,
                                                                    require_sorted_properties=False,
-                                                                   repeat_nonbatch=True)  # type: ignore
-        self._possible_nonbatch_properties = tuple()
+                                                                   repeat_nonbatch=True)
+        self._possible_nonbatch_properties = set()
         return self
 
     @_needs_cache_update
@@ -1021,8 +1021,10 @@ class _ANISubdataset(_ANIDatasetBase):
     def get_numpy_conformers(self,
                              key: str,
                              idx: Optional[Tensor] = None,
-                             include_properties: Optional[Sequence[str]] = None,
+                             include_properties: Optional[Iterable[str]] = None,
                              repeat_nonbatch: bool = True) -> NumpyConformers:
+        if isinstance(include_properties, str):
+            include_properties = {include_properties}
         if include_properties is None:
             requested_properties = self.properties
         else:
@@ -1054,8 +1056,10 @@ class _ANISubdataset(_ANIDatasetBase):
     def get_conformers(self,
                        key: str,
                        idx: Optional[Tensor] = None,
-                       include_properties: Optional[Sequence[str]] = None,
+                       include_properties: Optional[Iterable[str]] = None,
                        repeat_nonbatch: bool = True) -> Conformers:
+        if isinstance(include_properties, str):
+            include_properties = {include_properties}
         if include_properties is None:
             requested_properties = self.properties
         else:
@@ -1069,7 +1073,7 @@ class _ANISubdataset(_ANIDatasetBase):
             conformers.update({'species': torch.from_numpy(species)})
         return conformers
 
-    def _check_properties_are_present(self, requested_properties: Iterable[str], raise_: bool = True) -> bool:
+    def _check_properties_are_present(self, requested_properties: Iterable[str], raise_: bool = True) -> None:
         if isinstance(requested_properties, str):
             requested_properties = {requested_properties}
         else:
@@ -1078,7 +1082,7 @@ class _ANISubdataset(_ANIDatasetBase):
             raise ValueError(f"Some of the properties requested {requested_properties} are not"
                              f" in the dataset, which has properties {self.properties}")
 
-    def _check_properties_are_not_present(self, requested_properties: Iterable[str], raise_: bool = True) -> bool:
+    def _check_properties_are_not_present(self, requested_properties: Iterable[str], raise_: bool = True) -> None:
         if isinstance(requested_properties, str):
             requested_properties = (requested_properties,)
         if set(requested_properties).issubset(self.properties):
