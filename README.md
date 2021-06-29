@@ -49,7 +49,8 @@ To run the tests and examples, you must manually download a data package
 ```bash
 ./download.sh
 pip install -r test_requirements.txt
-pytest tests/ -s -v
+cd tests
+python -m pytest -v -s *.py
 ```
 
 # TorchANI Extensions
