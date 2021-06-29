@@ -49,4 +49,4 @@ jobs:
     - name: install pytest
       run: pip install pytest
     - name: Run all tests
-      run: cd tests; python -m pytest -v *  # import torchani in root dir will not import the compiled one
+      run: cd tests; python -m pytest -v -s test*.py  # import torchani in root dir will not import the compiled one
