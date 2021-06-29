@@ -36,12 +36,20 @@ TorchANI is a pytorch implementation of ANI. It is currently under alpha release
 
 
 # Install
+Supported version information when install from anaconda:
+- pytorch 1.9
+- cuda 11.1
+- python 3.6 or python 3.8
+
 Install from anaconda by
 ```bash
 conda create -n ani python=3.8 -y
 conda activate ani
 conda install -c roitberg-group -c pytorch -c nvidia -c defaults -c conda-forge sandbox
 ```
+
+You could also build torchani from source, check at [TorchANI CSRC](torchani/csrc).
+
 Note that if you updated TorchANI, you may also need to update PyTorch.
 
 To run the tests and examples, you must manually download a data package
@@ -54,7 +62,7 @@ python -m pytest -v -s *.py
 ```
 
 # TorchANI Extensions
-[TorchANI Extensions csrc](torchani/csrc) provides AEV CUDA Extension (speedup for AEV calculation) and MNP extension (Multi Net Parallel for inference) for speedup training and inference.
+[TorchANI CSRC](torchani/csrc) provides AEV CUDA Extension (speedup for AEV calculation) and MNP extension (Multi Net Parallel for inference) for speedup training and inference.
 
 # Citation
 

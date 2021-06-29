@@ -29,10 +29,10 @@ conda install conda-build conda-verify anaconda-client -y
 export PATH="${CONDA_PREFIX}/bin:${CONDA}/bin:$PATH"  # anaconda bin location
 which anaconda
 
-# do not upload
+# build package
 conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload --no-copy-test-source-files --python "$PYTHON_VERSION" "$script_dir/torchani"
 
-# upload to anaconda.org
+# upload to anaconda.org if has release argument
 if [[ $1 == release ]]; then
     BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PYTHON_VERSION//./}_torch1.9.0_cuda11.1.tar.bz2"
     echo $BUILD_FILE
