@@ -28,11 +28,11 @@ export PATH="${CONDA_PREFIX}/bin:${CONDA}/bin:$PATH"  # anaconda bin location
 which anaconda
 
 # do not upload
-conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload "$script_dir/torchani"
+conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload --python "$PYTHON_VERSION" "$script_dir/torchani"
 
 # upload to anaconda.org
 if [[ $1 == release ]]; then
-    BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PY_VERSION}_torch1.9.0_cuda11.1.tar.bz2"
+    BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PYTHON_VERSION//./}_torch1.9.0_cuda11.1.tar.bz2"
     echo $BUILD_FILE
     anaconda -t $CONDA_TOKEN upload -u $USER $BUILD_FILE --force
 fi

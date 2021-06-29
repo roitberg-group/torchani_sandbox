@@ -60,10 +60,10 @@ jobs:
         echo $CUDA_HOME
         echo $LD_LIBRARY_PATH
         nvcc -V
-        py_version=${{ matrix.python-version }}
-        echo "PY_VERSION=${py_version//./}" >> $GITHUB_ENV
-        export PY_VERSION=${py_version//./}
-        echo "CONDA_TOKEN=${{ secrets.CONDA_TOKEN }}" >> $GITHUB_ENV
+        export PYTHON_VERSION=${{ matrix.python-version }}
+        # echo "PY_VERSION=${py_version//./}" >> $GITHUB_ENV
+        # export PY_VERSION=${py_version//./}
+        # echo "CONDA_TOKEN=${{ secrets.CONDA_TOKEN }}" >> $GITHUB_ENV
         export CONDA_TOKEN=${{ secrets.CONDA_TOKEN }}
         ./conda/build_conda.sh release
     - name: Save pkgs to avoid to be removed
