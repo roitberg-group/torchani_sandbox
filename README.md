@@ -36,31 +36,20 @@ TorchANI is a pytorch implementation of ANI. It is currently under alpha release
 
 
 # Install
-
-TorchANI requires the latest preview version of PyTorch. Please install PyTorch before installing TorchANI.
-
-Please see [PyTorch's official site](https://pytorch.org/get-started/locally/) for instructions of installing latest preview version of PyTorch.
-
-Note that if you updated TorchANI, you may also need to update PyTorch.
-
-After installing the correct PyTorch, you can install TorchANI by `pip` or `conda`:
-
-```bash
-pip install torchani
-```
-
-or
-
+Install from anaconda by
 ```bash
 conda create -n condatest python=3.8 -y
 conda activate condatest
 conda install -c roitberg-group -c pytorch -c nvidia -c defaults -c conda-forge sandbox
 ```
+Note that if you updated TorchANI, you may also need to update PyTorch.
 
 To run the tests and examples, you must manually download a data package
 
 ```bash
 ./download.sh
+pip install -r test_requirements.txt
+pytest tests/ -s -v
 ```
 
 # TorchANI Extensions
