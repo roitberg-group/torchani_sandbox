@@ -3,9 +3,9 @@ set -ex
 
 # USAGE:
 # 1. test
-# ./build_conda.sh
+# PYTHON_VERSION=3.8 ./build_conda.sh
 # 2. release
-# ./build_conda.sh release CONDA_TOKEN
+# PYTHON_VERSION=3.8 CONDA_TOKEN=TOKEN ./build_conda.sh release
 
 # helper functions
 script_dir=$(dirname $(realpath $0))

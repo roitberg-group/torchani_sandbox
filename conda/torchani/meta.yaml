@@ -45,6 +45,15 @@ test:
     - torchani
     - torchani.cuaev
     - torchani.mnp
+  source_files:
+    - tests/*
+    - download.sh
+    - dataset/*
+  commands:
+    - pip install pytest pynvml pkbar ase parameterized
+    - ./download.sh
+    # cuaev test
+    - python tests/test_cuaev.py
 
 about:
   home: https://roitberg.chem.ufl.edu
