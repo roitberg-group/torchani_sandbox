@@ -32,12 +32,7 @@ conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload "$script_dir/torchani"
 
 # upload to anaconda.org
 if [[ $1 == release ]]; then
-    if (( $# < 2 )); then
-        >&2 echo "No conda token provided "
-        exit 1
-    fi
     BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PY_VERSION}_torch1.9.0_cuda11.1.tar.bz2"
     echo $BUILD_FILE
-    CONDA_TOKEN=$2
     anaconda -t $CONDA_TOKEN upload -u $USER $BUILD_FILE --force
 fi

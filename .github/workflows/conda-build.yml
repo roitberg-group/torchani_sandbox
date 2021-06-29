@@ -63,8 +63,9 @@ jobs:
         py_version=${{ matrix.python-version }}
         echo "PY_VERSION=${py_version//./}" >> $GITHUB_ENV
         export PY_VERSION=${py_version//./}
-        echo $PY_VERSION
-        ./conda/build_conda.sh release ${{ secrets.CONDA_TOKEN }}
+        echo "CONDA_TOKEN=${{ secrets.CONDA_TOKEN }}" >> $GITHUB_ENV
+        export CONDA_TOKEN=${{ secrets.CONDA_TOKEN }}
+        ./conda/build_conda.sh release
     - name: Save pkgs to avoid to be removed
       # Waiting feature to be added: https://github.com/conda-incubator/setup-miniconda/issues/181
       run: mv /root/conda_pkgs_dir /root/conda_pkgs_dir_saved
