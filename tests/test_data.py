@@ -456,14 +456,11 @@ class TestANIDataset(TestCase):
         ds.rename_properties({'energies': 'renamed_energies'})
         for k, v in ds.items():
             self.assertEqual(set(v.keys()), {'species', 'coordinates', 'renamed_energies'})
-        ds.rename_properties({'energies': 'renamed_energies'})
-        for k, v in ds.items():
-            self.assertEqual(set(v.keys()), {'species', 'coordinates', 'renamed_energies'})
 
-        with self.assertRaisesRegex(ValueError, "Cant rename null0 into null1"):
+        with self.assertRaisesRegex(ValueError, "Some of the properties requested"):
             ds.rename_properties({'null0': 'null1'})
 
-        with self.assertRaisesRegex(ValueError, "Cant rename species into renamed_energies"):
+        with self.assertRaisesRegex(ValueError, "Some of the properties requested"):
             ds.rename_properties({'species': 'renamed_energies'})
 
     def testDeleteProperty(self):
@@ -471,13 +468,6 @@ class TestANIDataset(TestCase):
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
-        ds.delete_properties({'energies'})
-        for k, v in ds.items():
-            self.assertEqual(set(v.keys()), {'species', 'coordinates'})
-            self.assertEqual(v['species'], new_groups[k]['species'])
-            self.assertEqual(v['coordinates'], new_groups[k]['coordinates'])
-
-        # Check for deletion of something that was already deleted
         ds.delete_properties({'energies'})
         for k, v in ds.items():
             self.assertEqual(set(v.keys()), {'species', 'coordinates'})
@@ -632,7 +622,7 @@ class TestANIDataset(TestCase):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)
         new_groups = deepcopy(self.new_groups_torch)
         for j, k in enumerate(('H6', 'C6', 'O6')):
-            ds.append_conformers(str(j), new_groups[k])
+            ds.append_conformers(f'group{j}', new_groups[k])
         ds.rename_groups_to_formulas()
         for k, v in ds.items():
             self.assertEqual(v, new_groups[k])

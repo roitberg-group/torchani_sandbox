@@ -23,7 +23,6 @@ if _H5PY_AVAILABLE:
     import h5py
 
 
-SubdsWithFlag = Tuple['_ANISubdataset', bool]
 KeyIdxConformers = Tuple[str, int, Conformers]
 Extractor = Callable[[int], Conformers]
 _T = TypeVar('_T')
@@ -53,7 +52,7 @@ _T = TypeVar('_T')
 # location of all the groups, and the sizes of all the groups inside
 # "groups_sizes". After this, it is not necessary to do the recursion again
 # unless some modification to the dataset happens, in which case we need a
-# cache update, to get "group_sizes" and "properties" again. Methods that may
+# cache update, to get "group_sizes" and "properties" again. Methods that
 # modify the dataset are decorated so that the internal cache is updated.
 #
 # If the dataset has some semblance of standarization (it is a tree with depth
@@ -501,15 +500,14 @@ class AniBatchedDataset(ANIBatchedDataset):
 
 
 # Decorator for ANISubdataset
-def _may_need_cache_update(method: Callable[..., SubdsWithFlag]) -> Callable[..., '_ANISubdataset']:
-    # Decorator that wraps functions that modify the dataset in place.  Makes
-    # sure that cache updating happens after dataset modification if needed
+def _needs_cache_update(method: Callable[..., '_ANISubdataset']) -> Callable[..., '_ANISubdataset']:
+    # Decorator that wraps functions that modify the dataset in place. Makes
+    # sure that cache updating happens after dataset modification
 
     @wraps(method)
     def method_with_cache_update(ds: '_ANISubdataset', *args, **kwargs) -> '_ANISubdataset':
-        _, update_cache = method(ds, *args, **kwargs)
-        if update_cache:
-            ds._update_internal_cache()
+        ds = method(ds, *args, **kwargs)
+        ds._update_internal_cache()
         return ds
 
     return method_with_cache_update
@@ -722,7 +720,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
     def append_conformers(self,
                           group_name: str,
-                          conformers: Conformers) -> '_ANISubdataset':
+                          conformers: Conformers, properties_to_sort: Iterable[str] = tuple()) -> '_ANISubdataset':
         group_name, conformers = self._check_append_input(group_name, conformers)
         numpy_conformers = {k: conformers[k].numpy()
                             for k in self.properties.difference({'species'})}
@@ -734,11 +732,11 @@ class _ANISubdataset(_ANIDatasetBase):
             species = self._numbers_to_symbols(conformers['species'].numpy())
             numpy_conformers.update({'species': species})
 
-        return self._append_numpy_conformers_no_check(group_name, numpy_conformers)
+        return self._append_numpy_conformers_no_check(group_name, numpy_conformers, properties_to_sort)
 
-    def append_numpy_conformers(self, group_name: str, conformers: NumpyConformers) -> '_ANISubdataset':
+    def append_numpy_conformers(self, group_name: str, conformers: NumpyConformers, properties_to_sort: Iterable[str] = tuple()) -> '_ANISubdataset':
         group_name, conformers = self._check_append_input(group_name, conformers)
-        return self._append_numpy_conformers_no_check(group_name, conformers)
+        return self._append_numpy_conformers_no_check(group_name, conformers, properties_to_sort)
 
     def _check_append_input(self, group_name: str, conformers: MaybeNumpyConformers) -> Tuple[str, MaybeNumpyConformers]:
         # check input kills first dimension of nonbatch keys
@@ -769,8 +767,11 @@ class _ANISubdataset(_ANIDatasetBase):
 
         return group_name, conformers
 
-    @_may_need_cache_update
-    def _append_numpy_conformers_no_check(self, group_name: str, conformers: NumpyConformers) -> SubdsWithFlag:
+    @_needs_cache_update
+    def _append_numpy_conformers_no_check(self,
+                                          group_name: str,
+                                          conformers: NumpyConformers,
+                                          properties_to_sort: Iterable[str] = tuple()) -> '_ANISubdataset':
         # NOTE: Appending to datasets is allowed in HDF5 but only if
         # the dataset is created with "resizable" format, since this is not the
         # default  for simplicity we just rebuild the whole group with the new
@@ -780,6 +781,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
         # check for correct sorting which is necessary if conformers are
         # grouped with nonbatch keys
+
         if self._nonbatch_properties:
             if 'numbers' in conformers.keys():
                 numbers = conformers['numbers']
@@ -787,17 +789,29 @@ class _ANISubdataset(_ANIDatasetBase):
                 numbers = self._symbols_to_numbers(conformers['species'])
             else:
                 raise ValueError('Either species or numbers need to be present to append')
-            if not (np.sort(numbers) == numbers).all():
-                raise ValueError('Atomic numbers, species and all other properties that are'
-                                  ' atomic (such as coordinates and forces) must'
-                                  ' be sorted by atomic number before appending')
 
+        # sorting logic
+        if properties_to_sort:
+            self._check_properties_are_present(properties_to_sort)
+            if not self._nonbatch_properties:
+                # second dimension of batch properties is sorted
+                raise ValueError("can't sort atomic keys if there are no nonbatch properties")
+            idxs_for_sort = np.argsort(numbers)
+            self._sort_atomic_properties_inplace(idxs_for_sort, conformers, properties_to_sort)
+
+        if self._nonbatch_properties and not (np.sort(numbers) == numbers).all():
+            raise ValueError('Atomic numbers, species and all other properties that are'
+                              ' atomic (such as coordinates and forces) must'
+                                  ' be sorted by atomic number before appending')
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             try:
                 group = f.create_conformer_group(group_name)
             except ValueError:
                 old_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch=False)
+                if properties_to_sort:
+                    self._sort_atomic_properties_inplace(idxs_for_sort, old_conformers, properties_to_sort)
+
                 if not all((old_conformers[k] == conformers[k]).all() for k in self._nonbatch_properties):
                     raise ValueError("Attempted to combine groups with different nonbatch key")
                 conformers.update({k: np.concatenate((old_conformers[k], conformers[k]), axis=0)
@@ -805,77 +819,79 @@ class _ANISubdataset(_ANIDatasetBase):
                 del f[group_name]
                 group = f.create_conformer_group(group_name)
             group.create_numpy_values(conformers)
-        return self, True
+        return self
 
-    @_may_need_cache_update
-    def delete_group(self, group_name: str) -> SubdsWithFlag:
+    def _sort_atomic_properties_inplace(self,
+                                        idxs_for_sort: np.ndarray,
+                                        conformers: NumpyConformers,
+                                        properties_to_sort: Iterable[str]) -> None:
+        for p in properties_to_sort:
+            conformers[p] = conformers[p][:, idxs_for_sort, ...]
+        if 'numbers' in conformers.keys():
+            conformers['numbers'] = conformers['numbers'][idxs_for_sort]
+        if 'species' in conformers.keys():
+            conformers['species'] = conformers['species'][idxs_for_sort]
+
+    @_needs_cache_update
+    def delete_group(self, group_name: str) -> '_ANISubdataset':
         if group_name not in self.keys():
             raise KeyError(group_name)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             del f[group_name]
-        return self, True
+        return self
 
-    @_may_need_cache_update
+    @_needs_cache_update
     def create_full_scalar_property(self,
                                     dest_key: str,
                                     fill_value: int = 0,
-                                    strict: bool = False,
-                                    dtype: DTypeLike = np.int64) -> SubdsWithFlag:
-        if self._should_exit_early(dest_key=dest_key, strict=strict):
-            return self, False
+                                    dtype: DTypeLike = np.int64) -> '_ANISubdataset':
+        self._check_properties_are_not_present(dest_key)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
                 size = _get_num_conformers(f[group_name], self._flag_property, self.properties)
                 data = np.full(size, fill_value=fill_value, dtype=dtype)
-                f[group_name].create_numpy_value(dest_key, data=data)
-        return self, bool(self.keys())
+                f[group_name].create_numpy_values({dest_key: data})
+        return self
 
-    @_may_need_cache_update
-    def create_species_from_numbers(self,
-                                    source_key: str = 'numbers',
-                                    dest_key: str = 'species',
-                                    strict: bool = True) -> SubdsWithFlag:
-        if self._should_exit_early(source_key, dest_key, strict):
-            return self, False
+    @_needs_cache_update
+    def create_species_from_numbers(self, source_key: str = 'numbers', dest_key: str = 'species') -> '_ANISubdataset':
+        self._check_properties_are_present(source_key)
+        self._check_properties_are_not_present(dest_key)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
-                symbols = np.asarray([PERIODIC_TABLE[j] for j in f[group_name][source_key]])
-                f[group_name].create_numpy_value(dest_key, data=symbols)
-        return self, bool(self.keys())
+                symbols = self._numbers_to_symbols(f[group_name][source_key])
+                f[group_name].create_numpy_values({dest_key: symbols})
+        return self
 
-    @_may_need_cache_update
-    def create_numbers_from_species(self,
-                                    source_key: str = 'species',
-                                    dest_key: str = 'numbers',
-                                    strict: bool = True) -> SubdsWithFlag:
-        if self._should_exit_early(source_key, dest_key, strict):
-            return self, False
+    @_needs_cache_update
+    def create_numbers_from_species(self, source_key: str = 'species', dest_key: str = 'numbers') -> '_ANISubdataset':
+        self._check_properties_are_present(source_key)
+        self._check_properties_are_not_present(dest_key)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
                 numbers = self._symbols_to_numbers(f[group_name][source_key].astype(str))
-                f[group_name].create_numpy_value(dest_key, data=numbers)
-        return self, bool(self.keys())
+                f[group_name].create_numpy_values({dest_key: numbers})
+        return self
 
-    @_may_need_cache_update
+    @_needs_cache_update
     def extract_slice_as_new_group(self,
                                    source_key: str,
                                    dest_key: str,
                                    idx_to_slice: int,
                                    dim_to_slice: int,
-                                   squeeze_dest_key: bool = True,
-                                   strict: bool = True) -> SubdsWithFlag:
+                                   squeeze_dest_key: bool = True) -> '_ANISubdataset':
+        self._check_properties_are_present(source_key)
+        self._check_properties_are_not_present(dest_key)
         # Annoyingly some properties are sometimes in this format:
         # "atomic_charges" with shape (C, A + 1), where charges[:, -1] is
         # actually the sum of the charges over all atoms.
         # This function solves the problem of dividing these properties as:
         # "atomic_charges (C, A + 1) -> "atomic_charges (C, A)", "charges (C,
         # )"
-        if self._should_exit_early(source_key, dest_key, strict):
-            return self, False
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name, conformers in self.numpy_items(include_properties=('source_key',),
@@ -893,28 +909,12 @@ class _ANISubdataset(_ANIDatasetBase):
                     with_slice_deleted = np.squeeze(with_slice_deleted, axis=dim_to_slice)
 
                 del f[group_name][source_key]
-                f[group_name].create_numpy_value(source_key, data=with_slice_deleted)
-                f[group_name].create_numpy_value(dest_key, data=slice_)
-        return self, True
+                f[group_name].create_numpy_values({source_key: with_slice_deleted})
+                f[group_name].create_numpy_values({dest_key: slice_})
+        return self
 
-    def _should_exit_early(self,
-                           source_key: Optional[str] = None,
-                           dest_key: Optional[str] = None, strict: bool = False) -> bool:
-        # Some functions need a source and/or a destination key to perform some
-        # operations, this function checks that the source key exists and the
-        # destination key does not, before performing the operation, if the
-        # destination key already exists then the function should return early
-        if source_key is not None and source_key not in self.properties:
-            raise ValueError(f"{source_key} is not in {self.properties}")
-        if dest_key is not None and dest_key in self.properties:
-            if not strict:
-                return True
-            raise ValueError(f"{dest_key} is already in {self.properties}")
-        return False
-
-    @_may_need_cache_update
-    def rename_groups_to_formulas(self, verbose: bool = True) -> SubdsWithFlag:
-        # This function is guaranteed to need cache update if there are any groups present at all
+    @_needs_cache_update
+    def rename_groups_to_formulas(self, verbose: bool = True, properties_to_sort: Iterable[str] = tuple()) -> '_ANISubdataset':
         if 'species' in self.properties:
             parser = lambda s: species_to_formula(s['species'])  # noqa E731
         elif 'numbers' in self.properties:
@@ -926,59 +926,48 @@ class _ANISubdataset(_ANIDatasetBase):
                                            desc='Renaming groups to formulas',
                                            disable=not verbose):
             new_name = parser(conformers)
-            if group_name != f'/{new_name}':
+            if group_name != f'{new_name}':
                 with ExitStack() as stack:
                     f = self._get_open_store(stack, 'r+')
                     del f[group_name]
                 # mypy doesn't know that @wrap'ed functions have __wrapped__.
                 # No need to check input here since it was inside the ds
-                self._append_numpy_conformers_no_check.__wrapped__(self, new_name, conformers)[1]  # type: ignore
-        return self, bool(self.keys())
+                self._append_numpy_conformers_no_check.__wrapped__(self, new_name, conformers, properties_to_sort)  # type: ignore
+        return self
 
-    @_may_need_cache_update
-    def delete_properties(self, properties: Sequence[str], verbose: bool = True) -> SubdsWithFlag:
-        properties_to_delete = self.properties.intersection(set(properties))
+    @_needs_cache_update
+    def delete_properties(self, properties: Sequence[str], verbose: bool = True) -> '_ANISubdataset':
 
-        if properties_to_delete:
-            with ExitStack() as stack:
-                f = self._get_open_store(stack, 'r+')
-                for group_key in tqdm(self.keys(),
-                                      total=self.num_conformer_groups,
-                                      desc='Deleting properties',
-                                      disable=not verbose):
-                    for property_ in properties_to_delete:
-                        del f[group_key][property_]
-                    if not f[group_key].keys():
-                        del f[group_key]
-        return self, bool(properties_to_delete)
+        self._check_properties_are_present(properties)
+        with ExitStack() as stack:
+            f = self._get_open_store(stack, 'r+')
+            for group_key in tqdm(self.keys(),
+                                  total=self.num_conformer_groups,
+                                  desc='Deleting properties',
+                                  disable=not verbose):
+                for property_ in properties:
+                    del f[group_key][property_]
+                if not f[group_key].keys():
+                    del f[group_key]
+        return self
 
-    @_may_need_cache_update
-    def rename_properties(self, old_new_dict: Dict[str, str]) -> SubdsWithFlag:
-        old_new_dict = old_new_dict.copy()
-        for old, new in old_new_dict.copy().items():
-            if old == new:
-                raise ValueError(f'Cant rename property {old} to the same name')
-            has_old = old in self.properties
-            has_new = new in self.properties
-            if has_old and has_new:
-                raise ValueError(f'Cant rename {old} into {new} since {new} already exists')
-            elif not has_old and not has_new:
-                raise ValueError(f'Cant rename {old} into {new} since neither exists')
-            elif not has_old and has_new:
-                # Already renamed this property
-                del old_new_dict[old]
+    @_needs_cache_update
+    def rename_properties(self, old_new_dict: Dict[str, str]) -> '_ANISubdataset':
+        # this can generate some counterintuitive results if the values are
+        # aliases (renaming can be a no-op in this case) so we disallow it
+        if set(old_new_dict.values()).issubset(set(self._property_to_alias.keys())):
+            raise ValueError("Cant rename to an alias")
+        self._check_properties_are_present(old_new_dict.keys())
+        self._check_properties_are_not_present(old_new_dict.values())
+        with ExitStack() as stack:
+            f = self._get_open_store(stack, 'r+')
+            for k in self.keys():
+                for old_name, new_name in old_new_dict.items():
+                    f[k].move(old_name, new_name)
+        return self
 
-        if old_new_dict:
-            with ExitStack() as stack:
-                f = self._get_open_store(stack, 'r+')
-                for k in self.keys():
-                    for old_name, new_name in old_new_dict.items():
-                        f[k].move(old_name, new_name)
-        return self, bool(old_new_dict)
-
-    @_may_need_cache_update
-    def delete_conformers(self, group_name: str, idx: Tensor) -> SubdsWithFlag:
-        # this function is guaranteed to need a cache update
+    @_needs_cache_update
+    def delete_conformers(self, group_name: str, idx: Tensor) -> '_ANISubdataset':
         all_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch=False)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
@@ -988,11 +977,11 @@ class _ANISubdataset(_ANIDatasetBase):
             if all(v.shape[0] == 0 for v in good_conformers.values()):
                 # if we deleted everything in the group then just return,
                 # otherwise we recreate the group using the good conformers
-                return self, True
+                return self
             good_conformers.update({k: all_conformers[k] for k in self._nonbatch_properties})
             group = f.create_conformer_group(group_name)
             group.create_numpy_values(good_conformers)
-        return self, True
+        return self
 
     def present_species(self) -> Tuple[str, ...]:
         if 'species' in self.properties:
@@ -1016,9 +1005,16 @@ class _ANISubdataset(_ANIDatasetBase):
                              idx: Optional[Tensor] = None,
                              include_properties: Optional[Sequence[str]] = None,
                              repeat_nonbatch: bool = True) -> NumpyConformers:
-        nonbatch_batch = self._split_key_kinds(include_properties)
-        requested_nonbatch_properties, requested_batch_properties = nonbatch_batch
-        requested_properties = nonbatch_batch[0].union(nonbatch_batch[1])
+        if include_properties is None:
+            requested_properties = self.properties
+        else:
+            requested_properties = set(include_properties)
+        self._check_properties_are_present(requested_properties)
+
+        # Determine which of the properties passed are batched and which are nonbatch
+        requested_nonbatch_properties = self._nonbatch_properties.intersection(requested_properties)
+        requested_batch_properties = self._batch_properties.intersection(requested_properties)
+
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r')
             numpy_conformers = {p: f[key][p] for p in requested_properties}
@@ -1042,10 +1038,12 @@ class _ANISubdataset(_ANIDatasetBase):
                        idx: Optional[Tensor] = None,
                        include_properties: Optional[Sequence[str]] = None,
                        repeat_nonbatch: bool = True) -> Conformers:
+        if include_properties is None:
+            requested_properties = self.properties
+        else:
+            requested_properties = set(include_properties)
         # The tensor counterpart of get_numpy_conformers
-        numpy_conformers = self.get_numpy_conformers(key, idx, include_properties, repeat_nonbatch)
-        nonbatch_batch = self._split_key_kinds(include_properties)
-        requested_properties = nonbatch_batch[0].union(nonbatch_batch[1])
+        numpy_conformers = self.get_numpy_conformers(key, idx, requested_properties, repeat_nonbatch)
         conformers = {k: torch.tensor(numpy_conformers[k]) for k in requested_properties.difference({'species'})}
 
         if 'species' in requested_properties:
@@ -1053,19 +1051,21 @@ class _ANISubdataset(_ANIDatasetBase):
             conformers.update({'species': torch.from_numpy(species)})
         return conformers
 
-    def _split_key_kinds(self, requested_properties: Optional[Sequence[str]] = None) -> Tuple[Set[str], Set[str]]:
-        # Determine which of the properties passed are batched and which are nonbatch
-        if requested_properties is None:
-            properties = self.properties
+    def _check_properties_are_present(self, requested_properties: Iterable[str], raise_: bool = True) -> bool:
+        if isinstance(requested_properties, str):
+            requested_properties = {requested_properties}
         else:
-            properties = set(requested_properties).intersection(self.properties)
-
-        if not properties:
-            raise ValueError(f"Some of the properties requested {properties} are not"
+            requested_properties = set(requested_properties)
+        if not requested_properties.issubset(self.properties):
+            raise ValueError(f"Some of the properties requested {requested_properties} are not"
                              f" in the dataset, which has properties {self.properties}")
-        nonbatch_properties = self._nonbatch_properties.intersection(properties)
-        batch_properties = self._batch_properties.intersection(properties)
-        return nonbatch_properties, batch_properties
+
+    def _check_properties_are_not_present(self, requested_properties: Iterable[str], raise_: bool = True) -> bool:
+        if isinstance(requested_properties, str):
+            requested_properties = (requested_properties,)
+        if set(requested_properties).issubset(self.properties):
+            raise ValueError(f"Some of the properties requested {requested_properties} are"
+                             f" in the dataset, which has properties {self.properties}, but they should not be")
 
 
 class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, '_ConformerGroupAdaptor']):
@@ -1111,7 +1111,11 @@ class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
         self._group_obj = group_obj
         self._property_to_alias = property_to_alias if property_to_alias is not None else dict()
 
-    def create_numpy_value(self, p: str, data: np.ndarray) -> None:
+    def create_numpy_values(self, conformers: NumpyConformers) -> None:
+        for p, v in conformers.items():
+            self._create_property_with_data(p, v)
+
+    def _create_property_with_data(self, p: str, data: np.ndarray) -> None:
         # this wraps create_dataset, correctly handling strings (species and _id) and
         # key aliases
         p = self._property_to_alias.get(p, p)
@@ -1119,10 +1123,6 @@ class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
             self._group_obj.create_dataset(name=p, data=data)
         except TypeError:
             self._group_obj.create_dataset(name=p, data=data.astype(bytes))
-
-    def create_numpy_values(self, conformers: NumpyConformers) -> None:
-        for p, v in conformers.items():
-            self.create_numpy_value(p, v)
 
     def move(self, src: str, dest: str) -> None:
         src = self._property_to_alias.get(src, src)
