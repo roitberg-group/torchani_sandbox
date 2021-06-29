@@ -4,7 +4,7 @@ set -ex
 
 setup_build_version() {
   if [[ -z "$BUILD_VERSION" ]]; then
-    export BUILD_VERSION="$1.dev$(date "+%Y%m%d")$VERSION_SUFFIX"
+    export BUILD_VERSION="$1.dev$(TZ='America/New_York' date "+%Y%m%d")$VERSION_SUFFIX"
   else
     export BUILD_VERSION="$BUILD_VERSION$VERSION_SUFFIX"
   fi
