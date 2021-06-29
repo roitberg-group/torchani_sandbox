@@ -2,6 +2,7 @@
 
 Metrics:
 
+[![Anaconda-Server Badge](https://anaconda.org/roitberg-group/sandbox/badges/version.svg)](https://anaconda.org/roitberg-group/sandbox)
 ![PyPI](https://img.shields.io/pypi/v/torchani.svg)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/torchani.svg)
 
@@ -20,6 +21,7 @@ Checks:
 
 Deploy:
 
+[![conda-release](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/conda-release.yml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/conda-release.yml)
 [![Actions Status](https://github.com/aiqm/torchani/workflows/deploy-docs/badge.svg)](https://github.com/aiqm/torchani/actions)
 [![Actions Status](https://github.com/aiqm/torchani/workflows/deploy-pypi/badge.svg)](https://github.com/aiqm/torchani/actions)
 
@@ -50,10 +52,10 @@ pip install torchani
 or
 
 ```bash
-conda install -c conda-forge torchani
+conda create -n condatest python=3.8 -y
+conda activate condatest
+conda install -c roitberg-group -c pytorch -c nvidia -c defaults -c conda-forge sandbox
 ```
-
-See https://github.com/conda-forge/torchani-feedstock for more information about the conda package.
 
 To run the tests and examples, you must manually download a data package
 
@@ -61,10 +63,8 @@ To run the tests and examples, you must manually download a data package
 ./download.sh
 ```
 
-# Extensions (Optional)
-[Torchani extensions csrc](torchani/csrc)
-
-To install AEV CUDA Extension (speedup for AEV calculation) and MNP (Multi Net Parallel for inference), please follow the instruction at [torchani/csrc](torchani/csrc).
+# TorchANI Extensions
+[TorchANI Extensions csrc](torchani/csrc) provides AEV CUDA Extension (speedup for AEV calculation) and MNP extension (Multi Net Parallel for inference) for speedup training and inference.
 
 # Citation
 
