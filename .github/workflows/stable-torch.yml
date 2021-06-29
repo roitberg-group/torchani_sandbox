@@ -11,7 +11,10 @@ on:
 jobs:
   stable-torch:
 
-    runs-on: self-hosted
+    runs-on: [self-hosted, miniconda]
+    defaults:
+      run:
+        shell: bash -l {0}
     strategy:
       fail-fast: true
       max-parallel: 4
@@ -19,15 +22,25 @@ jobs:
         python-version: [3.8]
 
     steps:
-    - name: Cancel Previous Runs
-      uses: styfle/cancel-workflow-action@0.8.0
+    - uses: actions/checkout@v2
+    - name: Use saved pkgs
+      run: |
+        if [ -d /root/conda_pkgs_dir_saved ]; then
+          mv /root/conda_pkgs_dir_saved /root/conda_pkgs_dir
+        fi
+    - name: Set up conda path prefix
+      run: |
+        echo "CONDA=/root/miniconda" >> $GITHUB_ENV
+    - name: Set up conda
+      uses: conda-incubator/setup-miniconda@v2
       with:
-        access_token: ${{ github.token }}
-    - uses: actions/checkout@v1
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
-      with:
+        miniconda-version: "latest"
+        activate-environment: foo${{ matrix.python-version }}
+        auto-update-conda: false
         python-version: ${{ matrix.python-version }}
+    - name: Conda info
+      shell: bash -l {0}
+      run: conda info
     - name: Fetch submodules
       run: git submodule update --init
     - name: Install cuda
@@ -52,3 +65,7 @@ jobs:
       run: pip install pytest
     - name: Run all tests
       run: python -m pytest -v tests/*
+
+concurrency:
+  group: stable-torch-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
