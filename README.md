@@ -38,8 +38,8 @@ TorchANI is a pytorch implementation of ANI. It is currently under alpha release
 # Install
 Install from anaconda by
 ```bash
-conda create -n condatest python=3.8 -y
-conda activate condatest
+conda create -n ani python=3.8 -y
+conda activate ani
 conda install -c roitberg-group -c pytorch -c nvidia -c defaults -c conda-forge sandbox
 ```
 Note that if you updated TorchANI, you may also need to update PyTorch.
