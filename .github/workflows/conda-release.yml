@@ -1,31 +1,20 @@
-name: conda-build
+name: conda-release
 
 on:
-  pull_request:
-    paths:
-      - 'setup.py'
-      - 'torchani/csrc/**'
-      - 'torchani/aev/**'
-      - 'ci/**'
-      - 'test/test_cuaev.py'
   push:
     branches:
       - master
-    paths:
-      - 'setup.py'
-      - 'torchani/csrc/**'
-      - 'torchani/aev/**'
-      - 'ci/**'
-      - 'test/test_cuaev.py'
+  schedule:
+    - cron: '0 0 * * *'
 
 jobs:
-  conda-build:
+  conda-release:
 
     runs-on: [self-hosted, miniconda]
     strategy:
       max-parallel: 4
       matrix:
-        python-version: [3.8]
+        python-version: [3.8, 3.6]
 
     steps:
     - uses: actions/checkout@v2
@@ -62,11 +51,11 @@ jobs:
         nvcc -V
         export PYTHON_VERSION=${{ matrix.python-version }}
         export CONDA_TOKEN=${{ secrets.CONDA_TOKEN }}
-        ./conda/build_conda.sh
+        ./conda/build_conda.sh release
     - name: Save pkgs to avoid to be removed
       # Waiting feature to be added: https://github.com/conda-incubator/setup-miniconda/issues/181
       run: mv /root/conda_pkgs_dir /root/conda_pkgs_dir_saved
 
 concurrency:
-  group: conda-build-${{ github.event.pull_request.number || github.sha }}
+  group: conda-release-${{ github.sha }}
   cancel-in-progress: true
