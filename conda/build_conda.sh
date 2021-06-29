@@ -3,7 +3,7 @@ set -ex
 
 # USAGE:
 # 1. test
-# ./build_conda.sh test
+# ./build_conda.sh
 # 2. release
 # ./build_conda.sh release CONDA_TOKEN
 
@@ -22,21 +22,13 @@ setup_conda_cudatoolkit_constraint
 export PACKAGE_NAME=sandbox
 export USER=roitberg-group
 
-if (( $# == 0 )); then
-    >&2 echo "Illegal number of parameters"
-    exit 1
-fi
-
 # conda-build dependency
 conda install conda-build conda-verify anaconda-client -y
 export PATH="${CONDA_PREFIX}/bin:${CONDA}/bin:$PATH"  # anaconda bin location
 which anaconda
 
 # do not upload
-if [[ $1 == test ]]; then
-    conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload "$script_dir/torchani"
-    echo test
-fi
+conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload "$script_dir/torchani"
 
 # upload to anaconda.org
 if [[ $1 == release ]]; then
@@ -44,8 +36,8 @@ if [[ $1 == release ]]; then
         >&2 echo "No conda token provided "
         exit 1
     fi
-    echo "${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PY_VERSION}_torch1.9.0_cuda11.1.tar.bz2"
-    conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload "$script_dir/torchani"
+    BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PY_VERSION}_torch1.9.0_cuda11.1.tar.bz2"
+    echo $BUILD_FILE
     CONDA_TOKEN=$2
-    anaconda -t $CONDA_TOKEN upload -u USER "${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PY_VERSION}_torch1.9.0_cuda11.1.tar.bz2" --force
+    anaconda -t $CONDA_TOKEN upload -u $USER $BUILD_FILE --force
 fi
