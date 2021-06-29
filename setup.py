@@ -172,7 +172,6 @@ setup(
         'lark-parser',
         'requests',
         'importlib_metadata',
-        'expecttest',
     ],
     **ext_kwargs()
 )
