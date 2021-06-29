@@ -23,7 +23,6 @@ if _H5PY_AVAILABLE:
     import h5py
 
 
-KeyIdxConformers = Tuple[str, int, Conformers]
 Extractor = Callable[[int], Conformers]
 _T = TypeVar('_T')
 
@@ -343,7 +342,7 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
         for group_name in self.keys():
             yield self.get_numpy_conformers(group_name, **kwargs)
 
-    def iter_key_idx_conformers(self, *args, **kwargs) -> Iterator[KeyIdxConformers]:
+    def iter_key_idx_conformers(self, *args, **kwargs) -> Iterator[Tuple[str, int, Conformers]]:
         for k, size in self.group_sizes.items():
             conformers = self.get_conformers(k, *args, **kwargs)
             for idx in range(size):
@@ -544,10 +543,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
         # group_sizes and properties are needed as internal cache
         # variables, this cache is updated if something in the dataset changes
-        if property_aliases is None:
-            self._property_to_alias = dict()
-        else:
-            self._property_to_alias = property_aliases
+        self._property_to_alias = dict() if property_aliases is None else property_aliases
         self._alias_to_property = {v: k for k, v in self._property_to_alias.items()}
 
         if create:
@@ -771,6 +767,8 @@ class _ANISubdataset(_ANIDatasetBase):
     def _append_numpy_conformers_no_check(self,
                                           group_name: str,
                                           conformers: NumpyConformers,
+                                          repeat_nonbatch: bool = False,
+                                          require_sorted_properties: bool = True,
                                           properties_to_sort: Iterable[str] = tuple()) -> '_ANISubdataset':
         # NOTE: Appending to datasets is allowed in HDF5 but only if
         # the dataset is created with "resizable" format, since this is not the
@@ -782,38 +780,38 @@ class _ANISubdataset(_ANIDatasetBase):
         # check for correct sorting which is necessary if conformers are
         # grouped with nonbatch keys
 
-        if self._nonbatch_properties:
-            if 'numbers' in conformers.keys():
+        if require_sorted_properties:
+            if 'numbers' in self._nonbatch_properties:
                 numbers = conformers['numbers']
-            elif 'species' in conformers.keys():
+            elif 'species' in self._nonbatch_properties:
                 numbers = self._symbols_to_numbers(conformers['species'])
             else:
                 raise ValueError('Either species or numbers need to be present to append')
+            idxs_for_sort = np.argsort(numbers, kind='stable')
 
-        # sorting logic
-        if properties_to_sort:
-            self._check_properties_are_present(properties_to_sort)
-            if not self._nonbatch_properties:
-                # second dimension of batch properties is sorted
-                raise ValueError("can't sort atomic keys if there are no nonbatch properties")
-            idxs_for_sort = np.argsort(numbers)
-            self._sort_atomic_properties_inplace(idxs_for_sort, conformers, properties_to_sort)
+            # sorting logic if requested
+            if properties_to_sort:
+                self._check_properties_are_present(properties_to_sort)
+                self._sort_atomic_properties_inplace(idxs_for_sort, conformers, properties_to_sort)
 
-        if self._nonbatch_properties and not (np.sort(numbers) == numbers).all():
-            raise ValueError('Atomic numbers, species and all other properties that are'
-                              ' atomic (such as coordinates and forces) must'
-                                  ' be sorted by atomic number before appending')
+            if not (numbers[idxs_for_sort] == numbers).all():
+                raise ValueError('Atomic numbers, species and all other properties that are'
+                                 ' atomic (such as coordinates and forces) must'
+                                 ' be sorted by atomic number before appending')
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             try:
                 group = f.create_conformer_group(group_name)
             except ValueError:
-                old_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch=False)
+                old_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch=repeat_nonbatch)
                 if properties_to_sort:
                     self._sort_atomic_properties_inplace(idxs_for_sort, old_conformers, properties_to_sort)
-
-                if not all((old_conformers[k] == conformers[k]).all() for k in self._nonbatch_properties):
-                    raise ValueError("Attempted to combine groups with different nonbatch key")
+                if repeat_nonbatch:
+                    conformers.update({k: np.concatenate((old_conformers[k], conformers[k]), axis=0)
+                                       for k in self._nonbatch_properties})
+                else:
+                    if not all((old_conformers[k] == conformers[k]).all() for k in self._nonbatch_properties):
+                        raise ValueError("Attempted to combine groups with different nonbatch key")
                 conformers.update({k: np.concatenate((old_conformers[k], conformers[k]), axis=0)
                                    for k in self._batch_properties})
                 del f[group_name]
@@ -932,7 +930,27 @@ class _ANISubdataset(_ANIDatasetBase):
                     del f[group_name]
                 # mypy doesn't know that @wrap'ed functions have __wrapped__.
                 # No need to check input here since it was inside the ds
-                self._append_numpy_conformers_no_check.__wrapped__(self, new_name, conformers, properties_to_sort)  # type: ignore
+                self._append_numpy_conformers_no_check.__wrapped__(self, new_name, conformers, properties_to_sort=properties_to_sort)  # type: ignore
+        return self
+
+    @_needs_cache_update
+    def rename_groups_to_sizes(self, verbose: bool = True) -> '_ANISubdataset':
+        for group_name, conformers in tqdm(self.numpy_items(repeat_nonbatch=True),
+                                           total=self.num_conformer_groups,
+                                           desc='Renaming groups to formulas',
+                                           disable=not verbose):
+            new_name = _get_num_atoms(conformers, None, self._nonbatch_properties)
+            new_name = f'num_atoms_{new_name}'
+            if group_name != f'{new_name}':
+                with ExitStack() as stack:
+                    f = self._get_open_store(stack, 'r+')
+                    del f[group_name]
+                self._append_numpy_conformers_no_check.__wrapped__(self,
+                                                                   new_name,
+                                                                   conformers,
+                                                                   require_sorted_properties=False,
+                                                                   repeat_nonbatch=True)  # type: ignore
+        self._possible_nonbatch_properties = tuple()
         return self
 
     @_needs_cache_update
