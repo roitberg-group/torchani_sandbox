@@ -41,11 +41,12 @@ Supported version information when install from anaconda:
 - cuda 11.1
 - python 3.6 or python 3.8
 
-Install from anaconda by
+Install from anaconda by the following (Note that we are hosting the packages only for internal usage at: https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
+
 ```bash
 conda create -n ani python=3.8 -y
 conda activate ani
-conda install -c roitberg-group -c pytorch -c nvidia -c defaults -c conda-forge sandbox
+conda install -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c pytorch -c nvidia -c defaults -c conda-forge sandbox
 ```
 
 You could also build torchani from source, check at [TorchANI CSRC](torchani/csrc).
