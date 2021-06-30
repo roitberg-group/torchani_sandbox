@@ -453,10 +453,13 @@ class TestANIDataset(TestCase):
                       'energies': torch.randn((5,))}}
 
     def testAliases(self):
-        ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True, property_aliases={'energies': 'alias_energies', 'coordinates': 'coord'})
+        ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)
         new_groups = deepcopy(self.new_groups_torch)
+
         for k in ('H6', 'O6', 'C6'):
             ds.append_conformers(k, new_groups[k])
+
+        ds.set_aliases({'energies': 'alias_energies', 'coordinates': 'coord'})
         self.assertTrue(ds.present_species(), ('C', 'H', 'O'))
         self.assertEqual(ds.properties, {'alias_energies', 'coord', 'species'})
         self.assertEqual(ds['H6']['alias_energies'], new_groups['H6']['energies'])

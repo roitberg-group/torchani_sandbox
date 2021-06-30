@@ -464,6 +464,9 @@ class ANIDataset(_ANIDatasetBase):
     @_broadcast
     def rename_properties(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
+    @_broadcast
+    def set_aliases(self, property_aliases: Optional[Dict[str, str]] = ...) -> 'ANIDataset': ...  # noqa E704
+
     def _update_internal_cache(self) -> 'ANIDataset':
         if self._num_subds > 1:
             od_args = [(f'{name}/{k}', v) for name, ds in self._datasets.items() for k, v in ds.group_sizes.items()]
@@ -546,8 +549,11 @@ class _ANISubdataset(_ANIDatasetBase):
 
         # group_sizes and properties are needed as internal cache
         # variables, this cache is updated if something in the dataset changes
-        self._property_to_alias = dict() if property_aliases is None else property_aliases
-        self._alias_to_property = {v: k for k, v in self._property_to_alias.items()}
+
+        # "storename" are the names of properties in the store file, and
+        # "aliases" are the names users see when manipulating
+        self._storename_to_alias = dict() if property_aliases is None else property_aliases
+        self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
 
         if create:
             # create the file
@@ -584,7 +590,7 @@ class _ANISubdataset(_ANIDatasetBase):
             context_manager = h5py.File(self._store_location, mode)
         else:
             raise RuntimeError(f"Bad backend {self._backend}")
-        self._open_store = _DatasetStoreAdaptor(context_manager, self._alias_to_property)
+        self._open_store = _DatasetStoreAdaptor(context_manager, self._alias_to_storename)
         try:
             yield self
         finally:
@@ -599,7 +605,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 context_manager = h5py.File(self._store_location, mode)
             else:
                 raise RuntimeError(f"Bad backend {self._backend}")
-            return stack.enter_context(_DatasetStoreAdaptor(context_manager, self._alias_to_property))
+            return stack.enter_context(_DatasetStoreAdaptor(context_manager, self._alias_to_storename))
         else:
             current_mode = self._open_store.mode
             assert mode in ['r+', 'r'], f"Unsupported mode {mode}"
@@ -680,12 +686,12 @@ class _ANISubdataset(_ANIDatasetBase):
         # don't have a batch dimension, their shape must be (atoms,), they only make sense
         # if ordering by formula or smiles
         if not self.properties:
-            self._properties = {self._property_to_alias.get(p, p) for p in set(conformers.keys())}
+            self._properties = {self._storename_to_alias.get(p, p) for p in set(conformers.keys())}
             if self._flag_property is not None and self._flag_property not in self.properties:
                 msg = f"Flag property {self._flag_property} not found in {self.properties}"
                 raise RuntimeError(msg)
         elif not self._checked_homogeneous_properties:
-            found_properties = {self._property_to_alias.get(p, p) for p in set(conformers.keys())}
+            found_properties = {self._storename_to_alias.get(p, p) for p in set(conformers.keys())}
             if not found_properties == self.properties:
                 msg = (f"Group {conformers.name} has bad keys, "
                        f"found {found_properties}, but expected "
@@ -698,10 +704,10 @@ class _ANISubdataset(_ANIDatasetBase):
         # raw == not renamed / not aliased
         raw_flag_property: Optional[str]
         if self._flag_property is not None:
-            raw_flag_property = self._alias_to_property.get(self._flag_property, self._flag_property)
+            raw_flag_property = self._alias_to_storename.get(self._flag_property, self._flag_property)
         else:
             raw_flag_property = None
-        raw_properties = {self._alias_to_property.get(p, p) for p in self.properties}
+        raw_properties = {self._alias_to_storename.get(p, p) for p in self.properties}
         group_size = _get_num_conformers(conformers,
                                          raw_flag_property,
                                          raw_properties)
@@ -815,8 +821,6 @@ class _ANISubdataset(_ANIDatasetBase):
     def _check_append_input(self, group_name: str, conformers: MaybeNumpyConformers) -> Tuple[str, MaybeNumpyConformers]:
         conformers = deepcopy(conformers)
 
-        # switch keys for aliases
-        conformers = {self._property_to_alias.get(k, k): v for k, v in conformers.items()}
         # check input kills first dimension of nonbatch keys
         if not self.properties:
             # if this is the first conformer ever added update the dataset to
@@ -1070,7 +1074,7 @@ class _ANISubdataset(_ANIDatasetBase):
     def rename_properties(self, old_new_dict: Dict[str, str]) -> '_ANISubdataset':
         # this can generate some counterintuitive results if the values are
         # aliases (renaming can be a no-op in this case) so we disallow it
-        if set(old_new_dict.values()).issubset(set(self._property_to_alias.keys())):
+        if set(old_new_dict.values()).issubset(set(self._storename_to_alias.keys())):
             raise ValueError("Cant rename to an alias")
         self._check_properties_are_present(old_new_dict.keys())
         self._check_properties_are_not_present(old_new_dict.values())
@@ -1079,6 +1083,12 @@ class _ANISubdataset(_ANIDatasetBase):
             for k in self.keys():
                 for old_name, new_name in old_new_dict.items():
                     f[k].move(old_name, new_name)
+        return self
+
+    @_needs_cache_update
+    def set_aliases(self, property_aliases: Optional[Dict[str, str]] = None) -> '_ANISubdataset':
+        self._storename_to_alias = dict() if property_aliases is None else property_aliases
+        self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
         return self
 
     def _check_properties_are_present(self, requested_properties: Iterable[str], raise_: bool = True) -> None:
@@ -1102,10 +1112,10 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
     # wrapper around an open hdf5 file object that
     # returns ConformerGroup facades which renames properties on access and
     # creation
-    def __init__(self, store_obj: H5File, alias_to_property: Optional[Dict[str, str]] = None):
+    def __init__(self, store_obj: H5File, alias_to_storename: Optional[Dict[str, str]] = None):
         # an open h5py file object
         self._store_obj = store_obj
-        self._alias_to_property = alias_to_property if alias_to_property is not None else dict()
+        self._alias_to_storename = alias_to_storename if alias_to_storename is not None else dict()
         self.mode = self._store_obj.mode
 
     def __delitem__(self, k: str) -> None:
@@ -1127,7 +1137,7 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
         self._store_obj.__exit__(*args)
 
     def __getitem__(self, name) -> '_ConformerGroupAdaptor':
-        return _ConformerGroupAdaptor(self._store_obj[name], self._alias_to_property)
+        return _ConformerGroupAdaptor(self._store_obj[name], self._alias_to_storename)
 
     def __len__(self) -> int:
         return len(self._store_obj)
@@ -1137,9 +1147,9 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
 
 
 class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
-    def __init__(self, group_obj: H5Group, alias_to_property: Optional[Dict[str, str]] = None):
+    def __init__(self, group_obj: H5Group, alias_to_storename: Optional[Dict[str, str]] = None):
         self._group_obj = group_obj
-        self._alias_to_property = alias_to_property if alias_to_property is not None else dict()
+        self._alias_to_storename = alias_to_storename if alias_to_storename is not None else dict()
 
     def create_numpy_values(self, conformers: NumpyConformers) -> None:
         for p, v in conformers.items():
@@ -1148,22 +1158,22 @@ class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
     def _create_property_with_data(self, p: str, data: np.ndarray) -> None:
         # this wraps create_dataset, correctly handling strings (species and _id) and
         # key aliases
-        p = self._alias_to_property.get(p, p)
+        p = self._alias_to_storename.get(p, p)
         try:
             self._group_obj.create_dataset(name=p, data=data)
         except TypeError:
             self._group_obj.create_dataset(name=p, data=data.astype(bytes))
 
     def move(self, src: str, dest: str) -> None:
-        src = self._alias_to_property.get(src, src)
-        dest = self._alias_to_property.get(dest, dest)
+        src = self._alias_to_storename.get(src, src)
+        dest = self._alias_to_storename.get(dest, dest)
         self._group_obj.move(src, dest)
 
     def __delitem__(self, k: str) -> None:
         del self._group_obj[k]
 
     def __getitem__(self, p: str) -> np.ndarray:
-        p = self._alias_to_property.get(p, p)
+        p = self._alias_to_storename.get(p, p)
         array = self._group_obj[p][()]
         assert isinstance(array, np.ndarray)
         return array
@@ -1173,4 +1183,4 @@ class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
 
     def __iter__(self) -> Iterator[str]:
         for k in self._group_obj.keys():
-            yield self._alias_to_property.get(k, k)
+            yield self._alias_to_storename.get(k, k)
