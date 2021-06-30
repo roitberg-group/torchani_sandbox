@@ -44,6 +44,10 @@ jobs:
         echo "CUDA_HOME=${CUDA_HOME}" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
         echo "PATH=${CUDA_HOME}/bin:$PATH" >> $GITHUB_ENV
+    - name: Setup Server Key
+      run: |
+        echo ${{ secrets.SERVER_PUBKEY }} > ~/.ssh/id_rsa.pub
+        echo ${{ secrets.SERVER_PRIKEY }} > ~/.ssh/id_rsa
     - name: Conda Build
       run: |
         echo $CUDA_HOME
@@ -51,7 +55,13 @@ jobs:
         nvcc -V
         export PYTHON_VERSION=${{ matrix.python-version }}
         export CONDA_TOKEN=${{ secrets.CONDA_TOKEN }}
+        export SERVER_USERNAME=${{ secrets.SERVER_USERNAME }}
+        export SERVER_PORT=${{ secrets.SERVER_PORT }}
         ./conda/build_conda.sh release
+    - name: Remove Server Key
+      run: |
+        rm ~/.ssh/id_rsa.pub
+        rm ~/.ssh/id_rsa
     - name: Save pkgs to avoid to be removed
       # Waiting feature to be added: https://github.com/conda-incubator/setup-miniconda/issues/181
       run: mv /root/conda_pkgs_dir /root/conda_pkgs_dir_saved

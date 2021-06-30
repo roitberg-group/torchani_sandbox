@@ -32,9 +32,21 @@ which anaconda
 # build package
 conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload --no-copy-test-source-files --python "$PYTHON_VERSION" "$script_dir/torchani"
 
-# upload to anaconda.org if has release argument
-if [[ $1 == release ]]; then
+# upload to anaconda.org if has release_anaconda argument
+if [[ $1 == release_anaconda ]]; then
     BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PYTHON_VERSION//./}_torch1.9.0_cuda11.1.tar.bz2"
     echo $BUILD_FILE
     anaconda -t $CONDA_TOKEN upload -u $USER $BUILD_FILE --force
+fi
+
+# upload to roitberg server if has release argument
+if [[ $1 == release ]]; then
+    BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PYTHON_VERSION//./}_torch1.9.0_cuda11.1.tar.bz2"
+    echo $BUILD_FILE
+    mkdir -p /release/conda-packages/linux-64
+    cp $BUILD_FILE /release/conda-packages/linux-64
+    conda index /release/conda-packages
+    chown -R 1003:1003 /release/conda-packages
+    apt install rsync -y
+    rsync -av -e "ssh -p $SERVER_PORT" /release/conda-packages/ $SERVER_USERNAME@roitberg.chem.ufl.edu:/home/statics/conda-packages/
 fi
