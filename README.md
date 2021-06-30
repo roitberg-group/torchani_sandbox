@@ -2,7 +2,8 @@
 
 Metrics:
 
-[![Anaconda-Server Badge](https://anaconda.org/roitberg-group/sandbox/badges/version.svg)](https://anaconda.org/roitberg-group/sandbox)
+[![conda-release](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/conda-release.yml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/conda-release.yml)
+[![conda-page](https://img.shields.io/badge/conda--package-page-blue)](https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
 ![PyPI](https://img.shields.io/pypi/v/torchani.svg)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/torchani.svg)
 
@@ -21,7 +22,6 @@ Checks:
 
 Deploy:
 
-[![conda-release](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/conda-release.yml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/conda-release.yml)
 [![Actions Status](https://github.com/aiqm/torchani/workflows/deploy-docs/badge.svg)](https://github.com/aiqm/torchani/actions)
 [![Actions Status](https://github.com/aiqm/torchani/workflows/deploy-pypi/badge.svg)](https://github.com/aiqm/torchani/actions)
 
