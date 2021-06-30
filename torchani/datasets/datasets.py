@@ -613,8 +613,7 @@ class _ANISubdataset(_ANIDatasetBase):
             if self._has_standard_format:
                 # This is much faster (x30) than a visitor function but it assumes
                 # the format is somewhat standard which means that all Groups have
-                # depth 1, and all Datasets have depth 2. "Meta" datasets don't
-                # bother in this case
+                # depth 1, and all Datasets have depth 2.
                 with tqdm(desc=f'Scanning {self._store_location.name} assuming standard format',
                           disable=not self._verbose) as pbar:
                     with ExitStack() as stack:
@@ -622,6 +621,8 @@ class _ANISubdataset(_ANIDatasetBase):
                         raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
                         for k, g in raw_hdf5_store.items():
                             pbar.update()
+                            if g.name.lower() in ['/_created', '/_meta']:
+                                continue
                             self._update_properties_cache_h5py(g)
                             self._update_groups_cache_h5py(g)
             else:
@@ -1045,6 +1046,8 @@ class _ANISubdataset(_ANIDatasetBase):
 
         if 'species' in requested_properties:
             numpy_conformers['species'] = numpy_conformers['species'].astype(str)
+        if '_id' in requested_properties:
+            numpy_conformers['_id'] = numpy_conformers['_id'].astype(str)
 
         if repeat_nonbatch:
             num_conformers = _get_num_conformers(numpy_conformers, self._flag_property, requested_batch_properties)
@@ -1066,7 +1069,7 @@ class _ANISubdataset(_ANIDatasetBase):
             requested_properties = set(include_properties)
         # The tensor counterpart of get_numpy_conformers
         numpy_conformers = self.get_numpy_conformers(key, idx, requested_properties, repeat_nonbatch)
-        conformers = {k: torch.tensor(numpy_conformers[k]) for k in requested_properties.difference({'species'})}
+        conformers = {k: torch.tensor(numpy_conformers[k]) for k in requested_properties.difference({'species', '_id'})}
 
         if 'species' in requested_properties:
             species = self._symbols_to_numbers(numpy_conformers['species'])
