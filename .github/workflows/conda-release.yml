@@ -70,7 +70,7 @@ jobs:
       run: mv /root/conda_pkgs_dir /root/conda_pkgs_dir_saved
     - name: Remove conda env
       if: ${{ always() }}
-      run: conda env remove --name foo
+      run: conda env remove --name foo${{ matrix.python-version }}
 
 concurrency:
   group: conda-release-${{ github.sha }}
