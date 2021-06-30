@@ -73,5 +73,5 @@ jobs:
       run: conda env remove --name foo${{ matrix.python-version }}
 
 concurrency:
-  group: conda-build-${{ github.event.pull_request.number || github.sha }}
+  group: conda-release
   cancel-in-progress: true
