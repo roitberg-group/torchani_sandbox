@@ -47,8 +47,8 @@ jobs:
         echo "PATH=${CUDA_HOME}/bin:$PATH" >> $GITHUB_ENV
     - name: Setup Server Key
       run: |
-        echo ${{ secrets.SERVER_PUBKEY }} > ~/.ssh/id_rsa.pub
-        echo ${{ secrets.SERVER_PRIKEY }} > ~/.ssh/id_rsa
+        echo "${{ secrets.SERVER_PUBKEY }}" > ~/.ssh/id_rsa.pub
+        echo "${{ secrets.SERVER_PRIKEY }}" > ~/.ssh/id_rsa
     - name: Conda Build
       run: |
         echo $CUDA_HOME
