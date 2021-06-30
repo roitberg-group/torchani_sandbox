@@ -584,7 +584,7 @@ class _ANISubdataset(_ANIDatasetBase):
             context_manager = h5py.File(self._store_location, mode)
         else:
             raise RuntimeError(f"Bad backend {self._backend}")
-        self._open_store = _DatasetStoreAdaptor(context_manager, self._property_to_alias)
+        self._open_store = _DatasetStoreAdaptor(context_manager, self._alias_to_property)
         try:
             yield self
         finally:
@@ -599,7 +599,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 context_manager = h5py.File(self._store_location, mode)
             else:
                 raise RuntimeError(f"Bad backend {self._backend}")
-            return stack.enter_context(_DatasetStoreAdaptor(context_manager))
+            return stack.enter_context(_DatasetStoreAdaptor(context_manager, self._alias_to_property))
         else:
             current_mode = self._open_store.mode
             assert mode in ['r+', 'r'], f"Unsupported mode {mode}"
@@ -813,6 +813,10 @@ class _ANISubdataset(_ANIDatasetBase):
         return self._append_numpy_conformers_no_check(group_name, conformers, properties_to_sort)
 
     def _check_append_input(self, group_name: str, conformers: MaybeNumpyConformers) -> Tuple[str, MaybeNumpyConformers]:
+        conformers = deepcopy(conformers)
+
+        # switch keys for aliases
+        conformers = {self._property_to_alias.get(k, k): v for k, v in conformers.items()}
         # check input kills first dimension of nonbatch keys
         if not self.properties:
             # if this is the first conformer ever added update the dataset to
@@ -824,7 +828,6 @@ class _ANISubdataset(_ANIDatasetBase):
         if not set(conformers.keys()) == self.properties:
             raise ValueError(f'Expected {self.properties} but got {set(conformers.keys())}')
 
-        conformers = deepcopy(conformers)
         for k in self._nonbatch_properties:
             if conformers[k].ndim == 2:
                 if not (conformers[k] == conformers[k][0]).all():
@@ -1099,10 +1102,10 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
     # wrapper around an open hdf5 file object that
     # returns ConformerGroup facades which renames properties on access and
     # creation
-    def __init__(self, store_obj: H5File, property_to_alias: Optional[Dict[str, str]] = None):
+    def __init__(self, store_obj: H5File, alias_to_property: Optional[Dict[str, str]] = None):
         # an open h5py file object
         self._store_obj = store_obj
-        self._property_to_alias = property_to_alias if property_to_alias is not None else dict()
+        self._alias_to_property = alias_to_property if alias_to_property is not None else dict()
         self.mode = self._store_obj.mode
 
     def __delitem__(self, k: str) -> None:
@@ -1124,7 +1127,7 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
         self._store_obj.__exit__(*args)
 
     def __getitem__(self, name) -> '_ConformerGroupAdaptor':
-        return _ConformerGroupAdaptor(self._store_obj[name], self._property_to_alias)
+        return _ConformerGroupAdaptor(self._store_obj[name], self._alias_to_property)
 
     def __len__(self) -> int:
         return len(self._store_obj)
@@ -1134,9 +1137,9 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
 
 
 class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
-    def __init__(self, group_obj: H5Group, property_to_alias: Optional[Dict[str, str]] = None):
+    def __init__(self, group_obj: H5Group, alias_to_property: Optional[Dict[str, str]] = None):
         self._group_obj = group_obj
-        self._property_to_alias = property_to_alias if property_to_alias is not None else dict()
+        self._alias_to_property = alias_to_property if alias_to_property is not None else dict()
 
     def create_numpy_values(self, conformers: NumpyConformers) -> None:
         for p, v in conformers.items():
@@ -1145,22 +1148,22 @@ class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
     def _create_property_with_data(self, p: str, data: np.ndarray) -> None:
         # this wraps create_dataset, correctly handling strings (species and _id) and
         # key aliases
-        p = self._property_to_alias.get(p, p)
+        p = self._alias_to_property.get(p, p)
         try:
             self._group_obj.create_dataset(name=p, data=data)
         except TypeError:
             self._group_obj.create_dataset(name=p, data=data.astype(bytes))
 
     def move(self, src: str, dest: str) -> None:
-        src = self._property_to_alias.get(src, src)
-        dest = self._property_to_alias.get(dest, dest)
+        src = self._alias_to_property.get(src, src)
+        dest = self._alias_to_property.get(dest, dest)
         self._group_obj.move(src, dest)
 
     def __delitem__(self, k: str) -> None:
         del self._group_obj[k]
 
     def __getitem__(self, p: str) -> np.ndarray:
-        p = self._property_to_alias.get(p, p)
+        p = self._alias_to_property.get(p, p)
         array = self._group_obj[p][()]
         assert isinstance(array, np.ndarray)
         return array
@@ -1170,4 +1173,4 @@ class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
 
     def __iter__(self) -> Iterator[str]:
         for k in self._group_obj.keys():
-            yield self._property_to_alias.get(k, k)
+            yield self._alias_to_property.get(k, k)
