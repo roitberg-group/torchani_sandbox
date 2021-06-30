@@ -8,6 +8,7 @@ dataset = ANIDataset('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
 
 # ############## Conformer groups:  ###########################
 # To access groups of conformers we can just use the dataset as an ordered
+# dictionary
 group = dataset['C10H10']
 print(group)
 
