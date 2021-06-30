@@ -456,6 +456,9 @@ class ANIDataset(_ANIDatasetBase):
     def rename_groups_to_formulas(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_broadcast
+    def rename_groups_to_sizes(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @_broadcast
     def delete_properties(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_broadcast
@@ -715,6 +718,80 @@ class _ANISubdataset(_ANIDatasetBase):
             str_ += "Present elements: Unknown\n"
         return str_
 
+    def present_species(self) -> Tuple[str, ...]:
+        if 'species' in self.properties:
+            element_key = 'species'
+            parser = lambda s: set(s['species'])  # noqa E731
+        elif 'numbers' in self.properties:
+            element_key = 'numbers'
+            parser = lambda s: set(self._numbers_to_symbols(s['numbers']))  # noqa E731
+        else:
+            raise ValueError('"species" or "numbers" must be present to parse symbols')
+        present_species: Set[str] = set()
+        for key in self.keys():
+            species = self.get_numpy_conformers(key,
+                                                include_properties=(element_key,),
+                                                repeat_nonbatch=False)
+            present_species.update(parser(species))
+        return tuple(sorted(present_species))
+
+    def get_conformers(self,
+                       key: str,
+                       idx: Optional[Tensor] = None,
+                       include_properties: Optional[Iterable[str]] = None,
+                       repeat_nonbatch: bool = True) -> Conformers:
+        if isinstance(include_properties, str):
+            include_properties = {include_properties}
+        if include_properties is None:
+            requested_properties = self.properties
+        else:
+            requested_properties = set(include_properties)
+        # The tensor counterpart of get_numpy_conformers
+        numpy_conformers = self.get_numpy_conformers(key, idx, requested_properties, repeat_nonbatch)
+        conformers = {k: torch.tensor(numpy_conformers[k]) for k in requested_properties.difference({'species', '_id'})}
+
+        if 'species' in requested_properties:
+            species = self._symbols_to_numbers(numpy_conformers['species'])
+            conformers.update({'species': torch.from_numpy(species)})
+        return conformers
+
+    def get_numpy_conformers(self,
+                             key: str,
+                             idx: Optional[Tensor] = None,
+                             include_properties: Optional[Iterable[str]] = None,
+                             repeat_nonbatch: bool = True) -> NumpyConformers:
+        if isinstance(include_properties, str):
+            include_properties = {include_properties}
+        if include_properties is None:
+            requested_properties = self.properties
+        else:
+            requested_properties = set(include_properties)
+        self._check_properties_are_present(requested_properties)
+
+        # Determine which of the properties passed are batched and which are nonbatch
+        requested_nonbatch_properties = self._nonbatch_properties.intersection(requested_properties)
+        requested_batch_properties = self._batch_properties.intersection(requested_properties)
+
+        with ExitStack() as stack:
+            f = self._get_open_store(stack, 'r')
+            numpy_conformers = {p: f[key][p] for p in requested_properties}
+            if idx is not None:
+                assert idx.dim() <= 1, "index must be a 0 or 1 dim tensor"
+                numpy_conformers.update({k: numpy_conformers[k][idx.cpu().numpy()]
+                                        for k in requested_batch_properties})
+
+        if 'species' in requested_properties:
+            numpy_conformers['species'] = numpy_conformers['species'].astype(str)
+        if '_id' in requested_properties:
+            numpy_conformers['_id'] = numpy_conformers['_id'].astype(str)
+
+        if repeat_nonbatch:
+            num_conformers = _get_num_conformers(numpy_conformers, self._flag_property, requested_batch_properties)
+            tile_shape = (num_conformers, 1) if idx is None or idx.dim() == 1 else (1,)
+            numpy_conformers.update({k: np.tile(numpy_conformers[k], tile_shape)
+                                     for k in requested_nonbatch_properties})
+        return numpy_conformers
+
     def append_conformers(self,
                           group_name: str,
                           conformers: Conformers, properties_to_sort: Iterable[str] = tuple()) -> '_ANISubdataset':
@@ -804,7 +881,7 @@ class _ANISubdataset(_ANIDatasetBase):
             try:
                 group = f.create_conformer_group(group_name)
             except ValueError:
-                old_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch=repeat_nonbatch)
+                old_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch=False)
                 if properties_to_sort:
                     self._sort_atomic_properties_inplace(idxs_for_sort, old_conformers, properties_to_sort)
                 if repeat_nonbatch:
@@ -832,26 +909,20 @@ class _ANISubdataset(_ANIDatasetBase):
             conformers['species'] = conformers['species'][idxs_for_sort]
 
     @_needs_cache_update
-    def delete_group(self, group_name: str) -> '_ANISubdataset':
-        if group_name not in self.keys():
-            raise KeyError(group_name)
+    def delete_conformers(self, group_name: str, idx: Tensor) -> '_ANISubdataset':
+        all_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch=False)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             del f[group_name]
-        return self
-
-    @_needs_cache_update
-    def create_full_scalar_property(self,
-                                    dest_key: str,
-                                    fill_value: int = 0,
-                                    dtype: DTypeLike = np.int64) -> '_ANISubdataset':
-        self._check_properties_are_not_present(dest_key)
-        with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r+')
-            for group_name in self.keys():
-                size = _get_num_conformers(f[group_name], self._flag_property, self.properties)
-                data = np.full(size, fill_value=fill_value, dtype=dtype)
-                f[group_name].create_numpy_values({dest_key: data})
+            good_conformers = {k: np.delete(all_conformers[k], obj=idx.cpu().numpy(), axis=0)
+                               for k in self._batch_properties}
+            if all(v.shape[0] == 0 for v in good_conformers.values()):
+                # if we deleted everything in the group then just return,
+                # otherwise we recreate the group using the good conformers
+                return self
+            good_conformers.update({k: all_conformers[k] for k in self._nonbatch_properties})
+            group = f.create_conformer_group(group_name)
+            group.create_numpy_values(good_conformers)
         return self
 
     @_needs_cache_update
@@ -874,6 +945,15 @@ class _ANISubdataset(_ANIDatasetBase):
             for group_name in self.keys():
                 numbers = self._symbols_to_numbers(f[group_name][source_key].astype(str))
                 f[group_name].create_numpy_values({dest_key: numbers})
+        return self
+
+    @_needs_cache_update
+    def delete_group(self, group_name: str) -> '_ANISubdataset':
+        if group_name not in self.keys():
+            raise KeyError(group_name)
+        with ExitStack() as stack:
+            f = self._get_open_store(stack, 'r+')
+            del f[group_name]
         return self
 
     @_needs_cache_update
@@ -913,6 +993,20 @@ class _ANISubdataset(_ANIDatasetBase):
         return self
 
     @_needs_cache_update
+    def create_full_scalar_property(self,
+                                    dest_key: str,
+                                    fill_value: int = 0,
+                                    dtype: DTypeLike = np.int64) -> '_ANISubdataset':
+        self._check_properties_are_not_present(dest_key)
+        with ExitStack() as stack:
+            f = self._get_open_store(stack, 'r+')
+            for group_name in self.keys():
+                size = _get_num_conformers(f[group_name], self._flag_property, self.properties)
+                data = np.full(size, fill_value=fill_value, dtype=dtype)
+                f[group_name].create_numpy_values({dest_key: data})
+        return self
+
+    @_needs_cache_update
     def rename_groups_to_formulas(self, verbose: bool = True, properties_to_sort: Iterable[str] = tuple()) -> '_ANISubdataset':
         if 'species' in self.properties:
             parser = lambda s: species_to_formula(s['species'])  # noqa E731
@@ -925,7 +1019,7 @@ class _ANISubdataset(_ANIDatasetBase):
                                            desc='Renaming groups to formulas',
                                            disable=not verbose):
             new_name = parser(conformers)
-            if group_name != f'{new_name}':
+            if group_name != new_name:
                 with ExitStack() as stack:
                     f = self._get_open_store(stack, 'r+')
                     del f[group_name]
@@ -938,11 +1032,10 @@ class _ANISubdataset(_ANIDatasetBase):
     def rename_groups_to_sizes(self, verbose: bool = True) -> '_ANISubdataset':
         for group_name, conformers in tqdm(self.numpy_items(repeat_nonbatch=True),
                                            total=self.num_conformer_groups,
-                                           desc='Renaming groups to formulas',
+                                           desc='Renaming groups to number of atoms',
                                            disable=not verbose):
-            num = _get_num_atoms(conformers, None, self._nonbatch_properties)
-            new_name = f'num_atoms_{num}'
-            if group_name != f'{new_name}':
+            new_name = f'num_atoms_{_get_num_atoms(conformers, None, self._batch_properties)}'
+            if group_name != new_name:
                 with ExitStack() as stack:
                     f = self._get_open_store(stack, 'r+')
                     del f[group_name]
@@ -984,97 +1077,6 @@ class _ANISubdataset(_ANIDatasetBase):
                 for old_name, new_name in old_new_dict.items():
                     f[k].move(old_name, new_name)
         return self
-
-    @_needs_cache_update
-    def delete_conformers(self, group_name: str, idx: Tensor) -> '_ANISubdataset':
-        all_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch=False)
-        with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r+')
-            del f[group_name]
-            good_conformers = {k: np.delete(all_conformers[k], obj=idx.cpu().numpy(), axis=0)
-                               for k in self._batch_properties}
-            if all(v.shape[0] == 0 for v in good_conformers.values()):
-                # if we deleted everything in the group then just return,
-                # otherwise we recreate the group using the good conformers
-                return self
-            good_conformers.update({k: all_conformers[k] for k in self._nonbatch_properties})
-            group = f.create_conformer_group(group_name)
-            group.create_numpy_values(good_conformers)
-        return self
-
-    def present_species(self) -> Tuple[str, ...]:
-        if 'species' in self.properties:
-            element_key = 'species'
-            parser = lambda s: set(s['species'])  # noqa E731
-        elif 'numbers' in self.properties:
-            element_key = 'numbers'
-            parser = lambda s: set(self._numbers_to_symbols(s['numbers']))  # noqa E731
-        else:
-            raise ValueError('"species" or "numbers" must be present to parse symbols')
-        present_species: Set[str] = set()
-        for key in self.keys():
-            species = self.get_numpy_conformers(key,
-                                                include_properties=(element_key,),
-                                                repeat_nonbatch=False)
-            present_species.update(parser(species))
-        return tuple(sorted(present_species))
-
-    def get_numpy_conformers(self,
-                             key: str,
-                             idx: Optional[Tensor] = None,
-                             include_properties: Optional[Iterable[str]] = None,
-                             repeat_nonbatch: bool = True) -> NumpyConformers:
-        if isinstance(include_properties, str):
-            include_properties = {include_properties}
-        if include_properties is None:
-            requested_properties = self.properties
-        else:
-            requested_properties = set(include_properties)
-        self._check_properties_are_present(requested_properties)
-
-        # Determine which of the properties passed are batched and which are nonbatch
-        requested_nonbatch_properties = self._nonbatch_properties.intersection(requested_properties)
-        requested_batch_properties = self._batch_properties.intersection(requested_properties)
-
-        with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r')
-            numpy_conformers = {p: f[key][p] for p in requested_properties}
-            if idx is not None:
-                assert idx.dim() <= 1, "index must be a 0 or 1 dim tensor"
-                numpy_conformers.update({k: numpy_conformers[k][idx.cpu().numpy()]
-                                        for k in requested_batch_properties})
-
-        if 'species' in requested_properties:
-            numpy_conformers['species'] = numpy_conformers['species'].astype(str)
-        if '_id' in requested_properties:
-            numpy_conformers['_id'] = numpy_conformers['_id'].astype(str)
-
-        if repeat_nonbatch:
-            num_conformers = _get_num_conformers(numpy_conformers, self._flag_property, requested_batch_properties)
-            tile_shape = (num_conformers, 1) if idx is None or idx.dim() == 1 else (1,)
-            numpy_conformers.update({k: np.tile(numpy_conformers[k], tile_shape)
-                                     for k in requested_nonbatch_properties})
-        return numpy_conformers
-
-    def get_conformers(self,
-                       key: str,
-                       idx: Optional[Tensor] = None,
-                       include_properties: Optional[Iterable[str]] = None,
-                       repeat_nonbatch: bool = True) -> Conformers:
-        if isinstance(include_properties, str):
-            include_properties = {include_properties}
-        if include_properties is None:
-            requested_properties = self.properties
-        else:
-            requested_properties = set(include_properties)
-        # The tensor counterpart of get_numpy_conformers
-        numpy_conformers = self.get_numpy_conformers(key, idx, requested_properties, repeat_nonbatch)
-        conformers = {k: torch.tensor(numpy_conformers[k]) for k in requested_properties.difference({'species', '_id'})}
-
-        if 'species' in requested_properties:
-            species = self._symbols_to_numbers(numpy_conformers['species'])
-            conformers.update({'species': torch.from_numpy(species)})
-        return conformers
 
     def _check_properties_are_present(self, requested_properties: Iterable[str], raise_: bool = True) -> None:
         if isinstance(requested_properties, str):
