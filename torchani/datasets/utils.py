@@ -56,7 +56,7 @@ def _copy_to_new_store(source: ANIDataset,
         if not dest_path.is_dir():
             raise ValueError('Destination path must be a directory')
         desc = 'Copying data to new store'
-        dest_paths = [dest_path.joinpath(p.name) for p in source_od.values()]
+        dest_paths = OrderedDict([(n, dest_path.joinpath(p.name)) for n, p in source_od.items()])
 
     dest = ANIDataset(dest_paths, create=True, nonbatch_properties=source._possible_nonbatch_properties)
     keys_copy = deepcopy(list(source.keys()))

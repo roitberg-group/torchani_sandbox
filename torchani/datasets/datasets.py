@@ -471,7 +471,9 @@ class ANIDataset(_ANIDatasetBase):
     def set_metadata(self, name: str, data: str) -> 'ANIDataset': ... # noqa E704
 
     def get_metadata(self, name: str) -> str:
-        return self._first_subds.get_metadata(name)
+        data = self._first_subds.get_metadata(name)
+        assert isinstance(data, str)
+        return data
 
     def _update_internal_cache(self) -> 'ANIDataset':
         if self._num_subds > 1:
@@ -1148,7 +1150,7 @@ class _ANISubdataset(_ANIDatasetBase):
             f.set_metadata(name, data)
         return self
 
-    def get_metadata(self, name: str) -> set:
+    def get_metadata(self, name: str) -> str:
         with ExitStack() as stack:
             # NOTE: r+ is needed due to HDF5 which disallows opening empty
             # files with r
@@ -1192,6 +1194,7 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
             data = self._store_obj.attrs[name]
         except (KeyError, OSError):
             data = ''
+        assert isinstance(data, str)
         return data
 
     def __delitem__(self, k: str) -> None:
