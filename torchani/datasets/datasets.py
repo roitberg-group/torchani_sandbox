@@ -26,18 +26,17 @@ if _H5PY_AVAILABLE:
 Extractor = Callable[[int], Conformers]
 _T = TypeVar('_T')
 
-# IMPORTANT: read this to understand a bit better
+# IMPORTANT
 
-# ANIDataset is a mapping,
-# The mapping has keys "group_names" or "names" and values "conformers" or
-# "conformer_group". Each group of conformers is also a mapping, where keys are
-# "properties" and values are numpy arrays / torch tensors (they are just referred
-# to as "values" or "data").
+# ANIDataset is a mapping, The mapping has keys "group_names" or "names" and
+# values "conformers" or "conformer_group". Each group of conformers is also a
+# mapping, where keys are "properties" and values are numpy arrays / torch
+# tensors (they are just referred to as "values" or "data").
 #
-# In the current HDF5 datasets the group names are formulas
-# (in some CCCCHHH.... etc, in others C2H4, etc)
-# groups could also be smiles or number of atoms. Since HDF5 is hierarchical
-# this grouping is essentially hardcoded into the dataset format.
+# In the current HDF5 datasets the group names are formulas (in some
+# CCCCHHH.... etc, in others C2H4, etc) groups could also be smiles or number
+# of atoms. Since HDF5 is hierarchical this grouping is essentially hardcoded
+# into the dataset format.
 #
 # To parse all current HDF5 dataset types it is necessary to first determine
 # where all the conformer groups are. HDF5 has directory structure, and in
@@ -65,7 +64,7 @@ _T = TypeVar('_T')
 # --------------------
 # There is in principle no guarantee that all conformer groups have the same
 # properties. Due to this we have to first traverse the dataset and check that
-# this is the case.  we store the properties the dataset supports inside an
+# this is the case. We store the properties the dataset supports inside an
 # internal variable _properties (e.g. it may happen that one molecule has
 # forces but not coordinates, if this happens then ANIDataset raises an error)
 
@@ -95,38 +94,28 @@ _T = TypeVar('_T')
 # case it just fetches the already opened file.
 
 
-def _get_num_conformers(*args, **kwargs) -> int:
-    # calculates number of conformers in a conformer group
-    common_keys = {'coordinates', 'coord', 'energies', 'forces'}
-    return _get_dim_size(common_keys, 0, *args, **kwargs)
-
-
-def _get_num_atoms(*args, **kwargs) -> int:
-    # calculates number of atoms in a conformer group
-    common_keys = {'coordinates', 'coord', 'forces'}
-    return _get_dim_size(common_keys, 1, *args, **kwargs)
-
-
-def _get_dim_size(common_keys: Set[str], dim: int,
-                  conformers: Union[H5Group, Conformers, NumpyConformers],
-                  flag_property: Optional[str] = None,
-                  properties: Optional[Set[str]] = None) -> int:
-    # Calculates the dimension size in a conformer group
-    # If a flag property is passed it gets the dimension from that property,
-    # otherwise it tries to get it from one of a number of common keys that
-    # have the dimension
-    if flag_property is not None:
-        size = conformers[flag_property].shape[dim]
+def _get_dim_size(conformers: Union[H5Group, Conformers, NumpyConformers], *,
+                  common_keys: Set[str],
+                  dim: int,
+                  storename_to_alias: Optional[Dict[str, str]] = None) -> int:
+    # Calculates the dimension size in a conformer group It tries to get it
+    # from one of a number of common keys that have the dimension
+    storename_to_alias = dict() if storename_to_alias is None else storename_to_alias
+    properties = {storename_to_alias.get(p, p) for p in conformers.keys()}
+    present_keys = common_keys.intersection(properties)
+    if present_keys:
+        size = conformers[tuple(present_keys)[0]].shape[dim]
     else:
-        assert properties is not None
-        present_keys = common_keys.intersection(properties)
-        if present_keys:
-            size = conformers[tuple(present_keys)[0]].shape[dim]
-        else:
-            msg = (f'Could not infer dimension size of dim {dim} in properties '
-                   f' since {common_keys} are missing')
-            raise RuntimeError(msg)
+        msg = (f'Could not infer dimension size of dim {dim} in properties '
+               f' since {common_keys} are missing')
+        raise RuntimeError(msg)
     return size
+
+
+# calculates number of atoms in a conformer group
+_get_num_atoms = partial(_get_dim_size, common_keys={'coordinates', 'coord', 'forces'}, dim=1)
+# calculates number of conformers in a conformer group
+_get_num_conformers = partial(_get_dim_size, common_keys={'coordinates', 'coord', 'forces', 'energies'}, dim=0)
 
 
 class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
@@ -138,7 +127,6 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
                        file_format: Optional[str] = None,
                        split: str = 'training',
                        transform: Transform = lambda x: x,
-                       flag_property: Optional[str] = None,
                        drop_last: bool = False):
 
         self.split = split
@@ -200,7 +188,6 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
                                       'pickle': partial(pickle_extractor, paths=self.batch_paths),
                                       'hdf5': partial(hdf5_extractor, paths=self.batch_paths)}[file_format]
 
-        self._flag_property = flag_property
         try:
             with open(self.store_dir.parent.joinpath('creation_log.json'), 'r') as logfile:
                 creation_log = json.load(logfile)
@@ -211,12 +198,12 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
             self._is_inplace_transformed = False
             # All batches except the last are assumed to have the same length
             first_batch = self[-1]
-            self.batch_size = _get_num_conformers(first_batch, self._flag_property, set(first_batch.keys()))
+            self.batch_size = _get_num_conformers(first_batch)
 
         if drop_last:
             # Drops last batch only if it is smallest than the rest
             last_batch = self[-1]
-            last_batch_size = _get_num_conformers(last_batch, self._flag_property, set(last_batch.keys()))
+            last_batch_size = _get_num_conformers(last_batch)
             if last_batch_size < self.batch_size:
                 self.batch_paths.pop()
         self._len = len(self.batch_paths)
@@ -310,6 +297,13 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
     @property
     def num_conformer_groups(self):
         return len(self.group_sizes.keys())
+
+    @property
+    def grouping(self) -> str:
+        raise NotImplementedError
+
+    def _set_grouping(self) -> None:
+        raise NotImplementedError
 
     def __getitem__(self, key: str) -> Conformers:
         return self.get_conformers(key)
@@ -467,13 +461,9 @@ class ANIDataset(_ANIDatasetBase):
     @_broadcast
     def set_aliases(self, property_aliases: Optional[Dict[str, str]] = ...) -> 'ANIDataset': ...  # noqa E704
 
-    @_broadcast
-    def set_metadata(self, name: str, data: str) -> 'ANIDataset': ... # noqa E704
-
-    def get_metadata(self, name: str) -> str:
-        data = self._first_subds.get_metadata(name)
-        assert isinstance(data, str)
-        return data
+    @property
+    def grouping(self) -> str:
+        return self._first_subds.grouping
 
     def _update_internal_cache(self) -> 'ANIDataset':
         if self._num_subds > 1:
@@ -482,10 +472,10 @@ class ANIDataset(_ANIDatasetBase):
             od_args = [(k, v) for ds in self._datasets.values() for k, v in ds.group_sizes.items()]
         self.group_sizes = OrderedDict(od_args)
         for name, ds in self._datasets.items():
-            if not ds.get_metadata('grouping') == self._first_subds.get_metadata('grouping'):
+            if not ds.grouping == self._first_subds.grouping:
                 raise ValueError("Datasets have incompatible groupings,"
-                                 f" got {self._first_subds.get_metadata('grouping')} for {self._first_name}"
-                                 f" and {ds.get_metadata('grouping')} for {name}")
+                                 f" got {self._first_subds.grouping} for {self._first_name}"
+                                 f" and {ds.grouping} for {name}")
 
             if not ds.properties == self._first_subds.properties:
                 raise ValueError('Supported properties are different for the'
@@ -533,12 +523,13 @@ def _needs_cache_update(method: Callable[..., '_ANISubdataset']) -> Callable[...
 
 class _ANISubdataset(_ANIDatasetBase):
 
+    _SUPPORTED_STORES = ('.h5',)
+
     def __init__(self,
-                 store_location: PathLike,
+                 store_location: PathLike, *,
                  assume_standard: bool = False,
                  create: bool = False,
-                 flag_property: Optional[str] = None,
-                 nonbatch_properties: Iterable[str] = ('species', 'numbers'),
+                 grouping: Optional[str] = None,
                  property_aliases: Optional[Dict[str, str]] = None,
                  verbose: bool = True):
         super().__init__()
@@ -546,49 +537,55 @@ class _ANISubdataset(_ANIDatasetBase):
         # used for directories with npz files. It should never ever be used
         # directly by user code
 
-        self._backend = 'h5py'  # the only backend allowed currently
-        if self._backend == 'h5py' and not _H5PY_AVAILABLE:
-            raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
-
         self._store_location = Path(store_location).resolve()
+
+        if store_location.suffix == '.h5' or store_location.suffix not in self._SUPPORTED_STORES:
+            if not _H5PY_AVAILABLE:
+                raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
+            self._backend = 'h5py'  # the only backend allowed currently, so we default to it
+
         self._open_store: Optional['_DatasetStoreAdaptor'] = None
-        self._possible_nonbatch_properties = set(nonbatch_properties)
         self._verbose = verbose
         self._symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
         self._numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
-
-        # flag property is used to infer size of conformer groups
-        self._flag_property = flag_property
-
-        # group_sizes and properties are needed as internal cache
-        # variables, this cache is updated if something in the dataset changes
 
         # "storename" are the names of properties in the store file, and
         # "aliases" are the names users see when manipulating
         self._storename_to_alias = dict() if property_aliases is None else property_aliases
         self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
 
+        self._get_num_conformers = partial(_get_num_conformers, storename_to_alias=self._storename_to_alias)
+        self._get_num_atoms = partial(_get_num_atoms, storename_to_alias=self._storename_to_alias)
+
+        # group_sizes and properties are needed as internal cache
+        # variables, this cache is updated if something in the dataset changes
         if create:
-            # create the file
+            # Create the file, since there is nothing in it homogeneous
+            # properties and standard format are assumed. Default grouping is
+            # "by formula"
             open(self._store_location, 'x').close()
-            self._checked_homogeneous_properties = True
             self._has_standard_format = True
+            self._checked_homogeneous_properties = True
+            self._set_grouping('by_formula' if grouping is None else grouping)
         else:
             # In general all supported properties of the dataset should be
             # equal for all groups, this is not a problem for relational databases
             # but it can be an issue for HDF5. First we check that this is the case inside
             # _update_internal_cache, if it isn't then we raise an error, if
             # the check passes we set _checked_homogeneous_properties = True,
-            # so that we don't run the costly test again
+            # so that we don't run the costly check again
+            # default grouping is "unspecified"
             if not self._store_location.is_file():
                 raise FileNotFoundError(f"The h5 file in {self._store_location.as_posix()} could not be found")
             self._has_standard_format = assume_standard
             self._checked_homogeneous_properties = False
+            self._set_grouping('' if grouping is None else grouping)
             self._update_internal_cache()
 
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
         r"""Context manager to keep dataset open while iterating over it
+
         Usage:
         with ds.keep_open('r') as ro_ds:
             c = ro_ds.get_conformers('CH4')
@@ -633,15 +630,6 @@ class _ANISubdataset(_ANIDatasetBase):
         self._properties = set()
 
         if self._backend == 'h5py':
-            # If grouping is by num atoms then there should be no possible nonbatch properties
-            with ExitStack() as stack:
-                hdf5_store = self._get_open_store(stack, 'r')
-                data = hdf5_store.get_metadata('grouping')
-                if data:
-                    # built-in groupings have standard format and no nonbatch properties
-                    self._has_standard_format = True
-                    self._possible_nonbatch_properties = set()
-
             # detect datasets with _created / _meta standarization, or which
             # were regrouped. These have standard format.
             if not self._has_standard_format:
@@ -722,9 +710,6 @@ class _ANISubdataset(_ANIDatasetBase):
         # if ordering by formula or smiles
         if not self.properties:
             self._properties = {self._storename_to_alias.get(p, p) for p in set(conformers.keys())}
-            if self._flag_property is not None and self._flag_property not in self.properties:
-                msg = f"Flag property {self._flag_property} not found in {self.properties}"
-                raise RuntimeError(msg)
         elif not self._checked_homogeneous_properties:
             found_properties = {self._storename_to_alias.get(p, p) for p in set(conformers.keys())}
             if not found_properties == self.properties:
@@ -737,15 +722,7 @@ class _ANISubdataset(_ANIDatasetBase):
         # updates "group_sizes" which holds the batch dimension (number of
         # molecules) of all grups in the dataset.
         # raw == not renamed / not aliased
-        raw_flag_property: Optional[str]
-        if self._flag_property is not None:
-            raw_flag_property = self._alias_to_storename.get(self._flag_property, self._flag_property)
-        else:
-            raw_flag_property = None
-        raw_properties = {self._alias_to_storename.get(p, p) for p in self.properties}
-        group_size = _get_num_conformers(conformers,
-                                         raw_flag_property,
-                                         raw_properties)
+        group_size = self._get_num_conformers(conformers)
         self.group_sizes.update({conformers.name[1:]: group_size})
 
     def __str__(self) -> str:
@@ -762,17 +739,15 @@ class _ANISubdataset(_ANIDatasetBase):
     def present_species(self) -> Tuple[str, ...]:
         if 'species' in self.properties:
             element_key = 'species'
-            parser = lambda s: set(s['species'])  # noqa E731
+            parser = lambda s: set(s['species'].ravel())  # noqa E731
         elif 'numbers' in self.properties:
             element_key = 'numbers'
-            parser = lambda s: set(self._numbers_to_symbols(s['numbers']))  # noqa E731
+            parser = lambda s: set(self._numbers_to_symbols(s['numbers']).ravel())  # noqa E731
         else:
             raise ValueError('"species" or "numbers" must be present to parse symbols')
         present_species: Set[str] = set()
         for key in self.keys():
-            species = self.get_numpy_conformers(key,
-                                                include_properties=(element_key,),
-                                                repeat_nonbatch=False)
+            species = self.get_numpy_conformers(key, include_properties=element_key)
             present_species.update(parser(species))
         return tuple(sorted(present_species))
 
@@ -826,81 +801,76 @@ class _ANISubdataset(_ANIDatasetBase):
         if '_id' in requested_properties:
             numpy_conformers['_id'] = numpy_conformers['_id'].astype(str)
 
-        if repeat_nonbatch:
-            num_conformers = _get_num_conformers(numpy_conformers, self._flag_property, requested_batch_properties)
+        if repeat_nonbatch and requested_nonbatch_properties:
+            num_conformers = self._get_num_conformers(numpy_conformers)
             tile_shape = (num_conformers, 1) if idx is None or idx.dim() == 1 else (1,)
             numpy_conformers.update({k: np.tile(numpy_conformers[k], tile_shape)
                                      for k in requested_nonbatch_properties})
         return numpy_conformers
 
-    def append_conformers(self,
-                          group_name: str,
-                          conformers: Conformers,
-                          properties_to_sort: Iterable[str] = tuple()) -> '_ANISubdataset':
+    def append_conformers(self, group_name: str, conformers: Conformers) -> '_ANISubdataset':
         group_name, conformers = self._check_append_input(group_name, conformers)
-        numpy_conformers = {k: conformers[k].numpy()
-                            for k in self.properties.difference({'species'})}
+        numpy_conformers = {k: conformers[k].detach().cpu().numpy() for k in self.properties.difference({'species'})}
 
-        # This correctly handles cases where species is a batch or nonbatch key
         if 'species' in self.properties:
             if (conformers['species'] <= 0).any():
                 raise ValueError('Species are atomic numbers, must be positive')
-            species = self._numbers_to_symbols(conformers['species'].numpy())
+            species = self._numbers_to_symbols(conformers['species'].detach().cpu().numpy())
             numpy_conformers.update({'species': species})
 
-        return self._append_numpy_conformers_no_check(group_name,
-                                                      numpy_conformers,
-                                                      properties_to_sort)
+        return self._append_numpy_conformers_no_check(group_name, numpy_conformers)
 
-    def append_numpy_conformers(self,
-                                group_name: str,
-                                conformers: NumpyConformers,
-                                properties_to_sort: Iterable[str] = tuple()) -> '_ANISubdataset':
+    def append_numpy_conformers(self, group_name: str, conformers: NumpyConformers) -> '_ANISubdataset':
         group_name, conformers = self._check_append_input(group_name, conformers)
-        return self._append_numpy_conformers_no_check(group_name,
-                                                      conformers,
-                                                      properties_to_sort)
+        return self._append_numpy_conformers_no_check(group_name, conformers)
+
+    def _get_conformer_formulas(self, conformers: MaybeNumpyConformers):
+        if 'species' in conformers.keys():
+            if isinstance(conformers['species'], Tensor):
+                symbols = self._numbers_to_symbols(conformers['species'].detach().cpu().numpy())
+            else:
+                symbols = conformers['species']
+        elif 'numbers' in conformers.keys():
+            symbols = self._numbers_to_symbols(conformers['numbers'])
+        else:
+            raise ValueError("Either species or numbers must be present to parse formulas")
+
+        return species_to_formula(symbols)
 
     def _check_append_input(self, group_name: str, conformers: MaybeNumpyConformers) -> Tuple[str, MaybeNumpyConformers]:
+
+        if self.grouping not in ['by_formula', 'by_num_atoms']:
+            raise ValueError("Can't append if the grouping is not by_formula or"
+                             " by_num_atoms, please regroup your dataset")
         conformers = deepcopy(conformers)
 
-        # check input kills first dimension of nonbatch keys
+        # check that all formulas are the same
+        if self.grouping == 'by_formula':
+            formulas = np.asarray(self._get_conformer_formulas(conformers))
+            if not np.all(formulas[0] == formulas):
+                raise ValueError("All appended conformers must have the same formula")
+
+        # If this is the first conformer added update the dataset to support
+        # these properties, otherwise check that all properties are present
         if not self.properties:
-            # if this is the first conformer ever added update the dataset to
-            # support these properties
             self._properties = set(conformers.keys())
+        elif not set(conformers.keys()) == self.properties:
+            raise ValueError(f'Expected {self.properties} but got {set(conformers.keys())}')
 
         if '/' in group_name:
             raise ValueError('Character "/" not supported in group_name')
-        if not set(conformers.keys()) == self.properties:
-            raise ValueError(f'Expected {self.properties} but got {set(conformers.keys())}')
 
-        for k in self._nonbatch_properties:
-            if conformers[k].ndim == 2:
-                if not (conformers[k] == conformers[k][0]).all():
-                    raise ValueError(f'All {k} must be equal in the batch dimension')
-                else:
-                    conformers[k] = conformers[k][0]
-            if conformers[k].ndim != 1:
-                raise ValueError(f'{k} must have 1 or 2 dimensions')
-
-        any_batch_property = next(iter(self._batch_properties))
-        for k in self._batch_properties:
-            if not conformers[k].shape[0] == conformers[any_batch_property].shape[0]:
-                raise ValueError(f"All batch keys {self._batch_properties} must have the same batch dimension")
+        # All properties must have the same batch dimension
+        size = self._get_num_conformers(conformers)
+        if not all(conformers[k].shape[0] == size for k in self.properties):
+            raise ValueError(f"All batch keys {self.properties} must have the same batch dimension")
 
         return group_name, conformers
 
     @_needs_cache_update
     def _append_numpy_conformers_no_check(self,
                                           group_name: str,
-                                          conformers: NumpyConformers,
-                                          repeat_nonbatch: bool = False,
-                                          require_sorted_properties: bool = True,
-                                          properties_to_sort: Iterable[str] = tuple()) -> '_ANISubdataset':
-        if self.get_metadata('grouping') == 'by_num_atoms':
-            require_sorted_properties = False
-
+                                          conformers: NumpyConformers) -> '_ANISubdataset':
         # NOTE: Appending to datasets is allowed in HDF5 but only if
         # the dataset is created with "resizable" format, since this is not the
         # default  for simplicity we just rebuild the whole group with the new
@@ -910,70 +880,34 @@ class _ANISubdataset(_ANIDatasetBase):
 
         # check for correct sorting which is necessary if conformers are
         # grouped with nonbatch keys
-
-        if require_sorted_properties:
-            if 'numbers' in self._nonbatch_properties:
-                numbers = conformers['numbers']
-            elif 'species' in self._nonbatch_properties:
-                numbers = self._symbols_to_numbers(conformers['species'])
-            else:
-                raise ValueError('Either species or numbers need to be present to append')
-            idxs_for_sort = np.argsort(numbers, kind='stable')
-
-            # sorting logic if requested
-            if properties_to_sort:
-                self._check_properties_are_present(properties_to_sort)
-                self._sort_atomic_properties_inplace(idxs_for_sort, conformers, properties_to_sort)
-
-            if not (numbers[idxs_for_sort] == numbers).all():
-                raise ValueError('Atomic numbers, species and all other properties that are'
-                                 ' atomic (such as coordinates and forces) must'
-                                 ' be sorted by atomic number before appending')
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             try:
                 group = f.create_conformer_group(group_name)
             except ValueError:
-                old_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch=False)
-                if properties_to_sort:
-                    self._sort_atomic_properties_inplace(idxs_for_sort, old_conformers, properties_to_sort)
-                if repeat_nonbatch:
-                    conformers.update({k: np.concatenate((old_conformers[k], conformers[k]), axis=0)
-                                       for k in self._nonbatch_properties})
-                else:
-                    if not all((old_conformers[k] == conformers[k]).all() for k in self._nonbatch_properties):
-                        raise ValueError("Attempted to combine groups with different nonbatch key")
+                old_conformers = self.get_numpy_conformers(group_name)
                 conformers.update({k: np.concatenate((old_conformers[k], conformers[k]), axis=0)
-                                   for k in self._batch_properties})
+                                   for k in self.properties})
                 del f[group_name]
                 group = f.create_conformer_group(group_name)
             group.create_numpy_values(conformers)
         return self
 
-    def _sort_atomic_properties_inplace(self,
-                                        idxs_for_sort: np.ndarray,
-                                        conformers: NumpyConformers,
-                                        properties_to_sort: Iterable[str]) -> None:
-        for p in properties_to_sort:
-            conformers[p] = conformers[p][:, idxs_for_sort, ...]
-        if 'numbers' in conformers.keys():
-            conformers['numbers'] = conformers['numbers'][idxs_for_sort]
-        if 'species' in conformers.keys():
-            conformers['species'] = conformers['species'][idxs_for_sort]
-
     @_needs_cache_update
     def delete_conformers(self, group_name: str, idx: Tensor) -> '_ANISubdataset':
-        all_conformers = self.get_numpy_conformers(group_name, repeat_nonbatch=False)
+        if self.grouping not in ['by_formula', 'by_num_atoms']:
+            raise ValueError("Can't delete if the grouping is not by_formula or"
+                             " by_num_atoms, please regroup your dataset")
+        all_conformers = self.get_numpy_conformers(group_name)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             del f[group_name]
             good_conformers = {k: np.delete(all_conformers[k], obj=idx.cpu().numpy(), axis=0)
-                               for k in self._batch_properties}
+                               for k in self.properties}
             if all(v.shape[0] == 0 for v in good_conformers.values()):
                 # if we deleted everything in the group then just return,
                 # otherwise we recreate the group using the good conformers
                 return self
-            good_conformers.update({k: all_conformers[k] for k in self._nonbatch_properties})
             group = f.create_conformer_group(group_name)
             group.create_numpy_values(good_conformers)
         return self
@@ -1026,8 +960,7 @@ class _ANISubdataset(_ANIDatasetBase):
         # )"
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
-            for group_name, conformers in self.numpy_items(include_properties=('source_key',),
-                                                           repeat_nonbatch=False):
+            for group_name, conformers in self.numpy_items(include_properties='source_key'):
                 to_slice = conformers[source_key]
                 if to_slice.shape[dim_to_slice] <= 1:
                     raise ValueError("You can't slice the property if "
@@ -1054,57 +987,53 @@ class _ANISubdataset(_ANIDatasetBase):
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
-                size = _get_num_conformers(f[group_name], self._flag_property, self.properties)
+                size = self._get_num_conformers(f[group_name])
                 data = np.full(size, fill_value=fill_value, dtype=dtype)
                 f[group_name].create_numpy_values({dest_key: data})
         return self
 
     @_needs_cache_update
     def regroup_by_formula(self, verbose: bool = True) -> '_ANISubdataset':
-        # TODO: Currently it is not possible to regroup sizes -> formulas, only formula_like -> sizes or formula_like -> formulas
-        if self.get_metadata('grouping') == 'by_num_atoms':
-            raise ValueError('Regrouping by formula is not supported for datasets grouped by num atoms')
-
-        if 'species' in self.properties:
-            parser = lambda s: species_to_formula(s['species'][0])  # noqa E731
-        elif 'numbers' in self.properties:
-            parser = lambda s: species_to_formula(self._numbers_to_symbols(s['numbers'][0]))  # noqa E731
-        else:
-            raise ValueError('"species" or "numbers" must be a nonbatch property to parse formulas')
-        for group_name, conformers in tqdm(self.numpy_items(repeat_nonbatch=True),
+        for group_name, conformers in tqdm(self.numpy_items(),
                                            total=self.num_conformer_groups,
                                            desc='Regrouping by formulas',
                                            disable=not verbose):
-            new_name = parser(conformers)
+
+            # get all formulas in the group to discriminate conformers by
+            # formula and then attach conformers with the same formula to the
+            # same groups
+            formulas = np.asarray(self._get_conformer_formulas(conformers))
+            unique_formulas = np.unique(formulas)
+            formula_idxs = ((formulas == el).nonzero()[0] for el in unique_formulas)
+
             with ExitStack() as stack:
                 f = self._get_open_store(stack, 'r+')
                 del f[group_name]
-            # mypy doesn't know that @wrap'ed functions have __wrapped__.
-            # No need to check input here since it was inside the ds
-            self._append_numpy_conformers_no_check.__wrapped__(self,  # type: ignore
-                                                               new_name,
-                                                               conformers,
-                                                               require_sorted_properties=False,
-                                                               repeat_nonbatch=True)
-        self.set_metadata('grouping', 'by_formula')
+
+            for formula, idx in zip(unique_formulas, formula_idxs):
+                selected_conformers = {k: v[idx] for k, v in conformers.items()}
+                # mypy doesn't know that @wrap'ed functions have __wrapped__.
+                # No need to check input here since it was inside the ds
+                self._append_numpy_conformers_no_check.__wrapped__(self,  # type: ignore
+                                                                   formula,
+                                                                   selected_conformers)
+        self._set_grouping('by_formula')
         return self
 
     @_needs_cache_update
     def regroup_by_num_atoms(self, verbose: bool = True) -> '_ANISubdataset':
-        for group_name, conformers in tqdm(self.numpy_items(repeat_nonbatch=True),
+        for group_name, conformers in tqdm(self.numpy_items(),
                                            total=self.num_conformer_groups,
                                            desc='Regrouping by number of atoms',
                                            disable=not verbose):
-            new_name = f'num_atoms_{_get_num_atoms(conformers, None, self._batch_properties)}'
+            new_name = f'num_atoms_{self._get_num_atoms(conformers)}'
             with ExitStack() as stack:
                 f = self._get_open_store(stack, 'r+')
                 del f[group_name]
             self._append_numpy_conformers_no_check.__wrapped__(self,  # type: ignore
                                                                new_name,
-                                                               conformers,
-                                                               require_sorted_properties=False,
-                                                               repeat_nonbatch=True)
-        self.set_metadata('grouping', 'by_num_atoms')
+                                                               conformers)
+        self._set_grouping('by_num_atoms')
         return self
 
     @_needs_cache_update
@@ -1144,18 +1073,25 @@ class _ANISubdataset(_ANIDatasetBase):
         self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
         return self
 
-    def set_metadata(self, name: str, data: str) -> '_ANISubdataset':
+    def _set_grouping(self, grouping: str) -> None:
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
-            f.set_metadata(name, data)
-        return self
+            f._set_grouping(grouping)
 
-    def get_metadata(self, name: str) -> str:
+        if grouping in ['by_formula', 'by_num_atoms']:
+            self._has_standard_format = True
+            self._possible_nonbatch_properties = set()
+        else:
+            # other groupings are assumed to have nonbatch keys
+            self._possible_nonbatch_properties = {'species', 'numbers'}
+
+    @property
+    def grouping(self) -> str:
         with ExitStack() as stack:
             # NOTE: r+ is needed due to HDF5 which disallows opening empty
             # files with r
             f = self._get_open_store(stack, 'r+')
-            data = f.get_metadata(name)
+            data = f.grouping
         return data
 
     def _check_properties_are_present(self, requested_properties: Iterable[str], raise_: bool = True) -> None:
@@ -1185,13 +1121,13 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
         self._alias_to_storename = alias_to_storename if alias_to_storename is not None else dict()
         self.mode = self._store_obj.mode
 
-    def set_metadata(self, name: str, data: str) -> '_DatasetStoreAdaptor':
-        self._store_obj.attrs[name] = data
-        return self
+    def _set_grouping(self, grouping: str) -> None:
+        self._store_obj.attrs['grouping'] = grouping
 
-    def get_metadata(self, name: str) -> str:
+    @property
+    def grouping(self) -> str:
         try:
-            data = self._store_obj.attrs[name]
+            data = self._store_obj.attrs['grouping']
         except (KeyError, OSError):
             data = ''
         assert isinstance(data, str)

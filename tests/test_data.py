@@ -519,8 +519,6 @@ class TestANIDataset(TestCase):
         # reset supported properties
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
-        with self.assertRaisesRegex(ValueError, 'Attempted to combine groups with different'):
-            ds.append_conformers('O6', new_groups['C6'])
         with self.assertRaisesRegex(ValueError, 'Character "/" not supported'):
             ds.append_conformers('O/6', new_groups['O6'])
 
@@ -529,12 +527,12 @@ class TestANIDataset(TestCase):
             del new_groups_copy['energies']
             ds.append_conformers('O6', new_groups_copy)
 
-        with self.assertRaisesRegex(ValueError, '.* must be equal in the batch dimension'):
+        with self.assertRaisesRegex(ValueError, 'All appended conformers'):
             new_groups_copy = deepcopy(new_groups['O6'])
             new_groups_copy['species'] = torch.randint(size=(5, 6), low=1, high=5, dtype=torch.long)
             ds.append_conformers('O6', new_groups_copy)
 
-        with self.assertRaisesRegex(ValueError, '.* must have 1 or 2 dimensions'):
+        with self.assertRaisesRegex(ValueError, 'Species needs to have two'):
             new_groups_copy = deepcopy(new_groups['O6'])
             new_groups_copy['species'] = torch.ones((5, 6, 1), dtype=torch.long)
             ds.append_conformers('O6', new_groups_copy)
@@ -576,9 +574,9 @@ class TestANIDataset(TestCase):
         self.assertEqual(ds.properties, {'species', 'energies', 'coordinates', 'numbers'})
         for k, v in ds.items():
             self.assertEqual(v['species'], v['numbers'])
-        numpy_species = ds.get_numpy_conformers('H6', include_properties=('species',), repeat_nonbatch=False)
-        numpy_numbers = ds.get_numpy_conformers('H6', include_properties=('numbers',), repeat_nonbatch=False)
-        self.assertEqual(numpy_numbers['numbers'], np.ones(len(numpy_species['species']), dtype=np.int64))
+        numpy_species = ds.get_numpy_conformers('H6', include_properties=('species',))
+        numpy_numbers = ds.get_numpy_conformers('H6', include_properties=('numbers',))
+        self.assertEqual(numpy_numbers['numbers'], np.ones(numpy_species['species'].shape, dtype=np.int64))
 
     def testNumbersFromSpecies(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)
@@ -589,8 +587,8 @@ class TestANIDataset(TestCase):
         ds.create_full_scalar_property('numbers', 1)
         ds.create_species_from_numbers('numbers', 'species')
         for k in ('H6', 'C6', 'O6'):
-            species = ds.get_numpy_conformers(k, include_properties=('species',), repeat_nonbatch=False)['species']
-            self.assertEqual(species, np.full(len(species), fill_value='H'))
+            species = ds.get_numpy_conformers(k, include_properties=('species',))['species']
+            self.assertEqual(species, np.full(species.shape, fill_value='H'))
 
     def testExtractSlice(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)
@@ -601,8 +599,8 @@ class TestANIDataset(TestCase):
         ds.create_full_scalar_property('numbers', 1)
         ds.create_species_from_numbers('numbers', 'species')
         for k in ('H6', 'C6', 'O6'):
-            species = ds.get_numpy_conformers(k, include_properties=('species',), repeat_nonbatch=False)['species']
-            self.assertEqual(species, np.full(len(species), fill_value='H'))
+            species = ds.get_numpy_conformers(k, include_properties=('species',))['species']
+            self.assertEqual(species, np.full(species.shape, fill_value='H'))
 
     def testNewScalar(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)

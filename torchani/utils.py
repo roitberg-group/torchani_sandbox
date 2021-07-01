@@ -8,9 +8,10 @@ import os
 import warnings
 import itertools
 from collections import defaultdict, Counter
-from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union, Iterable
+from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
+import numpy as np
 
 # torch hub has a dummy implementation of tqdm which can be used if tqdm is not
 # installed
@@ -40,13 +41,21 @@ def check_openmp_threads():
         print(f"OMP_NUM_THREADS is set as {num_threads}")
 
 
-def species_to_formula(species: Iterable[str]) -> str:
-    r"""Transforms an iterable of strings into the corresponding formula
-    sorts in alphabetical order e.g. ['H', 'H', 'C'] -> 'CH2'"""
-    symbol_counts: List[Tuple[str, int]] = sorted(Counter(species).items())
-    iterable = (str(i) for i in itertools.chain.from_iterable(symbol_counts))
-    formula = ''.join(iterable)
-    return formula
+def species_to_formula(species: np.ndarray) -> List[str]:
+    r"""Transforms an array of strings into the corresponding formula.  This
+    function expects an array of shape (M, A) and returns a list of
+    formulas of len M.
+    sorts in alphabetical order e.g. [['H', 'H', 'C']] -> ['CH2']"""
+    if species.ndim == 1:
+        species = species.unsqueeze(0)
+    elif species.ndim != 2:
+        raise ValueError("Species needs to have two dims/axes")
+    formulas = []
+    for s in species:
+        symbol_counts: List[Tuple[str, int]] = sorted(Counter(s).items())
+        iterable = (str(i) for i in itertools.chain.from_iterable(symbol_counts))
+        formulas.append(''.join(iterable))
+    return formulas
 
 
 def path_is_writable(path: Union[str, Path]) -> bool:

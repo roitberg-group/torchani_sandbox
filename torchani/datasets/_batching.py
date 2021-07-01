@@ -101,8 +101,8 @@ def create_batched_dataset(h5_path: PathLike,
                     'shuffle_seed': shuffle_seed,
                     'include_properties': include_properties if include_properties is not None else 'all',
                     'batch_size': batch_size,
-                    'total_num_conformers': len(conformer_indices),
-                    'total_conformer_groups': len(group_sizes_values)}
+                    'total_num_conformers': dataset.num_conformers,
+                    'total_conformer_groups': dataset.num_conformer_groups}
 
     with open(dest_path.joinpath('creation_log.json'), 'w') as logfile:
         json.dump(creation_log, logfile, indent=1)
