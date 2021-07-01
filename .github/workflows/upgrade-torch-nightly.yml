@@ -4,7 +4,7 @@ name: upgrade-torch-nightly
 on:
   pull_request:
   schedule:
-    - cron: '6 0 * * 6'
+    - cron: '7 0 * * *'  # 3AM on everyday
 
 jobs:
   upgrade-torch-nightly:
