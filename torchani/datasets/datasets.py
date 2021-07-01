@@ -302,7 +302,7 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
     def grouping(self) -> str:
         raise NotImplementedError
 
-    def _set_grouping(self) -> None:
+    def _set_grouping(self, grouping: str) -> None:
         raise NotImplementedError
 
     def __getitem__(self, key: str) -> Conformers:
@@ -538,8 +538,7 @@ class _ANISubdataset(_ANIDatasetBase):
         # directly by user code
 
         self._store_location = Path(store_location).resolve()
-
-        if store_location.suffix == '.h5' or store_location.suffix not in self._SUPPORTED_STORES:
+        if self._store_location.suffix == '.h5' or self._store_location.suffix not in self._SUPPORTED_STORES:
             if not _H5PY_AVAILABLE:
                 raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
             self._backend = 'h5py'  # the only backend allowed currently, so we default to it

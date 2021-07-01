@@ -47,7 +47,7 @@ def species_to_formula(species: np.ndarray) -> List[str]:
     formulas of len M.
     sorts in alphabetical order e.g. [['H', 'H', 'C']] -> ['CH2']"""
     if species.ndim == 1:
-        species = species.unsqueeze(0)
+        species = np.expand_dims(species, axis=0)
     elif species.ndim != 2:
         raise ValueError("Species needs to have two dims/axes")
     formulas = []

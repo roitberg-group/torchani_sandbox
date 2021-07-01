@@ -58,7 +58,7 @@ def _copy_to_new_store(source: ANIDataset,
         desc = 'Copying data to new store'
         dest_paths = OrderedDict([(n, dest_path.joinpath(p.name)) for n, p in source_od.items()])
 
-    dest = ANIDataset(dest_paths, create=True, nonbatch_properties=source._possible_nonbatch_properties)
+    dest = ANIDataset(dest_paths, create=True, grouping=source.grouping)
     keys_copy = deepcopy(list(source.keys()))
     for k in tqdm(keys_copy,
                   desc=desc,
@@ -68,7 +68,6 @@ def _copy_to_new_store(source: ANIDataset,
         if concatenate:
             k = k.split('/')[-1]
         dest.append_numpy_conformers(k, v, require_sorted_properties=False)
-    dest.set_metadata('grouping', source.get_metadata('grouping'))
     if delete_originals:
         for p in tqdm(source_od.values(),
                       desc='Deleting original store',
