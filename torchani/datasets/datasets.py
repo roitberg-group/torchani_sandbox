@@ -466,7 +466,7 @@ class ANIDataset(_ANIDatasetBase):
         str_ = ''
         for ds in self._datasets.values():
             str_ += f'{ds}\n'
-        return str
+        return str_
 
     def _update_internal_cache(self) -> 'ANIDataset':
         if self._num_subds > 1:
