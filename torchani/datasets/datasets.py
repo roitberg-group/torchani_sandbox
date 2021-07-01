@@ -96,13 +96,10 @@ _T = TypeVar('_T')
 
 def _get_dim_size(conformers: Union[H5Group, Conformers, NumpyConformers], *,
                   common_keys: Set[str],
-                  dim: int,
-                  storename_to_alias: Optional[Dict[str, str]] = None) -> int:
-    # Calculates the dimension size in a conformer group It tries to get it
-    # from one of a number of common keys that have the dimension
-    storename_to_alias = dict() if storename_to_alias is None else storename_to_alias
-    properties = {storename_to_alias.get(p, p) for p in conformers.keys()}
-    present_keys = common_keys.intersection(properties)
+                  dim: int) -> int:
+    # Calculates the dimension size in a conformer group. It tries to get it
+    # from one of a number of the "common keys" that have the dimension
+    present_keys = common_keys.intersection(set(conformers.keys()))
     if present_keys:
         size = conformers[tuple(present_keys)[0]].shape[dim]
     else:
@@ -465,6 +462,12 @@ class ANIDataset(_ANIDatasetBase):
     def grouping(self) -> str:
         return self._first_subds.grouping
 
+    def __str__(self) -> str:
+        str_ = ''
+        for ds in self._datasets.values():
+            str_ += f'{ds}\n'
+        return str
+
     def _update_internal_cache(self) -> 'ANIDataset':
         if self._num_subds > 1:
             od_args = [(f'{name}/{k}', v) for name, ds in self._datasets.items() for k, v in ds.group_sizes.items()]
@@ -552,9 +555,6 @@ class _ANISubdataset(_ANIDatasetBase):
         # "aliases" are the names users see when manipulating
         self._storename_to_alias = dict() if property_aliases is None else property_aliases
         self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
-
-        self._get_num_conformers = partial(_get_num_conformers, storename_to_alias=self._storename_to_alias)
-        self._get_num_atoms = partial(_get_num_atoms, storename_to_alias=self._storename_to_alias)
 
         # group_sizes and properties are needed as internal cache
         # variables, this cache is updated if something in the dataset changes
@@ -720,9 +720,7 @@ class _ANISubdataset(_ANIDatasetBase):
     def _update_groups_cache_h5py(self, conformers: H5Group) -> None:
         # updates "group_sizes" which holds the batch dimension (number of
         # molecules) of all grups in the dataset.
-        # raw == not renamed / not aliased
-        group_size = self._get_num_conformers(conformers)
-        self.group_sizes.update({conformers.name[1:]: group_size})
+        self.group_sizes.update({conformers.name[1:]: _get_num_conformers(conformers)})
 
     def __str__(self) -> str:
         str_ = "ANI HDF5 File:\n"
@@ -801,8 +799,7 @@ class _ANISubdataset(_ANIDatasetBase):
             numpy_conformers['_id'] = numpy_conformers['_id'].astype(str)
 
         if repeat_nonbatch and requested_nonbatch_properties:
-            num_conformers = self._get_num_conformers(numpy_conformers)
-            tile_shape = (num_conformers, 1) if idx is None or idx.dim() == 1 else (1,)
+            tile_shape = (_get_num_conformers(numpy_conformers), 1) if idx is None or idx.dim() == 1 else (1,)
             numpy_conformers.update({k: np.tile(numpy_conformers[k], tile_shape)
                                      for k in requested_nonbatch_properties})
         return numpy_conformers
@@ -860,7 +857,7 @@ class _ANISubdataset(_ANIDatasetBase):
             raise ValueError('Character "/" not supported in group_name')
 
         # All properties must have the same batch dimension
-        size = self._get_num_conformers(conformers)
+        size = _get_num_conformers(conformers)
         if not all(conformers[k].shape[0] == size for k in self.properties):
             raise ValueError(f"All batch keys {self.properties} must have the same batch dimension")
 
@@ -986,8 +983,7 @@ class _ANISubdataset(_ANIDatasetBase):
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
-                size = self._get_num_conformers(f[group_name])
-                data = np.full(size, fill_value=fill_value, dtype=dtype)
+                data = np.full(_get_num_conformers(f[group_name]), fill_value=fill_value, dtype=dtype)
                 f[group_name].create_numpy_values({dest_key: data})
         return self
 
@@ -1025,7 +1021,7 @@ class _ANISubdataset(_ANIDatasetBase):
                                            total=self.num_conformer_groups,
                                            desc='Regrouping by number of atoms',
                                            disable=not verbose):
-            new_name = f'num_atoms_{self._get_num_atoms(conformers)}'
+            new_name = f'num_atoms_{_get_num_atoms(conformers)}'
             with ExitStack() as stack:
                 f = self._get_open_store(stack, 'r+')
                 del f[group_name]
@@ -1070,8 +1066,6 @@ class _ANISubdataset(_ANIDatasetBase):
     def set_aliases(self, property_aliases: Optional[Dict[str, str]] = None) -> '_ANISubdataset':
         self._storename_to_alias = dict() if property_aliases is None else property_aliases
         self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
-        self._get_num_conformers = partial(_get_num_conformers, storename_to_alias=self._storename_to_alias)
-        self._get_num_atoms = partial(_get_num_atoms, storename_to_alias=self._storename_to_alias)
         return self
 
     def _set_grouping(self, grouping: str) -> None:
