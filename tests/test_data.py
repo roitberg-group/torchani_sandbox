@@ -617,21 +617,21 @@ class TestANIDataset(TestCase):
         self.assertEqual(ds['H6']['spin_multiplicities'], torch.ones(initial_len, dtype=torch.long))
         self.assertEqual(ds['C6']['charges'], torch.zeros(initial_len, dtype=torch.long))
 
-    def testRenameGroupsFormulas(self):
+    def testRegroupFormulas(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)
         new_groups = deepcopy(self.new_groups_torch)
         for j, k in enumerate(('H6', 'C6', 'O6')):
             ds.append_conformers(f'group{j}', new_groups[k])
-        ds.rename_groups_to_formulas()
+        ds.regroup_by_formula()
         for k, v in ds.items():
             self.assertEqual(v, new_groups[k])
 
-    def testRenameGroupsSizes(self):
+    def testRegroupNumAtoms(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)
         new_groups = deepcopy(self.new_groups_torch)
         for j, k in enumerate(('H6', 'C6', 'O6')):
             ds.append_conformers(f'group{j}', new_groups[k])
-        ds.rename_groups_to_sizes()
+        ds.regroup_by_num_atoms()
         self.assertEqual(len(ds.items()), 1)
         self.assertEqual(len(ds['num_atoms_6']['coordinates']), 15)
         self.assertEqual(len(ds['num_atoms_6']['species']), 15)

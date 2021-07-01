@@ -1,9 +1,11 @@
 r"""Utilities for working with ANI Datasets"""
-import torch
+from copy import deepcopy
 from pathlib import Path
 from torch import Tensor
 from collections import OrderedDict
 from typing import List, Tuple, Optional, Sequence, Union
+
+import torch
 
 from ..units import hartree2kcalmol
 from ..models import BuiltinModel
@@ -18,7 +20,7 @@ def concatenate(*args, **kwargs) -> 'ANIDataset':
     return _copy_to_new_store(*args, **kwargs)
 
 
-def copy_linked_only(*args, **kwargs) -> 'ANIDataset':
+def copy_linked_data(*args, **kwargs) -> 'ANIDataset':
     kwargs['concatenate'] = False
     return _copy_to_new_store(*args, **kwargs)
 
@@ -49,19 +51,24 @@ def _copy_to_new_store(source: ANIDataset,
         desc = 'Concatenating datasets'
         dest_paths = dest_path
     else:
+        if not dest_path.exists():
+            dest_path.mkdir(parents=True)
         if not dest_path.is_dir():
             raise ValueError('Destination path must be a directory')
         desc = 'Copying data to new store'
-        dest_paths = source_od
+        dest_paths = [dest_path.joinpath(p.name) for p in source_od.values()]
 
-    dest = ANIDataset(dest_paths, create=True, properties=source.properties)
-    for k, v in tqdm(source.numpy_items(repeat_nonbatch=False),
-                     desc=desc,
-                     total=source.num_conformer_groups,
-                     disable=not verbose):
+    dest = ANIDataset(dest_paths, create=True, nonbatch_properties=source._possible_nonbatch_properties)
+    keys_copy = deepcopy(list(source.keys()))
+    for k in tqdm(keys_copy,
+                  desc=desc,
+                  total=source.num_conformer_groups,
+                  disable=not verbose):
+        v = source.get_numpy_conformers(k, repeat_nonbatch=False)
         if concatenate:
             k = k.split('/')[-1]
-        dest.append_numpy_conformers(k, v)
+        dest.append_numpy_conformers(k, v, require_sorted_properties=False)
+    dest.set_metadata('grouping', source.get_metadata('grouping'))
     if delete_originals:
         for p in tqdm(source_od.values(),
                       desc='Deleting original store',
