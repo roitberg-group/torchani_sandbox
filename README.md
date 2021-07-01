@@ -44,9 +44,14 @@ Supported version information when install from anaconda:
 Install from anaconda by the following (Note that we are hosting the packages only for internal usage at: https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
 
 ```bash
-conda create -n ani python=3.8 -y
+conda create -n ani -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c pytorch -c nvidia -c defaults -c conda-forge sandbox python=3.8
+```
+Which is equivalent to 
+```bash
+conda create -n ani
 conda activate ani
-conda install -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c pytorch -c nvidia -c defaults -c conda-forge sandbox
+conda install pytorch torchvision torchaudio cudatoolkit=11.1 -c pytorch -c nvidia
+conda install sandbox -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c defaults -c conda-forge
 ```
 
 You could also build torchani from source, check at [TorchANI CSRC](torchani/csrc).
