@@ -808,6 +808,7 @@ class _ANISubdataset(_ANIDatasetBase):
         return numpy_conformers
 
     def append_conformers(self, group_name: str, conformers: Conformers) -> '_ANISubdataset':
+        conformers = deepcopy(conformers)
         group_name, conformers = self._check_append_input(group_name, conformers)
         numpy_conformers = {k: conformers[k].detach().cpu().numpy() for k in self.properties.difference({'species'})}
 
@@ -820,10 +821,11 @@ class _ANISubdataset(_ANIDatasetBase):
         return self._append_numpy_conformers_no_check(group_name, numpy_conformers)
 
     def append_numpy_conformers(self, group_name: str, conformers: NumpyConformers) -> '_ANISubdataset':
+        conformers = deepcopy(conformers)
         group_name, conformers = self._check_append_input(group_name, conformers)
         return self._append_numpy_conformers_no_check(group_name, conformers)
 
-    def _get_conformer_formulas(self, conformers: MaybeNumpyConformers):
+    def _get_conformer_formulas(self, conformers: MaybeNumpyConformers) -> List[str]:
         if 'species' in conformers.keys():
             if isinstance(conformers['species'], Tensor):
                 symbols = self._numbers_to_symbols(conformers['species'].detach().cpu().numpy())
@@ -837,11 +839,9 @@ class _ANISubdataset(_ANIDatasetBase):
         return species_to_formula(symbols)
 
     def _check_append_input(self, group_name: str, conformers: MaybeNumpyConformers) -> Tuple[str, MaybeNumpyConformers]:
-
         if self.grouping not in ['by_formula', 'by_num_atoms']:
             raise ValueError("Can't append if the grouping is not by_formula or"
                              " by_num_atoms, please regroup your dataset")
-        conformers = deepcopy(conformers)
 
         # check that all formulas are the same
         if self.grouping == 'by_formula':
@@ -875,7 +875,7 @@ class _ANISubdataset(_ANIDatasetBase):
         # default  for simplicity we just rebuild the whole group with the new
         # conformers appended.
         # NOTE: This function should never be called by user code since it
-        # modifies conformers in place.
+        # modifies conformers in place without making a copy first.
 
         # check for correct sorting which is necessary if conformers are
         # grouped with nonbatch keys
@@ -1070,6 +1070,8 @@ class _ANISubdataset(_ANIDatasetBase):
     def set_aliases(self, property_aliases: Optional[Dict[str, str]] = None) -> '_ANISubdataset':
         self._storename_to_alias = dict() if property_aliases is None else property_aliases
         self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
+        self._get_num_conformers = partial(_get_num_conformers, storename_to_alias=self._storename_to_alias)
+        self._get_num_atoms = partial(_get_num_atoms, storename_to_alias=self._storename_to_alias)
         return self
 
     def _set_grouping(self, grouping: str) -> None:
@@ -1081,7 +1083,8 @@ class _ANISubdataset(_ANIDatasetBase):
             self._has_standard_format = True
             self._possible_nonbatch_properties = set()
         else:
-            # other groupings are assumed to have nonbatch keys
+            # other groupings are assumed to be "legacy", i.e. to have nonbatch
+            # keys
             self._possible_nonbatch_properties = {'species', 'numbers'}
 
     @property
