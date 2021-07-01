@@ -48,7 +48,7 @@ conda create -n ani -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-
 ```
 Which is equivalent to 
 ```bash
-conda create -n ani
+conda create -n ani python=3.8
 conda activate ani
 conda install -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c pytorch -c nvidia -c defaults -c conda-forge sandbox
 ```
