@@ -30,7 +30,7 @@ def concatenate(source: ANIDataset,
                       grouping=source.grouping,
                       property_aliases=source._first_subds._storename_to_alias,
                       assume_standard=source._first_subds._has_standard_format,
-                      verbose=source._first_subds._verbose)
+                      verbose=False)
 
     for k, v in tqdm(source.numpy_items(),
                   desc='Concatenating datasets',
@@ -47,7 +47,7 @@ def concatenate(source: ANIDataset,
     return dest
 
 
-def filter_by_high_force(dataset: ANIDataset,
+def filter_by_high_force(dataset: ANIDataset, *,
                          threshold: float = 2.0,
                          criteria: str = 'components',
                          device: str = 'cpu',
@@ -93,7 +93,7 @@ def filter_by_high_force(dataset: ANIDataset,
 
 
 def filter_by_high_energy_error(dataset: ANIDataset,
-                                model: BuiltinModel,
+                                model: BuiltinModel, *,
                                 threshold: int = 100,
                                 device: str = 'cpu',
                                 max_split: int = 2560,

@@ -1,5 +1,6 @@
 from typing import (Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set,
                     Mapping, Any, Iterable, Callable, TypeVar, ContextManager)
+import inspect
 import json
 import re
 import pickle
@@ -209,7 +210,7 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
                 self.batch_paths.pop()
         self._len = len(self.batch_paths)
 
-    def cache(self, pin_memory: bool = True,
+    def cache(self, *, pin_memory: bool = True,
               verbose: bool = True,
               apply_transform: bool = True) -> 'ANIBatchedDataset':
         r"""Saves the full dataset into RAM"""
@@ -544,7 +545,6 @@ class _ANISubdataset(_ANIDatasetBase):
             self._backend = 'h5py'  # the only backend allowed currently, so we default to it
 
         self._open_store: Optional['_DatasetStoreAdaptor'] = None
-        self._verbose = verbose
         self._symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
         self._numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
@@ -576,7 +576,7 @@ class _ANISubdataset(_ANIDatasetBase):
             self._has_standard_format = assume_standard
             self._checked_homogeneous_properties = False
             self._set_grouping(self.grouping if grouping is None else grouping)
-            self._update_internal_cache()
+            self._update_internal_cache(verbose=verbose)
 
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
@@ -622,19 +622,18 @@ class _ANISubdataset(_ANIDatasetBase):
                 raise RuntimeError(msg)
             return self._open_store
 
-    def _update_internal_cache(self) -> None:
+    def _update_internal_cache(self, *, verbose: bool = True) -> None:
         self.group_sizes = OrderedDict()
         self._properties = set()
 
         if self._backend == 'h5py':
-            # detect datasets with _created / _meta standarization, or which
-            # were regrouped. These have standard format.
+
+            # Check if the raw hdf5 file has the '/_created' dataset if this is
+            # the case then it can be assumed to have standard format
             if not self._has_standard_format:
                 try:
                     with ExitStack() as stack:
-                        # get the raw hdf5 file object for manipulations inside this function
-                        raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
-                        raw_hdf5_store['/_created']
+                        self._get_open_store(stack, 'r')._store_obj['/_created']
                         self._has_standard_format = True
                 except KeyError:
                     pass
@@ -643,17 +642,16 @@ class _ANISubdataset(_ANIDatasetBase):
                 # This is much faster (x30) than a visitor function but it assumes
                 # the format is somewhat standard which means that all Groups have
                 # depth 1, and all Datasets have depth 2.
-                with tqdm(desc=f'Scanning {self._store_location.name} assuming standard format',
-                          disable=not self._verbose) as pbar:
-                    with ExitStack() as stack:
-                        # get the raw hdf5 file object for manipulations inside this function
-                        raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
-                        for k, g in raw_hdf5_store.items():
-                            pbar.update()
-                            if g.name in ['/_created', '/_meta']:
-                                continue
-                            self._update_properties_cache_h5py(g)
-                            self._update_groups_cache_h5py(g)
+                #
+                # A pbar is not needed here since this is extremely fast
+                with ExitStack() as stack:
+                    # get the raw hdf5 file object for manipulations inside this function
+                    raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
+                    for k, g in raw_hdf5_store.items():
+                        if g.name in ['/_created', '/_meta']:
+                            continue
+                        self._update_properties_cache_h5py(g)
+                        self._update_groups_cache_h5py(g)
             else:
                 def visitor_fn(name: str,
                                object_: Union[H5Dataset, H5Group],
@@ -684,7 +682,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 with ExitStack() as stack:
                     raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
                     with tqdm(desc='Verifying format correctness',
-                              disable=not self._verbose) as pbar:
+                              disable=not verbose) as pbar:
                         raw_hdf5_store.visititems(partial(visitor_fn, dataset=self, pbar=pbar))
 
                 # If the visitor function succeeded and this condition is met the
@@ -843,10 +841,14 @@ class _ANISubdataset(_ANIDatasetBase):
                 group.append_numpy_values(conformers)
         return self
 
-    def _check_append_input(self, group_name: str, conformers: MaybeNumpyConformers) -> Tuple[str, MaybeNumpyConformers]:
+    def _check_correct_grouping(self):
         if self.grouping not in ['by_formula', 'by_num_atoms']:
-            raise ValueError("Can't append if the grouping is not by_formula or"
-                             " by_num_atoms, please regroup your dataset")
+            raise ValueError(f"Can't use the function {inspect.stack()[1][3]}"
+                              " if the grouping is not by_formula or"
+                              " by_num_atoms, please regroup your dataset")
+
+    def _check_append_input(self, group_name: str, conformers: MaybeNumpyConformers) -> Tuple[str, MaybeNumpyConformers]:
+        self._check_correct_grouping()
 
         # check that all formulas are the same
         if self.grouping == 'by_formula':
@@ -887,11 +889,9 @@ class _ANISubdataset(_ANIDatasetBase):
     @_needs_cache_update
     def delete_conformers(self, group_name: str, idx: Optional[Tensor] = None) -> '_ANISubdataset':
         r"""Delete a given selected set of conformers"""
+        self._check_correct_grouping()
         if group_name not in self.keys():
             raise KeyError(group_name)
-        if self.grouping not in ['by_formula', 'by_num_atoms']:
-            raise ValueError("Can't delete if the grouping is not by_formula or"
-                             " by_num_atoms, please regroup your dataset")
         all_conformers = self.get_numpy_conformers(group_name)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
@@ -1005,7 +1005,7 @@ class _ANISubdataset(_ANIDatasetBase):
         other_dataset._store_location = self._store_location
 
     @_needs_cache_update
-    def repack(self, verbose: bool = True) -> '_ANISubdataset':
+    def repack(self, *, verbose: bool = True) -> '_ANISubdataset':
         r"""Repacks underlying store if it is HDF5
 
         When a dataset is deleted from an HDF5 file the file size is not
@@ -1013,6 +1013,7 @@ class _ANISubdataset(_ANIDatasetBase):
         needed in order to reduce the size of the file. Note that this is only
         useful for the h5py backend, otherwise it is a no-op.
         """
+        self._check_correct_grouping()
         # this is meaningless unless you are using h5py backend
         if not self._backend == 'h5py':
             return self
@@ -1025,12 +1026,11 @@ class _ANISubdataset(_ANIDatasetBase):
             # attribute, and fixing this is ugly
             new_ds.append_numpy_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
         self._move_store_location_to_dataset(new_ds)
-        new_ds._verbose = self._verbose
         self = new_ds
         return self
 
     @_needs_cache_update
-    def regroup_by_formula(self, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
+    def regroup_by_formula(self, *, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
         r"""Regroup dataset by formula
 
         All conformers are extracted and redistributed in groups named
@@ -1054,15 +1054,14 @@ class _ANISubdataset(_ANIDatasetBase):
                 selected_conformers = {k: v[idx] for k, v in conformers.items()}
                 new_ds.append_numpy_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
         self._move_store_location_to_dataset(new_ds)
-        new_ds._verbose = self._verbose
         self = new_ds
         if repack:
             self._update_internal_cache()
-            return self.repack.__wrapped__(self, verbose)  # type: ignore
+            return self.repack.__wrapped__(self, verbose=verbose)  # type: ignore
         return self
 
     @_needs_cache_update
-    def regroup_by_num_atoms(self, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
+    def regroup_by_num_atoms(self, *, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
         r"""Regroup dataset by number of atoms
 
         All conformers are extracted and redistributed in groups named
@@ -1078,15 +1077,14 @@ class _ANISubdataset(_ANIDatasetBase):
             new_name = f'num_atoms_{_get_num_atoms(conformers)}'
             new_ds.append_numpy_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
         self._move_store_location_to_dataset(new_ds)
-        new_ds._verbose = self._verbose
         self = new_ds
         if repack:
             self._update_internal_cache()
-            return self.repack.__wrapped__(self, verbose)  # type: ignore
+            return self.repack.__wrapped__(self, verbose=verbose)  # type: ignore
         return self
 
     @_needs_cache_update
-    def delete_properties(self, properties: Sequence[str], verbose: bool = True) -> '_ANISubdataset':
+    def delete_properties(self, properties: Sequence[str], *, verbose: bool = True) -> '_ANISubdataset':
         r"""Delete some properties from the dataset"""
         self._check_properties_are_present(properties)
         with ExitStack() as stack:
