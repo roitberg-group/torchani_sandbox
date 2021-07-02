@@ -166,7 +166,7 @@ class TestEstimationSAE(TestCase):
         self.batched_path = Path('./tmp_dataset').resolve()
         self.batch_size = 2560
         create_batched_dataset(h5_path=dataset_path_gdb, dest_path=self.batched_path, shuffle=True,
-                splits={'training': 1.0}, batch_size=self.batch_size, shuffle_seed=12345)
+                splits={'training': 1.0}, batch_size=self.batch_size, shuffle_seed=12345, include_properties=('energies', 'species', 'coordinates'))
         self.train = ANIBatchedDataset(self.batched_path, split='training')
 
     def testExactSAE(self):
@@ -486,7 +486,7 @@ class TestANIDataset(TestCase):
         # note that h5py does not allow this directly
         conformers12 = ds.get_conformers('HCHHH', torch.tensor([1, 1]))
         self.assertEqual(conformers12['coordinates'], ds['HCHHH']['coordinates'][torch.tensor([1, 1])])
-        conformers124 = ds.get_conformers('HCHHH', torch.tensor([1, 2, 4]), include_properties=('energies',))
+        conformers124 = ds.get_conformers('HCHHH', torch.tensor([1, 2, 4]), properties='energies')
         self.assertEqual(conformers124['energies'], ds['HCHHH']['energies'][torch.tensor([1, 2, 4])])
         self.assertTrue(conformers124.get('species', None) is None)
         self.assertTrue(conformers124.get('coordinates', None) is None)
@@ -502,7 +502,7 @@ class TestANIDataset(TestCase):
         for k, v in ds.items():
             self.assertEqual(v, new_groups[k])
         for k in ('H6', 'C6', 'O6'):
-            ds.delete_group(k)
+            ds.delete_conformers(k)
         self.assertTrue(len(ds.items()) == 0)
 
         # check appending
@@ -514,7 +514,7 @@ class TestANIDataset(TestCase):
             self.assertEqual(len(ds.get_conformers(k)['energies']), new_lengths[k])
             self.assertEqual(len(ds.get_conformers(k)['species']), len(new_groups['O6']['species']))
         for k in deepcopy(ds.keys()):
-            ds.delete_group(k)
+            ds.delete_conformers(k)
 
         # reset supported properties
         for k in ('H6', 'C6', 'O6'):
@@ -560,9 +560,9 @@ class TestANIDataset(TestCase):
                 self.assertEqual(v, properties3)
         for v, (k, v2) in zip(ds.numpy_values(), ds.numpy_items()):
             self.assertEqual(v, v2)
-        ds.delete_group('H6')
-        ds.delete_group('O6')
-        ds.delete_group('C6')
+        ds.delete_conformers('H6')
+        ds.delete_conformers('O6')
+        ds.delete_conformers('C6')
         self.assertTrue(len(ds.items()) == 0)
 
     def testSpeciesFromNumbers(self):
@@ -574,8 +574,8 @@ class TestANIDataset(TestCase):
         self.assertEqual(ds.properties, {'species', 'energies', 'coordinates', 'numbers'})
         for k, v in ds.items():
             self.assertEqual(v['species'], v['numbers'])
-        numpy_species = ds.get_numpy_conformers('H6', include_properties=('species',))
-        numpy_numbers = ds.get_numpy_conformers('H6', include_properties=('numbers',))
+        numpy_species = ds.get_numpy_conformers('H6', properties='species')
+        numpy_numbers = ds.get_numpy_conformers('H6', properties='numbers')
         self.assertEqual(numpy_numbers['numbers'], np.ones(numpy_species['species'].shape, dtype=np.int64))
 
     def testNumbersFromSpecies(self):
@@ -587,7 +587,7 @@ class TestANIDataset(TestCase):
         ds.create_full_scalar_property('numbers', 1)
         ds.create_species_from_numbers('numbers', 'species')
         for k in ('H6', 'C6', 'O6'):
-            species = ds.get_numpy_conformers(k, include_properties=('species',))['species']
+            species = ds.get_numpy_conformers(k, properties='species')['species']
             self.assertEqual(species, np.full(species.shape, fill_value='H'))
 
     def testExtractSlice(self):
@@ -599,7 +599,7 @@ class TestANIDataset(TestCase):
         ds.create_full_scalar_property('numbers', 1)
         ds.create_species_from_numbers('numbers', 'species')
         for k in ('H6', 'C6', 'O6'):
-            species = ds.get_numpy_conformers(k, include_properties=('species',))['species']
+            species = ds.get_numpy_conformers(k, properties='species')['species']
             self.assertEqual(species, np.full(species.shape, fill_value='H'))
 
     def testNewScalar(self):

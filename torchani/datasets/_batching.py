@@ -23,7 +23,7 @@ def create_batched_dataset(h5_path: PathLike,
                            shuffle: bool = True,
                            shuffle_seed: Optional[int] = None,
                            file_format: str = 'hdf5',
-                           include_properties: Optional[Sequence[str]] = ('species', 'coordinates', 'energies'),
+                           include_properties: Optional[Sequence[str]] = None,
                            batch_size: int = 2560,
                            max_batches_per_packet: int = 350,
                            padding: Optional[Dict[str, float]] = None,
@@ -31,6 +31,10 @@ def create_batched_dataset(h5_path: PathLike,
                            folds: Optional[int] = None,
                            inplace_transform: Optional[Transform] = None,
                            verbose: bool = True) -> None:
+
+    if file_format != 'hdf5' and include_properties is None:
+        include_properties = ('species', 'coordinates', 'energies')
+        warnings.warn('Only species, coordinates and energies are included by default if format is not hdf5')
 
     if folds is not None and splits is not None:
         raise ValueError('Only one of ["folds", "splits"] should be specified')
@@ -288,7 +292,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                     assert selected_indices.dim() == 1
                     conformers = ro_dataset.get_conformers(key_list[group_idx.item()],
                                                                       selected_indices,
-                                                                      include_properties)
+                                                                      properties=include_properties)
                     all_conformers.append(conformers)
                 batches_cat = pad_atomic_properties(all_conformers, padding)
                 # Now we need to reassign the conformers to the specified
