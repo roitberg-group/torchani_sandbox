@@ -751,9 +751,11 @@ class _ANISubdataset(_ANIDatasetBase):
                        group_name: str,
                        idx: Optional[Tensor] = None, *,
                        properties: Optional[Iterable[str]] = None) -> Conformers:
-        r"""Get conformers in a given group in the dataset, with specified
-        indices, and including only specified properties.  conformers are dict
-        of the form {property: Tensor}, where properties are strings"""
+        r"""Get conformers in a given group in the dataset
+
+        Can obtain conformers with specified indices, and including only
+        specified properties.  conformers are dict of the form {property:
+        Tensor}, where properties are strings"""
         if isinstance(properties, str):
             properties = {properties}
         if properties is None:
@@ -807,10 +809,12 @@ class _ANISubdataset(_ANIDatasetBase):
         return numpy_conformers
 
     def append_conformers(self, group_name: str, conformers: Conformers) -> '_ANISubdataset':
-        r"""Attach a new set of conformers to the dataset. Conformers must be
-        a dict {property: Tensor}, and they must have the same properties that the dataset
-        supports. Appending is only supported for grouping 'by_formula' or
-        'by_num_atoms'"""
+        r"""Attach a new set of conformers to the dataset.
+
+        Conformers must be a dict {property: Tensor}, and they must have the
+        same properties that the dataset supports. Appending is only supported
+        for grouping 'by_formula' or 'by_num_atoms'
+        """
         conformers = deepcopy(conformers)
         group_name, conformers = self._check_append_input(group_name, conformers)
         numpy_conformers = {k: conformers[k].detach().cpu().numpy() for k in self.properties.difference({'species'})}
@@ -825,7 +829,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @_needs_cache_update
     def append_numpy_conformers(self, group_name: str, conformers: NumpyConformers) -> '_ANISubdataset':
-        r"""Same as append_conformers but conformers must be a dict {property: ndarray}"""
+        r"""Same as append_conformers but conformers must be {property: ndarray}"""
         group_name, conformers = self._check_append_input(group_name, conformers)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
@@ -882,9 +886,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @_needs_cache_update
     def delete_conformers(self, group_name: str, idx: Optional[Tensor] = None) -> '_ANISubdataset':
-        r"""Delete a given set of conformers by passing their group name and
-        indices within that group
-        """
+        r"""Delete a given selected set of conformers"""
         if group_name not in self.keys():
             raise KeyError(group_name)
         if self.grouping not in ['by_formula', 'by_num_atoms']:
@@ -971,10 +973,12 @@ class _ANISubdataset(_ANIDatasetBase):
                                     dest_key: str,
                                     fill_value: int = 0,
                                     dtype: DTypeLike = np.int64) -> '_ANISubdataset':
-        r"""Creates one property with shape (num_conformers,), and with a
-        specified dtype and value for all conformers in the dataset. Useful for
-        creating 'charge' or 'spin_multiplicity' properties, which are usually
-        the same for all conformers
+        r"""Creates a scalar property for all conformer groups
+
+        Creates a property with shape (num_conformers,), and with a specified
+        dtype and value for all conformers in the dataset. Useful for creating
+        'charge' or 'spin_multiplicity' properties, which are usually the same
+        for all conformers
         """
         self._check_properties_are_not_present(dest_key)
         with ExitStack() as stack:
@@ -1000,11 +1004,23 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @_needs_cache_update
     def repack(self, verbose: bool = True) -> '_ANISubdataset':
+        r"""Repacks underlying store if it is HDF5
+
+        When a dataset is deleted from an HDF5 file the file size is not
+        reduced since unlinked data is still kept in the file. Repacking is
+        needed in order to reduce the size of the file. Note that this is only
+        useful for the h5py backend, otherwise it is a no-op.
+        """
+        # this is meaningless unless you are using h5py backend
+        if not self._backend == 'h5py':
+            return self
         new_ds = self._make_empty_temporary_copy()
         for group_name, conformers in tqdm(self.numpy_items(),
                                            total=self.num_conformer_groups,
                                            desc='Repacking HDF5 file',
                                            disable=not verbose):
+            # mypy doesn't know that @wrap'ed functions have __wrapped__
+            # attribute, and fixing this is ugly
             new_ds.append_numpy_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
         self._move_store_location_to_dataset(new_ds)
         new_ds._verbose = self._verbose
@@ -1013,9 +1029,12 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @_needs_cache_update
     def regroup_by_formula(self, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
-        r"""Regroup dataset by formula (all conformers are extracted and
-        redistributed in groups named 'C8H5N7', 'C10O3' etc, depending on the
-        formula)
+        r"""Regroup dataset by formula
+
+        All conformers are extracted and redistributed in groups named
+        'C8H5N7', 'C10O3' etc, depending on the formula. Conformers in
+        different stores are not mixed. See the 'repack' method for an
+        explanation of that argument.
         """
         new_ds = self._make_empty_temporary_copy(grouping='by_formula')
         for group_name, conformers in tqdm(self.numpy_items(),
@@ -1037,14 +1056,17 @@ class _ANISubdataset(_ANIDatasetBase):
         self = new_ds
         if repack:
             self._update_internal_cache()
-            return self.repack.__wrapped__(self, verbose)
+            return self.repack.__wrapped__(self, verbose)  # type: ignore
         return self
 
     @_needs_cache_update
     def regroup_by_num_atoms(self, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
-        r"""Regroup dataset by number of atoms (all conformers are extracted
-        and redistributed in groups named 'num_atoms_10', 'num_atoms_8' etc,
-        depending on the number of atoms)
+        r"""Regroup dataset by number of atoms
+
+        All conformers are extracted and redistributed in groups named
+        'num_atoms_10', 'num_atoms_8' etc, depending on the number of atoms.
+        Conformers in different stores are not mixed. See the 'repack' method
+        for an explanation of that argument.
         """
         new_ds = self._make_empty_temporary_copy(grouping='by_num_atoms')
         for group_name, conformers in tqdm(self.numpy_items(),
@@ -1058,7 +1080,7 @@ class _ANISubdataset(_ANIDatasetBase):
         self = new_ds
         if repack:
             self._update_internal_cache()
-            return self.repack.__wrapped__(self, verbose)
+            return self.repack.__wrapped__(self, verbose)  # type: ignore
         return self
 
     @_needs_cache_update
@@ -1079,8 +1101,9 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @_needs_cache_update
     def rename_properties(self, old_new_dict: Dict[str, str]) -> '_ANISubdataset':
-        r"""Rename some properties from the dataset, expects a dictionary of
-        the form: {old_name: new_name}
+        r"""Rename some properties from the dataset
+
+        Expects a dictionary ofthe form: {old_name: new_name}
         """
         # This can generate some counterintuitive results if the values are
         # aliases (renaming can be a no-op in this case) so we disallow it
@@ -1097,9 +1120,10 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @_needs_cache_update
     def set_aliases(self, property_aliases: Optional[Dict[str, str]] = None) -> '_ANISubdataset':
-        r"""Set aliases for some properties from the dataset, expects a
-        dictionary of the form: {old_name: new_name}. The properties are
-        **not** renamed in the backing store, but the class will convert
+        r"""Set aliases for some properties from the dataset
+
+        Expects a dictionary of the form: {old_name: new_name}. The properties
+        are **not** renamed in the backing store, but the class will convert
         old_name to new_name internally when any method is called
         """
         self._storename_to_alias = dict() if property_aliases is None else property_aliases
@@ -1121,8 +1145,10 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @property
     def grouping(self) -> str:
-        r"""Get the dataset grouping, one of 'by_formula', 'by_num_atoms' or an
-        empty string for unspecified grouping
+        r"""Get the dataset grouping
+
+        One of 'by_formula', 'by_num_atoms' or an empty string for unspecified
+        grouping
         """
         with ExitStack() as stack:
             # NOTE: r+ is needed due to HDF5 which disallows opening empty

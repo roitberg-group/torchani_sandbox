@@ -28,9 +28,9 @@ def concatenate(source: ANIDataset,
     dest = ANIDataset(dest_path,
                       create=True,
                       grouping=source.grouping,
-                      property_aliases=source._storename_to_alias,
-                      assume_standard=source._has_standard_format,
-                      verbose=source._verbose)
+                      property_aliases=source._first_subds._storename_to_alias,
+                      assume_standard=source._first_subds._has_standard_format,
+                      verbose=source._first_subds._verbose)
 
     for k, v in tqdm(source.numpy_items(),
                   desc='Concatenating datasets',
