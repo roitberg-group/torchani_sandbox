@@ -590,18 +590,6 @@ class TestANIDataset(TestCase):
             species = ds.get_numpy_conformers(k, properties='species')['species']
             self.assertEqual(species, np.full(species.shape, fill_value='H'))
 
-    def testExtractSlice(self):
-        ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)
-        new_groups = deepcopy(self.new_groups_torch)
-        for k in ('H6', 'C6', 'O6'):
-            ds.append_conformers(k, new_groups[k])
-        ds.delete_properties({'species'})
-        ds.create_full_scalar_property('numbers', 1)
-        ds.create_species_from_numbers('numbers', 'species')
-        for k in ('H6', 'C6', 'O6'):
-            species = ds.get_numpy_conformers(k, properties='species')['species']
-            self.assertEqual(species, np.full(species.shape, fill_value='H'))
-
     def testNewScalar(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)
         new_groups = deepcopy(self.new_groups_torch)
