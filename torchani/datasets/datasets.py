@@ -60,6 +60,7 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
                        transform: Transform = lambda x: x,
                        properties: Optional[Sequence[str]] = ('coordinates', 'species', 'energies'),
                        drop_last: bool = False):
+        store_dir = Path(store_dir).resolve()
         self.transform = transform
         self.properties = properties
         self.split = split
@@ -83,7 +84,6 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
 
     def _get_batch_paths_from_dir(self, store_dir: Path, split: str) -> List[Path]:
         store_dir = Path(store_dir).resolve().joinpath(split)
-        assert isinstance(store_dir, Path)
         if not store_dir.is_dir():
             raise ValueError(f'The directory {store_dir.as_posix()} exists, '
                              f'but the split {split} could not be found')
