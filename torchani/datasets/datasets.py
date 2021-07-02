@@ -1,5 +1,5 @@
 from typing import (Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set,
-                    Mapping, Any, Iterable, Callable, TypeVar, ContextManager)
+                    Mapping, Any, Iterable, Callable, TypeVar)
 import inspect
 import json
 import re
@@ -16,9 +16,8 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from ._backends import _H5PY_AVAILABLE
-from ._annotations import (Transform, Conformers, NumpyConformers, MaybeNumpyConformers, PathLike, DTypeLike,
-                           PathLikeODict, H5Group, H5File, H5Dataset)
+from ._backends import _H5PY_AVAILABLE, _DatasetStoreAdaptor, _H5DatasetStoreAdaptor, H5Dataset, H5Group
+from ._annotations import Transform, Conformers, NumpyConformers, MaybeNumpyConformers, PathLike, DTypeLike, PathLikeODict
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
 if _H5PY_AVAILABLE:
@@ -304,7 +303,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
             self._backend = 'h5py'  # the only backend allowed currently, so we default to it
 
-        self._open_store: Optional['_DatasetStoreAdaptor'] = None
+        self._open_store: Optional['_H5DatasetStoreAdaptor'] = None
         self._symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
         self._numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
@@ -353,11 +352,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 print(c)
         may be much faster than directly iterating over conformers
         """
-        if self._backend == 'h5py':
-            context_manager = h5py.File(self._store_location, mode)
-        else:
-            raise RuntimeError(f"Bad backend {self._backend}")
-        self._open_store = _DatasetStoreAdaptor(context_manager, self._alias_to_storename)
+        self._open_store = _DatasetStoreAdaptor(self._store_location, mode, self._backend, self._alias_to_storename)
         try:
             yield self
         finally:
@@ -366,20 +361,16 @@ class _ANISubdataset(_ANIDatasetBase):
 
     # This trick makes methods fetch the open file directly
     # if they are being called from inside a "keep_open" context
-    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_DatasetStoreAdaptor':
+    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_H5DatasetStoreAdaptor':
         if self._open_store is None:
-            if self._backend == 'h5py':
-                context_manager = h5py.File(self._store_location, mode)
-            else:
-                raise RuntimeError(f"Bad backend {self._backend}")
-            return stack.enter_context(_DatasetStoreAdaptor(context_manager, self._alias_to_storename))
+            open_store = _DatasetStoreAdaptor(self._store_location, mode, self._backend, self._alias_to_storename)
+            return stack.enter_context(open_store)
         else:
             current_mode = self._open_store.mode
             assert mode in ['r+', 'r'], f"Unsupported mode {mode}"
             if mode == 'r+' and current_mode == 'r':
-                msg = ('Tried to open a file with mode "r+" but the dataset is'
-                       ' currently keeping its store file open with mode "r"')
-                raise RuntimeError(msg)
+                raise RuntimeError('Tried to open a file with mode "r+" but the dataset is'
+                                   ' currently keeping its store file open with mode "r"')
             return self._open_store
 
     # Check if the raw hdf5 file has the '/_created' dataset if this is the
@@ -1183,109 +1174,3 @@ class AniBatchedDataset(ANIBatchedDataset):
     def __init__(self, *args, **kwargs) -> None:
         warnings.warn("AniBatchedDataset has been renamed to ANIBatchedDataset, please use ANIBatchedDataset instead")
         super().__init__(*args, **kwargs)
-
-
-# wrapper around an open hdf5 file object that returns ConformerGroup facades
-# which renames properties on access and creation
-class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, '_ConformerGroupAdaptor']):
-    def __init__(self, store_obj: H5File, alias_to_storename: Optional[Dict[str, str]] = None):
-        # an open h5py file object
-        self._store_obj = store_obj
-        self._alias_to_storename = alias_to_storename if alias_to_storename is not None else dict()
-        self.mode = self._store_obj.mode
-
-    def _set_grouping(self, grouping: str) -> None:
-        self._store_obj.attrs['grouping'] = grouping
-
-    @property
-    def grouping(self) -> str:
-        try:
-            data = self._store_obj.attrs['grouping']
-        except (KeyError, OSError):
-            data = ''
-        assert isinstance(data, str)
-        return data
-
-    def __delitem__(self, k: str) -> None:
-        del self._store_obj[k]
-
-    def create_conformer_group(self, name) -> '_ConformerGroupAdaptor':
-        self._store_obj.create_group(name)
-        return self[name]
-
-    def close(self) -> None:
-        self._store_obj.close()
-
-    def __enter__(self) -> '_DatasetStoreAdaptor':
-        self._store_obj.__enter__()
-        return self
-
-    def __exit__(self, *args) -> None:
-        self._store_obj.__exit__(*args)
-
-    def __getitem__(self, name) -> '_ConformerGroupAdaptor':
-        return _ConformerGroupAdaptor(self._store_obj[name], self._alias_to_storename)
-
-    def __len__(self) -> int:
-        return len(self._store_obj)
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._store_obj)
-
-
-class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
-    def __init__(self, group_obj: H5Group, alias_to_storename: Optional[Dict[str, str]] = None):
-        self._group_obj = group_obj
-        self._alias_to_storename = alias_to_storename if alias_to_storename is not None else dict()
-
-    def create_numpy_values(self, conformers: NumpyConformers) -> None:
-        for p, v in conformers.items():
-            self._create_property_with_data(p, v)
-
-    def append_numpy_values(self, conformers: NumpyConformers) -> None:
-        for p, v in conformers.items():
-            self._append_property_with_data(p, v)
-
-    def is_resizable(self) -> bool:
-        return all(ds.maxshape[0] is None for ds in self._group_obj.values())
-
-    def _append_property_with_data(self, p: str, data: np.ndarray) -> None:
-        p = self._alias_to_storename.get(p, p)
-        h5_dataset = self._group_obj[p]
-        h5_dataset.resize(h5_dataset.shape[0] + data.shape[0], axis=0)
-        try:
-            h5_dataset[-data.shape[0]:] = data
-        except TypeError:
-            h5_dataset[-data.shape[0]:] = data.astype(bytes)
-
-    def _create_property_with_data(self, p: str, data: np.ndarray) -> None:
-        # this correctly handles strings (species and _id) and
-        # key aliases
-        p = self._alias_to_storename.get(p, p)
-        # make the first axis resizable
-        maxshape = (None,) + data.shape[1:]
-        try:
-            self._group_obj.create_dataset(name=p, data=data, maxshape=maxshape)
-        except TypeError:
-            self._group_obj.create_dataset(name=p, data=data.astype(bytes), maxshape=maxshape)
-
-    def move(self, src: str, dest: str) -> None:
-        src = self._alias_to_storename.get(src, src)
-        dest = self._alias_to_storename.get(dest, dest)
-        self._group_obj.move(src, dest)
-
-    def __delitem__(self, k: str) -> None:
-        del self._group_obj[k]
-
-    def __getitem__(self, p: str) -> np.ndarray:
-        p = self._alias_to_storename.get(p, p)
-        array = self._group_obj[p][()]
-        assert isinstance(array, np.ndarray)
-        return array
-
-    def __len__(self) -> int:
-        return len(self._group_obj)
-
-    def __iter__(self) -> Iterator[str]:
-        for k in self._group_obj.keys():
-            yield self._alias_to_storename.get(k, k)
