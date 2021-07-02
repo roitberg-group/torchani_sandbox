@@ -13,10 +13,14 @@ from ._annotations import KeyIdx, Conformers, PathLike
 from .datasets import ANIDataset
 
 
+__all__ = ['filter_by_high_force', 'filter_by_high_energy_error', 'concatenate']
+
+
 def concatenate(source: ANIDataset,
                        dest_path: PathLike, *,
                        verbose: bool = True,
                        delete_originals: bool = False) -> ANIDataset:
+    r"""Combine all the backing stores in a given ANIDataset into one"""
     if source.grouping not in ['by_formula', 'by_num_atoms']:
         raise ValueError("Please regroup your dataset before concatenating")
     source_paths = [sub_ds._store_location for sub_ds in source._datasets.values()]
@@ -55,6 +59,7 @@ def filter_by_high_force(dataset: ANIDataset, *,
                          max_split: int = 2560,
                          delete_inplace: bool = False,
                          verbose: bool = True) -> Optional[Tuple[Tensor, Tensor, List[KeyIdx]]]:
+    r"""Filter outlier conformations either by force components or force magnitude"""
     if criteria == 'magnitude':
         desc = f"Filtering where force magnitude > {threshold} Ha / Angstrom"
     elif criteria == 'components':
@@ -100,6 +105,7 @@ def filter_by_high_energy_error(dataset: ANIDataset,
                                 max_split: int = 2560,
                                 delete_inplace: bool = False,
                                 verbose: bool = True) -> Optional[Tuple[Tensor, Tensor, List[KeyIdx]]]:
+    r"""Filter outlier conformations for which a given model has an excessively high absolute error"""
     bad_conformations: List[Conformers] = []
     bad_keys_and_idxs: List[KeyIdx] = []
     model = model.to(device)
