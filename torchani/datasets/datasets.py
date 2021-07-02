@@ -4,6 +4,7 @@ import json
 import re
 import pickle
 import warnings
+import shutil
 from copy import deepcopy
 from pathlib import Path
 from functools import partial, wraps
@@ -308,13 +309,13 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
         return iter(self.group_sizes.keys())
 
     def get_conformers(self,
-                       key: str,
+                       group_name: str,
                        idx: Optional[Tensor] = None, *,
                        properties: Optional[Iterable[str]] = None) -> Conformers:
         raise NotImplementedError
 
     def get_numpy_conformers(self,
-                             key: str,
+                             group_name: str,
                              idx: Optional[Tensor] = None, *,
                              properties: Optional[Iterable[str]] = None) -> NumpyConformers:
         raise NotImplementedError
@@ -345,8 +346,8 @@ def _broadcast(method: Callable[..., 'ANIDataset']) -> Callable[..., 'ANIDataset
     # delegated to all of its "_ANISubdataset" members in a loop.
     @wraps(method)
     def delegated_method_call(self: 'ANIDataset', *args, **kwargs) -> 'ANIDataset':
-        for ds in self._datasets.values():
-            getattr(ds, method.__name__)(*args, **kwargs)
+        for name in self._datasets.keys():
+            self._datasets[name] = getattr(self._datasets[name], method.__name__)(*args, **kwargs)
         return self._update_internal_cache()
     return delegated_method_call
 
@@ -415,10 +416,10 @@ class ANIDataset(_ANIDatasetBase):
     def get_numpy_conformers(self, key: str, **kwargs) -> NumpyConformers: ...  # noqa E704
 
     @_delegate
-    def append_conformers(self, key: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+    def append_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_delegate
-    def append_numpy_conformers(self, key: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+    def append_numpy_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_delegate
     def delete_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
@@ -434,7 +435,7 @@ class ANIDataset(_ANIDatasetBase):
     def grouping(self) -> str:
         return self._first_subds.grouping
 
-    # property manipulation ("columnwise")
+    # property manipulation ("columnwise" in relational ds)
     @_broadcast
     def create_species_from_numbers(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
@@ -454,7 +455,10 @@ class ANIDataset(_ANIDatasetBase):
     def rename_properties(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_broadcast
-    def set_aliases(self, property_aliases: Optional[Dict[str, str]] = ...) -> 'ANIDataset': ...  # noqa E704
+    def set_aliases(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @_broadcast
+    def repack(self, *args, **kwargs) -> 'ANIDataset': ... # noqa E704
 
     def __str__(self) -> str:
         str_ = ''
@@ -738,13 +742,13 @@ class _ANISubdataset(_ANIDatasetBase):
         else:
             raise ValueError('"species" or "numbers" must be present to parse symbols')
         present_species: Set[str] = set()
-        for key in self.keys():
-            species = self.get_numpy_conformers(key, properties=element_key)
+        for group_name in self.keys():
+            species = self.get_numpy_conformers(group_name, properties=element_key)
             present_species.update(parser(species))
         return tuple(sorted(present_species))
 
     def get_conformers(self,
-                       key: str,
+                       group_name: str,
                        idx: Optional[Tensor] = None, *,
                        properties: Optional[Iterable[str]] = None) -> Conformers:
         r"""Get conformers in a given group in the dataset, with specified
@@ -757,7 +761,7 @@ class _ANISubdataset(_ANIDatasetBase):
         else:
             requested_properties = set(properties)
         # The tensor counterpart of get_numpy_conformers
-        numpy_conformers = self.get_numpy_conformers(key, idx, properties=requested_properties)
+        numpy_conformers = self.get_numpy_conformers(group_name, idx, properties=requested_properties)
         conformers = {k: torch.tensor(numpy_conformers[k]) for k in requested_properties.difference({'species', '_id'})}
 
         if 'species' in requested_properties:
@@ -766,7 +770,7 @@ class _ANISubdataset(_ANIDatasetBase):
         return conformers
 
     def get_numpy_conformers(self,
-                             key: str,
+                             group_name: str,
                              idx: Optional[Tensor] = None, *,
                              properties: Optional[Iterable[str]] = None) -> NumpyConformers:
         r"""Same as get_conformers but conformers are a dict {property: ndarray}"""
@@ -784,7 +788,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r')
-            numpy_conformers = {p: f[key][p] for p in requested_properties}
+            numpy_conformers = {p: f[group_name][p] for p in requested_properties}
             if idx is not None:
                 assert idx.dim() <= 1, "index must be a 0 or 1 dim tensor"
                 numpy_conformers.update({k: numpy_conformers[k][idx.cpu().numpy()]
@@ -817,26 +821,23 @@ class _ANISubdataset(_ANIDatasetBase):
             species = self._numbers_to_symbols(conformers['species'].detach().cpu().numpy())
             numpy_conformers.update({'species': species})
 
-        return self._append_numpy_conformers_no_check(group_name, numpy_conformers)
+        return self.append_numpy_conformers(group_name, numpy_conformers)
 
+    @_needs_cache_update
     def append_numpy_conformers(self, group_name: str, conformers: NumpyConformers) -> '_ANISubdataset':
         r"""Same as append_conformers but conformers must be a dict {property: ndarray}"""
-        conformers = deepcopy(conformers)
         group_name, conformers = self._check_append_input(group_name, conformers)
-        return self._append_numpy_conformers_no_check(group_name, conformers)
-
-    def _get_conformer_formulas(self, conformers: MaybeNumpyConformers) -> List[str]:
-        if 'species' in conformers.keys():
-            if isinstance(conformers['species'], Tensor):
-                symbols = self._numbers_to_symbols(conformers['species'].detach().cpu().numpy())
-            else:
-                symbols = conformers['species']
-        elif 'numbers' in conformers.keys():
-            symbols = self._numbers_to_symbols(conformers['numbers'])
-        else:
-            raise ValueError("Either species or numbers must be present to parse formulas")
-
-        return species_to_formula(symbols)
+        with ExitStack() as stack:
+            f = self._get_open_store(stack, 'r+')
+            try:
+                group = f.create_conformer_group(group_name)
+                group.create_numpy_values(conformers)
+            except ValueError:
+                group = f[group_name]
+                if not group.is_resizable():
+                    raise RuntimeError("Dataset must be resizable to allow appending")
+                group.append_numpy_values(conformers)
+        return self
 
     def _check_append_input(self, group_name: str, conformers: MaybeNumpyConformers) -> Tuple[str, MaybeNumpyConformers]:
         if self.grouping not in ['by_formula', 'by_num_atoms']:
@@ -866,37 +867,18 @@ class _ANISubdataset(_ANIDatasetBase):
 
         return group_name, conformers
 
-    @_needs_cache_update
-    def _append_numpy_conformers_no_check(self,
-                                          group_name: str,
-                                          conformers: NumpyConformers) -> '_ANISubdataset':
-        # NOTE: Appending to datasets is allowed in HDF5 but only if
-        # the dataset is created with "resizable" format, since this is not the
-        # default  for simplicity we just rebuild the whole group with the new
-        # conformers appended.
-        # NOTE: This function should never be called by user code since it
-        # modifies conformers in place without making a copy first.
+    def _get_conformer_formulas(self, conformers: MaybeNumpyConformers) -> List[str]:
+        if 'species' in conformers.keys():
+            if isinstance(conformers['species'], Tensor):
+                symbols = self._numbers_to_symbols(conformers['species'].detach().cpu().numpy())
+            else:
+                symbols = conformers['species']
+        elif 'numbers' in conformers.keys():
+            symbols = self._numbers_to_symbols(conformers['numbers'])
+        else:
+            raise ValueError("Either species or numbers must be present to parse formulas")
 
-        # check for correct sorting which is necessary if conformers are
-        # grouped with nonbatch keys
-        with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r+')
-            try:
-                group = f.create_conformer_group(group_name)
-                group.create_numpy_values(conformers)
-            except ValueError:
-                # TODO: This will fail in the edge case where the dataset was
-                # created as resizable but it has nonbatch species
-                if f[group_name].is_resizable():
-                    f[group_name].append_numpy_values(conformers)
-                else:
-                    old_conformers = self.get_numpy_conformers(group_name)
-                    conformers.update({k: np.concatenate((old_conformers[k], conformers[k]), axis=0)
-                                       for k in self.properties})
-                    del f[group_name]
-                    group = f.create_conformer_group(group_name)
-                    group.create_numpy_values(conformers)
-        return self
+        return species_to_formula(symbols)
 
     @_needs_cache_update
     def delete_conformers(self, group_name: str, idx: Optional[Tensor] = None) -> '_ANISubdataset':
@@ -1002,56 +984,81 @@ class _ANISubdataset(_ANIDatasetBase):
                 f[group_name].create_numpy_values({dest_key: data})
         return self
 
+    def _make_empty_temporary_copy(self, grouping: Optional[str] = None) -> '_ANISubdataset':
+        new_ds = _ANISubdataset(self._store_location.parent.joinpath('tmp_dataset.h5'),
+                                create=True,
+                                grouping=grouping if grouping is not None else self.grouping,
+                                property_aliases=self._storename_to_alias,
+                                assume_standard=self._has_standard_format,
+                                verbose=False)
+        return new_ds
+
+    def _move_store_location_to_dataset(self, other_dataset: '_ANISubdataset') -> None:
+        self._store_location.unlink()
+        shutil.move(other_dataset._store_location.as_posix(), self._store_location.as_posix())
+        other_dataset._store_location = self._store_location
+
     @_needs_cache_update
-    def regroup_by_formula(self, verbose: bool = True) -> '_ANISubdataset':
+    def repack(self, verbose: bool = True) -> '_ANISubdataset':
+        new_ds = self._make_empty_temporary_copy()
+        for group_name, conformers in tqdm(self.numpy_items(),
+                                           total=self.num_conformer_groups,
+                                           desc='Repacking HDF5 file',
+                                           disable=not verbose):
+            new_ds.append_numpy_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
+        self._move_store_location_to_dataset(new_ds)
+        new_ds._verbose = self._verbose
+        self = new_ds
+        return self
+
+    @_needs_cache_update
+    def regroup_by_formula(self, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
         r"""Regroup dataset by formula (all conformers are extracted and
         redistributed in groups named 'C8H5N7', 'C10O3' etc, depending on the
         formula)
         """
+        new_ds = self._make_empty_temporary_copy(grouping='by_formula')
         for group_name, conformers in tqdm(self.numpy_items(),
                                            total=self.num_conformer_groups,
                                            desc='Regrouping by formulas',
                                            disable=not verbose):
-
-            # get all formulas in the group to discriminate conformers by
+            # Get all formulas in the group to discriminate conformers by
             # formula and then attach conformers with the same formula to the
             # same groups
             formulas = np.asarray(self._get_conformer_formulas(conformers))
             unique_formulas = np.unique(formulas)
             formula_idxs = ((formulas == el).nonzero()[0] for el in unique_formulas)
 
-            with ExitStack() as stack:
-                f = self._get_open_store(stack, 'r+')
-                del f[group_name]
-
             for formula, idx in zip(unique_formulas, formula_idxs):
                 selected_conformers = {k: v[idx] for k, v in conformers.items()}
-                # mypy doesn't know that @wrap'ed functions have __wrapped__.
-                # No need to check input here since it was inside the ds
-                self._append_numpy_conformers_no_check.__wrapped__(self,  # type: ignore
-                                                                   formula,
-                                                                   selected_conformers)
-        self._set_grouping('by_formula')
+                new_ds.append_numpy_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
+        self._move_store_location_to_dataset(new_ds)
+        new_ds._verbose = self._verbose
+        self = new_ds
+        if repack:
+            self._update_internal_cache()
+            return self.repack.__wrapped__(self, verbose)
         return self
 
     @_needs_cache_update
-    def regroup_by_num_atoms(self, verbose: bool = True) -> '_ANISubdataset':
+    def regroup_by_num_atoms(self, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
         r"""Regroup dataset by number of atoms (all conformers are extracted
         and redistributed in groups named 'num_atoms_10', 'num_atoms_8' etc,
         depending on the number of atoms)
         """
+        new_ds = self._make_empty_temporary_copy(grouping='by_num_atoms')
         for group_name, conformers in tqdm(self.numpy_items(),
                                            total=self.num_conformer_groups,
                                            desc='Regrouping by number of atoms',
                                            disable=not verbose):
             new_name = f'num_atoms_{_get_num_atoms(conformers)}'
-            with ExitStack() as stack:
-                f = self._get_open_store(stack, 'r+')
-                del f[group_name]
-            self._append_numpy_conformers_no_check.__wrapped__(self,  # type: ignore
-                                                               new_name,
-                                                               conformers)
-        self._set_grouping('by_num_atoms')
+            new_ds.append_numpy_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
+        self._move_store_location_to_dataset(new_ds)
+        new_ds._verbose = self._verbose
+        self = new_ds
+        if repack:
+            self._update_internal_cache()
+            return self.repack.__wrapped__(self, verbose)
         return self
 
     @_needs_cache_update

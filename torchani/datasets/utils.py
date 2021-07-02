@@ -1,9 +1,7 @@
 r"""Utilities for working with ANI Datasets"""
-from copy import deepcopy
 from pathlib import Path
 from torch import Tensor
-from collections import OrderedDict
-from typing import List, Tuple, Optional, Sequence, Union
+from typing import List, Tuple, Optional, Sequence
 
 import torch
 
@@ -11,67 +9,39 @@ from ..units import hartree2kcalmol
 from ..models import BuiltinModel
 from ..utils import pad_atomic_properties, tqdm
 from ..nn import Ensemble
-from ._annotations import KeyIdx, Conformers, PathLike, PathLikeODict
+from ._annotations import KeyIdx, Conformers, PathLike
 from .datasets import ANIDataset
 
 
-def concatenate(*args, **kwargs) -> 'ANIDataset':
-    kwargs['concatenate'] = True
-    return _copy_to_new_store(*args, **kwargs)
-
-
-def copy_linked_data(*args, **kwargs) -> 'ANIDataset':
-    kwargs['concatenate'] = False
-    return _copy_to_new_store(*args, **kwargs)
-
-
-def _copy_to_new_store(source: ANIDataset,
+def concatenate(source: ANIDataset,
                        dest_path: PathLike, *,
-                       concatenate: bool = False,
                        verbose: bool = True,
                        delete_originals: bool = False) -> ANIDataset:
-    # When a dataset or group is unlinked from the HDF5 file the underlying
-    # buffer is still part of the file, so the file does not reduce its size.
-    # After deleting conformations or properties the dataset can be rebuilt on
-    # a different location.
-    # Since only accessible data is copied the size is reduced. Even if
-    # multiple backends are supported in the future, copying without
-    # concatenating will always be specific to the HDF5 backend
-    source_names_and_paths = [(name, sub_ds._store_location)
-                              for name, sub_ds in source._datasets.items()]
-    source_od = OrderedDict(source_names_and_paths)
+    source_paths = [sub_ds._store_location for sub_ds in source._datasets.values()]
     dest_path = Path(dest_path).resolve()
 
-    dest_paths: Union[PathLikeODict, PathLike]
-    if concatenate:
-        if dest_path.exists():
-            raise ValueError('Destination path must be a new file name')
-        if not source._num_subds > 1:
-            raise ValueError("Need more than one subdataset to concatenate")
-        desc = 'Concatenating datasets'
-        dest_paths = dest_path
-    else:
-        if not dest_path.exists():
-            dest_path.mkdir(parents=True)
-        if not dest_path.is_dir():
-            raise ValueError('Destination path must be a directory')
-        desc = 'Copying data to new store'
-        dest_paths = OrderedDict([(n, dest_path.joinpath(p.name)) for n, p in source_od.items()])
+    if dest_path.exists():
+        raise ValueError('Destination path must be a new file name')
+    if not source._num_subds > 1:
+        raise ValueError("Need more than one subdataset to concatenate")
 
-    dest = ANIDataset(dest_paths, create=True, grouping=source.grouping)
-    keys_copy = deepcopy(list(source.keys()))
-    for k in tqdm(keys_copy,
-                  desc=desc,
+    dest = ANIDataset(dest_path,
+                      create=True,
+                      grouping=source.grouping,
+                      property_aliases=source._storename_to_alias,
+                      assume_standard=source._has_standard_format,
+                      verbose=source._verbose)
+
+    for k, v in tqdm(source.numpy_items(),
+                  desc='Concatenating datasets',
                   total=source.num_conformer_groups,
                   disable=not verbose):
-        v = source.get_numpy_conformers(k, repeat_nonbatch=False)
-        if concatenate:
-            k = k.split('/')[-1]
-        dest.append_numpy_conformers(k, v, require_sorted_properties=False)
+        dest.append_numpy_conformers(k.split('/')[-1], v)
+
     if delete_originals:
-        for p in tqdm(source_od.values(),
+        for p in tqdm(source_paths,
                       desc='Deleting original store',
-                      total=len(source_od),
+                      total=len(source_paths),
                       disable=not verbose):
             p.unlink()
     return dest
