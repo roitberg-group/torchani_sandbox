@@ -17,6 +17,8 @@ def concatenate(source: ANIDataset,
                        dest_path: PathLike, *,
                        verbose: bool = True,
                        delete_originals: bool = False) -> ANIDataset:
+    if source.grouping not in ['by_formula', 'by_num_atoms']:
+        raise ValueError("Please regroup your dataset before concatenating")
     source_paths = [sub_ds._store_location for sub_ds in source._datasets.values()]
     dest_path = Path(dest_path).resolve()
 
@@ -29,7 +31,6 @@ def concatenate(source: ANIDataset,
                       create=True,
                       grouping=source.grouping,
                       property_aliases=source._first_subds._storename_to_alias,
-                      assume_standard=source._first_subds._has_standard_format,
                       verbose=False)
 
     for k, v in tqdm(source.numpy_items(),

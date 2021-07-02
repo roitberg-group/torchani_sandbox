@@ -270,237 +270,6 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
             yield c
 
 
-# Decorators for ANIDataset
-# Decorator that wraps functions from ANIDataset that should be
-# delegated to all of its "_ANISubdataset" members in a loop.
-def _broadcast(method: Callable[..., 'ANIDataset']) -> Callable[..., 'ANIDataset']:
-    @wraps(method)
-    def delegated_method_call(self: 'ANIDataset', *args, **kwargs) -> 'ANIDataset':
-        for name in self._datasets.keys():
-            self._datasets[name] = getattr(self._datasets[name], method.__name__)(*args, **kwargs)
-        return self._update_internal_cache()
-    return delegated_method_call
-
-
-# Decorator that wraps functions from ANIDataset that should be
-# delegated to one of its "_ANISubdataset" members,
-def _delegate(method: Callable[..., 'ANIDataset']) -> Callable[..., 'ANIDataset']:
-    @wraps(method)
-    def delegated_method_call(self: 'ANIDataset', group_name: str, *args, **kwargs) -> 'ANIDataset':
-        name, k = self._parse_key(group_name)
-        getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
-        return self._update_internal_cache()
-    return delegated_method_call
-
-
-# Decorator that wraps functions from ANIDataset that should be
-# delegated to one of its "_ANISubdataset" members.
-def _delegate_with_return(method: Callable[..., _T]) -> Callable[..., _T]:
-    @wraps(method)
-    def delegated_method_call(self: 'ANIDataset', group_name: str, *args, **kwargs) -> Any:
-        name, k = self._parse_key(group_name)
-        return getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
-    return delegated_method_call
-
-
-# ANIDataset implementation detail:
-#
-# ANIDataset is a mapping, The mapping has keys "group_names" or "names" and
-# values "conformers" or "conformer_group". Each group of conformers is also a
-# mapping, where keys are "properties" and values are numpy arrays / torch
-# tensors (they are just referred to as "values" or "data").
-#
-# In the current HDF5 datasets the group names are formulas (in some
-# CCCCHHH.... etc, in others C2H4, etc) groups could also be smiles or number
-# of atoms. Since HDF5 is hierarchical this grouping is essentially hardcoded
-# into the dataset format.
-#
-# To parse all current HDF5 dataset types it is necessary to first determine
-# where all the conformer groups are. HDF5 has directory structure, and in
-# principle they could be arbitrarily located. One would think that there is
-# some sort of standarization between the datasets, but unfortunately there is
-# none (!!), and the legacy reader, anidataloader, just scans all the groups
-# recursively...
-#
-# Cache update part 1:
-# --------------------
-# Since scanning recursively is super slow we just do this once and cache the
-# location of all the groups, and the sizes of all the groups inside
-# "groups_sizes". After this, it is not necessary to do the recursion again
-# unless some modification to the dataset happens, in which case we need a
-# cache update, to get "group_sizes" and "properties" again. Methods that
-# modify the dataset are decorated so that the internal cache is updated.
-#
-# If the dataset has some semblance of standarization (it is a tree with depth
-# 1, where all groups are directly joined to the root) then it is much faster
-# to traverse the dataset. This can be assumed passing "assume_standarized". In
-# any case after the first recursion if this structure is detected the flag is
-# set internally so we never do the recursion again. This speeds up cache
-# updates and lookup x30
-#
-# Cache update part 2:
-# --------------------
-# There is in principle no guarantee that all conformer groups have the same
-# properties. Due to this we have to first traverse the dataset and check that
-# this is the case. We store the properties the dataset supports inside an
-# internal variable _properties (e.g. it may happen that one molecule has
-# forces but not coordinates, if this happens then ANIDataset raises an error)
-#
-# Multiple files:
-# ---------------
-# Current datasets need ANIDataset to be able to manage multiple files, this is
-# achieved by delegating execution of the methods to one of the _ANISubdataset
-# instances that ANIDataset
-# contains. Basically any method is either:
-# 1 - delegated to a subdataset: If you ask for the conformer group "ANI1x/CH4"
-#     in the "full ANI2x" dataset (ANI1x + ANI2x_FSCl + dimers),
-#     then this will be delegated to the "ANI1x" subdataset.
-# 2 - broadcasted to all subdatasets: If you want to rename a property or
-#     delete a property it will be deleted / renamed in all subdatasets.
-#
-# This mechanism is currently achieved by decorating dummy methods but there
-# may be some more elegant way.
-#
-# ContextManager usage:
-# ----------------
-# You can turn the dataset into a context manager that keeps all HDF5 files
-# open simultaneously by using with ds.keep_open('r') as ro_ds:, for example.
-# It seems that HDF5 is quite slow when opening files, it has to aqcuire locks,
-# and do other things, so this speeds up iteration by 12 - 13 % usually. Since
-# many files may need to be opened at the same time then ExitStack is needed to
-# properly clean up everything. Each time a method needs to open a file it first
-# checks if it is already open (i.e. we are inside a 'keep_open' context) in that
-# case it just fetches the already opened file.
-class ANIDataset(_ANIDatasetBase):
-    def __init__(self, dataset_paths: Union[PathLike, PathLikeODict, Sequence[PathLike]], **kwargs):
-        super().__init__()
-
-        if isinstance(dataset_paths, (Path, str)):
-            dataset_paths = [Path(dataset_paths).resolve()]
-
-        if isinstance(dataset_paths, OrderedDict):
-            od = [(k, _ANISubdataset(v, **kwargs)) for k, v in dataset_paths.items()]
-        else:
-            od = [(str(j), _ANISubdataset(v, **kwargs)) for j, v in enumerate(dataset_paths)]
-        self._datasets = OrderedDict(od)
-        self._num_subds = len(self._datasets)
-
-        # save pointer to the first subds as attr, useful for code clarity
-        self._first_name, self._first_subds = next(iter(self._datasets.items()))
-        self._update_internal_cache()
-
-    # conformer getters/setters/deleters
-    @_delegate_with_return
-    def get_conformers(self, key: str, **kwargs) -> Conformers: ...  # noqa E704
-
-    @_delegate_with_return
-    def get_numpy_conformers(self, key: str, **kwargs) -> NumpyConformers: ...  # noqa E704
-
-    @_delegate
-    def append_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_delegate
-    def append_numpy_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_delegate
-    def delete_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    # regrouping
-    @_broadcast
-    def regroup_by_formula(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def regroup_by_num_atoms(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @property
-    def grouping(self) -> str:
-        return self._first_subds.grouping
-
-    # property manipulation ("columnwise" in relational ds, "datasets" in h5py)
-    @_broadcast
-    def create_species_from_numbers(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def create_numbers_from_species(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def extract_slice_as_new_property(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def create_full_scalar_property(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def delete_properties(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def rename_properties(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def set_aliases(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    # Other utilities
-    @_broadcast
-    def repack(self, *args, **kwargs) -> 'ANIDataset': ... # noqa E704
-
-    @contextmanager
-    def keep_open(self, mode: str = 'r') -> Iterator['ANIDataset']:
-        with ExitStack() as stack:
-            for k in self._datasets.keys():
-                self._datasets[k] = stack.enter_context(self._datasets[k].keep_open(mode))
-            yield self
-
-    def present_species(self) -> Tuple[str, ...]:
-        present_species = {s for ds in self._datasets.values() for s in ds.present_species()}
-        return tuple(sorted(present_species))
-
-    def __str__(self) -> str:
-        str_ = ''
-        for ds in self._datasets.values():
-            str_ += f'{ds}\n'
-        return str_
-
-    def _update_internal_cache(self) -> 'ANIDataset':
-        if self._num_subds > 1:
-            od_args = [(f'{name}/{k}', v) for name, ds in self._datasets.items() for k, v in ds.group_sizes.items()]
-        else:
-            od_args = [(k, v) for ds in self._datasets.values() for k, v in ds.group_sizes.items()]
-        self.group_sizes = OrderedDict(od_args)
-        for name, ds in self._datasets.items():
-            if not ds.grouping == self._first_subds.grouping:
-                raise ValueError("Datasets have incompatible groupings,"
-                                 f" got {self._first_subds.grouping} for {self._first_name}"
-                                 f" and {ds.grouping} for {name}")
-
-            if not ds.properties == self._first_subds.properties:
-                raise ValueError('Supported properties are different for the'
-                                 ' component subdatasets, got'
-                                 f' {self._first_subds.properties} for {self._first_name}'
-                                 f' and {ds.properties} for {name}')
-        self._properties = self._first_subds.properties
-        return self
-
-    def _parse_key(self, key: str) -> Tuple[str, str]:
-        tokens = key.split('/')
-        if self._num_subds > 1:
-            return tokens[0], '/'.join(tokens[1:])
-        else:
-            return self._first_name, '/'.join(tokens)
-
-
-class AniH5Dataset(ANIDataset):
-
-    def __init__(self, *args, **kwargs) -> None:
-        warnings.warn("AniH5Dataset has been renamed to ANIDataset, please use ANIDataset instead")
-        super().__init__(*args, **kwargs)
-
-
-class AniBatchedDataset(ANIBatchedDataset):
-
-    def __init__(self, *args, **kwargs) -> None:
-        warnings.warn("AniBatchedDataset has been renamed to ANIBatchedDataset, please use ANIBatchedDataset instead")
-        super().__init__(*args, **kwargs)
-
-
 # Decorator for ANISubdataset
 # Decorator that wraps functions that modify the dataset in place. Makes
 # sure that cache updating happens after dataset modification
@@ -523,7 +292,6 @@ class _ANISubdataset(_ANIDatasetBase):
 
     def __init__(self,
                  store_location: PathLike, *,
-                 assume_standard: bool = False,
                  create: bool = False,
                  grouping: Optional[str] = None,
                  property_aliases: Optional[Dict[str, str]] = None,
@@ -565,7 +333,7 @@ class _ANISubdataset(_ANIDatasetBase):
             # costly check again default grouping is "unspecified"
             if not self._store_location.is_file():
                 raise FileNotFoundError(f"The h5 file in {self._store_location.as_posix()} could not be found")
-            self._has_standard_format = assume_standard
+            self._has_standard_format = self._quick_standard_format_check()
             self._checked_homogeneous_properties = False
             self._set_grouping(self.grouping if grouping is None else grouping)
             self._update_internal_cache(verbose=verbose)
@@ -614,21 +382,26 @@ class _ANISubdataset(_ANIDatasetBase):
                 raise RuntimeError(msg)
             return self._open_store
 
+    # Check if the raw hdf5 file has the '/_created' dataset if this is the
+    # case then it can be assumed to have standard format. All other h5
+    # files are assumed to **not** have standard format.  All other files
+    # are also assumed to not have standard format
+    def _quick_standard_format_check(self):
+        if self._backend == 'h5py':
+            try:
+                with ExitStack() as stack:
+                    self._get_open_store(stack, 'r')._store_obj['/_created']
+                    return True
+            except KeyError:
+                return False
+        else:
+            return True
+
     def _update_internal_cache(self, *, verbose: bool = True) -> None:
         self.group_sizes = OrderedDict()
         self._properties = set()
 
         if self._backend == 'h5py':
-            # Check if the raw hdf5 file has the '/_created' dataset if this is
-            # the case then it can be assumed to have standard format
-            if not self._has_standard_format:
-                try:
-                    with ExitStack() as stack:
-                        self._get_open_store(stack, 'r')._store_obj['/_created']
-                        self._has_standard_format = True
-                except KeyError:
-                    pass
-
             if self._has_standard_format:
                 # This is much faster (x30) than a visitor function but it
                 # assumes the format is somewhat standard which means that all
@@ -986,7 +759,6 @@ class _ANISubdataset(_ANIDatasetBase):
                                 create=True,
                                 grouping=grouping if grouping is not None else self.grouping,
                                 property_aliases=self._storename_to_alias,
-                                assume_standard=self._has_standard_format,
                                 verbose=False)
         return new_ds
 
@@ -1121,19 +893,6 @@ class _ANISubdataset(_ANIDatasetBase):
         self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
         return self
 
-    def _set_grouping(self, grouping: str) -> None:
-        with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r+')
-            f._set_grouping(grouping)
-
-        if grouping in ['by_formula', 'by_num_atoms']:
-            self._has_standard_format = True
-            self._possible_nonbatch_properties = set()
-        else:
-            # other groupings are assumed to be "legacy", i.e. to have nonbatch
-            # keys
-            self._possible_nonbatch_properties = {'species', 'numbers'}
-
     @property
     def grouping(self) -> str:
         r"""Get the dataset grouping
@@ -1147,6 +906,19 @@ class _ANISubdataset(_ANIDatasetBase):
             f = self._get_open_store(stack, 'r+')
             data = f.grouping
         return data
+
+    def _set_grouping(self, grouping: str) -> None:
+        with ExitStack() as stack:
+            f = self._get_open_store(stack, 'r+')
+            f._set_grouping(grouping)
+
+        if grouping in ['by_formula', 'by_num_atoms']:
+            self._has_standard_format = True
+            self._possible_nonbatch_properties = set()
+        else:
+            # other groupings are assumed to be "legacy", i.e. to have nonbatch
+            # keys
+            self._possible_nonbatch_properties = {'species', 'numbers'}
 
     def _check_properties_are_present(self, requested_properties: Iterable[str], raise_: bool = True) -> None:
         if isinstance(requested_properties, str):
@@ -1163,6 +935,254 @@ class _ANISubdataset(_ANIDatasetBase):
         if set(requested_properties).issubset(self.properties):
             raise ValueError(f"Some of the properties requested {requested_properties} are"
                              f" in the dataset, which has properties {self.properties}, but they should not be")
+
+
+# Decorators for ANIDataset
+# Decorator that wraps functions from ANIDataset that should be
+# delegated to all of its "_ANISubdataset" members in a loop.
+def _broadcast(method: Callable[..., 'ANIDataset']) -> Callable[..., 'ANIDataset']:
+    @wraps(method)
+    def delegated_method_call(self: 'ANIDataset', *args, **kwargs) -> 'ANIDataset':
+        for name in self._datasets.keys():
+            self._datasets[name] = getattr(self._datasets[name], method.__name__)(*args, **kwargs)
+        return self._update_internal_cache()
+    delegated_method_call.__doc__ = getattr(_ANISubdataset, method.__name__).__doc__
+    return delegated_method_call
+
+
+# Decorator that wraps functions from ANIDataset that should be
+# delegated to one of its "_ANISubdataset" members,
+def _delegate(method: Callable[..., 'ANIDataset']) -> Callable[..., 'ANIDataset']:
+    @wraps(method)
+    def delegated_method_call(self: 'ANIDataset', group_name: str, *args, **kwargs) -> 'ANIDataset':
+        name, k = self._parse_key(group_name)
+        getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
+        return self._update_internal_cache()
+    delegated_method_call.__doc__ = getattr(_ANISubdataset, method.__name__).__doc__
+    return delegated_method_call
+
+
+# Decorator that wraps functions from ANIDataset that should be
+# delegated to one of its "_ANISubdataset" members.
+def _delegate_with_return(method: Callable[..., _T]) -> Callable[..., _T]:
+    @wraps(method)
+    def delegated_method_call(self: 'ANIDataset', group_name: str, *args, **kwargs) -> Any:
+        name, k = self._parse_key(group_name)
+        return getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
+    delegated_method_call.__doc__ = getattr(_ANISubdataset, method.__name__).__doc__
+    return delegated_method_call
+
+
+# ANIDataset implementation detail:
+#
+# ANIDataset is a mapping, The mapping has keys "group_names" or "names" and
+# values "conformers" or "conformer_group". Each group of conformers is also a
+# mapping, where keys are "properties" and values are numpy arrays / torch
+# tensors (they are just referred to as "values" or "data").
+#
+# In the current HDF5 datasets the group names are formulas (in some
+# CCCCHHH.... etc, in others C2H4, etc) groups could also be smiles or number
+# of atoms. Since HDF5 is hierarchical this grouping is essentially hardcoded
+# into the dataset format.
+#
+# To parse all current HDF5 dataset types it is necessary to first determine
+# where all the conformer groups are. HDF5 has directory structure, and in
+# principle they could be arbitrarily located. One would think that there is
+# some sort of standarization between the datasets, but unfortunately there is
+# none (!!), and the legacy reader, anidataloader, just scans all the groups
+# recursively...
+#
+# Cache update part 1:
+# --------------------
+# Since scanning recursively is super slow we just do this once and cache the
+# location of all the groups, and the sizes of all the groups inside
+# "groups_sizes". After this, it is not necessary to do the recursion again
+# unless some modification to the dataset happens, in which case we need a
+# cache update, to get "group_sizes" and "properties" again. Methods that
+# modify the dataset are decorated so that the internal cache is updated.
+#
+# If the dataset has some semblance of standarization (it is a tree with depth
+# 1, where all groups are directly joined to the root) then it is much faster
+# to traverse the dataset. In any case after the first recursion if this
+# structure is detected the flag is set internally so we never do the recursion
+# again. This speeds up cache updates and lookup x30
+#
+# Cache update part 2:
+# --------------------
+# There is in principle no guarantee that all conformer groups have the same
+# properties. Due to this we have to first traverse the dataset and check that
+# this is the case. We store the properties the dataset supports inside an
+# internal variable _properties (e.g. it may happen that one molecule has
+# forces but not coordinates, if this happens then ANIDataset raises an error)
+#
+# Multiple files:
+# ---------------
+# Current datasets need ANIDataset to be able to manage multiple files, this is
+# achieved by delegating execution of the methods to one of the _ANISubdataset
+# instances that ANIDataset
+# contains. Basically any method is either:
+# 1 - delegated to a subdataset: If you ask for the conformer group "ANI1x/CH4"
+#     in the "full ANI2x" dataset (ANI1x + ANI2x_FSCl + dimers),
+#     then this will be delegated to the "ANI1x" subdataset.
+# 2 - broadcasted to all subdatasets: If you want to rename a property or
+#     delete a property it will be deleted / renamed in all subdatasets.
+#
+# This mechanism is currently achieved by decorating dummy methods but there
+# may be some more elegant way.
+#
+# ContextManager usage:
+# ----------------
+# You can turn the dataset into a context manager that keeps all HDF5 files
+# open simultaneously by using with ds.keep_open('r') as ro_ds:, for example.
+# It seems that HDF5 is quite slow when opening files, it has to aqcuire locks,
+# and do other things, so this speeds up iteration by 12 - 13 % usually. Since
+# many files may need to be opened at the same time then ExitStack is needed to
+# properly clean up everything. Each time a method needs to open a file it first
+# checks if it is already open (i.e. we are inside a 'keep_open' context) in that
+# case it just fetches the already opened file.
+class ANIDataset(_ANIDatasetBase):
+    r"""Dataset that supports multiple stores and manages them as one single entity.
+
+    Datasets have a "grouping" for the different conformers, which can be
+    "by_formula", "by_num_atoms", or an empty string (legacy grouping).
+    Regrouping to one of the standard groupings can be done using
+    'regroup_by_formula' or 'regroup_by_num_atoms'.
+
+    Conformers can be extracted as {property: Tensor} or {property: ndarray}
+    dicts, and can also be appended or deleted from the backing stores.
+
+    All conformers in a datasets must have the same properties and the first
+    dimension in all Tensors/arrays is the same for all conformer groups (it is
+    the batch dimension).  Property manipulation (renaming, deleting, adding)
+    is also supported.
+    """
+    def __init__(self, dataset_paths: Union[PathLike, PathLikeODict, Sequence[PathLike]], **kwargs):
+        super().__init__()
+
+        if isinstance(dataset_paths, (Path, str)):
+            dataset_paths = [Path(dataset_paths).resolve()]
+
+        if isinstance(dataset_paths, OrderedDict):
+            od = [(k, _ANISubdataset(v, **kwargs)) for k, v in dataset_paths.items()]
+        else:
+            od = [(str(j), _ANISubdataset(v, **kwargs)) for j, v in enumerate(dataset_paths)]
+        self._datasets = OrderedDict(od)
+        self._num_subds = len(self._datasets)
+
+        # save pointer to the first subds as attr, useful for code clarity
+        self._first_name, self._first_subds = next(iter(self._datasets.items()))
+        self._update_internal_cache()
+
+    # conformer getters/setters/deleters
+    @_delegate_with_return
+    def get_conformers(self, key: str, **kwargs) -> Conformers: ...  # noqa E704
+
+    @_delegate_with_return
+    def get_numpy_conformers(self, key: str, **kwargs) -> NumpyConformers: ...  # noqa E704
+
+    @_delegate
+    def append_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @_delegate
+    def append_numpy_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @_delegate
+    def delete_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    # regrouping
+    @_broadcast
+    def regroup_by_formula(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @_broadcast
+    def regroup_by_num_atoms(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @property
+    def grouping(self) -> str:
+        return self._first_subds.grouping
+
+    # property manipulation ("columnwise" in relational ds, "datasets" in h5py)
+    @_broadcast
+    def create_species_from_numbers(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @_broadcast
+    def create_numbers_from_species(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @_broadcast
+    def extract_slice_as_new_property(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @_broadcast
+    def create_full_scalar_property(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @_broadcast
+    def delete_properties(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @_broadcast
+    def rename_properties(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    @_broadcast
+    def set_aliases(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
+
+    # Other utilities
+    @_broadcast
+    def repack(self, *args, **kwargs) -> 'ANIDataset': ... # noqa E704
+
+    @contextmanager
+    def keep_open(self, mode: str = 'r') -> Iterator['ANIDataset']:
+        with ExitStack() as stack:
+            for k in self._datasets.keys():
+                self._datasets[k] = stack.enter_context(self._datasets[k].keep_open(mode))
+            yield self
+
+    def present_species(self) -> Tuple[str, ...]:
+        present_species = {s for ds in self._datasets.values() for s in ds.present_species()}
+        return tuple(sorted(present_species))
+
+    def __str__(self) -> str:
+        str_ = ''
+        for ds in self._datasets.values():
+            str_ += f'{ds}\n'
+        return str_
+
+    def _update_internal_cache(self) -> 'ANIDataset':
+        if self._num_subds > 1:
+            od_args = [(f'{name}/{k}', v) for name, ds in self._datasets.items() for k, v in ds.group_sizes.items()]
+        else:
+            od_args = [(k, v) for ds in self._datasets.values() for k, v in ds.group_sizes.items()]
+        self.group_sizes = OrderedDict(od_args)
+        for name, ds in self._datasets.items():
+            if not ds.grouping == self._first_subds.grouping:
+                raise ValueError("Datasets have incompatible groupings,"
+                                 f" got {self._first_subds.grouping} for {self._first_name}"
+                                 f" and {ds.grouping} for {name}")
+
+            if not ds.properties == self._first_subds.properties:
+                raise ValueError('Supported properties are different for the'
+                                 ' component subdatasets, got'
+                                 f' {self._first_subds.properties} for {self._first_name}'
+                                 f' and {ds.properties} for {name}')
+        self._properties = self._first_subds.properties
+        return self
+
+    def _parse_key(self, key: str) -> Tuple[str, str]:
+        tokens = key.split('/')
+        if self._num_subds > 1:
+            return tokens[0], '/'.join(tokens[1:])
+        else:
+            return self._first_name, '/'.join(tokens)
+
+
+class AniH5Dataset(ANIDataset):
+
+    def __init__(self, *args, **kwargs) -> None:
+        warnings.warn("AniH5Dataset has been renamed to ANIDataset, please use ANIDataset instead")
+        super().__init__(*args, **kwargs)
+
+
+class AniBatchedDataset(ANIBatchedDataset):
+
+    def __init__(self, *args, **kwargs) -> None:
+        warnings.warn("AniBatchedDataset has been renamed to ANIBatchedDataset, please use ANIBatchedDataset instead")
+        super().__init__(*args, **kwargs)
 
 
 # wrapper around an open hdf5 file object that returns ConformerGroup facades
