@@ -430,6 +430,10 @@ class ANIDataset(_ANIDatasetBase):
     @_broadcast
     def regroup_by_num_atoms(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
+    @property
+    def grouping(self) -> str:
+        return self._first_subds.grouping
+
     # property manipulation ("columnwise")
     @_broadcast
     def create_species_from_numbers(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
@@ -451,10 +455,6 @@ class ANIDataset(_ANIDatasetBase):
 
     @_broadcast
     def set_aliases(self, property_aliases: Optional[Dict[str, str]] = ...) -> 'ANIDataset': ...  # noqa E704
-
-    @property
-    def grouping(self) -> str:
-        return self._first_subds.grouping
 
     def __str__(self) -> str:
         str_ = ''
@@ -571,7 +571,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 raise FileNotFoundError(f"The h5 file in {self._store_location.as_posix()} could not be found")
             self._has_standard_format = assume_standard
             self._checked_homogeneous_properties = False
-            self._set_grouping('' if grouping is None else grouping)
+            self._set_grouping(self.grouping if grouping is None else grouping)
             self._update_internal_cache()
 
     @contextmanager
@@ -883,13 +883,19 @@ class _ANISubdataset(_ANIDatasetBase):
             f = self._get_open_store(stack, 'r+')
             try:
                 group = f.create_conformer_group(group_name)
+                group.create_numpy_values(conformers)
             except ValueError:
-                old_conformers = self.get_numpy_conformers(group_name)
-                conformers.update({k: np.concatenate((old_conformers[k], conformers[k]), axis=0)
-                                   for k in self.properties})
-                del f[group_name]
-                group = f.create_conformer_group(group_name)
-            group.create_numpy_values(conformers)
+                # TODO: This will fail in the edge case where the dataset was
+                # created as resizable but it has nonbatch species
+                if f[group_name].is_resizable():
+                    f[group_name].append_numpy_values(conformers)
+                else:
+                    old_conformers = self.get_numpy_conformers(group_name)
+                    conformers.update({k: np.concatenate((old_conformers[k], conformers[k]), axis=0)
+                                       for k in self.properties})
+                    del f[group_name]
+                    group = f.create_conformer_group(group_name)
+                    group.create_numpy_values(conformers)
         return self
 
     @_needs_cache_update
@@ -1194,14 +1200,34 @@ class _ConformerGroupAdaptor(Mapping[str, np.ndarray]):
         for p, v in conformers.items():
             self._create_property_with_data(p, v)
 
+    def append_numpy_values(self, conformers: NumpyConformers) -> None:
+        for p, v in conformers.items():
+            self._append_property_with_data(p, v)
+
+    def is_resizable(self) -> bool:
+        return all(ds.maxshape[0] is None for ds in self._group_obj.values())
+
+    def _append_property_with_data(self, p: str, data: np.ndarray) -> None:
+        # resize and append to the dataset
+        p = self._alias_to_storename.get(p, p)
+        h5_dataset = self._group_obj[p]
+        h5_dataset.resize(h5_dataset.shape[0] + data.shape[0], axis=0)
+        try:
+            h5_dataset[-data.shape[0]:] = data
+        except TypeError:
+            h5_dataset[-data.shape[0]:] = data.astype(bytes)
+
     def _create_property_with_data(self, p: str, data: np.ndarray) -> None:
-        # this wraps create_dataset, correctly handling strings (species and _id) and
+        # this correctly handles strings (species and _id) and
         # key aliases
         p = self._alias_to_storename.get(p, p)
+
+        # make the first axis resizable
+        maxshape = (None,) + data.shape[1:]
         try:
-            self._group_obj.create_dataset(name=p, data=data)
+            self._group_obj.create_dataset(name=p, data=data, maxshape=maxshape)
         except TypeError:
-            self._group_obj.create_dataset(name=p, data=data.astype(bytes))
+            self._group_obj.create_dataset(name=p, data=data.astype(bytes), maxshape=maxshape)
 
     def move(self, src: str, dest: str) -> None:
         src = self._alias_to_storename.get(src, src)
