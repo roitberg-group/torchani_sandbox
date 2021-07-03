@@ -34,7 +34,7 @@ def concatenate(source: ANIDataset,
     dest = ANIDataset(dest_path,
                       create=True,
                       grouping=source.grouping,
-                      property_aliases=source._first_subds._storename_to_alias,
+                      property_aliases=source._first_subds._property_aliases,
                       verbose=False)
 
     for k, v in tqdm(source.numpy_items(),

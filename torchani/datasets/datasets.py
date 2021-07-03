@@ -16,7 +16,7 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from ._backends import _H5PY_AVAILABLE, _DatasetStoreAdaptor, _H5DatasetStoreAdaptor, H5Dataset, H5Group
+from ._backends import _H5PY_AVAILABLE, _DatasetStoreAdaptor, StoreAdaptorFactory
 from ._annotations import Transform, Conformers, NumpyConformers, MaybeNumpyConformers, PathLike, DTypeLike, PathLikeODict
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
@@ -28,7 +28,7 @@ Extractor = Callable[[int], Conformers]
 _T = TypeVar('_T')
 
 
-def _get_dim_size(conformers: Union[H5Group, Conformers, NumpyConformers], *,
+def _get_dim_size(conformers: Union[Conformers, NumpyConformers], *,
                   common_keys: Set[str],
                   dim: int) -> int:
     # Calculates the dimension size in a conformer group. It tries to get it
@@ -214,11 +214,11 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
         return batch_properties
 
     @property
-    def num_conformers(self):
+    def num_conformers(self) -> int:
         return sum(self.group_sizes.values())
 
     @property
-    def num_conformer_groups(self):
+    def num_conformer_groups(self) -> int:
         return len(self.group_sizes.keys())
 
     @property
@@ -299,18 +299,15 @@ class _ANISubdataset(_ANIDatasetBase):
 
         self._store_location = Path(store_location).resolve()
         if self._store_location.suffix == '.h5' or self._store_location.suffix not in self._SUPPORTED_STORES:
-            if not _H5PY_AVAILABLE:
-                raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
             self._backend = 'h5py'  # the only backend allowed currently, so we default to it
 
-        self._open_store: Optional['_H5DatasetStoreAdaptor'] = None
+        self._open_store: Optional['_DatasetStoreAdaptor'] = None
         self._symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
         self._numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
         # "storename" are the names of properties in the store file, and
         # "aliases" are the names users see when manipulating
-        self._storename_to_alias = dict() if property_aliases is None else property_aliases
-        self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
+        self._property_aliases = dict() if property_aliases is None else property_aliases
 
         # group_sizes and properties are needed as internal cache
         # variables, this cache is updated if something in the dataset changes
@@ -320,22 +317,19 @@ class _ANISubdataset(_ANIDatasetBase):
             # "by formula"
             open(self._store_location, 'x').close()
             self._has_standard_format = True
-            self._checked_homogeneous_properties = True
             self._set_grouping('by_formula' if grouping is None else grouping)
         else:
             # In general all supported properties of the dataset should be
             # equal for all groups, this is not a problem for relational
-            # databases but it can be an issue for HDF5. First we check that
-            # this is the case inside _update_internal_cache, if it isn't then
-            # we raise an error, if the check passes we set
-            # _checked_homogeneous_properties = True, so that we don't run the
-            # costly check again default grouping is "unspecified"
+            # databases but it can be an issue for HDF5. We check that this is
+            # the case inside the first call of _update_internal_cache, only if
+            # it isn't then we raise an error.
             if not self._store_location.is_file():
                 raise FileNotFoundError(f"The h5 file in {self._store_location.as_posix()} could not be found")
-            self._has_standard_format = self._quick_standard_format_check()
-            self._checked_homogeneous_properties = False
+            with ExitStack() as stack:
+                self._has_standard_format = self._get_open_store(stack, 'r').quick_standard_format_check()
             self._set_grouping(self.grouping if grouping is None else grouping)
-            self._update_internal_cache(verbose=verbose)
+            self._update_internal_cache(check_properties=True, verbose=verbose)
 
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
@@ -352,7 +346,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 print(c)
         may be much faster than directly iterating over conformers
         """
-        self._open_store = _DatasetStoreAdaptor(self._store_location, mode, self._backend, self._alias_to_storename)
+        self._open_store = StoreAdaptorFactory(self._store_location, mode, self._backend, self._property_aliases)
         try:
             yield self
         finally:
@@ -361,10 +355,10 @@ class _ANISubdataset(_ANIDatasetBase):
 
     # This trick makes methods fetch the open file directly
     # if they are being called from inside a "keep_open" context
-    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_H5DatasetStoreAdaptor':
+    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_DatasetStoreAdaptor':
         if self._open_store is None:
-            open_store = _DatasetStoreAdaptor(self._store_location, mode, self._backend, self._alias_to_storename)
-            return stack.enter_context(open_store)
+            store = StoreAdaptorFactory(self._store_location, mode, self._backend, self._property_aliases)
+            return stack.enter_context(store)
         else:
             current_mode = self._open_store.mode
             assert mode in ['r+', 'r'], f"Unsupported mode {mode}"
@@ -373,105 +367,15 @@ class _ANISubdataset(_ANIDatasetBase):
                                    ' currently keeping its store file open with mode "r"')
             return self._open_store
 
-    # Check if the raw hdf5 file has the '/_created' dataset if this is the
-    # case then it can be assumed to have standard format. All other h5
-    # files are assumed to **not** have standard format.  All other files
-    # are also assumed to not have standard format
-    def _quick_standard_format_check(self):
-        if self._backend == 'h5py':
-            try:
-                with ExitStack() as stack:
-                    self._get_open_store(stack, 'r')._store_obj['/_created']
-                    return True
-            except KeyError:
-                return False
-        else:
-            return True
-
-    def _update_internal_cache(self, *, verbose: bool = True) -> None:
-        self.group_sizes = OrderedDict()
-        self._properties = set()
-
-        if self._backend == 'h5py':
-            if self._has_standard_format:
-                # This is much faster (x30) than a visitor function but it
-                # assumes the format is somewhat standard which means that all
-                # Groups have depth 1, and all Datasets have depth 2. A pbar is
-                # not needed here since this is extremely fast
-                with ExitStack() as stack:
-                    # Get the raw hdf5 file object for manipulations inside
-                    # this function
-                    raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
-                    for k, g in raw_hdf5_store.items():
-                        if g.name in ['/_created', '/_meta']:
-                            continue
-                        self._update_properties_cache_h5py(g)
-                        self._update_groups_cache_h5py(g)
-            else:
-                def visitor_fn(name: str,
-                               object_: Union[H5Dataset, H5Group],
-                               dataset: '_ANISubdataset',
-                               pbar: Any) -> None:
-                    pbar.update()
-                    # We make sure the node is a Dataset, and We avoid Datasets
-                    # called _meta or _created since if present these store units
-                    # or other metadata. We also check if we already visited this
-                    # group via one of its children.
-                    if not isinstance(object_, H5Dataset) or\
-                           object_.name in ['/_created', '/_meta'] or\
-                           object_.parent.name in dataset.group_sizes.keys():
-                        return
-                    g = object_.parent
-                    # Check for format correctness
-                    for v in g.values():
-                        if isinstance(v, h5py.Group):
-                            msg = (f"Invalid dataset format, there shouldn't be "
-                                    "Groups inside Groups that have Datasets, "
-                                    f"but {g.name}, parent of the dataset "
-                                    f"{object_.name}, has group {v.name} as a "
-                                    "child")
-                            raise RuntimeError(msg)
-                    dataset._update_properties_cache_h5py(g)
-                    dataset._update_groups_cache_h5py(g)
-
-                with ExitStack() as stack:
-                    raw_hdf5_store = self._get_open_store(stack, 'r')._store_obj
-                    with tqdm(desc='Verifying format correctness',
-                              disable=not verbose) as pbar:
-                        raw_hdf5_store.visititems(partial(visitor_fn, dataset=self, pbar=pbar))
-
-                # If the visitor function succeeded and this condition is met the
-                # dataset must be in standard format
-                self._has_standard_format = not any('/' in k[1:] for k in self.group_sizes.keys())
-        else:
-            raise RuntimeError(f"Bad backend {self._backend}")
-
-        self._checked_homogeneous_properties = True
-        # By default iteration of HDF5 should be alphanumeric in which case
-        # sorting should not be necessary, this internal check ensures the
-        # groups were not created with 'track_order=True', and that the visitor
-        # function worked properly.
-        if list(self.group_sizes) != sorted(self.group_sizes):
-            raise RuntimeError("Groups were not iterated upon alphanumerically")
-
-    # Updates the "_properties", variables. "_nonbatch_properties" are keys
-    # that don't have a batch dimension, their shape must be (atoms,), they
-    # only make sense if ordering by formula or smiles
-    def _update_properties_cache_h5py(self, conformers: H5Group) -> None:
-        if not self.properties:
-            self._properties = {self._storename_to_alias.get(p, p) for p in set(conformers.keys())}
-        elif not self._checked_homogeneous_properties:
-            found_properties = {self._storename_to_alias.get(p, p) for p in set(conformers.keys())}
-            if not found_properties == self.properties:
-                msg = (f"Group {conformers.name} has bad keys, "
-                       f"found {found_properties}, but expected "
-                       f"{self.properties}")
-                raise RuntimeError(msg)
-
-    # updates "group_sizes" which holds the batch dimension (number of
-    # molecules) of all grups in the dataset.
-    def _update_groups_cache_h5py(self, conformers: H5Group) -> None:
-        self.group_sizes.update({conformers.name[1:]: _get_num_conformers(conformers)})
+    def _update_internal_cache(self, check_properties: bool = False, verbose: bool = True) -> None:
+        with ExitStack() as stack:
+            store = self._get_open_store(stack, 'r')
+            group_sizes, properties, has_standard_format = store.update_cache(self._has_standard_format,
+                                                                              check_properties,
+                                                                              verbose)
+        self._properties = properties
+        self.group_sizes = group_sizes
+        self._has_standard_format = has_standard_format
 
     def __str__(self) -> str:
         str_ = "ANI HDF5 File:\n"
@@ -591,12 +495,12 @@ class _ANISubdataset(_ANIDatasetBase):
                 group.create_numpy_values(conformers)
             except ValueError:
                 group = f[group_name]
-                if not group.is_resizable():
+                if not group.is_resizable:
                     raise RuntimeError("Dataset must be resizable to allow appending")
                 group.append_numpy_values(conformers)
         return self
 
-    def _check_correct_grouping(self):
+    def _check_correct_grouping(self) -> None:
         if self.grouping not in ['by_formula', 'by_num_atoms']:
             raise ValueError(f"Can't use the function {inspect.stack()[1][3]}"
                               " if the grouping is not by_formula or"
@@ -749,7 +653,7 @@ class _ANISubdataset(_ANIDatasetBase):
         new_ds = _ANISubdataset(self._store_location.parent.joinpath('tmp_dataset.h5'),
                                 create=True,
                                 grouping=grouping if grouping is not None else self.grouping,
-                                property_aliases=self._storename_to_alias,
+                                property_aliases=self._property_aliases,
                                 verbose=False)
         return new_ds
 
@@ -861,7 +765,7 @@ class _ANISubdataset(_ANIDatasetBase):
         """
         # This can generate some counterintuitive results if the values are
         # aliases (renaming can be a no-op in this case) so we disallow it
-        if set(old_new_dict.values()).issubset(set(self._storename_to_alias.keys())):
+        if set(old_new_dict.values()).issubset(set(self._property_aliases.keys())):
             raise ValueError("Cant rename to an alias")
         self._check_properties_are_present(old_new_dict.keys())
         self._check_properties_are_not_present(old_new_dict.values())
@@ -873,15 +777,14 @@ class _ANISubdataset(_ANIDatasetBase):
         return self
 
     @_needs_cache_update
-    def set_aliases(self, property_aliases: Optional[Dict[str, str]] = None) -> '_ANISubdataset':
+    def set_aliases(self, property_aliases: Dict[str, str]) -> '_ANISubdataset':
         r"""Set aliases for some properties from the dataset
 
         Expects a dictionary of the form: {old_name: new_name}. The properties
         are **not** renamed in the backing store, but the class will convert
         old_name to new_name internally when any method is called
         """
-        self._storename_to_alias = dict() if property_aliases is None else property_aliases
-        self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
+        self._property_aliases = property_aliases
         return self
 
     @property
