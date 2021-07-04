@@ -38,7 +38,7 @@ fi
 
 # conda-build dependency
 conda install conda-build conda-verify anaconda-client -y
-conda install conda-package-handling -y  # update to newer version, Issue: https://github.com/conda/conda-package-handling/issues/71
+conda install conda-package-handling -y  # Update to newer version, Issue: https://github.com/conda/conda-package-handling/issues/71
 export PATH="${CONDA_PREFIX}/bin:${CONDA}/bin:$PATH"  # anaconda bin location
 which anaconda
 
@@ -57,9 +57,9 @@ if [[ $1 == release ]]; then
     BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PYTHON_VERSION//./}_torch1.9.0_cuda11.1.tar.bz2"
     echo $BUILD_FILE
     mkdir -p /release/conda-packages/linux-64
-    rm /release/conda-packages/linux-64/sandbox_cudf*  # remove old sandbox_cudf packages
+    rm -f /release/conda-packages/linux-64/sandbox_cudf*  # remove old sandbox_cudf packages
     cp $BUILD_FILE /release/conda-packages/linux-64
-    rm -rf "${CONDA}/conda-bld/*"                      # remove conda-bld directory
+    rm -rf "${CONDA}/conda-bld/*"                         # remove conda-bld directory
     conda index /release/conda-packages
     chown -R 1003:1003 /release/conda-packages
     apt install rsync -y
