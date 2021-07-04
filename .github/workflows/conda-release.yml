@@ -1,7 +1,6 @@
 name: conda-release
 
 on:
-  pull_request:
   push:
     branches:
       - master
@@ -21,8 +20,6 @@ jobs:
         exclude:
           # excludes py3.6 for torchani_cudf
           - package: torchani_cudf
-            python-version: 3.6
-          - package: torchani
             python-version: 3.6
 
     steps:

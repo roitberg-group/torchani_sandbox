@@ -53,6 +53,16 @@ conda activate ani
 conda install -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c pytorch -c nvidia -c defaults -c conda-forge sandbox
 ```
 
+To install a version that is compatible with cudf, because of [cudatoolkit confilcts](https://github.com/rapidsai/cudf/issues/8510), you will need to install it by the following:
+```bash
+# important: update conda and conda-package-handling
+conda update -n base -c defaults conda
+# install torchani and torch
+conda create -n cudf -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c defaults -c conda-forge sandbox_cudf python=3.8
+# install cudf
+conda install -c rapidsai -c nvidia -c conda-forge blazingsql=21.06 cudf=21.06 python=3.8 cudatoolkit=11.0
+```
+
 You could also build torchani from source, check at [TorchANI CSRC](torchani/csrc).
 
 Note that if you updated TorchANI, you may also need to update PyTorch.
