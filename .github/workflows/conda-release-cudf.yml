@@ -1,20 +1,21 @@
-name: conda-release
+name: conda-release-cudf
 
 on:
+  pull_request:
   push:
     branches:
       - master
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 1 * * *'
 
 jobs:
-  conda-release:
+  conda-release-cudf:
 
     runs-on: [self-hosted, miniconda]
     strategy:
       max-parallel: 4
       matrix:
-        python-version: [3.8, 3.6]
+        python-version: [3.8]
 
     steps:
     - uses: actions/checkout@v2
@@ -59,7 +60,7 @@ jobs:
         export CONDA_TOKEN=${{ secrets.CONDA_TOKEN }}
         export SERVER_USERNAME=${{ secrets.SERVER_USERNAME }}
         export SERVER_PORT=${{ secrets.SERVER_PORT }}
-        export PACKAGE=torchani
+        export PACKAGE=torchani_cudf
         ./conda/build_conda.sh release
     - name: Remove Server Key
       run: |
@@ -73,5 +74,5 @@ jobs:
       run: conda env remove --name foo${{ matrix.python-version }}
 
 concurrency:
-  group: conda-release
+  group: conda-release-cudf
   cancel-in-progress: true

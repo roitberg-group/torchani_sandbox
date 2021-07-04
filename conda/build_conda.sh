@@ -2,10 +2,11 @@
 set -ex
 
 # USAGE:
+# Build packages of torchani or torchani_cudf
 # 1. test
-# PYTHON_VERSION=3.8 ./build_conda.sh
+# PYTHON_VERSION=3.8 PACKAGE=torchani ./build_conda.sh
 # 2. release
-# PYTHON_VERSION=3.8 CONDA_TOKEN=TOKEN ./build_conda.sh release
+# PYTHON_VERSION=3.8 PACKAGE=torchani CONDA_TOKEN=TOKEN ./build_conda.sh release
 
 # helper functions
 script_dir=$(dirname $(realpath $0))
@@ -19,10 +20,21 @@ setup_build_version 2.2
 setup_cuda_home
 setup_conda_pytorch_constraint
 setup_conda_cudatoolkit_constraint
-export PACKAGE_NAME=sandbox
 export USER=roitberg-group
 # default python version is 3.8 if it's not set
 PYTHON_VERSION="${PYTHON_VERSION:-3.8}"
+# default package is torchani
+PACKAGE="${PACKAGE:-torchani}"
+
+# set package name
+if [[ $PACKAGE == torchani ]]; then
+    export PACKAGE_NAME=sandbox
+elif [[ $PACKAGE == torchani_cudf ]]; then
+    export PACKAGE_NAME=sandbox_cudf
+else
+    echo PACKAGE must be torchani or torchani_cudf
+    exit 1
+fi
 
 # conda-build dependency
 conda install conda-build conda-verify anaconda-client -y
@@ -30,7 +42,7 @@ export PATH="${CONDA_PREFIX}/bin:${CONDA}/bin:$PATH"  # anaconda bin location
 which anaconda
 
 # build package
-conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload --no-copy-test-source-files --python "$PYTHON_VERSION" "$script_dir/torchani"
+conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload --no-copy-test-source-files --python "$PYTHON_VERSION" "$script_dir/$PACKAGE"
 
 # upload to anaconda.org if has release_anaconda argument
 if [[ $1 == release_anaconda ]]; then
