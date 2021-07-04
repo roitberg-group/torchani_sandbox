@@ -57,6 +57,7 @@ if [[ $1 == release ]]; then
     echo $BUILD_FILE
     mkdir -p /release/conda-packages/linux-64
     cp $BUILD_FILE /release/conda-packages/linux-64
+    rm -rf "${CONDA}/conda-bld/*"
     conda index /release/conda-packages
     chown -R 1003:1003 /release/conda-packages
     apt install rsync -y
