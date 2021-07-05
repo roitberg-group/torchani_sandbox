@@ -1,7 +1,6 @@
 name: conda-release
 
 on:
-  pull_request:
   push:
     branches:
       - master

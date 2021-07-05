@@ -59,9 +59,11 @@ if [[ $1 == release ]]; then
     BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PYTHON_VERSION//./}_torch1.9.0_cuda11.1.tar.bz2"
     echo $BUILD_FILE
     mkdir -p /release/conda-packages/linux-64
-    rm -f /release/conda-packages/linux-64/sandbox_cudf*  # remove all old sandbox_cudf packages
+    if [[ $PACKAGE == torchani_cudf ]]; then
+        rm -f /release/conda-packages/linux-64/sandbox_cudf*  # remove all old sandbox_cudf packages
+    fi
     cp $BUILD_FILE /release/conda-packages/linux-64
-    rm -rf "${CONDA}/conda-bld/*"                         # remove conda-bld directory
+    rm -rf "${CONDA}/conda-bld/*"                             # remove conda-bld directory
     conda index /release/conda-packages
     chown -R 1003:1003 /release/conda-packages
     apt install rsync -y
