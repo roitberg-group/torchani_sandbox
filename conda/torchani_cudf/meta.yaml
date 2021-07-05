@@ -33,6 +33,9 @@ requirements:
     - defaults::numpy >=1.18
     - pillow
     - typing-extensions
+    - blazingsql=21.06
+    - cudf=21.06
+    - cudatoolkit=11.0
 
 build:
   number: 1

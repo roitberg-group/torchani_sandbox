@@ -26,11 +26,13 @@ PYTHON_VERSION="${PYTHON_VERSION:-3.8}"
 # default package is torchani
 PACKAGE="${PACKAGE:-torchani}"
 
-# set package name
+# set package-name and channel for torchani or torchani_cudf
 if [[ $PACKAGE == torchani ]]; then
     export PACKAGE_NAME=sandbox
+    export CONDA_CHANNEL_FLAGS="-c pytorch -c nvidia -c defaults -c conda-forge"
 elif [[ $PACKAGE == torchani_cudf ]]; then
     export PACKAGE_NAME=sandbox_cudf
+    export CONDA_CHANNEL_FLAGS="-c rapidsai -c nvidia -c defaults -c conda-forge"
 else
     echo PACKAGE must be torchani or torchani_cudf
     exit 1

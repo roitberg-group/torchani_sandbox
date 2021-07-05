@@ -57,10 +57,8 @@ To install a version that is compatible with cudf, because of [cudatoolkit confi
 ```bash
 # important: update conda and conda-package-handling
 conda update -n base -c defaults conda
-# install torchani and torch
-conda create -n cudf -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c defaults -c conda-forge sandbox_cudf python=3.8
-# install cudf
-conda install -c rapidsai -c nvidia -c conda-forge blazingsql=21.06 cudf=21.06 python=3.8 cudatoolkit=11.0
+# install torchani, torch and cudf together
+conda create -n cudf -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c rapidsai -c nvidia -c defaults -c conda-forge sandbox_cudf python=3.8
 ```
 
 You could also build torchani from source, check at [TorchANI CSRC](torchani/csrc).
