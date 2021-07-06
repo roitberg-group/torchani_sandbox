@@ -320,7 +320,7 @@ class _ANISubdataset(_ANIDatasetBase):
             self._set_grouping('by_formula' if grouping is None else grouping)
         else:
             # In general all supported properties of the dataset should be
-            # equal for all groups, this is not a problem for relational
+            # equal for all groups, this is not a problem for tabular
             # databases but it can be an issue for HDF5. We check that this is
             # the case inside the first call of _update_internal_cache, only if
             # it isn't then we raise an error.
@@ -335,16 +335,15 @@ class _ANISubdataset(_ANIDatasetBase):
     def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
         r"""Context manager to keep dataset open while iterating over it
 
+        This speeds up access in the context of many operations in a block,
+        Iterating in this context may be much faster than directly iterating
+        over conformers
+
         Usage:
-        with ds.keep_open('r') as ro_ds:
-            c = ro_ds.get_conformers('CH4')
-        etc
-        this speeds up access in the context of many operations in a block,
-        e.g.
         with ds.keep_open('r') as ro_ds:
             for c in ro_ds.iter_conformers():
                 print(c)
-        may be much faster than directly iterating over conformers
+                ... etc
         """
         self._open_store = StoreAdaptorFactory(self._store_location, mode, self._backend, self._property_aliases)
         try:
@@ -502,7 +501,8 @@ class _ANISubdataset(_ANIDatasetBase):
 
     def _check_correct_grouping(self) -> None:
         if self.grouping not in ['by_formula', 'by_num_atoms']:
-            raise ValueError(f"Can't use the function {inspect.stack()[1][3]}"
+            calling_fn_name = inspect.stack()[1][3]
+            raise ValueError(f"Can't use the function {calling_fn_name}"
                               " if the grouping is not by_formula or"
                               " by_num_atoms, please regroup your dataset")
 
@@ -954,7 +954,11 @@ class ANIDataset(_ANIDatasetBase):
         super().__init__()
 
         if isinstance(dataset_paths, (Path, str)):
-            dataset_paths = [Path(dataset_paths).resolve()]
+            dataset_paths = Path(dataset_paths).resolve()
+            if dataset_paths.is_dir():
+                dataset_paths = list(sorted(dataset_paths.iterdir()))
+            else:
+                dataset_paths = [Path(dataset_paths).resolve()]
 
         if isinstance(dataset_paths, OrderedDict):
             od = [(k, _ANISubdataset(v, **kwargs)) for k, v in dataset_paths.items()]
@@ -994,7 +998,7 @@ class ANIDataset(_ANIDatasetBase):
     def grouping(self) -> str:
         return self._first_subds.grouping
 
-    # property manipulation ("columnwise" in relational ds, "datasets" in h5py)
+    # property manipulation ("columnwise" in tabular ds, "datasets" in h5py)
     @_broadcast
     def create_species_from_numbers(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
