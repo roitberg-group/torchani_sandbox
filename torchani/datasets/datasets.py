@@ -593,43 +593,6 @@ class _ANISubdataset(_ANIDatasetBase):
         return self
 
     @_needs_cache_update
-    def extract_slice_as_new_property(self,
-                                   source_key: str,
-                                   dest_key: str,
-                                   idx_to_slice: int,
-                                   dim_to_slice: int,
-                                   squeeze_dest_key: bool = True) -> '_ANISubdataset':
-        r"""Extract a slice from a property and make it a new property
-
-        Annoyingly some properties are sometimes in this format:
-        "atomic_charges" with shape (C, A + 1), where charges[:, -1] is
-        actually the sum of the charges over all atoms.
-        This function solves the problem of dividing these properties as:
-        "atomic_charges (C, A + 1) -> "atomic_charges (C, A)", "charges (C,)
-        """
-        self._check_properties_are_present(source_key)
-        self._check_properties_are_not_present(dest_key)
-        with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r+')
-            for group_name, conformers in self.numpy_items(properties='source_key'):
-                to_slice = conformers[source_key]
-                if to_slice.shape[dim_to_slice] <= 1:
-                    raise ValueError("You can't slice the property if "
-                                     "dim_to_slice has size 1 or smaller")
-                # np.take automatically squeezes the output along the slice but
-                # delete does not squeeze even if the resulting dim has size 1
-                # so we sqeeze manually
-                slice_ = np.take(to_slice, indices=idx_to_slice, axis=dim_to_slice)
-                with_slice_deleted = np.delete(to_slice, obj=idx_to_slice, axis=dim_to_slice)
-                if squeeze_dest_key:
-                    with_slice_deleted = np.squeeze(with_slice_deleted, axis=dim_to_slice)
-
-                del f[group_name][source_key]
-                f[group_name].create_numpy_values({source_key: with_slice_deleted})
-                f[group_name].create_numpy_values({dest_key: slice_})
-        return self
-
-    @_needs_cache_update
     def create_full_scalar_property(self,
                                     dest_key: str,
                                     fill_value: int = 0,
@@ -1004,9 +967,6 @@ class ANIDataset(_ANIDatasetBase):
 
     @_broadcast
     def create_numbers_from_species(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def extract_slice_as_new_property(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @_broadcast
     def create_full_scalar_property(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
