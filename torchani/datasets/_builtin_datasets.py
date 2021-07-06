@@ -4,65 +4,14 @@ from typing import Optional, Any
 from collections import OrderedDict
 
 from torchvision.datasets.utils import download_and_extract_archive, list_files, check_integrity
-from .datasets import ANIBatchedDataset, ANIDataset
+from .datasets import ANIDataset
 from ._annotations import PathLike
 from ..utils import tqdm
 
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
 
 
-class _BaseBuiltinBatchedDataset(ANIBatchedDataset):
-
-    def __init__(self, root: PathLike,
-                       download: bool = False,
-                       archive: Optional[str] = None,
-                       md5: Optional[str] = None,
-                       **batched_ds_kwargs: Any):
-        root = Path(root).resolve()
-        self._archive: str = '' if archive is None else archive
-        self._md5: str = '' if md5 is None else md5
-        download_and_extract_archive(url=f'{_BASE_URL}{self._archive}', download_root=root, md5=self._md5)
-        super().__init__(root, **batched_ds_kwargs)
-
-
-class BatchedANI1x(_BaseBuiltinBatchedDataset):
-
-    _ARCHIVES_AND_MD5S = {'train-valid': ('batched-ANI-1x-wB97X-6-31Gd-train-valid-2560.tar.gz', 'sdfsfd'),
-                          '8-folds': ('batched-ANI-1x-wB97X-6-31Gd-8-folds-2560.tar.gz', 'sldkfsf'),
-                          '5-folds': ('batched-ANI-1x-wB97X-6-31Gd-5-folds-2560.tar.gz', 'sdfdf')}
-
-    def __init__(self, root: PathLike, download: bool = False, kind: str = 'train-valid', **batched_ds_kwargs: Any):
-        if kind not in self._ARCHIVES_AND_MD5S.keys():
-            raise ValueError(f"kind {kind} should be one of {list(self._ARCHIVES_AND_MD5S.keys())}")
-        archive, md5 = self._ARCHIVES_AND_MD5S[kind]
-        super().__init__(root, download, archive=archive, md5=md5, **batched_ds_kwargs)
-
-
-class BatchedANI2x(_BaseBuiltinBatchedDataset):
-
-    _ARCHIVES_AND_MD5S = {'train-valid': ('batched-ANI-2x-wB97X-6-31Gd-train-valid-2560.tar.gz', 'sdfsfd'),
-                          '8-folds': ('batched-ANI-2x-wB97X-6-31Gd-8-folds-2560.tar.gz', 'sldkfsf'),
-                          '5-folds': ('batched-ANI-2x-wB97X-6-31Gd-5-folds-2560.tar.gz', 'sdfdf')}
-
-    def __init__(self, root: PathLike, download: bool = False, kind: str = 'train-valid', **batched_ds_kwargs: Any):
-        if kind not in self._ARCHIVES_AND_MD5S.keys():
-            raise ValueError(f"kind {kind} should be one of {list(self._ARCHIVES_AND_MD5S.keys())}")
-        archive, md5 = self._ARCHIVES_AND_MD5S[kind]
-        super().__init__(root, download, archive=archive, md5=md5, **batched_ds_kwargs)
-
-
-class BatchedCOMP6v1(_BaseBuiltinBatchedDataset):
-
-    _ARCHIVES_AND_MD5S = {'files': ('batched-COMP6-v1-wB97X-6-31Gd-train-valid-2560.tar.gz', 'sdfsfd')}
-
-    def __init__(self, root: PathLike, download: bool = False, kind: str = 'train-valid', **batched_ds_kwargs: Any):
-        if kind not in self._ARCHIVES_AND_MD5S.keys():
-            raise ValueError(f"kind {kind} should be one of {list(self._ARCHIVES_AND_MD5S.keys())}")
-        archive, md5 = self._ARCHIVES_AND_MD5S[kind]
-        super().__init__(root, download, archive=archive, md5=md5, **batched_ds_kwargs)
-
-
-class _BaseBuiltinRawDataset(ANIDataset):
+class _BaseBuiltinDataset(ANIDataset):
     # NOTE: Code heavily borrows from celeb dataset of torchvision
 
     def __init__(self, root: PathLike,
@@ -120,7 +69,7 @@ class _BaseBuiltinRawDataset(ANIDataset):
         return self._check_hdf5_files_integrity(root)
 
 
-class RawANI1x(_BaseBuiltinRawDataset):
+class ANI1x(_BaseBuiltinDataset):
     _ARCHIVE = 'ANI-1x-wB97X-6-31Gd-data.tar.gz'
     # NOTE: The order of this dictionary is important since it deterimenes the order of iteration over the files
     _FILES_AND_MD5S = OrderedDict([('ANI-1x-wB97X-6-31Gd.h5', 'c9d63bdbf90d093db9741c94d9b20972')])
@@ -129,7 +78,7 @@ class RawANI1x(_BaseBuiltinRawDataset):
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)
 
 
-class RawANI2x(_BaseBuiltinRawDataset):
+class ANI2x(_BaseBuiltinDataset):
 
     _ARCHIVE = 'ANI-2x-wB97X-6-31Gd-data.tar.gz'
     # NOTE: The order of this dictionary is important since it deterimenes the order of iteration over the files
@@ -141,7 +90,7 @@ class RawANI2x(_BaseBuiltinRawDataset):
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)
 
 
-class RawCOMP6v1(_BaseBuiltinRawDataset):
+class COMP6v1(_BaseBuiltinDataset):
     _ARCHIVE = 'COMP6-v1-data.tar.gz'
     # NOTE: The order of this dictionary is important since it deterimenes the order of iteration over the files
     _FILES_AND_MD5S = OrderedDict([('GDB11-07-test-500.h5', '9200755bfc755405e64100a53a9f7468'),

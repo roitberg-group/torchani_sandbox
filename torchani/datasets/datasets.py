@@ -947,7 +947,7 @@ class ANIDataset(_ANIDatasetBase):
 
     All conformers in a datasets must have the same properties and the first
     dimension in all Tensors/arrays is the same for all conformer groups (it is
-    the batch dimension).  Property manipulation (renaming, deleting, adding)
+    the batch dimension). Property manipulation (renaming, deleting, adding)
     is also supported.
     """
     def __init__(self, dataset_paths: Union[PathLike, PathLikeODict, Sequence[PathLike]], **kwargs):
