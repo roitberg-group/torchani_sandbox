@@ -86,7 +86,7 @@ def filter_by_high_force(dataset: ANIDataset, *,
                     bad_idxs = (f.abs() > threshold).any(dim=-1).any(dim=-1).nonzero().squeeze()
                 elif criteria == 'magnitude':
                     # any over atoms
-                    bad_idxs = (f.norm(-1) > threshold).any(dim=-1).nonzero().squeeze()
+                    bad_idxs = (f.norm(dim=-1) > threshold).any(dim=-1).nonzero().squeeze()
                 if bad_idxs.numel() > 0:
                     _append_bad_keys_and_idxs(bad_idxs, bad_keys_and_idxs, key, split_idx, max_split)
                     _append_bad_conformations(bad_idxs, bad_conformations, s, c)
