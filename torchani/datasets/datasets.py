@@ -351,6 +351,7 @@ class _ANISubdataset(_ANIDatasetBase):
         finally:
             assert self._open_store is not None
             self._open_store.close()
+            self._open_store = None
 
     # This trick makes methods fetch the open file directly
     # if they are being called from inside a "keep_open" context
