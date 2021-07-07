@@ -5,7 +5,7 @@ import json
 import pickle
 import datetime
 from pathlib import Path
-from typing import Tuple, Dict, Optional, Sequence, List
+from typing import Tuple, Dict, Optional, Sequence, List, Union
 from collections import OrderedDict
 
 import h5py
@@ -18,7 +18,7 @@ from .datasets import ANIDataset
 from ._annotations import Conformers, PathLike, Transform
 
 
-def create_batched_dataset(h5_path: PathLike,
+def create_batched_dataset(h5_path: Union[PathLike, ANIDataset],
                            dest_path: Optional[PathLike] = None,
                            shuffle: bool = True,
                            shuffle_seed: Optional[int] = None,
@@ -44,15 +44,18 @@ def create_batched_dataset(h5_path: PathLike,
         dest_path = Path(f'./batched_dataset_{file_format}').resolve()
     dest_path = Path(dest_path).resolve()
 
-    h5_path = Path(h5_path).resolve()
-    if h5_path.is_dir():
-        # Sort paths according to file names for reproducibility
-        paths_list = [p for p in h5_path.iterdir() if p.suffix == '.h5']
-        filenames_list = [p.name for p in paths_list]
-        sorted_paths = [p for _, p in sorted(zip(filenames_list, paths_list))]
-        dataset = ANIDataset(sorted_paths)
-    elif h5_path.is_file():
-        dataset = ANIDataset([h5_path])
+    if isinstance(h5_path, ANIDataset):
+        dataset = h5_path
+    else:
+        h5_path = Path(h5_path).resolve()
+        if h5_path.is_dir():
+            # Sort paths according to file names for reproducibility
+            paths_list = [p for p in h5_path.iterdir() if p.suffix == '.h5']
+            filenames_list = [p.name for p in paths_list]
+            sorted_paths = [p for _, p in sorted(zip(filenames_list, paths_list))]
+            dataset = ANIDataset(sorted_paths)
+        elif h5_path.is_file():
+            dataset = ANIDataset([h5_path])
 
     # (1) Get all indices and shuffle them if needed
     #
@@ -96,7 +99,7 @@ def create_batched_dataset(h5_path: PathLike,
 
     # log creation data
     creation_log = {'datetime_created': str(datetime.datetime.now()),
-                    'source_path': h5_path.as_posix(),
+                    'source_path': [p.as_posix() for p in dataset._store_paths],
                     'splits': splits,
                     'folds': folds,
                     'padding': PADDING if padding is None else padding,

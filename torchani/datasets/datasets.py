@@ -282,9 +282,9 @@ def _needs_cache_update(method: Callable[..., '_ANISubdataset']) -> Callable[...
     return method_with_cache_update
 
 
-# Private wrapper over backing storage, with some modifications it
-# could be used for directories with npz files. It should never ever be
-# used directly by user code.
+# Private wrapper over backing storage, with some modifications it could be
+# used for directories with npz files. It should never ever be used directly by
+# user code.
 class _ANISubdataset(_ANIDatasetBase):
 
     _SUPPORTED_STORES = ('.h5',)
@@ -916,17 +916,29 @@ class ANIDataset(_ANIDatasetBase):
     def __init__(self, dataset_paths: Union[PathLike, PathLikeODict, Sequence[PathLike]], **kwargs):
         super().__init__()
 
+        # _datasets is an ordereddict {name: _ANISubdataset}.
+        # This logic parses dataset_paths in order to obtain the arguments to
+        # build this ordereddict.
+        # - If a path to a dir is passed then all h5 files in the dir are used
+        # - If a path to a file is passed then that file is used
+        # - If an ordereddict is passed it is used directly
+        # If an ordereddict is not passed then names are just numbers as str
+        self._store_paths: List[Path]
+
         if isinstance(dataset_paths, (Path, str)):
             dataset_paths = Path(dataset_paths).resolve()
             if dataset_paths.is_dir():
-                dataset_paths = list(sorted(dataset_paths.iterdir()))
+                self._store_paths = sorted([p for p in dataset_paths.iterdir() if p.suffix == '.h5'])
             else:
-                dataset_paths = [Path(dataset_paths).resolve()]
-
-        if isinstance(dataset_paths, OrderedDict):
+                self._store_paths = [Path(dataset_paths).resolve()]
+            od = [(str(j), _ANISubdataset(v, **kwargs)) for j, v in enumerate(self._store_paths)]
+        elif isinstance(dataset_paths, OrderedDict):
+            self._store_paths = [Path(p).resolve() for p in dataset_paths.values()]
             od = [(k, _ANISubdataset(v, **kwargs)) for k, v in dataset_paths.items()]
         else:
-            od = [(str(j), _ANISubdataset(v, **kwargs)) for j, v in enumerate(dataset_paths)]
+            self._store_paths = [Path(p).resolve() for p in dataset_paths]
+            od = [(str(j), _ANISubdataset(v, **kwargs)) for j, v in enumerate(self._store_paths)]
+
         self._datasets = OrderedDict(od)
         self._num_subds = len(self._datasets)
 
