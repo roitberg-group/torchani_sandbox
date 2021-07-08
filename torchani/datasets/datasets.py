@@ -5,7 +5,6 @@ import json
 import re
 import pickle
 import warnings
-import shutil
 from copy import deepcopy
 from pathlib import Path
 from functools import partial, wraps
@@ -16,7 +15,7 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from ._backends import _H5PY_AVAILABLE, _DatasetStoreAdaptor, StoreAdaptorFactory
+from ._backends import _H5PY_AVAILABLE, _StoreAdaptor, StoreAdaptorFactory, get_temporary_location, infer_backend
 from ._annotations import Transform, Conformers, NumpyConformers, MaybeNumpyConformers, PathLike, DTypeLike, PathLikeODict
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
@@ -46,6 +45,10 @@ def _get_dim_size(conformers: Union[Conformers, NumpyConformers], *,
 _get_num_atoms = partial(_get_dim_size, common_keys={'coordinates', 'coord', 'forces'}, dim=1)
 # calculates number of conformers in a conformer group
 _get_num_conformers = partial(_get_dim_size, common_keys={'coordinates', 'coord', 'forces', 'energies'}, dim=0)
+
+# convert to / from species and atomic numbers
+_symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
+_numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
 
 class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
@@ -225,9 +228,6 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
     def grouping(self) -> str:
         raise NotImplementedError
 
-    def _set_grouping(self, grouping: str) -> None:
-        raise NotImplementedError
-
     def __getitem__(self, key: str) -> Conformers:
         return self.get_conformers(key)
 
@@ -287,48 +287,40 @@ def _needs_cache_update(method: Callable[..., '_ANISubdataset']) -> Callable[...
 # user code.
 class _ANISubdataset(_ANIDatasetBase):
 
-    _SUPPORTED_STORES = ('.h5',)
-
     def __init__(self,
                  store_location: PathLike, *,
                  create: bool = False,
-                 grouping: Optional[str] = None,
+                 grouping: str = 'by_formula',
+                 backend: Optional[str] = None,
                  property_aliases: Optional[Dict[str, str]] = None,
                  verbose: bool = True):
         super().__init__()
 
-        self._store_location = Path(store_location).resolve()
-        if self._store_location.suffix == '.h5' or self._store_location.suffix not in self._SUPPORTED_STORES:
-            self._backend = 'h5py'  # the only backend allowed currently, so we default to it
-
-        self._open_store: Optional['_DatasetStoreAdaptor'] = None
-        self._symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
-        self._numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
-
-        # "storename" are the names of properties in the store file, and
-        # "aliases" are the names users see when manipulating
+        self._backend = infer_backend(store_location) if backend is None else backend
         self._property_aliases = dict() if property_aliases is None else property_aliases
+        self._store = StoreAdaptorFactory(store_location, self._backend)
 
-        # group_sizes and properties are needed as internal cache
-        # variables, this cache is updated if something in the dataset changes
         if create:
-            # Create the file, since there is nothing in it homogeneous
-            # properties and standard format are assumed. Default grouping is
-            # "by formula"
-            open(self._store_location, 'x').close()
+            # Create the file, since there is nothing in it it will have
+            # standard format
+            if grouping not in ['by_formula', 'by_num_atoms']:
+                raise ValueError('invalid grouping')
+            self._store.make_empty(grouping)
             self._has_standard_format = True
-            self._set_grouping('by_formula' if grouping is None else grouping)
         else:
-            # In general all supported properties of the dataset should be
-            # equal for all groups, this is not a problem for tabular
-            # databases but it can be an issue for HDF5. We check that this is
-            # the case inside the first call of _update_internal_cache, only if
-            # it isn't then we raise an error.
-            if not self._store_location.is_file():
-                raise FileNotFoundError(f"The h5 file in {self._store_location.as_posix()} could not be found")
-            with ExitStack() as stack:
-                self._has_standard_format = self._get_open_store(stack, 'r').quick_standard_format_check()
-            self._set_grouping(self.grouping if grouping is None else grouping)
+            self._store.validate_location()
+            if grouping != 'by_formula':
+                raise ValueError("Can't specify grouping for an already existing dataset")
+            if self.grouping not in ['by_formula', 'by_num_atoms', 'legacy']:
+                raise ValueError(f'Reading a dataset with unsupported grouping {self.grouping}')
+            if self.grouping == 'legacy':
+                self._has_standard_format = self._store.quick_standard_format_check()
+                self._possible_nonbatch_properties = {'species', 'numbers'}
+            else:
+                self._has_standard_format = True
+            # In general properties of the dataset should be equal for all
+            # groups, this can be an issue for HDF5. We check this in the first
+            # call of _update_internal_cache, if it isn't we raise an exception
             self._update_internal_cache(check_properties=True, verbose=verbose)
 
     @contextmanager
@@ -345,27 +337,24 @@ class _ANISubdataset(_ANIDatasetBase):
                 print(c)
                 ... etc
         """
-        self._open_store = StoreAdaptorFactory(self._store_location, mode, self._backend, self._property_aliases)
+        self._store.open(mode, self._property_aliases)
         try:
             yield self
         finally:
-            assert self._open_store is not None
-            self._open_store.close()
-            self._open_store = None
+            self._store.close()
 
     # This trick makes methods fetch the open file directly
     # if they are being called from inside a "keep_open" context
-    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_DatasetStoreAdaptor':
-        if self._open_store is None:
-            store = StoreAdaptorFactory(self._store_location, mode, self._backend, self._property_aliases)
-            return stack.enter_context(store)
-        else:
-            current_mode = self._open_store.mode
-            assert mode in ['r+', 'r'], f"Unsupported mode {mode}"
-            if mode == 'r+' and current_mode == 'r':
-                raise RuntimeError('Tried to open a file with mode "r+" but the dataset is'
-                                   ' currently keeping its store file open with mode "r"')
-            return self._open_store
+    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_StoreAdaptor':
+        if mode not in ['r+', 'r']:
+            raise ValueError(f"Unsupported mode {mode}")
+
+        if self._store.is_open:
+            if mode == 'r+' and self._store.mode == 'r':
+                raise RuntimeError('Tried to open a store with mode "r+" but the dataset is'
+                                   ' currently keeping its store open with mode "r"')
+            return self._store
+        return stack.enter_context(self._store.open(mode, self._property_aliases))
 
     def _update_internal_cache(self, check_properties: bool = False, verbose: bool = True) -> None:
         with ExitStack() as stack:
@@ -389,13 +378,17 @@ class _ANISubdataset(_ANIDatasetBase):
         return str_
 
     def present_species(self) -> Tuple[str, ...]:
-        r"""Get an ordered tuple with all species present in the dataset"""
+        r"""Get an ordered tuple with all species present in the dataset
+
+        Tuple is ordered alphabetically
+        raises ValueError if neither 'species' or 'numbers' properties are present
+        """
         if 'species' in self.properties:
             element_key = 'species'
             parser = lambda s: set(s['species'].ravel())  # noqa E731
         elif 'numbers' in self.properties:
             element_key = 'numbers'
-            parser = lambda s: set(self._numbers_to_symbols(s['numbers']).ravel())  # noqa E731
+            parser = lambda s: set(_numbers_to_symbols(s['numbers']).ravel())  # noqa E731
         else:
             raise ValueError('"species" or "numbers" must be present to parse symbols')
         present_species: Set[str] = set()
@@ -424,7 +417,7 @@ class _ANISubdataset(_ANIDatasetBase):
         conformers = {k: torch.tensor(numpy_conformers[k]) for k in requested_properties.difference({'species', '_id'})}
 
         if 'species' in requested_properties:
-            species = self._symbols_to_numbers(numpy_conformers['species'])
+            species = _symbols_to_numbers(numpy_conformers['species'])
             conformers.update({'species': torch.from_numpy(species)})
         return conformers
 
@@ -479,7 +472,7 @@ class _ANISubdataset(_ANIDatasetBase):
         if 'species' in self.properties:
             if (conformers['species'] <= 0).any():
                 raise ValueError('Species are atomic numbers, must be positive')
-            species = self._numbers_to_symbols(conformers['species'].detach().cpu().numpy())
+            species = _numbers_to_symbols(conformers['species'].detach().cpu().numpy())
             numpy_conformers.update({'species': species})
 
         return self.append_numpy_conformers(group_name, numpy_conformers)
@@ -536,11 +529,11 @@ class _ANISubdataset(_ANIDatasetBase):
     def _get_conformer_formulas(self, conformers: MaybeNumpyConformers) -> List[str]:
         if 'species' in conformers.keys():
             if isinstance(conformers['species'], Tensor):
-                symbols = self._numbers_to_symbols(conformers['species'].detach().cpu().numpy())
+                symbols = _numbers_to_symbols(conformers['species'].detach().cpu().numpy())
             else:
                 symbols = conformers['species']
         elif 'numbers' in conformers.keys():
-            symbols = self._numbers_to_symbols(conformers['numbers'])
+            symbols = _numbers_to_symbols(conformers['numbers'])
         else:
             raise ValueError("Either species or numbers must be present to parse formulas")
 
@@ -577,7 +570,7 @@ class _ANISubdataset(_ANIDatasetBase):
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
-                symbols = self._numbers_to_symbols(f[group_name][source_key])
+                symbols = _numbers_to_symbols(f[group_name][source_key])
                 f[group_name].create_numpy_values({dest_key: symbols})
         return self
 
@@ -589,7 +582,7 @@ class _ANISubdataset(_ANIDatasetBase):
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
-                numbers = self._symbols_to_numbers(f[group_name][source_key].astype(str))
+                numbers = _symbols_to_numbers(f[group_name][source_key].astype(str))
                 f[group_name].create_numpy_values({dest_key: numbers})
         return self
 
@@ -613,18 +606,16 @@ class _ANISubdataset(_ANIDatasetBase):
                 f[group_name].create_numpy_values({dest_key: data})
         return self
 
-    def _make_empty_temporary_copy(self, grouping: Optional[str] = None) -> '_ANISubdataset':
-        new_ds = _ANISubdataset(self._store_location.parent.joinpath('tmp_dataset.h5'),
+    def _make_empty_temporary_copy(self, grouping: Optional[str] = None, backend: Optional[str] = None) -> '_ANISubdataset':
+        backend = backend if backend is not None else self._backend
+        grouping = grouping if grouping is not None else self.grouping
+        new_ds = _ANISubdataset(get_temporary_location(backend),
                                 create=True,
-                                grouping=grouping if grouping is not None else self.grouping,
+                                backend=backend,
+                                grouping=grouping,
                                 property_aliases=self._property_aliases,
                                 verbose=False)
         return new_ds
-
-    def _move_store_location_to_dataset(self, other_dataset: '_ANISubdataset') -> None:
-        self._store_location.unlink()
-        shutil.move(other_dataset._store_location.as_posix(), self._store_location.as_posix())
-        other_dataset._store_location = self._store_location
 
     @_needs_cache_update
     def repack(self, *, verbose: bool = True) -> '_ANISubdataset':
@@ -647,9 +638,8 @@ class _ANISubdataset(_ANIDatasetBase):
             # mypy doesn't know that @wrap'ed functions have __wrapped__
             # attribute, and fixing this is ugly
             new_ds.append_numpy_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
-        self._move_store_location_to_dataset(new_ds)
-        self = new_ds
-        return self
+        self._store.transfer_location_to(new_ds._store)
+        return new_ds
 
     @_needs_cache_update
     def regroup_by_formula(self, *, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
@@ -675,12 +665,11 @@ class _ANISubdataset(_ANIDatasetBase):
             for formula, idx in zip(unique_formulas, formula_idxs):
                 selected_conformers = {k: v[idx] for k, v in conformers.items()}
                 new_ds.append_numpy_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
-        self._move_store_location_to_dataset(new_ds)
-        self = new_ds
+        self._store.transfer_location_to(new_ds._store)
         if repack:
-            self._update_internal_cache()
-            return self.repack.__wrapped__(self, verbose=verbose)  # type: ignore
-        return self
+            new_ds._update_internal_cache()
+            return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
+        return new_ds
 
     @_needs_cache_update
     def regroup_by_num_atoms(self, *, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
@@ -698,12 +687,11 @@ class _ANISubdataset(_ANIDatasetBase):
                                            disable=not verbose):
             new_name = f'num_atoms_{_get_num_atoms(conformers)}'
             new_ds.append_numpy_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
-        self._move_store_location_to_dataset(new_ds)
-        self = new_ds
+        self._store.transfer_location_to(new_ds._store)
         if repack:
-            self._update_internal_cache()
-            return self.repack.__wrapped__(self, verbose=verbose)  # type: ignore
-        return self
+            new_ds._update_internal_cache()
+            return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
+        return new_ds
 
     @_needs_cache_update
     def delete_properties(self, properties: Sequence[str], *, verbose: bool = True) -> '_ANISubdataset':
@@ -725,7 +713,7 @@ class _ANISubdataset(_ANIDatasetBase):
     def rename_properties(self, old_new_dict: Dict[str, str]) -> '_ANISubdataset':
         r"""Rename some properties from the dataset
 
-        Expects a dictionary ofthe form: {old_name: new_name}
+        Expects a dictionary of the form: {old_name: new_name}
         """
         # This can generate some counterintuitive results if the values are
         # aliases (renaming can be a no-op in this case) so we disallow it
@@ -755,28 +743,12 @@ class _ANISubdataset(_ANIDatasetBase):
     def grouping(self) -> str:
         r"""Get the dataset grouping
 
-        One of 'by_formula', 'by_num_atoms' or an empty string for unspecified
-        grouping
+        Grouping is a string that describes how conformers are grouped in
+        hierarchical datasets. Can be one of 'by_formula', 'by_num_atoms', 'legacy'.
         """
         with ExitStack() as stack:
-            # NOTE: r+ is needed due to HDF5 which disallows opening empty
-            # files with r
-            f = self._get_open_store(stack, 'r+')
-            data = f.grouping
-        return data
-
-    def _set_grouping(self, grouping: str) -> None:
-        with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r+')
-            f._set_grouping(grouping)
-
-        if grouping in ['by_formula', 'by_num_atoms']:
-            self._has_standard_format = True
-            self._possible_nonbatch_properties = set()
-        else:
-            # other groupings are assumed to be "legacy", i.e. to have nonbatch
-            # keys
-            self._possible_nonbatch_properties = {'species', 'numbers'}
+            grouping = self._get_open_store(stack, 'r').grouping
+        return grouping
 
     def _check_properties_are_present(self, requested_properties: Iterable[str], raise_: bool = True) -> None:
         if isinstance(requested_properties, str):
@@ -814,7 +786,7 @@ def _delegate(method: Callable[..., 'ANIDataset']) -> Callable[..., 'ANIDataset'
     @wraps(method)
     def delegated_method_call(self: 'ANIDataset', group_name: str, *args, **kwargs) -> 'ANIDataset':
         name, k = self._parse_key(group_name)
-        getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
+        self._datasets[name] = getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
         return self._update_internal_cache()
     delegated_method_call.__doc__ = getattr(_ANISubdataset, method.__name__).__doc__
     return delegated_method_call

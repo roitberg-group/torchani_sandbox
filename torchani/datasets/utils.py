@@ -23,7 +23,7 @@ def concatenate(source: ANIDataset,
     r"""Combine all the backing stores in a given ANIDataset into one"""
     if source.grouping not in ['by_formula', 'by_num_atoms']:
         raise ValueError("Please regroup your dataset before concatenating")
-    source_paths = [sub_ds._store_location for sub_ds in source._datasets.values()]
+    source_paths = [sub_ds._store.location for sub_ds in source._datasets.values()]
     dest_path = Path(dest_path).resolve()
 
     if dest_path.exists():

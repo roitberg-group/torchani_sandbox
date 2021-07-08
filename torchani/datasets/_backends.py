@@ -1,4 +1,6 @@
 import warnings
+import uuid
+import shutil
 from pathlib import Path
 from functools import partial
 from abc import ABC, abstractmethod
@@ -7,8 +9,9 @@ from collections import OrderedDict
 
 import numpy as np
 
-from ._annotations import NumpyConformers
+from ._annotations import NumpyConformers, PathLike
 from ..utils import tqdm
+
 
 try:
     import h5py
@@ -22,11 +25,18 @@ except ImportError:
     _H5PY_AVAILABLE = False
 
 
-def StoreAdaptorFactory(store_location: Path, mode: str, backend: str, property_alias: Optional[Dict[str, str]] = None) -> '_DatasetStoreAdaptor':
+def infer_backend(store_location: PathLike) -> str:
+    if Path(store_location).resolve().suffix == '.h5':
+        return 'h5py'
+    else:
+        raise RuntimeError("Backend could not be infered from store location")
+
+
+def StoreAdaptorFactory(store_location: PathLike, backend: str) -> '_StoreAdaptor':
     if backend == 'h5py':
         if not _H5PY_AVAILABLE:
             raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
-        return _H5DatasetStoreAdaptor(h5py.File(store_location, mode), property_alias)
+        return _H5StoreAdaptor(store_location)
     else:
         raise RuntimeError(f"Bad backend {backend}")
 
@@ -38,7 +48,16 @@ class CacheHolder:
         self.has_standard_format = has_standard_format
 
 
-# ConformerGroupAdaptor and DatasetStoreAdaptor are abstract classes from which
+def get_temporary_location(backend: str) -> str:
+    if backend == 'h5py':
+        # uuid4 gives a random string
+        tmp_location = Path('/tmp').resolve() / f'tmp_{uuid.uuid4()}.h5'
+        return tmp_location.as_posix()
+    else:
+        raise ValueError(f"Bad backend {backend}")
+
+
+# ConformerGroupAdaptor and StoreAdaptor are abstract classes from which
 # all backends should inherit in order to correctly interact with ANIDataset.
 # adding support for a new backend can be done just by coding these two classes and
 # adding the support for the backend inside StoreAdaptorFactory
@@ -72,17 +91,40 @@ class _ConformerGroupAdaptor(Mapping[str, np.ndarray], ABC):
     def __delitem__(self, k: str) -> None: pass  # noqa E704
 
 
-class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, '_ConformerGroupAdaptor'], ABC):
+class _StoreAdaptor(ContextManager['_StoreAdaptor'], Mapping[str, '_ConformerGroupAdaptor'], ABC):
 
     def __init__(self, *args, **kwargs) -> None:
         pass
 
     @abstractmethod
-    def _set_grouping(self, grouping: str) -> None: pass  # noqa E704
+    def transfer_location_to(self, other_store: '_StoreAdaptor') -> None: pass  # noqa E704
+
+    @abstractmethod
+    def validate_location(self) -> None: pass  # noqa E704
+
+    @abstractmethod
+    def make_empty(self, grouping: str) -> None: pass  # noqa E704
+
+    @property
+    @abstractmethod
+    def location(self) -> str: pass  # noqa E704
+
+    @abstractmethod
+    def _set_location(self, value: str) -> None: pass  # noqa E704
 
     @property
     @abstractmethod
     def mode(self) -> str: pass # noqa E704
+
+    @property
+    @abstractmethod
+    def is_open(self) -> bool: pass # noqa E704
+
+    @abstractmethod
+    def close(self) -> '_StoreAdaptor': pass # noqa E704
+
+    @abstractmethod
+    def open(self, mode: str = 'r', property_alias: Optional[Dict[str, str]] = None) -> '_StoreAdaptor': pass # noqa E704
 
     @property
     @abstractmethod
@@ -96,9 +138,6 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
 
     @abstractmethod
     def create_conformer_group(self, name: str) -> '_ConformerGroupAdaptor': pass # noqa E704
-
-    @abstractmethod
-    def close(self) -> None: pass # noqa E704
 
     def update_cache(self,
                      has_standard_format: bool,
@@ -127,18 +166,77 @@ class _DatasetStoreAdaptor(ContextManager['_DatasetStoreAdaptor'], Mapping[str, 
 
 
 # Backend Specific code starts here
-class _H5DatasetStoreAdaptor(_DatasetStoreAdaptor):
-    def __init__(self, store_obj: h5py.File, property_aliases: Optional[Dict[str, str]] = None):
-        self._store_obj = store_obj
+class _H5StoreAdaptor(_StoreAdaptor):
+    def __init__(self, store_location: PathLike):
+        self._store_location = Path(store_location).resolve()
+        self._alias_to_storename: Dict[str, str] = dict()
+        self._storename_to_alias: Dict[str, str] = dict()
+        self._store_obj = None
+
+    def validate_location(self) -> None:
+        if not self._store_location.is_file():
+            raise FileNotFoundError(f"The h5 file in {self._store_location} could not be found")
+
+    def transfer_location_to(self, other_store: '_StoreAdaptor') -> None:
+        self._store_location.unlink()
+        other_store._set_location(self.location)
+
+    @property
+    def location(self) -> str:
+        return self._store_location.as_posix()
+
+    def _set_location(self, value: str) -> None:
+        # pathlib.rename() may fail if src and dst are in different mounts
+        shutil.move(self.location, value)
+        self._store_location = Path(value).resolve()
+
+    def make_empty(self, grouping: str) -> None:
+        with h5py.File(self._store_location, 'x') as f:
+            f.attrs['grouping'] = grouping
+
+    def open(self, mode: str = 'r', property_aliases: Optional[Dict[str, str]] = None) -> '_StoreAdaptor':
         self._storename_to_alias = dict() if property_aliases is None else property_aliases
         self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
+        self._store_obj = h5py.File(self._store_location, mode)
+        return self
+
+    def close(self) -> '_StoreAdaptor':
+        self._storename_to_alias = dict()
+        self._alias_to_storename = dict()
+        self._store.close()
+        self._store_obj = None
+        return self
+
+    @property
+    def _store(self) -> h5py.File:
+        if self._store_obj is None:
+            raise RuntimeError("Can't access store")
+        return self._store_obj
+
+    @property
+    def is_open(self) -> bool:
+        try:
+            self._store
+        except RuntimeError:
+            return False
+        return True
+
+    def __enter__(self) -> '_H5StoreAdaptor':
+        self._store.__enter__()
+        return self
+
+    def __exit__(self, *args, **kwargs) -> None:
+        self._storename_to_alias = dict()
+        self._alias_to_storename = dict()
+        self._store.__exit__(*args, **kwargs)
+        self._store_obj = None
 
     # This is much faster (x30) than a visitor function but it assumes the
     # format is somewhat standard which means that all Groups have depth 1, and
     # all Datasets have depth 2. A pbar is not needed here since this is
     # extremely fast
     def _update_cache_standard(self, cache: CacheHolder, check_properties: bool) -> None:
-        for k, g in self._store_obj.items():
+        for k, g in self._store.items():
             if g.name in ['/_created', '/_meta']:
                 continue
             self._update_properties_cache(cache, g, check_properties)
@@ -147,7 +245,7 @@ class _H5DatasetStoreAdaptor(_DatasetStoreAdaptor):
     def _update_cache_nonstandard(self, cache: CacheHolder, check_properties: bool, verbose: bool) -> None:
         def visitor_fn(name: str,
                        object_: Union[h5py.Dataset, h5py.Group],
-                       store: '_H5DatasetStoreAdaptor',
+                       store: '_H5StoreAdaptor',
                        cache: CacheHolder,
                        check_properties: bool,
                        pbar: Any) -> None:
@@ -173,7 +271,7 @@ class _H5DatasetStoreAdaptor(_DatasetStoreAdaptor):
             store._update_groups_cache(cache, g)
 
         with tqdm(desc='Verifying format correctness', disable=not verbose) as pbar:
-            self._store_obj.visititems(partial(visitor_fn,
+            self._store.visititems(partial(visitor_fn,
                                                store=self,
                                                cache=cache,
                                                pbar=pbar,
@@ -205,59 +303,49 @@ class _H5DatasetStoreAdaptor(_DatasetStoreAdaptor):
             raise RuntimeError('To infer conformer size need one of "coordinates", "coord", "energies"')
         cache.group_sizes.update({group.name[1:]: group[any_key].shape[0]})
 
-    def _set_grouping(self, grouping: str) -> None:
-        self._store_obj.attrs['grouping'] = grouping
-
     # Check if the raw hdf5 file has the '/_created' dataset if this is the
     # case then it can be assumed to have standard format. All other h5
     # files are assumed to **not** have standard format.
     def quick_standard_format_check(self) -> bool:
         try:
-            self._store_obj['/_created']
-            return True
+            with self.open():
+                self._store['/_created']
+                return True
         except KeyError:
             return False
 
     @property
     def mode(self) -> str:
-        mode = self._store_obj.mode
+        mode = self._store.mode
         assert isinstance(mode, str)
         return mode
 
     @property
     def grouping(self) -> str:
         try:
-            data = self._store_obj.attrs['grouping']
+            g = self._store.attrs['grouping']
         except (KeyError, OSError):
-            data = ''
-        assert isinstance(data, str)
-        return data
+            g = 'legacy'
+        assert isinstance(g, str)
+        if g == '':
+            breakpoint()
+        return g
 
     def __delitem__(self, k: str) -> None:
-        del self._store_obj[k]
+        del self._store[k]
 
     def create_conformer_group(self, name: str) -> '_H5ConformerGroupAdaptor':
-        self._store_obj.create_group(name)
+        self._store.create_group(name)
         return self[name]
 
-    def close(self) -> None:
-        self._store_obj.close()
-
-    def __enter__(self) -> '_H5DatasetStoreAdaptor':
-        self._store_obj.__enter__()
-        return self
-
-    def __exit__(self, *args) -> None:
-        self._store_obj.__exit__(*args)
-
     def __getitem__(self, name: str) -> '_H5ConformerGroupAdaptor':
-        return _H5ConformerGroupAdaptor(self._store_obj[name], self._storename_to_alias)
+        return _H5ConformerGroupAdaptor(self._store[name], self._storename_to_alias)
 
     def __len__(self) -> int:
-        return len(self._store_obj)
+        return len(self._store)
 
     def __iter__(self) -> Iterator[str]:
-        return iter(self._store_obj)
+        return iter(self._store)
 
 
 class _H5ConformerGroupAdaptor(_ConformerGroupAdaptor):

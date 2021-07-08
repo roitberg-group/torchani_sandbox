@@ -406,8 +406,8 @@ class TestANIDataset(TestCase):
         # these are "tf_one_group" and "tf_three_groups"
         self.tmp_path = Path('./tmp_h5_dataset').resolve()
         self.tmp_path.mkdir(exist_ok=True)
-        self.tf_one_group = tempfile.NamedTemporaryFile()
-        self.tf_three_groups = tempfile.NamedTemporaryFile()
+        self.tf_one_group = tempfile.NamedTemporaryFile(suffix='.h5')
+        self.tf_three_groups = tempfile.NamedTemporaryFile(suffix='.h5')
         self.rng = np.random.default_rng(12345)
         self.num_conformers1 = 7
 
