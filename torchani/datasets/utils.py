@@ -1,5 +1,4 @@
 r"""Utilities for working with ANI Datasets"""
-from pathlib import Path
 from torch import Tensor
 from typing import List, Tuple, Optional, Sequence
 
@@ -17,21 +16,14 @@ __all__ = ['filter_by_high_force', 'filter_by_high_energy_error', 'concatenate']
 
 
 def concatenate(source: ANIDataset,
-                       dest_path: PathLike, *,
-                       verbose: bool = True,
-                       delete_originals: bool = False) -> ANIDataset:
+                dest_location: PathLike, *,
+                verbose: bool = True,
+                delete_originals: bool = False) -> ANIDataset:
     r"""Combine all the backing stores in a given ANIDataset into one"""
     if source.grouping not in ['by_formula', 'by_num_atoms']:
         raise ValueError("Please regroup your dataset before concatenating")
-    source_paths = [sub_ds._store.location for sub_ds in source._datasets.values()]
-    dest_path = Path(dest_path).resolve()
 
-    if dest_path.exists():
-        raise ValueError('Destination path must be a new file name')
-    if not source._num_subds > 1:
-        raise ValueError("Need more than one subdataset to concatenate")
-
-    dest = ANIDataset(dest_path,
+    dest = ANIDataset(dest_location,
                       create=True,
                       grouping=source.grouping,
                       property_aliases=source._first_subds._property_aliases,
@@ -44,9 +36,10 @@ def concatenate(source: ANIDataset,
         dest.append_numpy_conformers(k.split('/')[-1], v)
 
     if delete_originals:
-        for p in tqdm(source_paths,
+        source_locations = source.store_locations
+        for p in tqdm(source_locations,
                       desc='Deleting original store',
-                      total=len(source_paths),
+                      total=len(source_locations),
                       disable=not verbose):
             p.unlink()
     return dest

@@ -99,7 +99,7 @@ def create_batched_dataset(h5_path: Union[PathLike, ANIDataset],
 
     # log creation data
     creation_log = {'datetime_created': str(datetime.datetime.now()),
-                    'source_path': [p.as_posix() for p in dataset._store_paths],
+                    'source_store_locations': dataset.store_locations,
                     'splits': splits,
                     'folds': folds,
                     'padding': PADDING if padding is None else padding,

@@ -3,6 +3,7 @@ from typing import (Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set,
 import inspect
 import json
 import re
+import types
 import pickle
 import warnings
 from copy import deepcopy
@@ -229,7 +230,7 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
         raise NotImplementedError
 
     def __getitem__(self, key: str) -> Conformers:
-        return self.get_conformers(key)
+        return getattr(self, 'get_conformers')(key)
 
     def __len__(self) -> int:
         return self.num_conformer_groups
@@ -237,29 +238,17 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
     def __iter__(self) -> Iterator[str]:
         return iter(self.group_sizes.keys())
 
-    def get_conformers(self,
-                       group_name: str,
-                       idx: Optional[Tensor] = None, *,
-                       properties: Optional[Iterable[str]] = None) -> Conformers:
-        raise NotImplementedError
-
-    def get_numpy_conformers(self,
-                             group_name: str,
-                             idx: Optional[Tensor] = None, *,
-                             properties: Optional[Iterable[str]] = None) -> NumpyConformers:
-        raise NotImplementedError
-
     def numpy_items(self, **kwargs) -> Iterator[Tuple[str, NumpyConformers]]:
         for group_name in self.keys():
-            yield group_name, self.get_numpy_conformers(group_name, **kwargs)
+            yield group_name, getattr(self, 'get_numpy_conformers')(group_name, **kwargs)
 
     def numpy_values(self, **kwargs) -> Iterator[NumpyConformers]:
         for group_name in self.keys():
-            yield self.get_numpy_conformers(group_name, **kwargs)
+            yield getattr(self, 'get_numpy_conformers')(group_name, **kwargs)
 
     def iter_key_idx_conformers(self, **kwargs) -> Iterator[Tuple[str, int, Conformers]]:
         for k, size in self.group_sizes.items():
-            conformers = self.get_conformers(k, **kwargs)
+            conformers = getattr(self, 'get_conformers')(k, **kwargs)
             for idx in range(size):
                 single_conformer = {k: conformers[k][idx] for k in conformers.keys()}
                 yield k, idx, single_conformer
@@ -767,42 +756,6 @@ class _ANISubdataset(_ANIDatasetBase):
                              f" in the dataset, which has properties {self.properties}, but they should not be")
 
 
-# Decorators for ANIDataset
-# Decorator that wraps functions from ANIDataset that should be
-# delegated to all of its "_ANISubdataset" members in a loop.
-def _broadcast(method: Callable[..., 'ANIDataset']) -> Callable[..., 'ANIDataset']:
-    @wraps(method)
-    def delegated_method_call(self: 'ANIDataset', *args, **kwargs) -> 'ANIDataset':
-        for name in self._datasets.keys():
-            self._datasets[name] = getattr(self._datasets[name], method.__name__)(*args, **kwargs)
-        return self._update_internal_cache()
-    delegated_method_call.__doc__ = getattr(_ANISubdataset, method.__name__).__doc__
-    return delegated_method_call
-
-
-# Decorator that wraps functions from ANIDataset that should be
-# delegated to one of its "_ANISubdataset" members,
-def _delegate(method: Callable[..., 'ANIDataset']) -> Callable[..., 'ANIDataset']:
-    @wraps(method)
-    def delegated_method_call(self: 'ANIDataset', group_name: str, *args, **kwargs) -> 'ANIDataset':
-        name, k = self._parse_key(group_name)
-        self._datasets[name] = getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
-        return self._update_internal_cache()
-    delegated_method_call.__doc__ = getattr(_ANISubdataset, method.__name__).__doc__
-    return delegated_method_call
-
-
-# Decorator that wraps functions from ANIDataset that should be
-# delegated to one of its "_ANISubdataset" members.
-def _delegate_with_return(method: Callable[..., _T]) -> Callable[..., _T]:
-    @wraps(method)
-    def delegated_method_call(self: 'ANIDataset', group_name: str, *args, **kwargs) -> Any:
-        name, k = self._parse_key(group_name)
-        return getattr(self._datasets[name], method.__name__)(k, *args, **kwargs)
-    delegated_method_call.__doc__ = getattr(_ANISubdataset, method.__name__).__doc__
-    return delegated_method_call
-
-
 # ANIDataset implementation detail:
 #
 # ANIDataset is a mapping, The mapping has keys "group_names" or "names" and
@@ -856,9 +809,7 @@ def _delegate_with_return(method: Callable[..., _T]) -> Callable[..., _T]:
 #     then this will be delegated to the "ANI1x" subdataset.
 # 2 - broadcasted to all subdatasets: If you want to rename a property or
 #     delete a property it will be deleted / renamed in all subdatasets.
-#
-# This mechanism is currently achieved by decorating dummy methods but there
-# may be some more elegant way.
+# The mechanism for delegation involves overriding getattr.
 #
 # ContextManager usage:
 # ----------------
@@ -874,7 +825,7 @@ class ANIDataset(_ANIDatasetBase):
     r"""Dataset that supports multiple stores and manages them as one single entity.
 
     Datasets have a "grouping" for the different conformers, which can be
-    "by_formula", "by_num_atoms", or an empty string (legacy grouping).
+    "by_formula", "by_num_atoms", "legacy".
     Regrouping to one of the standard groupings can be done using
     'regroup_by_formula' or 'regroup_by_num_atoms'.
 
@@ -886,88 +837,34 @@ class ANIDataset(_ANIDatasetBase):
     the batch dimension). Property manipulation (renaming, deleting, adding)
     is also supported.
     """
-    def __init__(self, dataset_paths: Union[PathLike, PathLikeODict, Sequence[PathLike]], **kwargs):
+    def __init__(self, locations: Union[PathLike, PathLikeODict, Iterable[PathLike]], **kwargs):
         super().__init__()
 
         # _datasets is an ordereddict {name: _ANISubdataset}.
         # This logic parses dataset_paths in order to obtain the arguments to
         # build this ordereddict.
-        # - If a path to a dir is passed then all h5 files in the dir are used
+        # - If a path to a dir is passed and the backend is h5py then
+        #   all h5 files in the dir are used
         # - If a path to a file is passed then that file is used
         # - If an ordereddict is passed it is used directly
         # If an ordereddict is not passed then names are just numbers as str
-        self._store_paths: List[Path]
-
-        if isinstance(dataset_paths, (Path, str)):
-            dataset_paths = Path(dataset_paths).resolve()
-            if dataset_paths.is_dir():
-                self._store_paths = sorted([p for p in dataset_paths.iterdir() if p.suffix == '.h5'])
+        if isinstance(locations, (Path, str)):
+            # TODO: for now this is hardcoded for h5py but it can be done more generally
+            locations_aspath = Path(locations).resolve()
+            if locations_aspath.is_dir() and kwargs['backend'] == 'h5py':
+                locations = sorted([p for p in locations_aspath.iterdir() if p.suffix == '.h5'])
             else:
-                self._store_paths = [Path(dataset_paths).resolve()]
-            od = [(str(j), _ANISubdataset(v, **kwargs)) for j, v in enumerate(self._store_paths)]
-        elif isinstance(dataset_paths, OrderedDict):
-            self._store_paths = [Path(p).resolve() for p in dataset_paths.values()]
-            od = [(k, _ANISubdataset(v, **kwargs)) for k, v in dataset_paths.items()]
+                locations = [locations]
+        if isinstance(locations, OrderedDict):
+            self._datasets = OrderedDict((k, _ANISubdataset(v, **kwargs)) for k, v in locations.items())
         else:
-            self._store_paths = [Path(p).resolve() for p in dataset_paths]
-            od = [(str(j), _ANISubdataset(v, **kwargs)) for j, v in enumerate(self._store_paths)]
+            self._datasets = OrderedDict((str(j), _ANISubdataset(loc, **kwargs)) for j, loc in enumerate(locations))
 
-        self._datasets = OrderedDict(od)
-        self._num_subds = len(self._datasets)
-
-        # save pointer to the first subds as attr, useful for code clarity
-        self._first_name, self._first_subds = next(iter(self._datasets.items()))
         self._update_internal_cache()
-
-    # conformer getters/setters/deleters
-    @_delegate_with_return
-    def get_conformers(self, key: str, **kwargs) -> Conformers: ...  # noqa E704
-
-    @_delegate_with_return
-    def get_numpy_conformers(self, key: str, **kwargs) -> NumpyConformers: ...  # noqa E704
-
-    @_delegate
-    def append_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_delegate
-    def append_numpy_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_delegate
-    def delete_conformers(self, group_name: str, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    # regrouping
-    @_broadcast
-    def regroup_by_formula(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def regroup_by_num_atoms(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
 
     @property
     def grouping(self) -> str:
         return self._first_subds.grouping
-
-    # property manipulation ("columnwise" in tabular ds, "datasets" in h5py)
-    @_broadcast
-    def create_species_from_numbers(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def create_numbers_from_species(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def create_full_scalar_property(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def delete_properties(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def rename_properties(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    @_broadcast
-    def set_aliases(self, *args, **kwargs) -> 'ANIDataset': ...  # noqa E704
-
-    # Other utilities
-    @_broadcast
-    def repack(self, *args, **kwargs) -> 'ANIDataset': ... # noqa E704
 
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['ANIDataset']:
@@ -980,35 +877,71 @@ class ANIDataset(_ANIDatasetBase):
         present_species = {s for ds in self._datasets.values() for s in ds.present_species()}
         return tuple(sorted(present_species))
 
+    @property
+    def store_locations(self) -> Tuple[str, ...]:
+        return tuple(ds._store.location for ds in self._datasets.values())
+
+    @property
+    def num_stores(self) -> int:
+        return len(self._datasets)
+
+    def __getattr__(self, method: str) -> Callable:
+        # Mechanism for delegating calls to the correct _ANISubdatasets
+        unbound_method = getattr(_ANISubdataset, method)
+        assert isinstance(unbound_method, types.FunctionType)
+        type_hints = unbound_method.__annotations__
+        if 'group_name' in type_hints:
+            if type_hints['return'] == '_ANISubdataset':
+                @wraps(unbound_method)
+                def delegated_call(group_name: str, *args, **kwargs) -> 'ANIDataset':
+                    name, k = self._parse_key(group_name)
+                    self._datasets[name] = getattr(self._datasets[name], method)(k, *args, **kwargs)
+                    return self._update_internal_cache()
+            else:
+                @wraps(unbound_method)
+                def delegated_call(group_name: str, *args, **kwargs) -> Any:
+                    name, k = self._parse_key(group_name)
+                    return getattr(self._datasets[name], method)(k, *args, **kwargs)
+        else:
+            @wraps(unbound_method)
+            def delegated_call(*args, **kwargs) -> 'ANIDataset':
+                for name in self._datasets.keys():
+                    self._datasets[name] = getattr(self._datasets[name], method)(*args, **kwargs)
+                return self._update_internal_cache()
+        return delegated_call
+
+    @property
+    def _first_name(self):
+        return next(iter(self._datasets.keys()))
+
+    @property
+    def _first_subds(self):
+        return next(iter(self._datasets.values()))
+
     def __str__(self) -> str:
-        str_ = ''
-        for ds in self._datasets.values():
-            str_ += f'{ds}\n'
-        return str_
+        return '\n'.join(str(ds) for ds in self._datasets.values())
 
     def _update_internal_cache(self) -> 'ANIDataset':
-        if self._num_subds > 1:
-            od_args = [(f'{name}/{k}', v) for name, ds in self._datasets.items() for k, v in ds.group_sizes.items()]
-        else:
-            od_args = [(k, v) for ds in self._datasets.values() for k, v in ds.group_sizes.items()]
-        self.group_sizes = OrderedDict(od_args)
+        self.group_sizes = OrderedDict((k if self.num_stores == 1 else f'{name}/{k}', v)
+                                       for name, ds in self._datasets.items()
+                                       for k, v in ds.group_sizes.items())
         for name, ds in self._datasets.items():
             if not ds.grouping == self._first_subds.grouping:
-                raise ValueError("Datasets have incompatible groupings,"
-                                 f" got {self._first_subds.grouping} for {self._first_name}"
-                                 f" and {ds.grouping} for {name}")
+                raise RuntimeError("Datasets have incompatible groupings,"
+                                  f" got {self._first_subds.grouping} for {self._first_name}"
+                                  f" and {ds.grouping} for {name}")
 
             if not ds.properties == self._first_subds.properties:
-                raise ValueError('Supported properties are different for the'
-                                 ' component subdatasets, got'
-                                 f' {self._first_subds.properties} for {self._first_name}'
-                                 f' and {ds.properties} for {name}')
+                raise RuntimeError('Supported properties are different for the'
+                                   ' component subdatasets, got'
+                                  f' {self._first_subds.properties} for {self._first_name}'
+                                  f' and {ds.properties} for {name}')
         self._properties = self._first_subds.properties
         return self
 
     def _parse_key(self, key: str) -> Tuple[str, str]:
         tokens = key.split('/')
-        if self._num_subds > 1:
+        if self.num_stores > 1:
             return tokens[0], '/'.join(tokens[1:])
         else:
             return self._first_name, '/'.join(tokens)
