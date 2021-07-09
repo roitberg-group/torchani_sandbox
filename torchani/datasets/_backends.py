@@ -1,10 +1,11 @@
 import warnings
+from dataclasses import dataclass, field
 import uuid
 import shutil
 from pathlib import Path
 from functools import partial
 from abc import ABC, abstractmethod
-from typing import ContextManager, Iterator, Mapping, Optional, Dict, Any, Set, Tuple, Union
+from typing import ContextManager, Iterator, Mapping, Optional, Dict, Any, Set, Union, Tuple
 from collections import OrderedDict
 
 import numpy as np
@@ -41,11 +42,10 @@ def StoreAdaptorFactory(store_location: PathLike, backend: str) -> '_StoreAdapto
         raise RuntimeError(f"Bad backend {backend}")
 
 
+@dataclass
 class CacheHolder:
-    def __init__(self, group_sizes: 'OrderedDict[str, int]', properties: Set[str], has_standard_format: bool):
-        self.group_sizes = group_sizes
-        self.properties = properties
-        self.has_standard_format = has_standard_format
+    group_sizes: 'OrderedDict[str, int]' = field(default_factory=OrderedDict)
+    properties: Set[str] = field(default_factory=set)
 
 
 def get_temporary_location(backend: str) -> str:
@@ -131,37 +131,13 @@ class _StoreAdaptor(ContextManager['_StoreAdaptor'], Mapping[str, '_ConformerGro
     def grouping(self) -> str: pass # noqa E704
 
     @abstractmethod
-    def quick_standard_format_check(self) -> bool: pass # noqa E704
-
-    @abstractmethod
     def __delitem__(self, k: str) -> None: pass # noqa E704
 
     @abstractmethod
     def create_conformer_group(self, name: str) -> '_ConformerGroupAdaptor': pass # noqa E704
 
-    def update_cache(self,
-                     has_standard_format: bool,
-                     check_properties: bool = False,
-                     verbose: bool = True) -> Tuple['OrderedDict[str, int]', Set[str], bool]:
-        cache = CacheHolder(group_sizes=OrderedDict(),
-                            properties=set(),
-                            has_standard_format=has_standard_format)
-        if has_standard_format:
-            self._update_cache_standard(cache, check_properties)
-        else:
-            self._update_cache_nonstandard(cache, check_properties, verbose)
-        # By default iteration of HDF5 should be alphanumeric in which case
-        # sorting should not be necessary, this internal check ensures the
-        # groups were not created with 'track_order=True', and that the visitor
-        # function worked properly.
-        if list(cache.group_sizes) != sorted(cache.group_sizes):
-            raise RuntimeError("Groups were not iterated upon alphanumerically")
-        return cache.group_sizes, cache.properties, cache.has_standard_format
-
-    def _update_cache_nonstandard(self, cache: CacheHolder, check_properties: bool, verbose: bool) -> None:
-        pass
-
-    def _update_cache_standard(self, cache: CacheHolder, check_properties: bool) -> None:
+    @abstractmethod
+    def update_cache(self, check_properties: bool = False, verbose: bool = True) -> Tuple['OrderedDict[str, int]', Set[str]]:
         pass
 
 
@@ -172,6 +148,8 @@ class _H5StoreAdaptor(_StoreAdaptor):
         self._alias_to_storename: Dict[str, str] = dict()
         self._storename_to_alias: Dict[str, str] = dict()
         self._store_obj = None
+        self._has_standard_format = False
+        self._made_quick_check = False
 
     def validate_location(self) -> None:
         if not self._store_location.is_file():
@@ -191,6 +169,7 @@ class _H5StoreAdaptor(_StoreAdaptor):
         self._store_location = Path(value).resolve()
 
     def make_empty(self, grouping: str) -> None:
+        self._has_standard_format = True
         with h5py.File(self._store_location, 'x') as f:
             f.attrs['grouping'] = grouping
 
@@ -231,6 +210,27 @@ class _H5StoreAdaptor(_StoreAdaptor):
         self._store.__exit__(*args, **kwargs)
         self._store_obj = None
 
+    def update_cache(self,
+                     check_properties: bool = False,
+                     verbose: bool = True) -> Tuple['OrderedDict[str, int]', Set[str]]:
+        cache = CacheHolder()
+        # this check must only be performed once
+        if self.grouping == 'legacy' and not self._made_quick_check:
+            self._has_standard_format = self._quick_standard_format_check()
+            self._made_quick_check = True
+
+        if self._has_standard_format:
+            self._update_cache_standard(cache, check_properties)
+        else:
+            self._has_standard_format = self._update_cache_nonstandard(cache, check_properties, verbose)
+        # By default iteration of HDF5 should be alphanumeric in which case
+        # sorting should not be necessary, this internal check ensures the
+        # groups were not created with 'track_order=True', and that the visitor
+        # function worked properly.
+        if list(cache.group_sizes) != sorted(cache.group_sizes):
+            raise RuntimeError("Groups were not iterated upon alphanumerically")
+        return cache.group_sizes, cache.properties
+
     # This is much faster (x30) than a visitor function but it assumes the
     # format is somewhat standard which means that all Groups have depth 1, and
     # all Datasets have depth 2. A pbar is not needed here since this is
@@ -242,7 +242,7 @@ class _H5StoreAdaptor(_StoreAdaptor):
             self._update_properties_cache(cache, g, check_properties)
             self._update_groups_cache(cache, g)
 
-    def _update_cache_nonstandard(self, cache: CacheHolder, check_properties: bool, verbose: bool) -> None:
+    def _update_cache_nonstandard(self, cache: CacheHolder, check_properties: bool, verbose: bool) -> bool:
         def visitor_fn(name: str,
                        object_: Union[h5py.Dataset, h5py.Group],
                        store: '_H5StoreAdaptor',
@@ -278,7 +278,8 @@ class _H5StoreAdaptor(_StoreAdaptor):
                                                check_properties=check_properties))
         # If the visitor function succeeded and this condition is met the
         # dataset must be in standard format
-        cache.has_standard_format = not any('/' in k[1:] for k in cache.group_sizes.keys())
+        has_standard_format = not any('/' in k[1:] for k in cache.group_sizes.keys())
+        return has_standard_format
 
     # Updates the "_properties", variables. "_nonbatch_properties" are keys
     # that don't have a batch dimension, their shape must be (atoms,), they
@@ -306,11 +307,10 @@ class _H5StoreAdaptor(_StoreAdaptor):
     # Check if the raw hdf5 file has the '/_created' dataset if this is the
     # case then it can be assumed to have standard format. All other h5
     # files are assumed to **not** have standard format.
-    def quick_standard_format_check(self) -> bool:
+    def _quick_standard_format_check(self) -> bool:
         try:
-            with self.open():
-                self._store['/_created']
-                return True
+            self._store['/_created']
+            return True
         except KeyError:
             return False
 

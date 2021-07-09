@@ -189,41 +189,28 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
 class _ANIDatasetBase(Mapping[str, Conformers]):
 
     def __init__(self, *args, **kwargs) -> None:
-        # "properties" is read only persistent attribute needed for validation
-        # of inputs, it may change if a property is renamed or deleted, and it
-        # is and backed by _properties.  The variables _batch_properties,
-        # _nonbatch_properties, num_conformers and num_conformer_groups are all
-        # calculated on the fly to guarantee synchronization with "properties".
-        # nonbatch and batch properties distinction is needed due to the legacy
-        # format having some properties with no "batch" dimension
-        self.group_sizes: 'OrderedDict[str, int]' = OrderedDict()
+        # "properties" is read only, needed for validation of inputs, it may
+        # change if a property is renamed or deleted. num_conformers and
+        # num_conformer_groups are all calculated on the fly to guarantee
+        # synchronization with "group_sizes".
+        self._group_sizes: 'OrderedDict[str, int]' = OrderedDict()
         self._properties: Set[str] = set()
-        self._possible_nonbatch_properties: Set[str] = set()
 
-    # read-only, can be called by user code
+    @property
+    def group_sizes(self) -> 'OrderedDict[str, int]':
+        return self._group_sizes.copy()
+
     @property
     def properties(self) -> Set[str]:
         return self._properties
 
     @property
-    def _batch_properties(self) -> Set[str]:
-        batch_properties = {k for k in self.properties
-                            if k not in self._possible_nonbatch_properties}
-        return batch_properties
-
-    @property
-    def _nonbatch_properties(self) -> Set[str]:
-        batch_properties = {k for k in self.properties
-                            if k in self._possible_nonbatch_properties}
-        return batch_properties
-
-    @property
     def num_conformers(self) -> int:
-        return sum(self.group_sizes.values())
+        return sum(self._group_sizes.values())
 
     @property
     def num_conformer_groups(self) -> int:
-        return len(self.group_sizes.keys())
+        return len(self._group_sizes.keys())
 
     @property
     def grouping(self) -> str:
@@ -236,7 +223,7 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
         return self.num_conformer_groups
 
     def __iter__(self) -> Iterator[str]:
-        return iter(self.group_sizes.keys())
+        return iter(self._group_sizes.keys())
 
     def numpy_items(self, **kwargs) -> Iterator[Tuple[str, NumpyConformers]]:
         for group_name in self.keys():
@@ -247,7 +234,7 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
             yield getattr(self, 'get_numpy_conformers')(group_name, **kwargs)
 
     def iter_key_idx_conformers(self, **kwargs) -> Iterator[Tuple[str, int, Conformers]]:
-        for k, size in self.group_sizes.items():
+        for k, size in self._group_sizes.items():
             conformers = getattr(self, 'get_conformers')(k, **kwargs)
             for idx in range(size):
                 single_conformer = {k: conformers[k][idx] for k in conformers.keys()}
@@ -288,25 +275,25 @@ class _ANISubdataset(_ANIDatasetBase):
         self._backend = infer_backend(store_location) if backend is None else backend
         self._property_aliases = dict() if property_aliases is None else property_aliases
         self._store = StoreAdaptorFactory(store_location, self._backend)
-
+        self._possible_nonbatch_properties: Set[str]
         if create:
             # Create the file, since there is nothing in it it will have
             # standard format
             if grouping not in ['by_formula', 'by_num_atoms']:
                 raise ValueError('invalid grouping')
             self._store.make_empty(grouping)
-            self._has_standard_format = True
+            self._possible_nonbatch_properties = set()
         else:
             self._store.validate_location()
             if grouping != 'by_formula':
                 raise ValueError("Can't specify grouping for an already existing dataset")
             if self.grouping not in ['by_formula', 'by_num_atoms', 'legacy']:
                 raise ValueError(f'Reading a dataset with unsupported grouping {self.grouping}')
+
             if self.grouping == 'legacy':
-                self._has_standard_format = self._store.quick_standard_format_check()
                 self._possible_nonbatch_properties = {'species', 'numbers'}
             else:
-                self._has_standard_format = True
+                self._possible_nonbatch_properties = set()
             # In general properties of the dataset should be equal for all
             # groups, this can be an issue for HDF5. We check this in the first
             # call of _update_internal_cache, if it isn't we raise an exception
@@ -340,23 +327,18 @@ class _ANISubdataset(_ANIDatasetBase):
 
         if self._store.is_open:
             if mode == 'r+' and self._store.mode == 'r':
-                raise RuntimeError('Tried to open a store with mode "r+" but the dataset is'
-                                   ' currently keeping its store open with mode "r"')
+                raise RuntimeError('Tried to open a store with mode "r+" but'
+                                   ' the store open with mode "r"')
             return self._store
         return stack.enter_context(self._store.open(mode, self._property_aliases))
 
     def _update_internal_cache(self, check_properties: bool = False, verbose: bool = True) -> None:
         with ExitStack() as stack:
             store = self._get_open_store(stack, 'r')
-            group_sizes, properties, has_standard_format = store.update_cache(self._has_standard_format,
-                                                                              check_properties,
-                                                                              verbose)
-        self._properties = properties
-        self.group_sizes = group_sizes
-        self._has_standard_format = has_standard_format
+            self._group_sizes, self._properties = store.update_cache(check_properties, verbose)
 
     def __str__(self) -> str:
-        str_ = "ANI HDF5 File:\n"
+        str_ = "ANI store:\n"
         str_ += f"Supported properties: {self.properties}\n"
         str_ += f"Number of conformers: {self.num_conformers}\n"
         str_ += f"Number of conformer groups: {self.num_conformer_groups}\n"
@@ -369,8 +351,8 @@ class _ANISubdataset(_ANIDatasetBase):
     def present_species(self) -> Tuple[str, ...]:
         r"""Get an ordered tuple with all species present in the dataset
 
-        Tuple is ordered alphabetically
-        raises ValueError if neither 'species' or 'numbers' properties are present
+        Tuple is ordered alphabetically raises ValueError if neither 'species'
+        or 'numbers' properties are present
         """
         if 'species' in self.properties:
             element_key = 'species'
@@ -424,8 +406,8 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_properties_are_present(requested_properties)
 
         # Determine which of the properties passed are batched and which are nonbatch
-        requested_nonbatch_properties = self._nonbatch_properties.intersection(requested_properties)
-        requested_batch_properties = self._batch_properties.intersection(requested_properties)
+        nonbatch_properties = requested_properties.intersection(self._possible_nonbatch_properties)
+        batch_properties = requested_properties.difference(self._possible_nonbatch_properties)
 
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r')
@@ -433,12 +415,12 @@ class _ANISubdataset(_ANIDatasetBase):
             if idx is not None:
                 assert idx.dim() <= 1, "index must be a 0 or 1 dim tensor"
                 numpy_conformers.update({k: numpy_conformers[k][idx.cpu().numpy()]
-                                        for k in requested_batch_properties})
+                                        for k in batch_properties})
 
-        if requested_nonbatch_properties:
+        if nonbatch_properties:
             tile_shape = (_get_num_conformers(numpy_conformers), 1) if idx is None or idx.dim() == 1 else (1,)
             numpy_conformers.update({k: np.tile(numpy_conformers[k], tile_shape)
-                                     for k in requested_nonbatch_properties})
+                                     for k in nonbatch_properties})
 
         if 'species' in requested_properties:
             numpy_conformers['species'] = numpy_conformers['species'].astype(str)
@@ -755,7 +737,7 @@ class _ANISubdataset(_ANIDatasetBase):
                              f" in the dataset, which has properties {self.properties}, but they should not be")
 
 
-# ANIDataset implementation detail:
+# ANIDataset implementation details:
 #
 # ANIDataset is a mapping, The mapping has keys "group_names" or "names" and
 # values "conformers" or "conformer_group". Each group of conformers is also a
@@ -921,9 +903,9 @@ class ANIDataset(_ANIDatasetBase):
         return next(iter(self._datasets.values()))
 
     def _update_internal_cache(self) -> 'ANIDataset':
-        self.group_sizes = OrderedDict((k if self.num_stores == 1 else f'{name}/{k}', v)
+        self._group_sizes = OrderedDict((k if self.num_stores == 1 else f'{name}/{k}', v)
                                        for name, ds in self._datasets.items()
-                                       for k, v in ds.group_sizes.items())
+                                       for k, v in ds._group_sizes.items())
         for name, ds in self._datasets.items():
             if not ds.grouping == self._first_subds.grouping:
                 raise RuntimeError('Datasets have incompatible groupings,'
