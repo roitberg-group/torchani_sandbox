@@ -3,7 +3,6 @@ from typing import (Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set,
 import inspect
 import json
 import re
-import types
 import pickle
 import warnings
 from copy import deepcopy
@@ -495,9 +494,10 @@ class _ANISubdataset(_ANIDatasetBase):
 
     def _get_conformer_formulas(self, conformers: MaybeNumpyConformers) -> List[str]:
         if 'species' in conformers.keys():
-            if isinstance(conformers['species'], Tensor):
-                symbols = _numbers_to_symbols(conformers['species'].detach().cpu().numpy())
-            else:
+            try:
+                # this code will fail if conformers['species'] is not a tensor
+                symbols = _numbers_to_symbols(conformers['species'].detach().cpu().numpy())  # type: ignore
+            except AttributeError:
                 symbols = conformers['species']
         elif 'numbers' in conformers.keys():
             symbols = _numbers_to_symbols(conformers['numbers'])
@@ -716,20 +716,18 @@ class _ANISubdataset(_ANIDatasetBase):
             grouping = self._get_open_store(stack, 'r').grouping
         return grouping
 
-    def _check_properties_are_present(self, requested_properties: Iterable[str], raise_: bool = True) -> None:
-        if isinstance(requested_properties, str):
-            requested_properties = {requested_properties}
-        else:
-            requested_properties = set(requested_properties)
-        if not requested_properties.issubset(self.properties):
-            raise ValueError(f"Some of the properties requested {requested_properties} are not"
+    def _check_properties_are_present(self, properties: Iterable[str]) -> None:
+        if isinstance(properties, str):
+            properties = {properties}
+        if not set(properties).issubset(self.properties):
+            raise ValueError(f"Some of the properties requested {properties} are not"
                              f" in the dataset, which has properties {self.properties}")
 
-    def _check_properties_are_not_present(self, requested_properties: Iterable[str], raise_: bool = True) -> None:
-        if isinstance(requested_properties, str):
-            requested_properties = (requested_properties,)
-        if set(requested_properties).issubset(self.properties):
-            raise ValueError(f"Some of the properties requested {requested_properties} are"
+    def _check_properties_are_not_present(self, properties: Iterable[str]) -> None:
+        if isinstance(properties, str):
+            properties = {properties}
+        if set(properties).issubset(self.properties):
+            raise ValueError(f"Some of the properties requested {properties} are"
                              f" in the dataset, which has properties {self.properties}, but they should not be")
 
 
@@ -859,7 +857,6 @@ class ANIDataset(_ANIDatasetBase):
     def __getattr__(self, method: str) -> Callable:
         # Mechanism for delegating calls to the correct _ANISubdatasets
         unbound_method = getattr(_ANISubdataset, method)
-        assert isinstance(unbound_method, types.FunctionType)
         type_hints = unbound_method.__annotations__
         if 'group_name' in type_hints:
             if type_hints['return'] == '_ANISubdataset':
