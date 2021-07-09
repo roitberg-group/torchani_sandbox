@@ -18,7 +18,7 @@ from .datasets import ANIDataset
 from ._annotations import Conformers, PathLike, Transform
 
 
-def create_batched_dataset(location: Union[PathLike, ANIDataset], /,
+def create_batched_dataset(location: Union[PathLike, ANIDataset],
                            dest_path: Optional[PathLike] = None,
                            shuffle: bool = True,
                            shuffle_seed: Optional[int] = None,
