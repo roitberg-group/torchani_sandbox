@@ -33,24 +33,24 @@ def _get_dim_size(conformers: Union[Conformers, NumpyConformers], *,
                   dim: int) -> int:
     # Calculates the dimension size in a conformer group. It tries to get it
     # from one of a number of the "common keys" that have the dimension
-    present_keys = common_keys.intersection(set(conformers.keys()))
+    present_keys = tuple(common_keys.intersection(set(conformers.keys())))
     try:
-        any_key = tuple(present_keys)[0]
+        any_key = present_keys[0]
     except IndexError:
         raise RuntimeError(f'Could not infer dimension size of dim {dim} in properties'
                            f' since {common_keys} are missing')
     return conformers[any_key].shape[dim]
 
 
-def to_strpath_tuple(obj: Union[Iterable[StrPath], StrPath]) -> Tuple[StrPath]:
+def to_strpath_list(obj: Union[Iterable[StrPath], StrPath]) -> List[StrPath]:
     try:
         # This will raise an exception if obj is Iterable[StrPath]
         fspath(obj)  # type: ignore
     except TypeError:
-        tuple_ = tuple(o for o in obj)  # type: ignore
+        list_ = [o for o in obj]  # type: ignore
     else:
-        tuple_ = (obj,)
-    return cast(Tuple[StrPath], tuple_)
+        list_ = [obj]
+    return cast(List[StrPath], list_)
 
 
 # calculates number of atoms in a conformer group
@@ -354,11 +354,11 @@ class _ANISubdataset(_ANIDatasetBase):
             str_ += "Present elements: Unknown\n"
         return str_
 
-    def present_species(self) -> Tuple[str, ...]:
-        r"""Get an ordered tuple with all species present in the dataset
+    def present_species(self) -> List[str]:
+        r"""Get an ordered list with all species present in the dataset
 
-        Tuple is ordered alphabetically raises ValueError if neither 'species'
-        or 'numbers' properties are present
+        list is ordered alphabetically. Function raises ValueError if neither
+        'species' or 'numbers' properties are present.
         """
         if 'species' in self.properties:
             element_key = 'species'
@@ -372,7 +372,7 @@ class _ANISubdataset(_ANIDatasetBase):
         for group_name in self.keys():
             species = self.get_numpy_conformers(group_name, properties=element_key)
             present_species.update(parser(species))
-        return tuple(sorted(present_species))
+        return sorted(present_species)
 
     def get_conformers(self,
                        group_name: str,
@@ -825,14 +825,14 @@ class ANIDataset(_ANIDatasetBase):
         # _datasets is an ordereddict {name: _ANISubdataset}.
         # "locations" and "names" are collections used to build it
 
-        # First we convert locations / names into tuples of strpath / str
+        # First we convert locations / names into lists of strpath / str
         # if no names are provided they are just '0', '1', '2', etc.
-        locations = to_strpath_tuple(locations)
+        locations = to_strpath_list(locations)
 
         if names is None:
             names = (str(j) for j in range(len(locations)))
 
-        names = (names,) if isinstance(names, str) else tuple(n for n in names)
+        names = [names] if isinstance(names, str) else [n for n in names]
 
         if not len(names) == len(locations):
             raise ValueError("Length of locations and names must be equal")
@@ -851,13 +851,12 @@ class ANIDataset(_ANIDatasetBase):
                 self._datasets[k] = stack.enter_context(self._datasets[k].keep_open(mode))
             yield self
 
-    def present_species(self) -> Tuple[str, ...]:
-        present_species = {s for ds in self._datasets.values() for s in ds.present_species()}
-        return tuple(sorted(present_species))
+    def present_species(self) -> List[str]:
+        return sorted({s for ds in self._datasets.values() for s in ds.present_species()})
 
     @property
-    def store_locations(self) -> Tuple[str, ...]:
-        return tuple(ds._store.location for ds in self._datasets.values())
+    def store_locations(self) -> List[str]:
+        return [ds._store.location for ds in self._datasets.values()]
 
     @property
     def num_stores(self) -> int:
