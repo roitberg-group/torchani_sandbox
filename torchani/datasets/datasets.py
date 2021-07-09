@@ -284,16 +284,12 @@ class _ANISubdataset(_ANIDatasetBase):
             self._store.make_empty(grouping)
             self._possible_nonbatch_properties = set()
         else:
-            self._store.validate_location()
             if grouping != 'by_formula':
                 raise ValueError("Can't specify grouping for an already existing dataset")
+            self._store.validate_location()
             if self.grouping not in ['by_formula', 'by_num_atoms', 'legacy']:
-                raise ValueError(f'Reading a dataset with unsupported grouping {self.grouping}')
-
-            if self.grouping == 'legacy':
-                self._possible_nonbatch_properties = {'species', 'numbers'}
-            else:
-                self._possible_nonbatch_properties = set()
+                raise RuntimeError(f'Reading a dataset with unsupported grouping {self.grouping}')
+            self._possible_nonbatch_properties = {'species', 'numbers'} if self.grouping == 'legacy' else set()
             # In general properties of the dataset should be equal for all
             # groups, this can be an issue for HDF5. We check this in the first
             # call of _update_internal_cache, if it isn't we raise an exception
