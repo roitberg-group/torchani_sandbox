@@ -5,7 +5,7 @@ from collections import OrderedDict
 
 from torchvision.datasets.utils import download_and_extract_archive, list_files, check_integrity
 from .datasets import ANIDataset
-from ._annotations import PathLike
+from ._annotations import StrPath
 from ..utils import tqdm
 
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
@@ -14,7 +14,7 @@ _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
 class _BaseBuiltinDataset(ANIDataset):
     # NOTE: Code heavily borrows from celeb dataset of torchvision
 
-    def __init__(self, root: PathLike,
+    def __init__(self, root: StrPath,
                        download: bool = False,
                        archive: Optional[str] = None,
                        files_and_md5s: Optional['OrderedDict[str, str]'] = None,
@@ -42,7 +42,7 @@ class _BaseBuiltinDataset(ANIDataset):
         filenames_and_paths = OrderedDict(_filenames_and_paths)
         super().__init__(filenames_and_paths, **h5_dataset_kwargs)
 
-    def _check_hdf5_files_integrity(self, root: PathLike) -> bool:
+    def _check_hdf5_files_integrity(self, root: Path) -> bool:
         # Checks that all HDF5 files in the provided path are equal to the
         # expected ones and have the correct checksum, other files such as
         # tar.gz archives are neglected
@@ -60,7 +60,7 @@ class _BaseBuiltinDataset(ANIDataset):
                 return False
         return True
 
-    def _maybe_download_hdf5_archive_and_check_integrity(self, root: PathLike) -> bool:
+    def _maybe_download_hdf5_archive_and_check_integrity(self, root: Path) -> bool:
         # Downloads only if the files have not been found or are corrupted
         root = Path(root).resolve()
         if root.is_dir() and self._check_hdf5_files_integrity(root):
@@ -74,7 +74,7 @@ class ANI1x(_BaseBuiltinDataset):
     # NOTE: The order of this dictionary is important since it deterimenes the order of iteration over the files
     _FILES_AND_MD5S = OrderedDict([('ANI-1x-wB97X-6-31Gd.h5', 'c9d63bdbf90d093db9741c94d9b20972')])
 
-    def __init__(self, root: PathLike, download: bool = False, **base_kwargs: Any):
+    def __init__(self, root: StrPath, download: bool = False, **base_kwargs: Any):
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)
 
 
@@ -86,7 +86,7 @@ class ANI2x(_BaseBuiltinDataset):
                                    ('ANI-2x-heavy-wB97X-6-31Gd.h5', '49ec3dc5d046f5718802f5d1f102391c'),
                                    ('ANI-2x-dimers-wB97X-6-31Gd.h5', '3455d82a50c63c389126b68607fb9ca8')])
 
-    def __init__(self, root: PathLike, download: bool = False, **base_kwargs: Any):
+    def __init__(self, root: StrPath, download: bool = False, **base_kwargs: Any):
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)
 
 
@@ -106,5 +106,5 @@ class COMP6v1(_BaseBuiltinDataset):
                                    ('ANI-MD-Bench.h5', '9e3a1327d01730033edeeebd6fac4d6c'),
                                    ('S66-x8-wB97X-6-31Gd.h5', 'df1a5f3b9b6599d56f1a78631a83b720')])
 
-    def __init__(self, root: PathLike, download: bool = False, **base_kwargs: Any):
+    def __init__(self, root: StrPath, download: bool = False, **base_kwargs: Any):
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)

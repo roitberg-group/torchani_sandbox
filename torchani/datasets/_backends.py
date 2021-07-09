@@ -10,7 +10,7 @@ from collections import OrderedDict
 
 import numpy as np
 
-from ._annotations import NumpyConformers, PathLike
+from ._annotations import NumpyConformers, StrPath
 from ..utils import tqdm
 
 
@@ -26,14 +26,14 @@ except ImportError:
     _H5PY_AVAILABLE = False
 
 
-def infer_backend(store_location: PathLike) -> str:
+def infer_backend(store_location: StrPath) -> str:
     if Path(store_location).resolve().suffix == '.h5':
         return 'h5py'
     else:
         raise RuntimeError("Backend could not be infered from store location")
 
 
-def StoreAdaptorFactory(store_location: PathLike, backend: str) -> '_StoreAdaptor':
+def StoreAdaptorFactory(store_location: StrPath, backend: str) -> '_StoreAdaptor':
     if backend == 'h5py':
         if not _H5PY_AVAILABLE:
             raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
@@ -143,7 +143,7 @@ class _StoreAdaptor(ContextManager['_StoreAdaptor'], Mapping[str, '_ConformerGro
 
 # Backend Specific code starts here
 class _H5StoreAdaptor(_StoreAdaptor):
-    def __init__(self, store_location: PathLike):
+    def __init__(self, store_location: StrPath):
         self._store_location = Path(store_location).resolve()
         self._alias_to_storename: Dict[str, str] = dict()
         self._storename_to_alias: Dict[str, str] = dict()

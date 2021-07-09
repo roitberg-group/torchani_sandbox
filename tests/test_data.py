@@ -121,11 +121,12 @@ class TestFineGrainedShuffle(TestCase):
 
             self.batched_path = Path('./tmp_dataset').resolve()
             # both validation and test have 3 batches of 60 each
+            h5_dirs = sorted(Path(tmpdir).iterdir())
             if folds is None:
-                create_batched_dataset(tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
+                create_batched_dataset(h5_dirs, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
                         splits={'training': 0.5, 'validation': 0.5}, batch_size=60)
             else:
-                create_batched_dataset(tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
+                create_batched_dataset(h5_dirs, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
                         folds=folds, batch_size=60)
 
     def _create_dummy_file(self, file_, num_groups, num_conformers_per_group, element, factor, properties, range_start=None):

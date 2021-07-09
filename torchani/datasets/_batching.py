@@ -5,7 +5,7 @@ import json
 import pickle
 import datetime
 from pathlib import Path
-from typing import Tuple, Dict, Optional, Sequence, List, Union
+from typing import Tuple, Dict, Optional, Sequence, List, Union, Collection
 from collections import OrderedDict
 
 import h5py
@@ -15,11 +15,11 @@ import numpy as np
 
 from ..utils import pad_atomic_properties, cumsum_from_zero, PADDING, tqdm
 from .datasets import ANIDataset
-from ._annotations import Conformers, PathLike, Transform
+from ._annotations import Conformers, StrPath, Transform
 
 
-def create_batched_dataset(location: Union[PathLike, ANIDataset],
-                           dest_path: Optional[PathLike] = None,
+def create_batched_dataset(locations: Union[Collection[StrPath], StrPath, ANIDataset],
+                           dest_path: Optional[StrPath] = None,
                            shuffle: bool = True,
                            shuffle_seed: Optional[int] = None,
                            file_format: str = 'hdf5',
@@ -41,13 +41,14 @@ def create_batched_dataset(location: Union[PathLike, ANIDataset],
 
     # NOTE: All the tensor manipulation in this function is handled in CPU
     if dest_path is None:
-        dest_path = Path(f'./batched_dataset_{file_format}').resolve()
-    dest_path = Path(dest_path).resolve()
-
-    if isinstance(location, ANIDataset):
-        dataset = location
+        dest_path = Path.cwd() / f'batched_dataset_{file_format}'
     else:
-        dataset = ANIDataset(location)
+        dest_path = Path(dest_path).resolve()
+
+    if isinstance(locations, ANIDataset):
+        dataset = locations
+    else:
+        dataset = ANIDataset(locations)
 
     # (1) Get all indices and shuffle them if needed
     #

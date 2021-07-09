@@ -1,10 +1,11 @@
 from typing import (Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set,
-                    Mapping, Any, Iterable, Callable, TypeVar)
+                    Mapping, Any, Iterable, Callable, TypeVar, cast)
 import inspect
 import json
 import re
 import pickle
 import warnings
+from os import fspath
 from copy import deepcopy
 from pathlib import Path
 from functools import partial, wraps
@@ -16,7 +17,7 @@ from torch import Tensor
 import numpy as np
 
 from ._backends import _H5PY_AVAILABLE, _StoreAdaptor, StoreAdaptorFactory, get_temporary_location, infer_backend
-from ._annotations import Transform, Conformers, NumpyConformers, MaybeNumpyConformers, PathLike, DTypeLike, PathLikeODict
+from ._annotations import Transform, Conformers, NumpyConformers, MaybeNumpyConformers, StrPath, DTypeLike
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
 if _H5PY_AVAILABLE:
@@ -41,6 +42,17 @@ def _get_dim_size(conformers: Union[Conformers, NumpyConformers], *,
     return conformers[any_key].shape[dim]
 
 
+def to_strpath_tuple(obj: Union[Iterable[StrPath], StrPath]) -> Tuple[StrPath]:
+    try:
+        # This will raise an exception if obj is Iterable[StrPath]
+        fspath(obj)  # type: ignore
+    except TypeError:
+        tuple_ = tuple(o for o in obj)  # type: ignore
+    else:
+        tuple_ = (obj,)
+    return cast(Tuple[StrPath], tuple_)
+
+
 # calculates number of atoms in a conformer group
 _get_num_atoms = partial(_get_dim_size, common_keys={'coordinates', 'coord', 'forces'}, dim=1)
 # calculates number of conformers in a conformer group
@@ -56,7 +68,7 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
     _SUFFIXES_AND_FORMATS = {'.npz': 'numpy', '.h5': 'hdf5', '.pkl': 'pickle'}
     batch_size: int
 
-    def __init__(self, store_dir: PathLike,
+    def __init__(self, store_dir: StrPath,
                        file_format: Optional[str] = None,
                        split: str = 'training',
                        transform: Transform = lambda x: x,
@@ -216,7 +228,7 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
         raise NotImplementedError
 
     def __getitem__(self, key: str) -> Conformers:
-        return getattr(self, 'get_conformers')(key)
+        return cast(Conformers, getattr(self, 'get_conformers')(key))
 
     def __len__(self) -> int:
         return self.num_conformer_groups
@@ -263,14 +275,13 @@ def _needs_cache_update(method: Callable[..., '_ANISubdataset']) -> Callable[...
 class _ANISubdataset(_ANIDatasetBase):
 
     def __init__(self,
-                 store_location: PathLike, *,
+                 store_location: StrPath, *,
                  create: bool = False,
                  grouping: str = 'by_formula',
                  backend: Optional[str] = None,
                  property_aliases: Optional[Dict[str, str]] = None,
                  verbose: bool = True):
         super().__init__()
-
         self._backend = infer_backend(store_location) if backend is None else backend
         self._property_aliases = dict() if property_aliases is None else property_aliases
         self._store = StoreAdaptorFactory(store_location, self._backend)
@@ -808,27 +819,25 @@ class ANIDataset(_ANIDatasetBase):
     the batch dimension). Property manipulation (renaming, deleting, adding)
     is also supported.
     """
-    def __init__(self, locations: Union[PathLike, PathLikeODict, Iterable[PathLike]], **kwargs):
+    def __init__(self, locations: Union[Iterable[StrPath], StrPath], names: Optional[Union[Iterable[str], str]] = None, **kwargs):
         super().__init__()
 
         # _datasets is an ordereddict {name: _ANISubdataset}.
-        # This logic parses locations to build it
-        # - If an ordereddict is passed keys and values are used as names and locations,
-        #   otherwise names are just numbers as str
-        # - If it is a dir with no suffix and backend is unspecified, then all files in it dir are used
-        # - If it is not a dir then it is used directly as one single location
-        if isinstance(locations, (Path, str)):
-            locations_aspath = Path(locations).resolve()
-            if locations_aspath.is_dir() and locations_aspath.suffix == '' and kwargs.get('backend', None) is None:
-                # we can't infer anything from the location in this case, so just use all files in it
-                locations = sorted([p for p in locations_aspath.iterdir()])
-            else:
-                locations = [locations]
-        if isinstance(locations, OrderedDict):
-            self._datasets = OrderedDict((k, _ANISubdataset(v, **kwargs)) for k, v in locations.items())
-        else:
-            self._datasets = OrderedDict((str(j), _ANISubdataset(loc, **kwargs)) for j, loc in enumerate(locations))
+        # "locations" and "names" are collections used to build it
 
+        # First we convert locations / names into tuples of strpath / str
+        # if no names are provided they are just '0', '1', '2', etc.
+        locations = to_strpath_tuple(locations)
+
+        if names is None:
+            names = (str(j) for j in range(len(locations)))
+
+        names = (names,) if isinstance(names, str) else tuple(n for n in names)
+
+        if not len(names) == len(locations):
+            raise ValueError("Length of locations and names must be equal")
+
+        self._datasets = OrderedDict((k, _ANISubdataset(v, **kwargs)) for k, v in zip(names, locations))
         self._update_internal_cache()
 
     @property
@@ -856,6 +865,8 @@ class ANIDataset(_ANIDatasetBase):
 
     def __getattr__(self, method: str) -> Callable:
         # Mechanism for delegating calls to the correct _ANISubdatasets
+        # functions with a "group_name" argument are delegated to one specific
+        # subdataset, other ones are performed in all subdatasets on a loop
         unbound_method = getattr(_ANISubdataset, method)
         type_hints = unbound_method.__annotations__
         if 'group_name' in type_hints:
@@ -882,11 +893,11 @@ class ANIDataset(_ANIDatasetBase):
         return '\n'.join(str(ds) for ds in self._datasets.values())
 
     @property
-    def _first_name(self):
+    def _first_name(self) -> str:
         return next(iter(self._datasets.keys()))
 
     @property
-    def _first_subds(self):
+    def _first_subds(self) -> '_ANISubdataset':
         return next(iter(self._datasets.values()))
 
     def _update_internal_cache(self) -> 'ANIDataset':

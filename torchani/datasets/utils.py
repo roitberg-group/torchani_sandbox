@@ -8,7 +8,7 @@ from ..units import hartree2kcalmol
 from ..models import BuiltinModel
 from ..utils import pad_atomic_properties, tqdm
 from ..nn import Ensemble
-from ._annotations import KeyIdx, Conformers, PathLike
+from ._annotations import KeyIdx, Conformers, StrPath
 from .datasets import ANIDataset
 
 
@@ -16,7 +16,7 @@ __all__ = ['filter_by_high_force', 'filter_by_high_energy_error', 'concatenate']
 
 
 def concatenate(source: ANIDataset,
-                dest_location: PathLike, *,
+                dest_location: StrPath, *,
                 verbose: bool = True,
                 delete_originals: bool = False) -> ANIDataset:
     r"""Combine all the backing stores in a given ANIDataset into one"""
@@ -36,10 +36,9 @@ def concatenate(source: ANIDataset,
         dest.append_numpy_conformers(k.split('/')[-1], v)
 
     if delete_originals:
-        source_locations = source.store_locations
-        for p in tqdm(source_locations,
+        for p in tqdm(source.store_locations,
                       desc='Deleting original store',
-                      total=len(source_locations),
+                      total=source.num_stores,
                       disable=not verbose):
             p.unlink()
     return dest
