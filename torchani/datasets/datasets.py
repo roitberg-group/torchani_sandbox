@@ -765,12 +765,6 @@ class _ANISubdataset(_ANIDatasetBase):
 # cache update, to get "group_sizes" and "properties" again. Methods that
 # modify the dataset are decorated so that the internal cache is updated.
 #
-# If the dataset has some semblance of standarization (it is a tree with depth
-# 1, where all groups are directly joined to the root) then it is much faster
-# to traverse the dataset. In any case after the first recursion if this
-# structure is detected the flag is set internally so we never do the recursion
-# again. This speeds up cache updates and lookup x30
-#
 # Cache update part 2:
 # --------------------
 # There is in principle no guarantee that all conformer groups have the same

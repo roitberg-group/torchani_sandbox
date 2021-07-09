@@ -214,13 +214,21 @@ class _H5StoreAdaptor(_StoreAdaptor):
                      check_properties: bool = False,
                      verbose: bool = True) -> Tuple['OrderedDict[str, int]', Set[str]]:
         cache = CacheHolder()
-        # this check must only be performed once
+        # If the dataset has some semblance of standarization (it is a tree with depth
+        # 1, where all groups are directly joined to the root) then it is much faster
+        # to traverse the dataset. In any case after the first recursion if this
+        # structure is detected the flag is set internally so we never do the recursion
+        # again. This speeds up cache updates and lookup x30
         if self.grouping == 'legacy' and not self._made_quick_check:
             self._has_standard_format = self._quick_standard_format_check()
             self._made_quick_check = True
 
         if self._has_standard_format:
-            self._update_cache_standard(cache, check_properties)
+            for k, g in self._store.items():
+                if g.name in ['/_created', '/_meta']:
+                    continue
+                self._update_properties_cache(cache, g, check_properties)
+                self._update_groups_cache(cache, g)
         else:
             self._has_standard_format = self._update_cache_nonstandard(cache, check_properties, verbose)
         # By default iteration of HDF5 should be alphanumeric in which case
@@ -231,17 +239,6 @@ class _H5StoreAdaptor(_StoreAdaptor):
             raise RuntimeError("Groups were not iterated upon alphanumerically")
         return cache.group_sizes, cache.properties
 
-    # This is much faster (x30) than a visitor function but it assumes the
-    # format is somewhat standard which means that all Groups have depth 1, and
-    # all Datasets have depth 2. A pbar is not needed here since this is
-    # extremely fast
-    def _update_cache_standard(self, cache: CacheHolder, check_properties: bool) -> None:
-        for k, g in self._store.items():
-            if g.name in ['/_created', '/_meta']:
-                continue
-            self._update_properties_cache(cache, g, check_properties)
-            self._update_groups_cache(cache, g)
-
     def _update_cache_nonstandard(self, cache: CacheHolder, check_properties: bool, verbose: bool) -> bool:
         def visitor_fn(name: str,
                        object_: Union[h5py.Dataset, h5py.Group],
@@ -250,7 +247,7 @@ class _H5StoreAdaptor(_StoreAdaptor):
                        check_properties: bool,
                        pbar: Any) -> None:
             pbar.update()
-            # We make sure the node is a Dataset, and We avoid Datasets
+            # We make sure the node is a Dataset, and we avoid Datasets
             # called _meta or _created since if present these store units
             # or other metadata. We also check if we already visited this
             # group via one of its children.
@@ -281,9 +278,6 @@ class _H5StoreAdaptor(_StoreAdaptor):
         has_standard_format = not any('/' in k[1:] for k in cache.group_sizes.keys())
         return has_standard_format
 
-    # Updates the "_properties", variables. "_nonbatch_properties" are keys
-    # that don't have a batch dimension, their shape must be (atoms,), they
-    # only make sense if ordering by formula or smiles
     def _update_properties_cache(self, cache: CacheHolder, conformers: h5py.Group, check_properties: bool = False) -> None:
         if not cache.properties:
             cache.properties = {self._storename_to_alias.get(p, p) for p in set(conformers.keys())}
@@ -305,8 +299,7 @@ class _H5StoreAdaptor(_StoreAdaptor):
         cache.group_sizes.update({group.name[1:]: group[any_key].shape[0]})
 
     # Check if the raw hdf5 file has the '/_created' dataset if this is the
-    # case then it can be assumed to have standard format. All other h5
-    # files are assumed to **not** have standard format.
+    # case then it can be assumed to be a shallow tree, otherwise we don't know
     def _quick_standard_format_check(self) -> bool:
         try:
             self._store['/_created']
@@ -334,11 +327,11 @@ class _H5StoreAdaptor(_StoreAdaptor):
     def __delitem__(self, k: str) -> None:
         del self._store[k]
 
-    def create_conformer_group(self, name: str) -> '_H5ConformerGroupAdaptor':
+    def create_conformer_group(self, name: str) -> '_ConformerGroupAdaptor':
         self._store.create_group(name)
         return self[name]
 
-    def __getitem__(self, name: str) -> '_H5ConformerGroupAdaptor':
+    def __getitem__(self, name: str) -> '_ConformerGroupAdaptor':
         return _H5ConformerGroupAdaptor(self._store[name], self._storename_to_alias)
 
     def __len__(self) -> int:
