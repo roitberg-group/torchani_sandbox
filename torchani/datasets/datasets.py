@@ -841,18 +841,16 @@ class ANIDataset(_ANIDatasetBase):
         super().__init__()
 
         # _datasets is an ordereddict {name: _ANISubdataset}.
-        # This logic parses dataset_paths in order to obtain the arguments to
-        # build this ordereddict.
-        # - If a path to a dir is passed and the backend is h5py then
-        #   all h5 files in the dir are used
-        # - If a path to a file is passed then that file is used
-        # - If an ordereddict is passed it is used directly
-        # If an ordereddict is not passed then names are just numbers as str
+        # This logic parses locations to build it
+        # - If an ordereddict is passed keys and values are used as names and locations,
+        #   otherwise names are just numbers as str
+        # - If it is a dir with no suffix and backend is unspecified, then all files in it dir are used
+        # - If it is not a dir then it is used directly as one single location
         if isinstance(locations, (Path, str)):
-            # TODO: for now this is hardcoded for h5py but it can be done more generally
             locations_aspath = Path(locations).resolve()
-            if locations_aspath.is_dir() and kwargs['backend'] == 'h5py':
-                locations = sorted([p for p in locations_aspath.iterdir() if p.suffix == '.h5'])
+            if locations_aspath.is_dir() and locations_aspath.suffix == '' and kwargs.get('backend', None) is None:
+                # we can't infer anything from the location in this case, so just use all files in it
+                locations = sorted([p for p in locations_aspath.iterdir()])
             else:
                 locations = [locations]
         if isinstance(locations, OrderedDict):

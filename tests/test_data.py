@@ -122,10 +122,10 @@ class TestFineGrainedShuffle(TestCase):
             self.batched_path = Path('./tmp_dataset').resolve()
             # both validation and test have 3 batches of 60 each
             if folds is None:
-                create_batched_dataset(h5_path=tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
+                create_batched_dataset(tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
                         splits={'training': 0.5, 'validation': 0.5}, batch_size=60)
             else:
-                create_batched_dataset(h5_path=tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
+                create_batched_dataset(tmpdir, dest_path=self.batched_path, shuffle=True, shuffle_seed=123456789,
                         folds=folds, batch_size=60)
 
     def _create_dummy_file(self, file_, num_groups, num_conformers_per_group, element, factor, properties, range_start=None):
@@ -165,7 +165,7 @@ class TestEstimationSAE(TestCase):
     def setUp(self):
         self.batched_path = Path('./tmp_dataset').resolve()
         self.batch_size = 2560
-        create_batched_dataset(h5_path=dataset_path_gdb, dest_path=self.batched_path, shuffle=True,
+        create_batched_dataset(dataset_path_gdb, dest_path=self.batched_path, shuffle=True,
                 splits={'training': 1.0}, batch_size=self.batch_size, shuffle_seed=12345, include_properties=('energies', 'species', 'coordinates'))
         self.train = ANIBatchedDataset(self.batched_path, split='training')
 
@@ -237,9 +237,9 @@ class TestTransforms(TestCase):
 
         with warnings.catch_warnings():
             ignore_unshuffled_warning()
-            create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path, shuffle=False,
+            create_batched_dataset(dataset_path, dest_path=self.batched_path, shuffle=False,
                     splits={'training': 0.5, 'validation': 0.5}, batch_size=2560, inplace_transform=compose)
-            create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path2, shuffle=False,
+            create_batched_dataset(dataset_path, dest_path=self.batched_path2, shuffle=False,
                     splits={'training': 0.5, 'validation': 0.5}, batch_size=2560)
         train_inplace = ANIBatchedDataset(self.batched_path, split='training')
         train = ANIBatchedDataset(self.batched_path2, transform=compose, split='training')
@@ -267,7 +267,7 @@ class TestANIBatchedDataset(TestCase):
         self.batch_size = 2560
         with warnings.catch_warnings():
             ignore_unshuffled_warning()
-            create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path, shuffle=False,
+            create_batched_dataset(dataset_path, dest_path=self.batched_path, shuffle=False,
                     splits={'training': 0.5, 'validation': 0.5}, batch_size=self.batch_size)
         self.train = ANIBatchedDataset(self.batched_path, split='training')
         self.valid = ANIBatchedDataset(self.batched_path, split='validation')
@@ -309,7 +309,7 @@ class TestANIBatchedDataset(TestCase):
 
     def testShuffle(self):
         # thest that shuffling at creation time mixes up conformers a lot
-        create_batched_dataset(h5_path=dataset_path, dest_path=self.batched_path_shuffled, shuffle=True,
+        create_batched_dataset(dataset_path, dest_path=self.batched_path_shuffled, shuffle=True,
                 shuffle_seed=12345,
                 splits={'training': 0.5, 'validation': 0.5}, batch_size=self.batch_size)
         train = ANIBatchedDataset(self.batched_path_shuffled, split='training')
@@ -372,7 +372,7 @@ class TestANIBatchedDataset(TestCase):
 
             with warnings.catch_warnings():
                 ignore_unshuffled_warning()
-                create_batched_dataset(h5_path=dataset_path,
+                create_batched_dataset(dataset_path,
                         dest_path=self.batched_path2, shuffle=False,
                         splits={'training': 0.5, 'validation': 0.5}, batch_size=self.batch_size)
             train = ANIBatchedDataset(self.batched_path2, split='training')
