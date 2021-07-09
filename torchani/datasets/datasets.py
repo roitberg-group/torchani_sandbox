@@ -616,7 +616,6 @@ class _ANISubdataset(_ANIDatasetBase):
         useful for the h5py backend, otherwise it is a no-op.
         """
         self._check_correct_grouping()
-        # this is meaningless unless you are using h5py backend
         if not self._backend == 'h5py':
             return self
         new_ds = self._make_empty_temporary_copy()
@@ -794,9 +793,10 @@ class _ANISubdataset(_ANIDatasetBase):
 # --------------------
 # There is in principle no guarantee that all conformer groups have the same
 # properties. Due to this we have to first traverse the dataset and check that
-# this is the case. We store the properties the dataset supports inside an
-# internal variable _properties (e.g. it may happen that one molecule has
-# forces but not coordinates, if this happens then ANIDataset raises an error)
+# this is the case. We do this only once and then we store the properties the
+# dataset supports inside an internal variable _properties (e.g. it may happen
+# that one molecule has forces but not coordinates, if this happens then
+# ANIDataset raises an error), which gets updated if a property changes.
 #
 # Multiple files:
 # ---------------
@@ -806,10 +806,11 @@ class _ANISubdataset(_ANIDatasetBase):
 # contains. Basically any method is either:
 # 1 - delegated to a subdataset: If you ask for the conformer group "ANI1x/CH4"
 #     in the "full ANI2x" dataset (ANI1x + ANI2x_FSCl + dimers),
-#     then this will be delegated to the "ANI1x" subdataset.
-# 2 - broadcasted to all subdatasets: If you want to rename a property or
+#     then this will be delegated to the "ANI1x" subdataset. Methods that take
+#     a group_name parameter are delegated to subdatasets.
+# 2 - broadcasted to all subdatasets: e.g. If you want to rename a property or
 #     delete a property it will be deleted / renamed in all subdatasets.
-# The mechanism for delegation involves overriding getattr.
+# The mechanism for delegation involves overriding __getattr__.
 #
 # ContextManager usage:
 # ----------------
@@ -908,6 +909,9 @@ class ANIDataset(_ANIDatasetBase):
                 return self._update_internal_cache()
         return delegated_call
 
+    def __str__(self) -> str:
+        return '\n'.join(str(ds) for ds in self._datasets.values())
+
     @property
     def _first_name(self):
         return next(iter(self._datasets.keys()))
@@ -916,23 +920,21 @@ class ANIDataset(_ANIDatasetBase):
     def _first_subds(self):
         return next(iter(self._datasets.values()))
 
-    def __str__(self) -> str:
-        return '\n'.join(str(ds) for ds in self._datasets.values())
-
     def _update_internal_cache(self) -> 'ANIDataset':
         self.group_sizes = OrderedDict((k if self.num_stores == 1 else f'{name}/{k}', v)
                                        for name, ds in self._datasets.items()
                                        for k, v in ds.group_sizes.items())
         for name, ds in self._datasets.items():
             if not ds.grouping == self._first_subds.grouping:
-                raise RuntimeError("Datasets have incompatible groupings,"
-                                  f" got {self._first_subds.grouping} for {self._first_name}"
-                                  f" and {ds.grouping} for {name}")
+                raise RuntimeError('Datasets have incompatible groupings,'
+                                  f' got {self._first_subds.grouping} for'
+                                  f' {self._first_name}'
+                                  f' and {ds.grouping} for {name}')
 
             if not ds.properties == self._first_subds.properties:
-                raise RuntimeError('Supported properties are different for the'
-                                   ' component subdatasets, got'
-                                  f' {self._first_subds.properties} for {self._first_name}'
+                raise RuntimeError('Datasets have incompatible properties'
+                                  f' got {self._first_subds.properties} for'
+                                  f' {self._first_name}'
                                   f' and {ds.properties} for {name}')
         self._properties = self._first_subds.properties
         return self
