@@ -20,7 +20,7 @@ Transform = Callable[[Dict[str, Tensor]], Dict[str, Tensor]]
 
 Conformers = Dict[str, Tensor]
 NumpyConformers = Dict[str, ndarray]
-MaybeNumpyConformers = TypeVar('MaybeNumpyConformers', NumpyConformers, Conformers)
+TorchOrNumpyConformers = TypeVar('TorchOrNumpyConformers', NumpyConformers, Conformers)
 
 # mimic typeshed
 StrPath = Union[str, 'PathLike[str]']

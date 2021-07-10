@@ -301,21 +301,23 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                 for packet_batch_idx in range(num_batches_in_packet):
                     batch = {k: v[packet_batch_idx] for k, v in batch_packet_dict.items()}
                     batch = inplace_transform(batch)
-                    _save_batch(split_path, overall_batch_idx, batch, file_format)
+                    _save_batch(split_path, overall_batch_idx, batch, file_format, len(all_batch_indices))
                     overall_batch_idx += 1
 
 
-def _save_batch(path: Path, idx: int, batch: Conformers, file_format: str) -> None:
+def _save_batch(path: Path, idx: int, batch: Conformers, file_format: str, total_batches: int) -> None:
     # We use pickle, numpy or hdf5 since saving in
     # pytorch format is extremely slow
     batch = {k: v.numpy() for k, v in batch.items()}
+    # The batch names are e.g. 00034_batch.h5
+    batch_path = path / f'{str(idx).zfill(len(str(total_batches)))}_batch'
     if file_format == 'pickle':
-        with open(path.joinpath(f'batch{idx}.pkl'), 'wb') as batch_file:
+        with open(batch_path.with_suffix('.pkl'), 'wb') as batch_file:
             pickle.dump(batch, batch_file)
     elif file_format == 'numpy':
-        np.savez(path.joinpath(f'batch{idx}'), **batch)
+        np.savez(batch_path, **batch)
     elif file_format == 'hdf5':
-        with h5py.File(path.joinpath(f'batch{idx}.h5'), 'w-') as f:
+        with h5py.File(batch_path.with_suffix('.h5'), 'w-') as f:
             for k, v in batch.items():
                 f.create_dataset(k, data=v)
     else:
