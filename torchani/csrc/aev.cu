@@ -974,7 +974,7 @@ void cuaev_forward(
     return;
   }
 
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream(coordinates_t.device().index());
   at::globalContext().lazyInitCUDA();
 
   int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
@@ -1177,7 +1177,7 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
 
   const int n_molecules = coordinates_t.size(0);
   const int max_natoms_per_mol = coordinates_t.size(1);
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream(coordinates_t.device().index());
 
   auto grad_coord = torch::zeros(coordinates_t.sizes(), coordinates_t.options().requires_grad(false)); // [2, 5, 3]
 
@@ -1261,7 +1261,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
 
   const int n_molecules = coordinates_t.size(0);
   const int max_natoms_per_mol = coordinates_t.size(1);
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream(coordinates_t.device().index());
 
   int aev_length = aev_params.radial_length + aev_params.angular_length;
 
