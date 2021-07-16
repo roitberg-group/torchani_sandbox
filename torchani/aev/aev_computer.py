@@ -101,7 +101,7 @@ class AEVComputer(torch.nn.Module):
         self.num_species_pairs = num_species * (num_species + 1) // 2
 
         self.register_buffer('triu_index',
-                             self._calculate_triu_index(num_species))
+                             self._calculate_triu_index(num_species).to(device=EtaR.device))
 
         # currently only cosine, smooth and custom cutoffs are supported
         # only ANI-1 style angular terms or radial terms
