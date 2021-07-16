@@ -2,6 +2,8 @@
 
 Metrics:
 
+[![conda-release](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/conda-release.yml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/conda-release.yml)
+[![conda-page](https://img.shields.io/badge/conda--package-page-blue)](https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
 ![PyPI](https://img.shields.io/pypi/v/torchani.svg)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/torchani.svg)
 
@@ -9,14 +11,14 @@ Checks:
 
 [![CodeFactor](https://www.codefactor.io/repository/github/aiqm/torchani/badge/master)](https://www.codefactor.io/repository/github/aiqm/torchani/overview/master)
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/aiqm/torchani.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/aiqm/torchani/alerts/)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/flake8/badge.svg)](https://github.com/aiqm/torchani/actions)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/clang-format/badge.svg)](https://github.com/aiqm/torchani/actions)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/mypy/badge.svg)](https://github.com/aiqm/torchani/actions)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/unittests/badge.svg)](https://github.com/aiqm/torchani/actions)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/cuda/badge.svg)](https://github.com/aiqm/torchani/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/flake8/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/clang-format/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/mypy/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/unittests/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/cuda/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
 [![Actions Status](https://github.com/aiqm/torchani/workflows/docs/badge.svg)](https://github.com/aiqm/torchani/actions)
 [![Actions Status](https://github.com/aiqm/torchani/workflows/runnable-submodules/badge.svg)](https://github.com/aiqm/torchani/actions)
-[![Actions Status](https://github.com/aiqm/torchani/workflows/tools/badge.svg)](https://github.com/aiqm/torchani/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/workflows/tools/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions)
 
 Deploy:
 
@@ -25,7 +27,7 @@ Deploy:
 
 We only provide compatibility with nightly PyTorch, but you can check if stable PyTorch happens to be supported by looking at the following badge:
 
-[![Actions Status](https://github.com/aiqm/torchani/workflows/stable-torch/badge.svg)](https://github.com/aiqm/torchani/actions)
+[![Actions Status](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/stable-torch.yml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/stable-torch.yml)
 
 
 TorchANI is a pytorch implementation of ANI. It is currently under alpha release, which means, the API is not stable yet. If you find a bug of TorchANI, or have some feature request, feel free to open an issue on GitHub, or send us a pull request.
@@ -34,37 +36,38 @@ TorchANI is a pytorch implementation of ANI. It is currently under alpha release
 
 
 # Install
+Supported version information when install from anaconda:
+- pytorch 1.9
+- cuda 11.1
+- python 3.6 or python 3.8
 
-TorchANI requires the latest preview version of PyTorch. Please install PyTorch before installing TorchANI.
+Install from anaconda by the following (Note that we are hosting the packages only for internal usage at: https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
 
-Please see [PyTorch's official site](https://pytorch.org/get-started/locally/) for instructions of installing latest preview version of PyTorch.
+```bash
+conda create -n ani -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c pytorch -c nvidia -c defaults -c conda-forge sandbox python=3.8
+```
+Which is equivalent to 
+```bash
+conda create -n ani python=3.8
+conda activate ani
+conda install -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c pytorch -c nvidia -c defaults -c conda-forge sandbox
+```
+
+You could also build torchani from source, check at [TorchANI CSRC](torchani/csrc).
 
 Note that if you updated TorchANI, you may also need to update PyTorch.
-
-After installing the correct PyTorch, you can install TorchANI by `pip` or `conda`:
-
-```bash
-pip install torchani
-```
-
-or
-
-```bash
-conda install -c conda-forge torchani
-```
-
-See https://github.com/conda-forge/torchani-feedstock for more information about the conda package.
 
 To run the tests and examples, you must manually download a data package
 
 ```bash
 ./download.sh
+pip install -r test_requirements.txt
+cd tests
+python -m pytest -v -s *.py
 ```
 
-# Extensions (Optional)
-[Torchani extensions csrc](torchani/csrc)
-
-To install AEV CUDA Extension (speedup for AEV calculation) and MNP (Multi Net Parallel for inference), please follow the instruction at [torchani/csrc](torchani/csrc).
+# TorchANI Extensions
+[TorchANI CSRC](torchani/csrc) provides AEV CUDA Extension (speedup for AEV calculation) and MNP extension (Multi Net Parallel for inference) for speedup training and inference.
 
 # Citation
 
