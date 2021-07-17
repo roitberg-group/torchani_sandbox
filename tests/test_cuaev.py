@@ -42,9 +42,9 @@ class TestCUAEV(TestCase):
     def setUpClass(cls):
         cls.ani2x = torchani.models.ANI2x(periodic_table_index=True, model_index=None)
 
-    def setUp(self):
+    def setUp(self, device='cuda'):
         self.tolerance = 5e-5
-        self.device = 'cuda'
+        self.device = device
         self.aev_computer_1x = torchani.AEVComputer.like_1x(cutoff_fn=self.cutoff_fn).to(self.device)
         self.cuaev_computer_1x = torchani.AEVComputer.like_1x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
         self.nn = torch.nn.Sequential(torch.nn.Linear(384, 1, False)).to(self.device)
@@ -133,7 +133,7 @@ class TestCUAEV(TestCase):
 
     @skipIfNoMultiGPU
     def testMultiGPU(self):
-        self.device = 'cuda:1'
+        self.setUp(device='cuda:1')
         self.testSimple()
         self.testSimpleBackward()
         self.testSimpleDoubleBackward_1()
