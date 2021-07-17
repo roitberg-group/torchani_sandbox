@@ -9,8 +9,8 @@ from parameterized import parameterized_class
 
 path = os.path.dirname(os.path.realpath(__file__))
 
-skipIfNoGPU = unittest.skipIf(not torch.cuda.is_available(),
-                              'There is no device to run this test')
+skipIfNoGPU = unittest.skipIf(not torch.cuda.is_available(), 'There is no device to run this test')
+skipIfNoMultiGPU = unittest.skipIf(not torch.cuda.device_count() >= 2, 'There is not enough GPU devices to run this test')
 skipIfNoCUAEV = unittest.skipIf(not torchani.aev.cuaev_is_installed, "only valid when cuaev is installed")
 
 
@@ -130,6 +130,14 @@ class TestCUAEV(TestCase):
         _, aev = self.aev_computer_1x((species, coordinates))
         _, cu_aev = self.cuaev_computer_1x((species, coordinates))
         self.assertEqual(cu_aev, aev)
+
+    @skipIfNoMultiGPU
+    def testMultiGPU(self):
+        self.device = 'cuda:1'
+        self.testSimple()
+        self.testSimpleBackward()
+        self.testSimpleDoubleBackward_1()
+        self.testSimpleDoubleBackward_2()
 
     def testBatch(self):
         coordinates = torch.rand([100, 50, 3], device=self.device) * 5
