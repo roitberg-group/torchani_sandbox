@@ -1,6 +1,7 @@
 #include <aev.h>
 #include <torch/extension.h>
 #include <cuaev_cub.cuh>
+
 #include <c10/cuda/CUDAException.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
@@ -980,7 +981,7 @@ void cuaev_forward(
     return;
   }
 
-  at::cuda::CUDAStream stream = at::cuda::getDefaultCUDAStream(coordinates_t.device().index());
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream(coordinates_t.device().index());
   at::cuda::CUDAStreamGuard guard(stream);
   at::globalContext().lazyInitCUDA();
 
@@ -1188,7 +1189,7 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
 
   const int n_molecules = coordinates_t.size(0);
   const int max_natoms_per_mol = coordinates_t.size(1);
-  at::cuda::CUDAStream stream = at::cuda::getDefaultCUDAStream(coordinates_t.device().index());
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream(coordinates_t.device().index());
   at::cuda::CUDAStreamGuard guard(stream);
 
   auto grad_coord = torch::zeros(coordinates_t.sizes(), coordinates_t.options().requires_grad(false)); // [2, 5, 3]
@@ -1275,7 +1276,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
 
   const int n_molecules = coordinates_t.size(0);
   const int max_natoms_per_mol = coordinates_t.size(1);
-  at::cuda::CUDAStream stream = at::cuda::getDefaultCUDAStream(coordinates_t.device().index());
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream(coordinates_t.device().index());
   at::cuda::CUDAStreamGuard guard(stream);
 
   int aev_length = aev_params.radial_length + aev_params.angular_length;
