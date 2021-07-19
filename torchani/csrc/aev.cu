@@ -1059,6 +1059,7 @@ void cuaev_forward(
     // remove padding numJPerI if numj == 0
     result.nI = cubDeviceSelectIf(
         numJPerI_p, radialNbr_numJPerI_p, total_atoms, [=] __device__(const int numj) { return (bool)numj; }, stream);
+
     // also remove padding atomI
     // Note: cub::DeviceSelect::Flagged Bug: flag current only allow bool or int which is ether 0 or 1
     // https://github.com/NVIDIA/cub/issues/235
@@ -1105,6 +1106,7 @@ void cuaev_forward(
         max_natoms_per_mol,
         max_numj_per_i_in_Rcr);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
+
 #ifdef TORCHANI_DEBUG
     result.angularNbr.nJ = cubSum(angularNbr_numJPerI_p, result.nI, stream);
     printf("%-35s %'d\n", "angularNbr nJ", result.angularNbr.nJ);
@@ -1135,6 +1137,7 @@ void cuaev_forward(
         result.radialNbr.nJ,
         result.radialNbr.maxNumJPerI);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
+
 #ifdef TORCHANI_DEBUG
     printf("%-35s %d\n", "radialNbr  maxNumJPerI", result.radialNbr.maxNumJPerI);
 #endif
