@@ -1,10 +1,9 @@
 #include <aev.h>
-#include <torch/extension.h>
-#include <cuaev_cub.cuh>
-
 #include <c10/cuda/CUDAException.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
+#include <torch/extension.h>
+#include <cuaev_cub.cuh>
 
 #include <ATen/Context.h>
 #include <THC/THC.h>
@@ -963,7 +962,8 @@ void cuaev_forward(
       "cuda extension is currently not supported for the specified "
       "configuration");
   TORCH_CHECK(
-    coordinates_t.device() == species_t.device() && coordinates_t.device() == aev_params.EtaR_t.device() && coordinates_t.device() == aev_params.EtaA_t.device(),
+      coordinates_t.device() == species_t.device() && coordinates_t.device() == aev_params.EtaR_t.device() &&
+          coordinates_t.device() == aev_params.EtaA_t.device(),
       "coordinates, species, and aev_params should be on the same device");
 
   float Rcr = aev_params.Rcr;
@@ -1059,6 +1059,7 @@ void cuaev_forward(
     // remove padding numJPerI if numj == 0
     result.nI = cubDeviceSelectIf(
         numJPerI_p, radialNbr_numJPerI_p, total_atoms, [=] __device__(const int numj) { return (bool)numj; }, stream);
+
     // also remove padding atomI
     // Note: cub::DeviceSelect::Flagged Bug: flag current only allow bool or int which is ether 0 or 1
     // https://github.com/NVIDIA/cub/issues/235
@@ -1105,6 +1106,7 @@ void cuaev_forward(
         max_natoms_per_mol,
         max_numj_per_i_in_Rcr);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
+
 #ifdef TORCHANI_DEBUG
     result.angularNbr.nJ = cubSum(angularNbr_numJPerI_p, result.nI, stream);
     printf("%-35s %'d\n", "angularNbr nJ", result.angularNbr.nJ);
@@ -1134,7 +1136,8 @@ void cuaev_forward(
         aev_params.radial_sublength,
         result.radialNbr.nJ,
         result.radialNbr.maxNumJPerI);
-        C10_CUDA_KERNEL_LAUNCH_CHECK();
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+
 #ifdef TORCHANI_DEBUG
     printf("%-35s %d\n", "radialNbr  maxNumJPerI", result.radialNbr.maxNumJPerI);
 #endif
@@ -1172,7 +1175,7 @@ void cuaev_forward(
         aev_params.num_species,
         result.angularNbr.maxNumJPerI,
         result.nI);
-        C10_CUDA_KERNEL_LAUNCH_CHECK();
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
 
 #ifdef TORCHANI_DEBUG
     printf("%-35s %d\n", "angularNbr maxNumJPerI", result.angularNbr.maxNumJPerI);
@@ -1221,7 +1224,7 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
       aev_params.radial_sublength,
       result.radialNbr.nJ,
       result.radialNbr.maxNumJPerI);
-      C10_CUDA_KERNEL_LAUNCH_CHECK();
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
 
   // angular
   auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
@@ -1263,7 +1266,7 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
           aev_params.num_species,
           result.angularNbr.maxNumJPerI,
           result.nI);
-          C10_CUDA_KERNEL_LAUNCH_CHECK();
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
 
   return grad_coord;
 }
@@ -1313,7 +1316,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
       aev_params.radial_sublength,
       result.radialNbr.nJ,
       result.radialNbr.maxNumJPerI);
-      C10_CUDA_KERNEL_LAUNCH_CHECK();
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
 
   // angular
   auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
@@ -1350,7 +1353,7 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
           aev_params.num_species,
           result.angularNbr.maxNumJPerI,
           result.nI);
-          C10_CUDA_KERNEL_LAUNCH_CHECK();
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
 
   return grad_grad_aev;
 }
