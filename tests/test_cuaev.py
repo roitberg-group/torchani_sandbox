@@ -42,7 +42,7 @@ class TestCUAEV(TestCase):
     def setUpClass(cls):
         cls.ani2x = torchani.models.ANI2x(periodic_table_index=True, model_index=None)
 
-    def setUp(self, device='cuda'):
+    def setUp(self, device='cuda:0'):
         self.tolerance = 5e-5
         self.device = device
         self.aev_computer_1x = torchani.AEVComputer.like_1x(cutoff_fn=self.cutoff_fn).to(self.device)
@@ -138,6 +138,7 @@ class TestCUAEV(TestCase):
         self.testSimpleBackward()
         self.testSimpleDoubleBackward_1()
         self.testSimpleDoubleBackward_2()
+        self.setUp(device='cuda:0')
 
     def testBatch(self):
         coordinates = torch.rand([100, 50, 3], device=self.device) * 5
