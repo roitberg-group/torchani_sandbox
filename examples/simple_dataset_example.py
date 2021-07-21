@@ -1,15 +1,20 @@
 from torchani.datasets import ANIDataset
-import torch
-
-# Example usage of the ANIDataset class, which supersedes the obsolete
+# Example of simple usage of the ANIDataset class, which supersedes the obsolete
 # anidataloader
 
-dataset = ANIDataset('/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5')
+# ANIDataset accepts a path to an h5 file or a list of paths (optionally with names)
+dataset = ANIDataset('/path/to/h5/file.h5')
+dataset = ANIDataset(locations=('/path/to/h5file1.h5', '/path/to/h5file2.h5'), names=('only_HCNO', 'heavy'))
 
 # ############## Conformer groups:  ###########################
 # To access groups of conformers we can just use the dataset as an ordered
 # dictionary
 group = dataset['C10H10']
+# if you have many files you can access by using the store names you passed:
+group = dataset['name1/C10H10']
+# by default the store names are just numbers if not passed
+group0 = dataset['0/C10H10']
+group1 = dataset['1/C10H8']
 print(group)
 
 # items(), values() and keys() work as expected for groups of conformers
@@ -37,10 +42,10 @@ print(conformer)
 
 # A tensor can also be passed for indexing, to fetch multiple conformers
 # from the same group, which is faster.
-# Since I copy the data for simplicity, this allows all fancy indexing
+# Since we copy the data for simplicity, this allows all fancy indexing
 # operations (directly indexing using h5py does not).
-# a numpy array or an int can also be used.
-conformers = dataset.get_conformers('C10H10', torch.tensor([0, 1]))
+# a numpy array or an int / list of ints can also be used.
+conformers = dataset.get_conformers('C10H10', [0, 1])
 print(conformers)
 
 # We can also access all the group, same as with [] if we don't pass an index
@@ -51,7 +56,7 @@ print(conformer)
 conformer = dataset.get_conformers('C10H10', include_properties=('species', 'energies'))
 print(conformer)
 
-conformer = dataset.get_conformers('C10H10', torch.tensor([0, 3]), include_properties=('species', 'energies'))
+conformer = dataset.get_conformers('C10H10', [0, 3], include_properties=('species', 'energies'))
 print(conformer)
 
 # We can iterate over all conformers sequentially by calling iter_conformer,

@@ -21,6 +21,9 @@ from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 if _H5PY_AVAILABLE:
     import h5py
 
+# any of these should be interpretable as a 1D index sequence
+IdxLike = Union[Tensor, np.ndarray, None, Iterable[int], int]
+
 
 # Helper functions
 def _get_formulas(conformers: TorchOrNumpyConformers) -> List[str]:
@@ -381,9 +384,24 @@ class _ANISubdataset(_ANIDatasetBase):
             present_species.update(parser(species))
         return sorted(present_species)
 
+    def _parse_index(self, idx: IdxLike) -> Optional[np.ndarray]:
+        # internally, idx_ is always a numpy array or None, idx can be a tensor
+        # or a list or other iterable, which is must be castable to a numpy int
+        # array of ndim 1
+        if idx is not None:
+            if isinstance(idx, Tensor):
+                idx_ = idx.cpu().numpy()
+            elif isinstance(idx, int):
+                idx_ = np.array(idx)
+            else:
+                idx_ = np.asarray(idx)
+            assert idx_.ndim <= 1, "index must be a 0 or 1 dim tensor"
+            return idx_
+        return idx
+
     def get_conformers(self,
                        group_name: str,
-                       idx: Optional[Tensor] = None,
+                       idx: IdxLike = None,
                        properties: Optional[Iterable[str]] = None) -> Conformers:
         r"""Get conformers in a given group in the dataset
 
@@ -404,9 +422,10 @@ class _ANISubdataset(_ANIDatasetBase):
 
     def get_numpy_conformers(self,
                              group_name: str,
-                             idx: Optional[Tensor] = None,
+                             idx: IdxLike = None,
                              properties: Optional[Iterable[str]] = None) -> NumpyConformers:
         r"""Same as get_conformers but conformers are a dict {property: ndarray}"""
+
         if properties is None:
             properties = self.properties
         needed_properties = {properties} if isinstance(properties, str) else set(properties)
@@ -419,13 +438,13 @@ class _ANISubdataset(_ANIDatasetBase):
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r')
             numpy_conformers = {p: f[group_name][p] for p in needed_properties}
-            if idx is not None:
-                assert idx.dim() <= 1, "index must be a 0 or 1 dim tensor"
-                numpy_conformers.update({k: numpy_conformers[k][idx.cpu().numpy()]
+            idx_ = self._parse_index(idx)
+            if idx_ is not None:
+                numpy_conformers.update({k: numpy_conformers[k][idx_]
                                          for k in batch_properties})
 
         if nonbatch_properties:
-            tile_shape = (_get_num_conformers(numpy_conformers), 1) if idx is None or idx.dim() == 1 else (1,)
+            tile_shape = (_get_num_conformers(numpy_conformers), 1) if idx_ is None or idx_.ndim == 1 else (1,)
             numpy_conformers.update({k: np.tile(numpy_conformers[k], tile_shape)
                                      for k in nonbatch_properties})
 
@@ -472,8 +491,9 @@ class _ANISubdataset(_ANIDatasetBase):
         return self
 
     @_needs_cache_update
-    def delete_conformers(self, group_name: str, idx: Optional[Tensor] = None) -> '_ANISubdataset':
+    def delete_conformers(self, group_name: str, idx: IdxLike = None) -> '_ANISubdataset':
         r"""Delete a given selected set of conformers"""
+        idx_ = self._parse_index(idx)
         self._check_correct_grouping()
         if group_name not in self.keys():
             raise KeyError(group_name)
@@ -482,9 +502,9 @@ class _ANISubdataset(_ANIDatasetBase):
             f = self._get_open_store(stack, 'r+')
             del f[group_name]
             # if no index was specified delete everything
-            if idx is None:
+            if idx_ is None:
                 return self
-            good_conformers = {k: np.delete(all_conformers[k], obj=idx.cpu().numpy(), axis=0)
+            good_conformers = {k: np.delete(all_conformers[k], obj=idx_, axis=0)
                                for k in self.properties}
             if all(v.shape[0] == 0 for v in good_conformers.values()):
                 # if we deleted everything in the group then just return,
@@ -519,10 +539,12 @@ class _ANISubdataset(_ANIDatasetBase):
         return self
 
     @_needs_cache_update
-    def create_full_scalar_property(self,
-                                    dest_key: str,
-                                    fill_value: int = 0,
-                                    dtype: DTypeLike = np.int64) -> '_ANISubdataset':
+    def create_full_property(self,
+                             dest_key: str,
+                             is_atomic: bool = False,
+                             extra_dims: Union[int, Tuple[int, ...]] = tuple(),
+                             fill_value: int = 0,
+                             dtype: DTypeLike = np.int64) -> '_ANISubdataset':
         r"""Creates a scalar property for all conformer groups
 
         Creates a property with shape (num_conformers,), and with a specified
@@ -530,11 +552,18 @@ class _ANISubdataset(_ANIDatasetBase):
         'charge' or 'spin_multiplicity' properties, which are usually the same
         for all conformers
         """
+        extra_dims_ = (extra_dims,) if isinstance(extra_dims, int) else extra_dims
         self._check_properties_are_not_present(dest_key)
+        shape: Tuple[int, ...]
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
-                data = np.full(_get_num_conformers(f[group_name]), fill_value=fill_value, dtype=dtype)
+                shape = (_get_num_conformers(f[group_name]),)
+
+                if is_atomic:
+                    shape += (_get_num_atoms(f[group_name]),)
+
+                data = np.full(shape=shape + extra_dims_, fill_value=fill_value, dtype=dtype)
                 f[group_name].create_numpy_values({dest_key: data})
         return self
 

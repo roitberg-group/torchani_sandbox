@@ -47,7 +47,7 @@ def concatenate(source: ANIDataset,
 
 def filter_by_high_force(dataset: ANIDataset,
                          threshold: float = 2.0,
-                         criteria: str = 'components',
+                         criteria: str = 'magnitude',
                          device: str = 'cpu',
                          max_split: int = 2560,
                          delete_inplace: bool = False,

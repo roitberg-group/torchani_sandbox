@@ -604,7 +604,7 @@ class TestANIDataset(TestCase):
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
         ds.delete_properties({'species'})
-        ds.create_full_scalar_property('numbers', 1)
+        ds.create_full_property('numbers', fill_value=1)
         ds.create_species_from_numbers('numbers', 'species')
         for k in ('H6', 'C6', 'O6'):
             species = ds.get_numpy_conformers(k, properties='species')['species']
@@ -616,8 +616,8 @@ class TestANIDataset(TestCase):
         initial_len = len(new_groups['C6']['coordinates'])
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
-        ds.create_full_scalar_property('spin_multiplicities', 1)
-        ds.create_full_scalar_property('charges', 0)
+        ds.create_full_property('spin_multiplicities', fill_value=1)
+        ds.create_full_property('charges', fill_value=0)
         self.assertEqual(len(ds['H6'].keys()), 5)
         self.assertEqual(ds.properties, {'species', 'energies', 'coordinates', 'charges', 'spin_multiplicities'})
         self.assertEqual(ds['H6']['spin_multiplicities'], torch.ones(initial_len, dtype=torch.long))
