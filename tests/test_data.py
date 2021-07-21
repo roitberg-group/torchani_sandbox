@@ -166,22 +166,54 @@ class TestEstimationSAE(TestCase):
     def setUp(self):
         self.batched_path = Path('./tmp_dataset').resolve()
         self.batch_size = 2560
-        create_batched_dataset(dataset_path_gdb, dest_path=self.batched_path, shuffle=True,
-                splits={'training': 1.0}, batch_size=self.batch_size, shuffle_seed=12345, include_properties=('energies', 'species', 'coordinates'))
+        create_batched_dataset(dataset_path_gdb,
+                               dest_path=self.batched_path,
+                               shuffle=True,
+                               splits={'training': 1.0},
+                               batch_size=self.batch_size,
+                               shuffle_seed=12345,
+                               include_properties=('energies', 'species', 'coordinates'))
+        self.direct_cache = create_batched_dataset(dataset_path_gdb,
+                                                   shuffle=True,
+                                                   splits={'training': 1.0},
+                                                   batch_size=self.batch_size,
+                                                   shuffle_seed=12345,
+                                                   include_properties=('energies', 'species', 'coordinates'),
+                                                   direct_cache=True)
         self.train = ANIBatchedDataset(self.batched_path, split='training')
 
     def testExactSAE(self):
+        self._testExactSAE(direct=False)
+
+    def testStochasticSAE(self):
+        self._testExactSAE(direct=False)
+
+    def testExactSAEDirect(self):
+        self._testExactSAE(direct=True)
+
+    def testStochasticSAEDirect(self):
+        self._testExactSAE(direct=True)
+
+    def _testExactSAE(self, direct: bool = False):
+        if direct:
+            ds = self.direct_cache['training']
+        else:
+            ds = self.train
         with warnings.catch_warnings():
             warnings.filterwarnings(action='ignore',
                                     message="Using all batches to estimate SAE, this may take up a lot of memory.")
-            saes, _ = calculate_saes(self.train, ('H', 'C', 'N', 'O'), mode='exact')
+            saes, _ = calculate_saes(ds, ('H', 'C', 'N', 'O'), mode='exact')
             torch.set_printoptions(precision=10)
         self.assertEqual(saes,
                          torch.tensor([-0.5983182192, -38.0726242065, -54.6750144958, -75.1433029175], dtype=torch.float),
                          atol=2.5e-3, rtol=2.5e-3)
 
-    def testStochasticSAE(self):
-        saes, _ = calculate_saes(self.train, ('H', 'C', 'N', 'O'), mode='sgd')
+    def _testStochasticSAE(self, direct: bool = False):
+        if direct:
+            ds = self.direct_cache['training']
+        else:
+            ds = self.train
+        saes, _ = calculate_saes(ds, ('H', 'C', 'N', 'O'), mode='sgd')
         # in this specific case the sae difference is very large because it is a
         # very small sample, but for the full sample this imlementation is correct
         self.assertEqual(saes, torch.tensor([-20.4466, -0.3910, -8.8793, -11.4184], dtype=torch.float),

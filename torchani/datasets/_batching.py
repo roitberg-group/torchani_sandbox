@@ -41,6 +41,9 @@ def create_batched_dataset(locations: Union[Collection[StrPath], StrPath, ANIDat
     if folds is not None and splits is not None:
         raise ValueError('Only one of ["folds", "splits"] should be specified')
 
+    if direct_cache and dest_path is not None:
+        raise ValueError("Destination path not needed for direct cache")
+
     # NOTE: All the tensor manipulation in this function is handled in CPU
     if dest_path is None:
         dest_path = Path.cwd() / f'batched_dataset_{file_format}'
@@ -281,8 +284,12 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                 all_conformers: List[Conformers] = []
                 end_idxs = counts_cat + cumcounts_cat
                 groups_slices = zip(uniqued_idxs_cat, cumcounts_cat, end_idxs)
-                desc = (f'Saving batch packet {j + 1} of {num_batch_indices_packets} '
-                        f'of split {split_path.name} in format {file_format}')
+                if direct_cache:
+                    desc = (f'Saving batch packet {j + 1} of {num_batch_indices_packets} '
+                            f'of split {split_path.name} into memory')
+                else:
+                    desc = (f'Saving batch packet {j + 1} of {num_batch_indices_packets} '
+                            f'of split {split_path.name} in format {file_format}')
                 for step, group_slice in tqdm(enumerate(groups_slices),
                                               total=len(counts_cat),
                                               desc=desc,
@@ -316,7 +323,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                         _save_batch(split_path, overall_batch_idx, batch, file_format, len(all_batch_indices))
                     overall_batch_idx += 1
         if direct_cache:
-            batched_datasets[split_name] = ANIBatchedDataset(batches=in_memory_batches, split=split_name)
+            batched_datasets[split_name] = ANIBatchedDataset(batches=in_memory_batches, split=split_name).cache(verbose=False)
         else:
             batched_datasets[split_name] = ANIBatchedDataset(store_dir=split_path.parent, split=split_name)
     return batched_datasets

@@ -71,7 +71,7 @@ _numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
 
     _SUFFIXES_AND_FORMATS = {'.npz': 'numpy', '.h5': 'hdf5', '.pkl': 'pickle'}
-    batch_paths: Optional[List[Path]]
+    _batch_paths: Optional[List[Path]]
 
     def __init__(self, store_dir: Optional[StrPath] = None,
                        batches: Optional[List[Conformers]] = None,
@@ -90,18 +90,19 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
         self.split = split
         self.properties = ('coordinates', 'species', 'energies') if properties is None else properties
         self.transform = (lambda x: x) if transform is None else transform
+        container: Union[List[Path], List[Conformers]]
         if not batches:
             if store_dir is None:
                 raise ValueError("One of batches or store_dir must be specified")
             store_dir = Path(store_dir).resolve()
-            self.batch_paths = self._get_batch_paths(store_dir / split)
-            self._extractor = self._get_batch_extractor(self.batch_paths[0].suffix, file_format)
-            container = self.batch_paths
+            self._batch_paths = self._get_batch_paths(store_dir / split)
+            self._extractor = self._get_batch_extractor(self._batch_paths[0].suffix, file_format)
+            container = self._batch_paths
         else:
             self._data = batches
-            self.batch_paths = None
+            self._batch_paths = None
             self._extractor = lambda idx: self._data[idx]
-            container = self._batches
+            container = self._data
 
         # Drops last batch only if requested and if its smaller than the rest
         if drop_last and self.batch_size(-1) < self.batch_size(0):
@@ -153,37 +154,35 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
 
     def _numpy_extractor(self, idx: int) -> Conformers:
         return {k: torch.as_tensor(v)
-                for k, v in np.load(self.batch_paths[idx]).items()  # type: ignore
+                for k, v in np.load(self._batch_paths[idx]).items()  # type: ignore
                 if self.properties is None or k in self.properties}
 
     def _pickle_extractor(self, idx: int) -> Conformers:
-        with open(self.batch_paths[idx], 'rb') as f:  # type: ignore
+        with open(self._batch_paths[idx], 'rb') as f:  # type: ignore
             return {k: torch.as_tensor(v)
                     for k, v in pickle.load(f).items()
                     if self.properties is None or k in self.properties}
 
     def _hdf5_extractor(self, idx: int) -> Conformers:
-        with h5py.File(self.batch_paths[idx], 'r') as f:  # type: ignore
+        with h5py.File(self._batch_paths[idx], 'r') as f:  # type: ignore
             return {k: torch.as_tensor(v[()])
                     for k, v in f['/'].items()
                     if self.properties is None or k in self.properties}
 
     def cache(self, pin_memory: bool = True,
-              verbose: bool = True,
-              apply_transform: bool = True) -> 'ANIBatchedDataset':
+              verbose: bool = True) -> 'ANIBatchedDataset':
         r"""Saves the full dataset into RAM"""
         desc = f'Cacheing {self.split}, Warning: this may use a lot of RAM!'
         self._data = [self._extractor(idx) for idx in tqdm(range(len(self)),
                                                           total=len(self),
                                                           disable=not verbose,
                                                           desc=desc)]
-        if apply_transform:
-            desc = "Applying transforms once and discarding"
-            with torch.no_grad():
-                self._data = [self.transform(p) for p in tqdm(self._data,
-                                                              total=len(self),
-                                                              disable=not verbose,
-                                                              desc=desc)]
+        desc = "Applying transforms once and discarding"
+        with torch.no_grad():
+            self._data = [self.transform(p) for p in tqdm(self._data,
+                                                          total=len(self),
+                                                          disable=not verbose,
+                                                          desc=desc)]
             self.transform = lambda x: x
         if pin_memory:
             desc = 'Pinning memory; dont pin memory in torch DataLoader!'
