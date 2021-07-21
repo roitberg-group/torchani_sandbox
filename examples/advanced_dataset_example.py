@@ -99,11 +99,11 @@ ds.append_conformers('store_name/group_name', conformers)
 # It is also possible to append conformers as numpy arrays, in this case
 # "species" should hold the actual species.
 import numpy as np  # noqa
-conformers = {'numbers': np.array([[1, 1, 6, 6], [1, 1, 6, 6]]),
-              'species': np.array([['H', 'H', 'C', 'C'], ['H', 'H', 'C', 'C']]),
-              'coordinates': np.random.standard_normal((2, 4, 3)),
-              'energies': np.random.standard_normal(2)}
-ds.append_numpy_conformers('store_name/group_name', conformers)
+numpy_conformers = {'numbers': np.array([[1, 1, 6, 6], [1, 1, 6, 6]]),
+                    'species': np.array([['H', 'H', 'C', 'C'], ['H', 'H', 'C', 'C']]),
+                    'coordinates': np.random.standard_normal((2, 4, 3)),
+                    'energies': np.random.standard_normal(2)}
+ds.append_numpy_conformers('store_name/group_name', numpy_conformers)
 # Conformers can also be deleted from the dataset.
 # This will delete conformers 0 and 2 only:
 ds.delete_conformers('store_name/group_name', [0, 2])
