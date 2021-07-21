@@ -1,8 +1,6 @@
 from typing import (Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set,
                     Mapping, Any, Iterable, Callable, cast)
 import inspect
-import json
-from json.decoder import JSONDecodeError
 import pickle
 import warnings
 from os import fspath
@@ -73,30 +71,43 @@ _numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
 
     _SUFFIXES_AND_FORMATS = {'.npz': 'numpy', '.h5': 'hdf5', '.pkl': 'pickle'}
+    batch_paths: Optional[List[Path]]
 
-    def __init__(self, store_dir: StrPath,
+    def __init__(self, store_dir: Optional[StrPath] = None,
+                       batches: Optional[List[Conformers]] = None,
                        file_format: Optional[str] = None,
                        split: str = 'training',
-                       transform: Transform = lambda x: x,
-                       properties: Optional[Sequence[str]] = ('coordinates', 'species', 'energies'),
+                       transform: Optional[Transform] = None,
+                       properties: Optional[Sequence[str]] = None,
                        drop_last: bool = False):
-        store_dir = Path(store_dir).resolve(strict=True)
-        self.batch_paths = self._get_batch_paths(store_dir / split)
-        self.transform = transform
-        self.properties = properties
-        self.split = split
-        self._extractor = self._get_batch_extractor(self.batch_paths[0].suffix, file_format)
+        # (store_dir or file_format or transform) and batches are mutually
+        # exclusive options, batches is passed if the dataset directly lives in
+        # memory and has no backing store, otherwise there should be a backing
+        # store in store_dir/split
+        if batches is not None and any(v is not None for v in (file_format, store_dir, transform)):
+            raise ValueError('Batches is mutually exclusive with file_format/store_dir/transform')
 
-        try:
-            with open(store_dir.with_name('creation_log.json'), 'r') as f:
-                self._is_inplace_transformed = json.load(f)['is_inplace_transformed']
-        except (FileNotFoundError, KeyError, JSONDecodeError):
-            warnings.warn("Creation log not found or corrupted, _is_inplace_transformed assumed False")
-            self._is_inplace_transformed = False
+        self.split = split
+        self.properties = ('coordinates', 'species', 'energies') if properties is None else properties
+        self.transform = (lambda x: x) if transform is None else transform
+        if not batches:
+            if store_dir is None:
+                raise ValueError("One of batches or store_dir must be specified")
+            store_dir = Path(store_dir).resolve()
+            self.batch_paths = self._get_batch_paths(store_dir / split)
+            self._extractor = self._get_batch_extractor(self.batch_paths[0].suffix, file_format)
+            container = self.batch_paths
+        else:
+            self._data = batches
+            self.batch_paths = None
+            self._extractor = lambda idx: self._data[idx]
+            container = self._batches
 
         # Drops last batch only if requested and if its smaller than the rest
         if drop_last and self.batch_size(-1) < self.batch_size(0):
-            self.batch_paths.pop()
+            container.pop()
+
+        self._len = len(container)
 
     def batch_size(self, idx: int) -> int:
         batch = self[idx]
@@ -142,22 +153,22 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
 
     def _numpy_extractor(self, idx: int) -> Conformers:
         return {k: torch.as_tensor(v)
-                for k, v in np.load(self.batch_paths[idx]).items()
+                for k, v in np.load(self.batch_paths[idx]).items()  # type: ignore
                 if self.properties is None or k in self.properties}
 
     def _pickle_extractor(self, idx: int) -> Conformers:
-        with open(self.batch_paths[idx], 'rb') as f:
+        with open(self.batch_paths[idx], 'rb') as f:  # type: ignore
             return {k: torch.as_tensor(v)
                     for k, v in pickle.load(f).items()
                     if self.properties is None or k in self.properties}
 
     def _hdf5_extractor(self, idx: int) -> Conformers:
-        with h5py.File(self.batch_paths[idx], 'r') as f:
+        with h5py.File(self.batch_paths[idx], 'r') as f:  # type: ignore
             return {k: torch.as_tensor(v[()])
                     for k, v in f['/'].items()
                     if self.properties is None or k in self.properties}
 
-    def cache(self, *, pin_memory: bool = True,
+    def cache(self, pin_memory: bool = True,
               verbose: bool = True,
               apply_transform: bool = True) -> 'ANIBatchedDataset':
         r"""Saves the full dataset into RAM"""
@@ -194,7 +205,7 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
         return batch
 
     def __len__(self) -> int:
-        return len(self.batch_paths)
+        return self._len
 
 
 # Base class for ANIDataset and _ANISubdataset
@@ -276,7 +287,7 @@ def _needs_cache_update(method: Callable[..., '_ANISubdataset']) -> Callable[...
 class _ANISubdataset(_ANIDatasetBase):
 
     def __init__(self,
-                 store_location: StrPath, *,
+                 store_location: StrPath,
                  create: bool = False,
                  grouping: str = 'by_formula',
                  backend: Optional[str] = None,
@@ -539,7 +550,7 @@ class _ANISubdataset(_ANIDatasetBase):
         return new_ds
 
     @_needs_cache_update
-    def repack(self, *, verbose: bool = True) -> '_ANISubdataset':
+    def repack(self, verbose: bool = True) -> '_ANISubdataset':
         r"""Repacks underlying store if it is HDF5
 
         When a dataset is deleted from an HDF5 file the file size is not
@@ -562,7 +573,7 @@ class _ANISubdataset(_ANIDatasetBase):
         return new_ds
 
     @_needs_cache_update
-    def regroup_by_formula(self, *, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
+    def regroup_by_formula(self, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
         r"""Regroup dataset by formula
 
         All conformers are extracted and redistributed in groups named
@@ -592,7 +603,7 @@ class _ANISubdataset(_ANIDatasetBase):
         return new_ds
 
     @_needs_cache_update
-    def regroup_by_num_atoms(self, *, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
+    def regroup_by_num_atoms(self, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
         r"""Regroup dataset by number of atoms
 
         All conformers are extracted and redistributed in groups named
@@ -615,7 +626,7 @@ class _ANISubdataset(_ANIDatasetBase):
         return new_ds
 
     @_needs_cache_update
-    def delete_properties(self, properties: Sequence[str], *, verbose: bool = True) -> '_ANISubdataset':
+    def delete_properties(self, properties: Sequence[str], verbose: bool = True) -> '_ANISubdataset':
         r"""Delete some properties from the dataset"""
         self._check_properties_are_present(properties)
         with ExitStack() as stack:

@@ -155,17 +155,10 @@ def calculate_saes(dataset: Union[DataLoader, ANIBatchedDataset],
         assert isinstance(dataset.dataset, ANIBatchedDataset)
         old_transform = dataset.dataset.transform
         dataset.dataset.transform = AtomicNumbersToIndices(elements)
-        wrapped_ds = dataset.dataset
     else:
         assert isinstance(dataset, ANIBatchedDataset)
         old_transform = dataset.transform
         dataset.transform = AtomicNumbersToIndices(elements)
-        wrapped_ds = dataset
-
-    if wrapped_ds._is_inplace_transformed:
-        warnings.warn("Dataset is inplace transformed, "
-                      "SAE calculation may be incorrect "
-                      "depending on the inplace transforms applied")
 
     num_species = len(elements)
     num_batches_to_use = math.ceil(len(dataset) * fraction)

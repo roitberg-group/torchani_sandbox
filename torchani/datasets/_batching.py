@@ -14,10 +14,11 @@ from torch import Tensor
 import numpy as np
 
 from ..utils import pad_atomic_properties, cumsum_from_zero, PADDING, tqdm
-from .datasets import ANIDataset
+from .datasets import ANIDataset, ANIBatchedDataset
 from ._annotations import Conformers, StrPath, Transform
 
 
+# TODO a batcher class would make this code much more clear
 def create_batched_dataset(locations: Union[Collection[StrPath], StrPath, ANIDataset],
                            dest_path: Optional[StrPath] = None,
                            shuffle: bool = True,
@@ -30,7 +31,8 @@ def create_batched_dataset(locations: Union[Collection[StrPath], StrPath, ANIDat
                            splits: Optional[Dict[str, float]] = None,
                            folds: Optional[int] = None,
                            inplace_transform: Optional[Transform] = None,
-                           verbose: bool = True) -> None:
+                           direct_cache: bool = False,
+                           verbose: bool = True) -> Dict[str, ANIBatchedDataset]:
 
     if file_format != 'hdf5' and include_properties is None:
         include_properties = ('species', 'coordinates', 'energies')
@@ -68,7 +70,7 @@ def create_batched_dataset(locations: Union[Collection[StrPath], StrPath, ANIDat
     # by defaults we use splits, if folds or splits is specified we
     # do the specified operation
     if folds is not None:
-        conformer_splits, split_paths = _divide_into_folds(conformer_indices, dest_path, folds, rng)
+        conformer_splits, split_paths = _divide_into_folds(conformer_indices, dest_path, folds, rng, direct_cache)
     else:
         if splits is None:
             splits = {'training': 0.8, 'validation': 0.2}
@@ -76,36 +78,37 @@ def create_batched_dataset(locations: Union[Collection[StrPath], StrPath, ANIDat
         if not math.isclose(sum(list(splits.values())), 1.0):
             raise ValueError("The sum of the split fractions has to add up to one")
 
-        conformer_splits, split_paths = _divide_into_splits(conformer_indices, dest_path, splits)
+        conformer_splits, split_paths = _divide_into_splits(conformer_indices, dest_path, splits, direct_cache)
 
     # (3) Compute the batch indices for each split and save the conformers to disk
-    _save_splits_into_batches(split_paths,
-                              conformer_splits,
-                              inplace_transform,
-                              file_format,
-                              include_properties,
-                              dataset,
-                              padding,
-                              batch_size,
-                              max_batches_per_packet,
-                              verbose)
+    return _save_splits_into_batches(split_paths,
+                                     conformer_splits,
+                                     inplace_transform,
+                                     file_format,
+                                     include_properties,
+                                     dataset,
+                                     padding,
+                                     batch_size,
+                                     max_batches_per_packet,
+                                     direct_cache,
+                                     verbose)
 
     # log creation data
-    creation_log = {'datetime_created': str(datetime.datetime.now()),
-                    'source_store_locations': dataset.store_locations,
-                    'splits': splits,
-                    'folds': folds,
-                    'padding': PADDING if padding is None else padding,
-                    'is_inplace_transformed': inplace_transform is not None,
-                    'shuffle': shuffle,
-                    'shuffle_seed': shuffle_seed,
-                    'include_properties': include_properties if include_properties is not None else 'all',
-                    'batch_size': batch_size,
-                    'total_num_conformers': dataset.num_conformers,
-                    'total_conformer_groups': dataset.num_conformer_groups}
+    if not direct_cache:
+        creation_log = {'datetime_created': str(datetime.datetime.now()),
+                        'source_store_locations': dataset.store_locations,
+                        'splits': splits,
+                        'folds': folds,
+                        'padding': PADDING if padding is None else padding,
+                        'shuffle': shuffle,
+                        'shuffle_seed': shuffle_seed,
+                        'include_properties': include_properties if include_properties is not None else 'all',
+                        'batch_size': batch_size,
+                        'total_num_conformers': dataset.num_conformers,
+                        'total_conformer_groups': dataset.num_conformer_groups}
 
-    with open(dest_path.joinpath('creation_log.json'), 'w') as logfile:
-        json.dump(creation_log, logfile, indent=1)
+        with open(dest_path.joinpath('creation_log.json'), 'w') as logfile:
+            json.dump(creation_log, logfile, indent=1)
 
 
 def _get_random_generator(shuffle: bool = False, shuffle_seed: Optional[int] = None) -> Optional[torch.Generator]:
@@ -135,7 +138,8 @@ def _maybe_shuffle_indices(conformer_indices: Tensor,
 def _divide_into_folds(conformer_indices: Tensor,
                         dest_path: Path,
                         folds: int,
-                        rng: Optional[torch.Generator] = None) -> Tuple[Tuple[Tensor, ...], 'OrderedDict[str, Path]']:
+                        rng: Optional[torch.Generator] = None,
+                        direct_cache: bool = False) -> Tuple[Tuple[Tensor, ...], 'OrderedDict[str, Path]']:
 
     # the idea here is to work with "blocks" of size num_conformers / folds
     # cast to list for mypy
@@ -158,20 +162,21 @@ def _divide_into_folds(conformer_indices: Tensor,
         split_paths_list.extend([(f'training{f}', dest_path.joinpath(f'training{f}')),
                                  (f'validation{f}', dest_path.joinpath(f'validation{f}'))])
     split_paths = OrderedDict(split_paths_list)
-
-    _create_split_paths(split_paths)
+    if not direct_cache:
+        _create_split_paths(split_paths)
 
     return tuple(conformer_splits), split_paths
 
 
 def _divide_into_splits(conformer_indices: Tensor,
                         dest_path: Path,
-                        splits: Dict[str, float]) -> Tuple[Tuple[Tensor, ...], 'OrderedDict[str, Path]']:
+                        splits: Dict[str, float],
+                        direct_cache: bool = False) -> Tuple[Tuple[Tensor, ...], 'OrderedDict[str, Path]']:
     total_num_conformers = len(conformer_indices)
     split_sizes = OrderedDict([(k, int(total_num_conformers * v)) for k, v in splits.items()])
     split_paths = OrderedDict([(k, dest_path.joinpath(k)) for k in split_sizes.keys()])
-
-    _create_split_paths(split_paths)
+    if not direct_cache:
+        _create_split_paths(split_paths)
 
     leftover = total_num_conformers - sum(split_sizes.values())
     if leftover != 0:
@@ -211,7 +216,8 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                               padding: Optional[Dict[str, float]],
                               batch_size: int,
                               max_batches_per_packet: int,
-                              verbose: bool) -> None:
+                              direct_cache: bool,
+                              verbose: bool) -> Dict[str, ANIBatchedDataset]:
     # NOTE: Explanation for following logic, please read
     #
     # This sets up a given number of batches (packet) to keep in memory and
@@ -244,8 +250,9 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
     # Important: to prevent possible bugs / errors, that may happen
     # due to incorrect conversion to indices, species is **always*
     # converted to atomic numbers when saving the batched dataset.
+    batched_datasets: Dict[str, ANIBatchedDataset] = dict()
     with dataset.keep_open() as ro_dataset:
-        for split_path, indices_of_split in zip(split_paths.values(), conformer_splits):
+        for (split_name, split_path), indices_of_split in zip(split_paths.items(), conformer_splits):
             all_batch_indices = torch.split(indices_of_split, batch_size)
 
             all_batch_indices_packets = [all_batch_indices[j:j + max_batches_per_packet]
@@ -297,17 +304,27 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                 # The format of this is {'species': (batch1, batch2, ...), 'coordinates': (batch1, batch2, ...)}
                 batch_packet_dict = {k: torch.split(t[indices_to_unsort_batch_cat], batch_sizes)
                                      for k, t in batches_cat.items()}
+                if direct_cache:
+                    in_memory_batches: List[Conformers] = []
 
                 for packet_batch_idx in range(num_batches_in_packet):
                     batch = {k: v[packet_batch_idx] for k, v in batch_packet_dict.items()}
                     batch = inplace_transform(batch)
-                    _save_batch(split_path, overall_batch_idx, batch, file_format, len(all_batch_indices))
+                    if direct_cache:
+                        in_memory_batches.append(batch)
+                    else:
+                        _save_batch(split_path, overall_batch_idx, batch, file_format, len(all_batch_indices))
                     overall_batch_idx += 1
+        if direct_cache:
+            batched_datasets[split_name] = ANIBatchedDataset(batches=in_memory_batches, split=split_name)
+        else:
+            batched_datasets[split_name] = ANIBatchedDataset(store_dir=split_path.parent, split=split_name)
+    return batched_datasets
 
 
+# Saves the batch to disk; we use pickle, numpy or hdf5 since saving in pytorch
+# format is extremely slow
 def _save_batch(path: Path, idx: int, batch: Conformers, file_format: str, total_batches: int) -> None:
-    # We use pickle, numpy or hdf5 since saving in
-    # pytorch format is extremely slow
     batch = {k: v.numpy() for k, v in batch.items()}
     # The batch names are e.g. 00034_batch.h5
     batch_path = path / f'{str(idx).zfill(len(str(total_batches)))}_batch'

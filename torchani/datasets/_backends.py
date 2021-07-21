@@ -305,14 +305,20 @@ class _H5StoreAdaptor(_StoreAdaptor):
 
     @property
     def grouping(self) -> str:
+        # This detects Roman's formatting style which doesn't have a
+        # 'grouping' key but is still grouped by num atoms.
+        try:
+            self._store.attrs['readme']
+            return 'by_num_atoms'
+        except (KeyError, OSError):
+            pass
+
         try:
             g = self._store.attrs['grouping']
+            assert isinstance(g, str)
+            return g
         except (KeyError, OSError):
-            g = 'legacy'
-        assert isinstance(g, str)
-        if g == '':
-            breakpoint()
-        return g
+            return 'legacy'
 
     def __delitem__(self, k: str) -> None:
         del self._store[k]

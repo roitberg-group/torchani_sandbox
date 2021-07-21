@@ -16,7 +16,7 @@ __all__ = ['filter_by_high_force', 'filter_by_high_energy_error', 'concatenate']
 
 
 def concatenate(source: ANIDataset,
-                dest_location: StrPath, *,
+                dest_location: StrPath,
                 verbose: bool = True,
                 delete_originals: bool = False) -> ANIDataset:
     r"""Combine all the backing stores in a given ANIDataset into one"""
@@ -26,7 +26,6 @@ def concatenate(source: ANIDataset,
     dest = ANIDataset(dest_location,
                       create=True,
                       grouping=source.grouping,
-                      property_aliases=source._first_subds._property_aliases,
                       verbose=False)
 
     for k, v in tqdm(source.numpy_items(),
@@ -35,6 +34,8 @@ def concatenate(source: ANIDataset,
                   disable=not verbose):
         dest.append_numpy_conformers(k.split('/')[-1], v)
 
+    # TODO this depends on the original stores being files, it should be
+    # changed for generality
     if delete_originals:
         for p in tqdm(source.store_locations,
                       desc='Deleting original store',
@@ -44,7 +45,7 @@ def concatenate(source: ANIDataset,
     return dest
 
 
-def filter_by_high_force(dataset: ANIDataset, *,
+def filter_by_high_force(dataset: ANIDataset,
                          threshold: float = 2.0,
                          criteria: str = 'components',
                          device: str = 'cpu',
@@ -91,7 +92,7 @@ def filter_by_high_force(dataset: ANIDataset, *,
 
 
 def filter_by_high_energy_error(dataset: ANIDataset,
-                                model: BuiltinModel, *,
+                                model: BuiltinModel,
                                 threshold: int = 100,
                                 device: str = 'cpu',
                                 max_split: int = 2560,
