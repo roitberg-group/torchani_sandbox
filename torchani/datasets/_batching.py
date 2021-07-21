@@ -323,7 +323,7 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                         _save_batch(split_path, overall_batch_idx, batch, file_format, len(all_batch_indices))
                     overall_batch_idx += 1
         if direct_cache:
-            batched_datasets[split_name] = ANIBatchedDataset(batches=in_memory_batches, split=split_name).cache(verbose=False)
+            batched_datasets[split_name] = ANIBatchedDataset(batches=in_memory_batches, split=split_name).cache(verbose=False, pin_memory=torch.cuda.is_available())
         else:
             batched_datasets[split_name] = ANIBatchedDataset(store_dir=split_path.parent, split=split_name)
     return batched_datasets
