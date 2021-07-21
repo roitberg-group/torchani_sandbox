@@ -453,19 +453,6 @@ class TestANIDataset(TestCase):
                       'coordinates': torch.randn((5, 6, 3)),
                       'energies': torch.randn((5,))}}
 
-    def testAliases(self):
-        ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)
-        new_groups = deepcopy(self.new_groups_torch)
-
-        for k in ('H6', 'O6', 'C6'):
-            ds.append_conformers(k, new_groups[k])
-
-        ds.set_aliases({'energies': 'alias_energies', 'coordinates': 'coord'})
-        self.assertTrue(ds.present_species(), ['C', 'H', 'O'])
-        self.assertEqual(ds.properties, {'alias_energies', 'coord', 'species'})
-        self.assertEqual(ds['H6']['alias_energies'], new_groups['H6']['energies'])
-        self.assertEqual(ds['H6']['coord'], new_groups['H6']['coordinates'])
-
     def testPresentSpecies(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)
         new_groups = deepcopy(self.new_groups_torch)
@@ -620,9 +607,9 @@ class TestANIDataset(TestCase):
             ds.append_conformers(f'group{j}', new_groups[k])
         ds.regroup_by_num_atoms()
         self.assertEqual(len(ds.items()), 1)
-        self.assertEqual(len(ds['num_atoms_6']['coordinates']), 15)
-        self.assertEqual(len(ds['num_atoms_6']['species']), 15)
-        self.assertEqual(len(ds['num_atoms_6']['energies']), 15)
+        self.assertEqual(len(ds['006']['coordinates']), 15)
+        self.assertEqual(len(ds['006']['species']), 15)
+        self.assertEqual(len(ds['006']['energies']), 15)
 
     def testDeleteProperty(self):
         ds = ANIDataset(self.tmp_path.joinpath('new.h5'), create=True)

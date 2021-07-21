@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from functools import partial
 from abc import ABC, abstractmethod
-from typing import ContextManager, Iterator, Mapping, Optional, Dict, Any, Set, Union, Tuple
+from typing import ContextManager, Iterator, Mapping, Any, Set, Union, Tuple
 from collections import OrderedDict
 
 import numpy as np
@@ -124,7 +124,7 @@ class _StoreAdaptor(ContextManager['_StoreAdaptor'], Mapping[str, '_ConformerGro
     def close(self) -> '_StoreAdaptor': pass # noqa E704
 
     @abstractmethod
-    def open(self, mode: str = 'r', property_alias: Optional[Dict[str, str]] = None) -> '_StoreAdaptor': pass # noqa E704
+    def open(self, mode: str = 'r') -> '_StoreAdaptor': pass # noqa E704
 
     @property
     @abstractmethod
@@ -145,8 +145,6 @@ class _StoreAdaptor(ContextManager['_StoreAdaptor'], Mapping[str, '_ConformerGro
 class _H5StoreAdaptor(_StoreAdaptor):
     def __init__(self, store_location: StrPath):
         self._store_location = Path(store_location).resolve()
-        self._alias_to_storename: Dict[str, str] = dict()
-        self._storename_to_alias: Dict[str, str] = dict()
         self._store_obj = None
         self._has_standard_format = False
         self._made_quick_check = False
@@ -173,15 +171,11 @@ class _H5StoreAdaptor(_StoreAdaptor):
         with h5py.File(self._store_location, 'x') as f:
             f.attrs['grouping'] = grouping
 
-    def open(self, mode: str = 'r', property_aliases: Optional[Dict[str, str]] = None) -> '_StoreAdaptor':
-        self._storename_to_alias = dict() if property_aliases is None else property_aliases
-        self._alias_to_storename = {v: k for k, v in self._storename_to_alias.items()}
+    def open(self, mode: str = 'r') -> '_StoreAdaptor':
         self._store_obj = h5py.File(self._store_location, mode)
         return self
 
     def close(self) -> '_StoreAdaptor':
-        self._storename_to_alias = dict()
-        self._alias_to_storename = dict()
         self._store.close()
         self._store_obj = None
         return self
@@ -205,8 +199,6 @@ class _H5StoreAdaptor(_StoreAdaptor):
         return self
 
     def __exit__(self, *args, **kwargs) -> None:
-        self._storename_to_alias = dict()
-        self._alias_to_storename = dict()
         self._store.__exit__(*args, **kwargs)
         self._store_obj = None
 
@@ -280,13 +272,11 @@ class _H5StoreAdaptor(_StoreAdaptor):
 
     def _update_properties_cache(self, cache: CacheHolder, conformers: h5py.Group, check_properties: bool = False) -> None:
         if not cache.properties:
-            cache.properties = {self._storename_to_alias.get(p, p) for p in set(conformers.keys())}
-        elif check_properties:
-            found_properties = {self._storename_to_alias.get(p, p) for p in set(conformers.keys())}
-            if not found_properties == cache.properties:
-                raise RuntimeError(f"Group {conformers.name} has bad keys, "
-                                   f"found {found_properties}, but expected "
-                                   f"{cache.properties}")
+            cache.properties = set(conformers.keys())
+        elif check_properties and not set(conformers.keys()) == cache.properties:
+            raise RuntimeError(f"Group {conformers.name} has bad keys, "
+                               f"found {set(conformers.keys())}, but expected "
+                               f"{cache.properties}")
 
     # updates "group_sizes" which holds the batch dimension (number of
     # molecules) of all groups in the dataset.
@@ -332,7 +322,7 @@ class _H5StoreAdaptor(_StoreAdaptor):
         return self[name]
 
     def __getitem__(self, name: str) -> '_ConformerGroupAdaptor':
-        return _H5ConformerGroupAdaptor(self._store[name], self._storename_to_alias)
+        return _H5ConformerGroupAdaptor(self._store[name])
 
     def __len__(self) -> int:
         return len(self._store)
@@ -342,17 +332,14 @@ class _H5StoreAdaptor(_StoreAdaptor):
 
 
 class _H5ConformerGroupAdaptor(_ConformerGroupAdaptor):
-    def __init__(self, group_obj: h5py.Group, property_aliases: Optional[Dict[str, str]] = None):
+    def __init__(self, group_obj: h5py.Group):
         self._group_obj = group_obj
-        _storename_to_alias = dict() if property_aliases is None else property_aliases
-        self._alias_to_storename = {v: k for k, v in _storename_to_alias.items()}
 
     @property
     def is_resizable(self) -> bool:
         return all(ds.maxshape[0] is None for ds in self._group_obj.values())
 
     def _append_property_with_data(self, p: str, data: np.ndarray) -> None:
-        p = self._alias_to_storename.get(p, p)
         h5_dataset = self._group_obj[p]
         h5_dataset.resize(h5_dataset.shape[0] + data.shape[0], axis=0)
         try:
@@ -361,9 +348,7 @@ class _H5ConformerGroupAdaptor(_ConformerGroupAdaptor):
             h5_dataset[-data.shape[0]:] = data.astype(bytes)
 
     def _create_property_with_data(self, p: str, data: np.ndarray) -> None:
-        # this correctly handles strings (species and _id) and
-        # key aliases
-        p = self._alias_to_storename.get(p, p)
+        # this correctly handles strings (species and _id)
         # make the first axis resizable
         maxshape = (None,) + data.shape[1:]
         try:
@@ -372,15 +357,12 @@ class _H5ConformerGroupAdaptor(_ConformerGroupAdaptor):
             self._group_obj.create_dataset(name=p, data=data.astype(bytes), maxshape=maxshape)
 
     def move(self, src: str, dest: str) -> None:
-        src = self._alias_to_storename.get(src, src)
-        dest = self._alias_to_storename.get(dest, dest)
         self._group_obj.move(src, dest)
 
     def __delitem__(self, k: str) -> None:
         del self._group_obj[k]
 
     def __getitem__(self, p: str) -> np.ndarray:
-        p = self._alias_to_storename.get(p, p)
         array = self._group_obj[p][()]
         assert isinstance(array, np.ndarray)
         return array
@@ -389,5 +371,4 @@ class _H5ConformerGroupAdaptor(_ConformerGroupAdaptor):
         return len(self._group_obj)
 
     def __iter__(self) -> Iterator[str]:
-        for k in self._group_obj.keys():
-            yield self._alias_to_storename.get(k, k)
+        yield from self._group_obj.keys()

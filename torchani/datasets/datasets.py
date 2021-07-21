@@ -280,11 +280,9 @@ class _ANISubdataset(_ANIDatasetBase):
                  create: bool = False,
                  grouping: str = 'by_formula',
                  backend: Optional[str] = None,
-                 property_aliases: Optional[Dict[str, str]] = None,
                  verbose: bool = True):
         super().__init__()
         self._backend = infer_backend(store_location) if backend is None else backend
-        self._property_aliases = dict() if property_aliases is None else property_aliases
         self._store = StoreAdaptorFactory(store_location, self._backend)
         self._possible_nonbatch_properties: Set[str]
         if create:
@@ -318,7 +316,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 print(c)
                 ... etc
         """
-        self._store.open(mode, self._property_aliases)
+        self._store.open(mode)
         try:
             yield self
         finally:
@@ -335,7 +333,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 raise RuntimeError('Tried to open a store with mode "r+" but'
                                    ' the store open with mode "r"')
             return self._store
-        return stack.enter_context(self._store.open(mode, self._property_aliases))
+        return stack.enter_context(self._store.open(mode))
 
     def _update_cache(self, check_properties: bool = False, verbose: bool = True) -> None:
         with ExitStack() as stack:
@@ -537,7 +535,6 @@ class _ANISubdataset(_ANIDatasetBase):
                                 create=True,
                                 backend=backend,
                                 grouping=grouping,
-                                property_aliases=self._property_aliases,
                                 verbose=False)
         return new_ds
 
@@ -608,7 +605,8 @@ class _ANISubdataset(_ANIDatasetBase):
                                            total=self.num_conformer_groups,
                                            desc='Regrouping by number of atoms',
                                            disable=not verbose):
-            new_name = f'num_atoms_{_get_num_atoms(conformers)}'
+            # This is done to accomodate the current group convention
+            new_name = str(_get_num_atoms(conformers)).zfill(3)
             new_ds.append_numpy_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
         self._store.transfer_location_to(new_ds._store)
         if repack:
@@ -638,10 +636,6 @@ class _ANISubdataset(_ANIDatasetBase):
 
         Expects a dictionary of the form: {old_name: new_name}
         """
-        # This can generate some counterintuitive results if the values are
-        # aliases (renaming can be a no-op in this case) so we disallow it
-        if any(k in self._property_aliases.keys() for k in old_new_dict.values()):
-            raise ValueError("Cant rename to an alias")
         self._check_properties_are_present(old_new_dict.keys())
         self._check_properties_are_not_present(old_new_dict.values())
         with ExitStack() as stack:
@@ -649,17 +643,6 @@ class _ANISubdataset(_ANIDatasetBase):
             for k in self.keys():
                 for old_name, new_name in old_new_dict.items():
                     f[k].move(old_name, new_name)
-        return self
-
-    @_needs_cache_update
-    def set_aliases(self, property_aliases: Dict[str, str]) -> '_ANISubdataset':
-        r"""Set aliases for some properties from the dataset
-
-        Expects a dictionary of the form: {old_name: new_name}. The properties
-        are **not** renamed in the backing store, but the class will convert
-        old_name to new_name internally when any method is called
-        """
-        self._property_aliases = property_aliases
         return self
 
     @property
