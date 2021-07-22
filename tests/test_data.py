@@ -524,6 +524,7 @@ class TestANIDataset(TestCase):
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
+
         for k, v in ds.items():
             self.assertEqual(v, new_groups[k])
         for k in ('H6', 'C6', 'O6'):
@@ -541,22 +542,20 @@ class TestANIDataset(TestCase):
         for k in deepcopy(ds.keys()):
             ds.delete_conformers(k)
 
-        # reset supported properties
+        # rebuild dataset
         for k in ('H6', 'C6', 'O6'):
             ds.append_conformers(k, new_groups[k])
+
         with self.assertRaisesRegex(ValueError, 'Character "/" not supported'):
             ds.append_conformers('O/6', new_groups['O6'])
-
         with self.assertRaisesRegex(ValueError, 'Expected .* but got .*'):
             new_groups_copy = deepcopy(new_groups['O6'])
             del new_groups_copy['energies']
             ds.append_conformers('O6', new_groups_copy)
-
         with self.assertRaisesRegex(ValueError, 'All appended conformers'):
             new_groups_copy = deepcopy(new_groups['O6'])
             new_groups_copy['species'] = torch.randint(size=(5, 6), low=1, high=5, dtype=torch.long)
             ds.append_conformers('O6', new_groups_copy)
-
         with self.assertRaisesRegex(ValueError, 'Species needs to have two'):
             new_groups_copy = deepcopy(new_groups['O6'])
             new_groups_copy['species'] = torch.ones((5, 6, 1), dtype=torch.long)
