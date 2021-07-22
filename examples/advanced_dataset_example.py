@@ -109,20 +109,19 @@ ds.append_conformers('store_name/group_name', numpy_conformers)
 ds.delete_conformers('store_name/group_name', [0, 2])
 # This will delete all conformers in the group:
 ds.delete_conformers('store_name/group_name')
-# NOTE: currently the class checks:
+
+# NOTE: currently, when appending the class checks:
 # - that the first dimension of all your properties is the same
-# - that you are appending a set of conformers with the same properties that already exist
-# - that all your formulas are correct when you append and the grouping type is "by_formula",
+# - that you are appending a set of conformers with the same properties that already exist in the dataset
+# - that all your formulas are correct when the grouping type is "by_formula",
 # - that your group name does not contain illegal "/" characters
-# it does NOT check:
-# - that the number of atoms is the same in all properties that are atomic
-#   (it doesn't know which properties are atomic so it can't, may change in the future)
 # - that species is consistent with numbers if both are present
-#   (will probably be implemented in the future)
-# - that the name of the group is consistent with the formula / num atoms, if
-#   you want it to be
-#   (may change in the future)
-# It is the responsibility of the user to make sure of these for now
+# It does NOT check:
+# - That the number of atoms is the same in all properties that are atomic
+#   (It doesn't know which properties are atomic so it can't)
+# - That the name of the group is consistent with the formula / num atoms
+#   (It allows arbitrary names)
+# It is the responsibility of the user to make sure of that
 
 
 # ###### Utilities #########
@@ -146,3 +145,16 @@ with ds.keep_open('r+') as open_ds:
         print(c)
     for group in ('bad_group1', 'bad_group2', 'bad_group3'):
         open_ds.delete_conformers(group)
+
+
+# #### Creating a dataset from scratch ####
+# It is possible to create an ANIDataset from scratch by calling:
+ds = ANIDataset('/path/to/my/dataset.h5', create=True)
+# By defalt the grouping is "by_formula"
+# The first set of conformers you append will determine what properties this
+# dataset will support
+numpy_conformers = {'numbers': np.array([[1, 1, 6, 6], [1, 1, 6, 6]]),
+                    'species': np.array([['H', 'H', 'C', 'C'], ['H', 'H', 'C', 'C']]),
+                    'coordinates': np.random.standard_normal((2, 4, 3)),
+                    'energies': np.random.standard_normal(2)}
+ds.append_conformers('C2H2', numpy_conformers)

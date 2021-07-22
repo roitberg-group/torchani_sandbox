@@ -727,6 +727,10 @@ class _ANISubdataset(_ANIDatasetBase):
         if not all(conformers[k].shape[0] == size for k in self.properties):
             raise ValueError(f"All batch keys {self.properties} must have the same batch dimension")
 
+        if {'species', 'numbers'}.issubset(self.properties):
+            if not (_symbols_to_numbers(conformers['species']) == conformers['numbers']).all():
+                raise ValueError("Tried to append inconsistent species and atomic numbers")
+
     def _check_properties_are_present(self, properties: Iterable[str]) -> None:
         properties = {properties} if isinstance(properties, str) else set(properties)
         if not properties <= self.properties:
