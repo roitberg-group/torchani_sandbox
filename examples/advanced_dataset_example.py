@@ -9,7 +9,7 @@ ds = ANIDataset(('/path/to/h5file.h5', '/path/to/h5file2.h5'))
 if ds.grouping == 'legacy':
     print("Dataset uses a legacy format")
 
-# Legacy format is the format used by justin when storing his datasets.  In the
+# Legacy format is the format used by Justin when storing his datasets.  In the
 # legacy format there can be groups arbitrarily nested in the hierarchical tree
 # inside the h5 files, and the "species" property does not have a batch
 # dimension.  this means all properties with an "atomic" dimension must be
@@ -49,7 +49,6 @@ assert ds.grouping == 'by_num_atoms'
 # ...
 # for "by_num_atoms"
 
-
 # ######### Manipulating properties #################
 # (Watch out: dataset mutability modifies the underlying stores)
 # All of the molecules in the dataset have the same properties
@@ -62,18 +61,14 @@ print(ds.properties)
 ds.rename_properties({'energies': 'my_renamed_energies'})
 # it is also possible to delete unwanted / unnedded properties
 ds.delete_properties(('useless_property', 'bad_property'))
-# sometimes it may be useful to just create one placeholder property for some
-# purpose, you can do that by, with shape equal to the batch dimension of the
-# group, (N,) by default by calling:
-ds.create_full_property('my_new_property', fill_value=0.0, dtype=float)
+
+# Sometimes it may be useful to just create one placeholder property for some
+# purpose.
 # You can pass make the second dimension equal to the number of atoms in
-# the group by passing is_atomic, and you can add also extra dims
+# the group by passing is_atomic, and you can add also extra dims, for example:
 # This creates a property with shape (N, A)
 ds.create_full_property('my_new_property', is_atomic=True, fill_value=0.0, dtype=float)
-# This creates a property with shape (N, A, 3, 3)
-ds.create_full_property('my_new_property', is_atomic=True, extra_dims=(3, 3), fill_value=0.0, dtype=float)
-# This creates a property with shape (N, 3)
-ds.create_full_property('my_new_property', extra_dims=3, fill_value=0.0, dtype=float)
+# for more examples see docstring of the function
 
 # It may be very useful in some cases to have only atomic numbers instead of
 # chemical symbols, you can easily create this properties. If the dataset
@@ -96,8 +91,9 @@ conformers = {'numbers': torch.tensor([[1, 1, 6, 6], [1, 1, 6, 6]]),
 # something that makes sense, if you have only one store you can pass
 # "group_name" directly, also note that species should have the atomic numbers
 ds.append_conformers('store_name/group_name', conformers)
+
 # It is also possible to append conformers as numpy arrays, in this case
-# "species" should hold the actual species.
+# "species" can hold the chemical symbols
 import numpy as np  # noqa
 numpy_conformers = {'numbers': np.array([[1, 1, 6, 6], [1, 1, 6, 6]]),
                     'species': np.array([['H', 'H', 'C', 'C'], ['H', 'H', 'C', 'C']]),
@@ -123,7 +119,6 @@ ds.delete_conformers('store_name/group_name')
 #   (It allows arbitrary names)
 # It is the responsibility of the user to make sure of that
 
-
 # ###### Utilities #########
 # Multiple datasets can be concatenated into one h5 file, optionally deleting the
 # original h5 files if the concatenation is successful
@@ -135,7 +130,6 @@ from torchani.datasets.utils import filter_by_high_force  # noqa
 bad_conformations = filter_by_high_force(ds, delete_inplace=True)
 print(bad_conformations)
 
-
 # ######### Context manager usage #######################
 # If you need to perform a lot of read/write operations in the dataset it can
 # be useful to keep all the underlying stores open, you can do this
@@ -145,7 +139,6 @@ with ds.keep_open('r+') as open_ds:
         print(c)
     for group in ('bad_group1', 'bad_group2', 'bad_group3'):
         open_ds.delete_conformers(group)
-
 
 # #### Creating a dataset from scratch ####
 # It is possible to create an ANIDataset from scratch by calling:

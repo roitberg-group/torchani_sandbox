@@ -547,12 +547,19 @@ class _ANISubdataset(_ANIDatasetBase):
                              extra_dims: Union[int, Tuple[int, ...]] = tuple(),
                              fill_value: int = 0,
                              dtype: DTypeLike = np.int64) -> '_ANISubdataset':
-        r"""Creates a scalar property for all conformer groups
+        r"""Creates a property for all conformer groups
 
-        Creates a property with shape (num_conformers,), and with a specified
-        dtype and value for all conformers in the dataset. Useful for creating
-        'charge' or 'spin_multiplicity' properties, which are usually the same
-        for all conformers
+        Creates a property with a specified shape, dtype and fill value
+        for all conformers in the dataset. Example usage:
+
+        # shape (N,)
+        ds.create_full_property('my_new_property', fill_value=0.0, dtype=float)
+        # shape (N, A)
+        ds.create_full_property('my_new_property', is_atomic=True, fill_value=0.0, dtype=int)
+        # shape (N, A, 3, 3)
+        ds.create_full_property('my_new_property', is_atomic=True, extra_dims=(3, 3), fill_value=0.0, dtype=np.float32)
+        # shape (N, 3)
+        ds.create_full_property('my_new_property', extra_dims=3, fill_value=0.0, dtype=np.int32)
         """
         extra_dims_ = (extra_dims,) if isinstance(extra_dims, int) else extra_dims
         self._check_properties_are_not_present(dest_key)
