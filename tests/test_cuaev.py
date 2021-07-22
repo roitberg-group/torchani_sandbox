@@ -41,6 +41,7 @@ class TestCUAEVNoGPU(TestCase):
             aev_computer = pickle.load(file)
         os.remove(tmpfile)
 
+
 @skipIfNoGPU
 @skipIfNoCUAEV
 @parameterized_class(('cutoff_fn'), [['cosine'], ['smooth']])
