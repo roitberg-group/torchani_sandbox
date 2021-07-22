@@ -37,10 +37,10 @@ class _BaseBuiltinDataset(ANIDataset):
 
         # Order dataset paths using the order given in "files and md5s"
         filenames_order = {k: j for j, k in enumerate(self._files_and_md5s.keys())}
-        _filenames_and_paths = sorted([(p.with_suffix('').name, p) for p in dataset_paths],
+        _filenames_and_paths = sorted([(p.name, p) for p in dataset_paths],
                                      key=lambda tup: filenames_order[tup[0]])
         filenames_and_paths = OrderedDict(_filenames_and_paths)
-        super().__init__(filenames_and_paths, **h5_dataset_kwargs)
+        super().__init__(locations=filenames_and_paths.values(), names=filenames_and_paths.keys(), **h5_dataset_kwargs)
 
     def _check_hdf5_files_integrity(self, root: Path) -> bool:
         # Checks that all HDF5 files in the provided path are equal to the
@@ -74,8 +74,8 @@ class ANI1x(_BaseBuiltinDataset):
     # NOTE: The order of this dictionary is important since it deterimenes the order of iteration over the files
     _FILES_AND_MD5S = OrderedDict([('ANI-1x-wB97X-6-31Gd.h5', 'c9d63bdbf90d093db9741c94d9b20972')])
 
-    def __init__(self, root: StrPath, download: bool = False, **base_kwargs: Any):
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)
+    def __init__(self, root: StrPath, download: bool = False, verbose: bool = True):
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
 class ANI2x(_BaseBuiltinDataset):
@@ -86,8 +86,8 @@ class ANI2x(_BaseBuiltinDataset):
                                    ('ANI-2x-heavy-wB97X-6-31Gd.h5', '49ec3dc5d046f5718802f5d1f102391c'),
                                    ('ANI-2x-dimers-wB97X-6-31Gd.h5', '3455d82a50c63c389126b68607fb9ca8')])
 
-    def __init__(self, root: StrPath, download: bool = False, **base_kwargs: Any):
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)
+    def __init__(self, root: StrPath, download: bool = False, verbose: bool = True):
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
 class COMP6v1(_BaseBuiltinDataset):
@@ -106,5 +106,5 @@ class COMP6v1(_BaseBuiltinDataset):
                                    ('ANI-MD-Bench.h5', '9e3a1327d01730033edeeebd6fac4d6c'),
                                    ('S66-x8-wB97X-6-31Gd.h5', 'df1a5f3b9b6599d56f1a78631a83b720')])
 
-    def __init__(self, root: StrPath, download: bool = False, **base_kwargs: Any):
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, **base_kwargs)
+    def __init__(self, root: StrPath, download: bool = False, verbose: bool = True):
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
