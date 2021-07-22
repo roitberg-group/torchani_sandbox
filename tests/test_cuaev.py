@@ -32,6 +32,14 @@ class TestCUAEVNoGPU(TestCase):
         coordinates = make_tensor((8, 0, 3), 'cpu', torch.float32, low=-5, high=5)
         self.assertIn("cuaev::run", str(s.graph_for((species, coordinates))))
 
+    def test(self):
+        aev_computer = torchani.AEVComputer.like_1x(use_cuda_extension=True)
+        tmpfile = '/tmp/cuaev.pkl'
+        with open(tmpfile, 'wb') as file:
+            pickle.dump(aev_computer, file)
+        with open(tmpfile, 'rb') as file:
+            aev_computer = pickle.load(file)
+        os.remove(tmpfile)
 
 @skipIfNoGPU
 @skipIfNoCUAEV
