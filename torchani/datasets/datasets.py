@@ -274,6 +274,29 @@ def _needs_cache_update(method: Callable[..., '_ANISubdataset']) -> Callable[...
     return method_with_cache_update
 
 
+# Decorators for ANISubdataset
+
+# methods marked with this decorator
+# should be called on all subdatasets
+def _broadcast(method):
+    method._mark = 'broadcast'
+    return method
+
+
+# methods marked with this decorator
+# should be delegated to one subdataset
+def _delegate(method):
+    method._mark = 'delegate'
+    return method
+
+
+# methods marked with this decorator
+# should be delegated to one subdataset, and return a value != "self"
+def _delegate_with_return(method):
+    method._mark = 'delegate_with_return'
+    return method
+
+
 # Private wrapper over backing storage, with some modifications it could be
 # used for directories with npz files, or other backends. It should never ever
 # be used directly by user code.
@@ -390,6 +413,7 @@ class _ANISubdataset(_ANIDatasetBase):
             return idx_
         return idx
 
+    @_delegate_with_return
     def get_conformers(self,
                        group_name: str,
                        idx: IdxLike = None,
@@ -411,6 +435,7 @@ class _ANISubdataset(_ANIDatasetBase):
             conformers.update({'species': torch.from_numpy(species)})
         return conformers
 
+    @_delegate_with_return
     def get_numpy_conformers(self,
                              group_name: str,
                              idx: IdxLike = None,
@@ -470,6 +495,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 numpy_conformers['species'] = mixed_conformers['species']
         return numpy_conformers
 
+    @_delegate
     @_needs_cache_update
     def append_conformers(self, group_name: str, conformers: MixedConformers) -> '_ANISubdataset':
         r"""Attach a new set of conformers to the dataset.
@@ -492,6 +518,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 group.append_numpy_values(numpy_conformers)
         return self
 
+    @_delegate
     @_needs_cache_update
     def delete_conformers(self, group_name: str, idx: IdxLike = None) -> '_ANISubdataset':
         r"""Delete a given selected set of conformers"""
@@ -516,6 +543,7 @@ class _ANISubdataset(_ANIDatasetBase):
             group.create_numpy_values(good_conformers)
         return self
 
+    @_broadcast
     @_needs_cache_update
     def create_species_from_numbers(self, source_key: str = 'numbers', dest_key: str = 'species') -> '_ANISubdataset':
         r"""Creates a 'species' property if a 'numbers' property exists"""
@@ -528,6 +556,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 f[group_name].create_numpy_values({dest_key: symbols})
         return self
 
+    @_broadcast
     @_needs_cache_update
     def create_numbers_from_species(self, source_key: str = 'species', dest_key: str = 'numbers') -> '_ANISubdataset':
         r"""Creates a 'numbers' property if a 'species' property exists"""
@@ -540,6 +569,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 f[group_name].create_numpy_values({dest_key: numbers})
         return self
 
+    @_broadcast
     @_needs_cache_update
     def create_full_property(self,
                              dest_key: str,
@@ -586,6 +616,7 @@ class _ANISubdataset(_ANIDatasetBase):
                                 verbose=False)
         return new_ds
 
+    @_broadcast
     @_needs_cache_update
     def repack(self, verbose: bool = True) -> '_ANISubdataset':
         r"""Repacks underlying store if it is HDF5
@@ -609,6 +640,7 @@ class _ANISubdataset(_ANIDatasetBase):
         self._store.transfer_location_to(new_ds._store)
         return new_ds
 
+    @_broadcast
     @_needs_cache_update
     def regroup_by_formula(self, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
         r"""Regroup dataset by formula
@@ -639,6 +671,7 @@ class _ANISubdataset(_ANIDatasetBase):
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
         return new_ds
 
+    @_broadcast
     @_needs_cache_update
     def regroup_by_num_atoms(self, repack: bool = True, verbose: bool = True) -> '_ANISubdataset':
         r"""Regroup dataset by number of atoms
@@ -662,6 +695,7 @@ class _ANISubdataset(_ANIDatasetBase):
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
         return new_ds
 
+    @_broadcast
     @_needs_cache_update
     def delete_properties(self, properties: Sequence[str], verbose: bool = True) -> '_ANISubdataset':
         r"""Delete some properties from the dataset"""
@@ -678,6 +712,7 @@ class _ANISubdataset(_ANIDatasetBase):
                     del f[group_key]
         return self
 
+    @_broadcast
     @_needs_cache_update
     def rename_properties(self, old_new_dict: Dict[str, str]) -> '_ANISubdataset':
         r"""Rename some properties from the dataset
@@ -873,28 +908,31 @@ class ANIDataset(_ANIDatasetBase):
 
     def __getattr__(self, method: str) -> Callable:
         # Mechanism for delegating calls to the correct _ANISubdatasets
-        # functions with a "group_name" argument are delegated to one specific
+        #
+        # Functions with a "group_name" argument are delegated to one specific
         # subdataset, other ones are performed in all subdatasets on a loop
+        # (broadcasted)
         unbound_method = getattr(_ANISubdataset, method)
-        type_hints = unbound_method.__annotations__
-        if 'group_name' in type_hints:
-            if type_hints['return'] == '_ANISubdataset':
-                @wraps(unbound_method)
-                def delegated_call(group_name: str, *args, **kwargs) -> 'ANIDataset':
-                    name, k = self._parse_key(group_name)
-                    self._datasets[name] = getattr(self._datasets[name], method)(k, *args, **kwargs)
-                    return self._update_cache()
-            else:
-                @wraps(unbound_method)
-                def delegated_call(group_name: str, *args, **kwargs) -> Any:
-                    name, k = self._parse_key(group_name)
-                    return getattr(self._datasets[name], method)(k, *args, **kwargs)
-        else:
+        mark = unbound_method._mark
+        if mark == 'delegate':
+            @wraps(unbound_method)
+            def delegated_call(group_name: str, *args, **kwargs) -> 'ANIDataset':
+                name, k = self._parse_key(group_name)
+                self._datasets[name] = getattr(self._datasets[name], method)(k, *args, **kwargs)
+                return self._update_cache()
+        elif mark == 'delegate_with_return':
+            @wraps(unbound_method)
+            def delegated_call(group_name: str, *args, **kwargs) -> Any:
+                name, k = self._parse_key(group_name)
+                return getattr(self._datasets[name], method)(k, *args, **kwargs)
+        elif mark == 'broadcast':
             @wraps(unbound_method)
             def delegated_call(*args, **kwargs) -> 'ANIDataset':
                 for name in self._datasets.keys():
                     self._datasets[name] = getattr(self._datasets[name], method)(*args, **kwargs)
                 return self._update_cache()
+        else:
+            raise AttributeError("Attribute {unbound_method.__name__} can't be accessed by ANIDataset")
         return delegated_call
 
     def __str__(self) -> str:
