@@ -568,9 +568,9 @@ class TestANIDataset(TestCase):
         properties3 = {'species': np.full((5, 6), fill_value='O', dtype=str),
                       'coordinates': np.random.standard_normal((5, 6, 3)),
                       'energies': np.random.standard_normal((5,))}
-        ds.append_numpy_conformers('H6', properties1)
-        ds.append_numpy_conformers('C6', properties2)
-        ds.append_numpy_conformers('O6', properties3)
+        ds.append_conformers('H6', properties1)
+        ds.append_conformers('C6', properties2)
+        ds.append_conformers('O6', properties3)
         for k, v in ds.numpy_items():
             if k == 'H6':
                 self.assertEqual(v, properties1)

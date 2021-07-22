@@ -4,7 +4,6 @@ import inspect
 import pickle
 import warnings
 from os import fspath
-from copy import deepcopy
 from pathlib import Path
 from functools import partial, wraps
 from contextlib import ExitStack, contextmanager
@@ -15,25 +14,17 @@ from torch import Tensor
 import numpy as np
 
 from ._backends import _H5PY_AVAILABLE, _StoreAdaptor, StoreAdaptorFactory, get_temporary_location, infer_backend
-from ._annotations import Transform, Conformers, NumpyConformers, TorchOrNumpyConformers, StrPath, DTypeLike
+from ._annotations import Transform, Conformers, NumpyConformers, MixedConformers, StrPath, DTypeLike, IdxLike
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
 if _H5PY_AVAILABLE:
     import h5py
 
-# any of these should be interpretable as a 1D index sequence
-IdxLike = Union[Tensor, np.ndarray, None, Iterable[int], int]
-
 
 # Helper functions
-def _get_formulas(conformers: TorchOrNumpyConformers) -> List[str]:
+def _get_formulas(conformers: NumpyConformers) -> List[str]:
     if 'species' in conformers.keys():
-        try:
-            # If conformers['species'] is a tensor then it will have atomic numbers
-            # and we need to convert them, otherwise this will raise AttributeError
-            symbols = _numbers_to_symbols(conformers['species'].detach().cpu().numpy())  # type: ignore
-        except AttributeError:
-            symbols = conformers['species']
+        symbols = conformers['species']
     elif 'numbers' in conformers.keys():
         symbols = _numbers_to_symbols(conformers['numbers'])
     else:
@@ -41,7 +32,7 @@ def _get_formulas(conformers: TorchOrNumpyConformers) -> List[str]:
     return species_to_formula(symbols)
 
 
-def _get_dim_size(conformers: TorchOrNumpyConformers, common_keys: Set[str], dim: int) -> int:
+def _get_dim_size(conformers: NumpyConformers, common_keys: Set[str], dim: int) -> int:
     # Tries to get dimension size from one of the "common keys" that have the dimension
     present_keys = common_keys.intersection(conformers.keys())
     try:
@@ -455,39 +446,50 @@ class _ANISubdataset(_ANIDatasetBase):
 
         return numpy_conformers
 
-    def append_conformers(self, group_name: str, conformers: Conformers) -> '_ANISubdataset':
+    # Convert a dict that maybe has some numpy arrays and / or some torch
+    # tensors into a homogeneous dict with all numpy arrays.
+    def _to_numpy_conformers(self, mixed_conformers: MixedConformers) -> NumpyConformers:
+        numpy_conformers: NumpyConformers = dict()
+        properties = set(mixed_conformers.keys())
+        for k in properties - {'species'}:
+            # try to convert the input to numpy, if it is already a numpy
+            # arry this will fail. Species is a special case
+            try:
+                numpy_conformers[k] = mixed_conformers[k].detach().cpu().numpy()  # type: ignore
+            except AttributeError:
+                numpy_conformers[k] = cast(np.ndarray, mixed_conformers[k])
+        if 'species' in properties:
+            # try to convert numerical species to symbols, if this fails,
+            # it means they are already symbols.
+            try:
+                if (mixed_conformers['species'] <= 0).any():
+                    raise ValueError('Species are atomic numbers, must be positive')
+                numpy_conformers['species'] = _numbers_to_symbols(mixed_conformers['species'])
+            except TypeError:
+                assert isinstance(mixed_conformers['species'], np.ndarray)
+                numpy_conformers['species'] = mixed_conformers['species']
+        return numpy_conformers
+
+    @_needs_cache_update
+    def append_conformers(self, group_name: str, conformers: MixedConformers) -> '_ANISubdataset':
         r"""Attach a new set of conformers to the dataset.
 
-        Conformers must be a dict {property: Tensor}, and they must have the
+        Conformers must be a dict {property: Tensor or ndarray}, and they must have the
         same properties that the dataset supports. Appending is only supported
         for grouping 'by_formula' or 'by_num_atoms'
         """
-        conformers = deepcopy(conformers)
-        self._check_append_input(group_name, conformers)
-        numpy_conformers = {k: conformers[k].detach().cpu().numpy() for k in self.properties - {'species'}}
-
-        if 'species' in self.properties:
-            if (conformers['species'] <= 0).any():
-                raise ValueError('Species are atomic numbers, must be positive')
-            species = _numbers_to_symbols(conformers['species'].detach().cpu().numpy())
-            numpy_conformers.update({'species': species})
-
-        return self.append_numpy_conformers(group_name, numpy_conformers)
-
-    @_needs_cache_update
-    def append_numpy_conformers(self, group_name: str, conformers: NumpyConformers) -> '_ANISubdataset':
-        r"""Same as append_conformers but conformers must be {property: ndarray}"""
-        self._check_append_input(group_name, conformers)
+        numpy_conformers = self._to_numpy_conformers(conformers)
+        self._check_append_input(group_name, numpy_conformers)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             try:
                 group = f.create_conformer_group(group_name)
-                group.create_numpy_values(conformers)
+                group.create_numpy_values(numpy_conformers)
             except ValueError:
                 group = f[group_name]
                 if not group.is_resizable:
                     raise RuntimeError("Dataset must be resizable to allow appending")
-                group.append_numpy_values(conformers)
+                group.append_numpy_values(numpy_conformers)
         return self
 
     @_needs_cache_update
@@ -596,7 +598,7 @@ class _ANISubdataset(_ANIDatasetBase):
                                            disable=not verbose):
             # mypy doesn't know that @wrap'ed functions have __wrapped__
             # attribute, and fixing this is ugly
-            new_ds.append_numpy_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
+            new_ds.append_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
         self._store.transfer_location_to(new_ds._store)
         return new_ds
 
@@ -623,7 +625,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
             for formula, idx in zip(unique_formulas, formula_idxs):
                 selected_conformers = {k: v[idx] for k, v in conformers.items()}
-                new_ds.append_numpy_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
+                new_ds.append_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
         self._store.transfer_location_to(new_ds._store)
         if repack:
             new_ds._update_cache()
@@ -646,7 +648,7 @@ class _ANISubdataset(_ANIDatasetBase):
                                            disable=not verbose):
             # This is done to accomodate the current group convention
             new_name = str(_get_num_atoms(conformers)).zfill(3)
-            new_ds.append_numpy_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
+            new_ds.append_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
         self._store.transfer_location_to(new_ds._store)
         if repack:
             new_ds._update_cache()
@@ -702,7 +704,7 @@ class _ANISubdataset(_ANIDatasetBase):
                               " if the grouping is not by_formula or"
                               " by_num_atoms, please regroup your dataset")
 
-    def _check_append_input(self, group_name: str, conformers: TorchOrNumpyConformers) -> None:
+    def _check_append_input(self, group_name: str, conformers: NumpyConformers) -> None:
         self._check_correct_grouping()
 
         # check that all formulas are the same

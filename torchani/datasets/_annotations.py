@@ -1,6 +1,6 @@
 r"""Mypy type aliases"""
 import sys
-from typing import Tuple, Dict, Union, Callable, TypeVar
+from typing import Tuple, Dict, Union, Callable, Iterable
 from torch import Tensor
 from numpy import ndarray, dtype
 from collections import OrderedDict
@@ -18,9 +18,12 @@ else:
 KeyIdx = Tuple[str, Tensor]
 Transform = Callable[[Dict[str, Tensor]], Dict[str, Tensor]]
 
+# any of these should be interpretable as a 1D index sequence
+IdxLike = Union[Tensor, ndarray, None, Iterable[int], int]
+
 Conformers = Dict[str, Tensor]
 NumpyConformers = Dict[str, ndarray]
-TorchOrNumpyConformers = TypeVar('TorchOrNumpyConformers', NumpyConformers, Conformers)
+MixedConformers = Dict[str, Union[Tensor, ndarray]]
 
 # mimic typeshed
 StrPath = Union[str, 'PathLike[str]']
