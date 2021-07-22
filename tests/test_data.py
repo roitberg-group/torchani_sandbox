@@ -482,19 +482,39 @@ class TestANIDataset(TestCase):
 
     def testGetConformers(self):
         ds = ANIDataset(self.tmp_file_three_groups.name)
+
+        # general getter of all conformers
         self.assertEqual(ds.get_conformers('HOO')['coordinates'], ds['HOO']['coordinates'].numpy())
-        conformers12 = ds.get_conformers('HCHHH', torch.tensor([1, 2]))
-        self.assertEqual(conformers12['coordinates'], ds['HCHHH']['coordinates'][torch.tensor([1, 2])])
-        # note that h5py does not allow this directly
-        conformers12 = ds.get_conformers('HCHHH', torch.tensor([2, 1]))
-        self.assertEqual(conformers12['coordinates'], ds['HCHHH']['coordinates'][torch.tensor([2, 1])])
-        # note that h5py does not allow this directly
-        conformers12 = ds.get_conformers('HCHHH', torch.tensor([1, 1]))
-        self.assertEqual(conformers12['coordinates'], ds['HCHHH']['coordinates'][torch.tensor([1, 1])])
-        conformers124 = ds.get_conformers('HCHHH', torch.tensor([1, 2, 4]), properties='energies')
-        self.assertEqual(conformers124['energies'], ds['HCHHH']['energies'][torch.tensor([1, 2, 4])])
-        self.assertTrue(conformers124.get('species', None) is None)
-        self.assertTrue(conformers124.get('coordinates', None) is None)
+
+        # test getting 1, 2, ... with a list
+        idxs = [1, 2, 4]
+        conformers = ds.get_conformers('HCHHH', idxs)
+        self.assertEqual(conformers['coordinates'], ds['HCHHH']['coordinates'][torch.tensor(idxs)])
+        self.assertEqual(conformers['energies'], ds['HCHHH']['energies'][torch.tensor(idxs)])
+
+        # same with a tensor
+        conformers = ds.get_conformers('HCHHH', torch.tensor(idxs))
+        self.assertEqual(conformers['coordinates'], ds['HCHHH']['coordinates'][torch.tensor(idxs)])
+        self.assertEqual(conformers['energies'], ds['HCHHH']['energies'][torch.tensor(idxs)])
+
+        # same with a ndarray
+        conformers = ds.get_conformers('HCHHH', np.array(idxs))
+        self.assertEqual(conformers['coordinates'], ds['HCHHH']['coordinates'][torch.tensor(idxs)])
+        self.assertEqual(conformers['energies'], ds['HCHHH']['energies'][torch.tensor(idxs)])
+
+        # indices in decreasing order
+        conformers = ds.get_conformers('HCHHH', list(reversed(idxs)))
+        self.assertEqual(conformers['coordinates'], ds['HCHHH']['coordinates'][torch.tensor(list(reversed(idxs)))])
+
+        # getting some equal conformers
+        conformers = ds.get_conformers('HCHHH', torch.tensor(idxs + idxs))
+        self.assertEqual(conformers['coordinates'], ds['HCHHH']['coordinates'][torch.tensor(idxs + idxs)])
+
+        # getting just the energies
+        conformers = ds.get_conformers('HCHHH', idxs, properties='energies')
+        self.assertEqual(conformers['energies'], ds['HCHHH']['energies'][torch.tensor(idxs)])
+        self.assertTrue(conformers.get('species', None) is None)
+        self.assertTrue(conformers.get('coordinates', None) is None)
 
     def testAppendAndDeleteConformers(self):
         # tests delitem and setitem analogues for the dataset
