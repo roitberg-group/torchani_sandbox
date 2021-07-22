@@ -12,14 +12,7 @@ from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
 import numpy as np
-
-# torch hub has a dummy implementation of tqdm which can be used if tqdm is not
-# installed
-try:
-    from tqdm.auto import tqdm
-except ImportError:
-    warnings.warn("tqdm could not be found, for better progress bars install tqdm")
-    from torch.hub import tqdm
+from .compat import tqdm
 
 PADDING = {
     'species': -1,
