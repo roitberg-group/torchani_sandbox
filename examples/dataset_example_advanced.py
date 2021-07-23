@@ -101,7 +101,7 @@ ds.delete_conformers('store_name/group_name')
 # - that you are appending a set of conformers with the same properties that already exist in the dataset
 # - that all your formulas are correct when the grouping type is "by_formula",
 # - that your group name does not contain illegal "/" characters
-# - that species is consistent with numbers if both are present
+# - that you are only appending one of "species" / "numbers"
 # It does NOT check:
 # - That the number of atoms is the same in all properties that are atomic
 #   (It doesn't know which properties are atomic so it can't)
