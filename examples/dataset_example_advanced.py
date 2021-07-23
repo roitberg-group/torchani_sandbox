@@ -63,40 +63,30 @@ ds.rename_properties({'energies': 'my_renamed_energies'})
 ds.delete_properties(('useless_property', 'bad_property'))
 
 # Sometimes it may be useful to just create one placeholder property for some
-# purpose.
-# You can pass make the second dimension equal to the number of atoms in
-# the group by passing is_atomic, and you can add also extra dims, for example:
-# This creates a property with shape (N, A)
+# purpose. You can make the second dimension equal to the number of atoms in
+# the group by setting is_atomic=True, and you can add also extra dims, for
+# example, This creates a property with shape (N, A)
 ds.create_full_property('my_new_property', is_atomic=True, fill_value=0.0, dtype=float)
 # for more examples see docstring of the function
-
-# It may be very useful in some cases to have only atomic numbers instead of
-# chemical symbols, you can easily create this properties. If the dataset
-# has atomic numbers and you want chemical symbols you can call:
-ds.create_species_from_numbers()
-# if the dataset has chemical symbols and you want atomic numbers:
-ds.create_numbers_from_species()
-# (I know "numbers" and "species" are bad names, don't blame me for that please)
 
 # ######### Manipulating conformers #################
 # (Watch out: dataset mutability modifies the underlying stores)
 # All of the molecules in the dataset have the same properties
 # Conformers as tensors can be appended by calling:
 import torch  # noqa
-conformers = {'numbers': torch.tensor([[1, 1, 6, 6], [1, 1, 6, 6]]),
-              'species': torch.tensor([[1, 1, 6, 6], [1, 1, 6, 6]]),
+conformers = {'species': torch.tensor([[1, 1, 6, 6], [1, 1, 6, 6]]),
               'coordinates': torch.randn(2, 4, 3),
               'energies': torch.randn(2)}
 # Here I put random numbers as species and coordinates but you should put
 # something that makes sense, if you have only one store you can pass
-# "group_name" directly, also note that species should have the atomic numbers
+# "group_name" directly,
 ds.append_conformers('store_name/group_name', conformers)
 
 # It is also possible to append conformers as numpy arrays, in this case
-# "species" can hold the chemical symbols
+# "species" can hold the chemical symbols or atomic numbers. Internally these
+# will be converted to atomic numbers.
 import numpy as np  # noqa
-numpy_conformers = {'numbers': np.array([[1, 1, 6, 6], [1, 1, 6, 6]]),
-                    'species': np.array([['H', 'H', 'C', 'C'], ['H', 'H', 'C', 'C']]),
+numpy_conformers = {'species': np.array([['H', 'H', 'C', 'C'], ['H', 'H', 'C', 'C']]),
                     'coordinates': np.random.standard_normal((2, 4, 3)),
                     'energies': np.random.standard_normal(2)}
 ds.append_conformers('store_name/group_name', numpy_conformers)

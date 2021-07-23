@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import ContextManager, Iterator, Mapping, Any, Set, Union, Tuple
 from collections import OrderedDict
 
+
 import numpy as np
 
 from ._annotations import NumpyConformers, StrPath
@@ -283,8 +284,8 @@ class _H5StoreAdaptor(_StoreAdaptor):
     def _update_groups_cache(self, cache: CacheHolder, group: h5py.Group) -> None:
         present_keys = {'coordinates', 'coord', 'energies'}.intersection(set(group.keys()))
         try:
-            any_key = tuple(present_keys)[0]
-        except IndexError:
+            any_key = next(iter(present_keys))
+        except StopIteration:
             raise RuntimeError('To infer conformer size need one of "coordinates", "coord", "energies"')
         cache.group_sizes.update({group.name[1:]: group[any_key].shape[0]})
 
@@ -354,8 +355,7 @@ class _H5ConformerGroupAdaptor(_ConformerGroupAdaptor):
             h5_dataset[-data.shape[0]:] = data.astype(bytes)
 
     def _create_property_with_data(self, p: str, data: np.ndarray) -> None:
-        # this correctly handles strings (species and _id)
-        # make the first axis resizable
+        # This correctly handles strings and make the first axis resizable
         maxshape = (None,) + data.shape[1:]
         try:
             self._group_obj.create_dataset(name=p, data=data, maxshape=maxshape)

@@ -473,15 +473,15 @@ class TestANIDataset(TestCase):
                       'coordinates': torch.randn((5, 6, 3)),
                       'energies': torch.randn((5,))}}
 
-    def testPresentSpecies(self):
+    def testPresentElements(self):
         ds = ANIDataset(self.tmp_dir.name / Path('new.h5'), create=True)
         new_groups = deepcopy(self.new_groups_torch)
         for k in ('H6', 'O6', 'C6'):
             ds.append_conformers(k, new_groups[k])
-        self.assertTrue(ds.present_species(), ['C', 'H', 'O'])
-        with self.assertRaisesRegex(ValueError, 'must be present to parse symbols'):
+        self.assertTrue(ds.present_elements(chem_symbols=True), ['C', 'H', 'O'])
+        with self.assertRaisesRegex(ValueError, 'Either species or numbers'):
             ds.delete_properties({'species'})
-            ds.present_species()
+            ds.present_elements()
 
     def testGetConformers(self):
         ds = ANIDataset(self.tmp_file_three_groups.name)
@@ -580,7 +580,7 @@ class TestANIDataset(TestCase):
         for k, v in conformers_str.items():
             ds.append_conformers(k, v)
         # Check that getters give the same result as what was input
-        for k, v in ds.numpy_items():
+        for k, v in ds.numpy_items(chem_symbols=True):
             self.assertEqual(v, conformers_str[k])
         # Now we delete everything
         for k in conformers_str.keys():
@@ -590,37 +590,11 @@ class TestANIDataset(TestCase):
         # now we do the same with conformers_int
         for k, v in conformers_int.items():
             ds.append_conformers(k, v)
-        # We append as ints but output is currently as strings always for numpy
         for k, v in ds.numpy_items():
-            self.assertEqual(v, conformers_str[k])
+            self.assertEqual(v, conformers_int[k])
         for k in conformers_str.keys():
             ds.delete_conformers(k)
         self.assertTrue(len(ds.items()) == 0)
-
-    def testSpeciesFromNumbers(self):
-        ds = ANIDataset(self.tmp_dir.name / Path('new.h5'), create=True)
-        new_groups = deepcopy(self.new_groups_torch)
-        for k in ('H6', 'C6', 'O6'):
-            ds.append_conformers(k, new_groups[k])
-        ds.create_numbers_from_species('species', 'numbers')
-        self.assertEqual(ds.properties, {'species', 'energies', 'coordinates', 'numbers'})
-        for k, v in ds.items():
-            self.assertEqual(v['species'], v['numbers'])
-        numpy_species = ds.get_numpy_conformers('H6', properties='species')
-        numpy_numbers = ds.get_numpy_conformers('H6', properties='numbers')
-        self.assertEqual(numpy_numbers['numbers'], np.ones(numpy_species['species'].shape, dtype=np.int64))
-
-    def testNumbersFromSpecies(self):
-        ds = ANIDataset(self.tmp_dir.name / Path('new.h5'), create=True)
-        new_groups = deepcopy(self.new_groups_torch)
-        for k in ('H6', 'C6', 'O6'):
-            ds.append_conformers(k, new_groups[k])
-        ds.delete_properties({'species'})
-        ds.create_full_property('numbers', fill_value=1)
-        ds.create_species_from_numbers('numbers', 'species')
-        for k in ('H6', 'C6', 'O6'):
-            species = ds.get_numpy_conformers(k, properties='species')['species']
-            self.assertEqual(species, np.full(species.shape, fill_value='H'))
 
     def testNewScalar(self):
         ds = ANIDataset(self.tmp_dir.name / Path('new.h5'), create=True)
