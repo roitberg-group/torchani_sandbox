@@ -194,7 +194,7 @@ class TestEstimationSAE(TestCase):
         self._testExactSAE(direct=True)
 
     def testStochasticSAEDirect(self):
-        self._testExactSAE(direct=True)
+        self. _testStochasticSAE(direct=True)
 
     def _testExactSAE(self, direct: bool = False):
         if direct:
