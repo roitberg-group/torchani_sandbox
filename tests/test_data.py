@@ -9,6 +9,7 @@ import tempfile
 import warnings
 from copy import deepcopy
 from torchani.transforms import AtomicNumbersToIndices, SubtractSAE, Compose, calculate_saes
+from torchani.utils import PERIODIC_TABLE
 from torchani.testing import TestCase
 from torchani.datasets import ANIDataset, ANIBatchedDataset, create_batched_dataset
 
@@ -17,6 +18,8 @@ dataset_path = os.path.join(path, '../dataset/ani-1x/sample.h5')
 dataset_path_gdb = os.path.join(path, '../dataset/ani1-up_to_gdb4/ani_gdb_s02.h5')
 batch_size = 256
 ani1x_sae_dict = {'H': -0.60095298, 'C': -38.08316124, 'N': -54.7077577, 'O': -75.19446356}
+
+_numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
 
 def ignore_unshuffled_warning():
@@ -563,30 +566,35 @@ class TestANIDataset(TestCase):
 
     def testAppendAndDeleteNumpyConformers(self):
         ds = ANIDataset(self.tmp_dir.name / Path('new.h5'), create=True)
-        properties1 = {'species': np.full((5, 6), fill_value='H', dtype=str),
-                      'coordinates': np.random.standard_normal((5, 6, 3)),
-                      'energies': np.random.standard_normal((5,))}
-        properties2 = {'species': np.full((5, 6), fill_value='C', dtype=str),
-                      'coordinates': np.random.standard_normal((5, 6, 3)),
-                      'energies': np.random.standard_normal((5,))}
-        properties3 = {'species': np.full((5, 6), fill_value='O', dtype=str),
-                      'coordinates': np.random.standard_normal((5, 6, 3)),
-                      'energies': np.random.standard_normal((5,))}
-        ds.append_conformers('H6', properties1)
-        ds.append_conformers('C6', properties2)
-        ds.append_conformers('O6', properties3)
+        # first we build numpy conformers with ints and str as species (both
+        # allowed)
+        conformers_int = dict()
+        conformers_str = dict()
+        for gn in self.new_groups_torch.keys():
+            conformers_int[gn] = {k: v.detach().cpu().numpy()
+                                  for k, v in self.new_groups_torch[gn].items()}
+            conformers_str[gn] = deepcopy(conformers_int[gn])
+            conformers_str[gn]['species'] = _numbers_to_symbols(conformers_int[gn]['species'])
+
+        # Build the dataset using conformers
+        for k, v in conformers_str.items():
+            ds.append_conformers(k, v)
+        # Check that getters give the same result as what was input
         for k, v in ds.numpy_items():
-            if k == 'H6':
-                self.assertEqual(v, properties1)
-            elif k == 'C6':
-                self.assertEqual(v, properties2)
-            elif k == 'O6':
-                self.assertEqual(v, properties3)
-        for v, (k, v2) in zip(ds.numpy_values(), ds.numpy_items()):
-            self.assertEqual(v, v2)
-        ds.delete_conformers('H6')
-        ds.delete_conformers('O6')
-        ds.delete_conformers('C6')
+            self.assertEqual(v, conformers_str[k])
+        # Now we delete everything
+        for k in conformers_str.keys():
+            ds.delete_conformers(k)
+        self.assertTrue(len(ds.items()) == 0)
+
+        # now we do the same with conformers_int
+        for k, v in conformers_int.items():
+            ds.append_conformers(k, v)
+        # We append as ints but output is currently as strings always for numpy
+        for k, v in ds.numpy_items():
+            self.assertEqual(v, conformers_str[k])
+        for k in conformers_str.keys():
+            ds.delete_conformers(k)
         self.assertTrue(len(ds.items()) == 0)
 
     def testSpeciesFromNumbers(self):
