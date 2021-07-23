@@ -1,3 +1,4 @@
+import torchani  # noqa
 from torchani.datasets import ANIDataset
 # Example of simple usage of the ANIDataset class, which supersedes the obsolete
 # anidataloader
@@ -5,6 +6,19 @@ from torchani.datasets import ANIDataset
 # ANIDataset accepts a path to an h5 file or a list of paths (optionally with names)
 dataset = ANIDataset('/path/to/h5/file.h5')
 dataset = ANIDataset(locations=('/path/to/h5file1.h5', '/path/to/h5file2.h5'), names=('only_HCNO', 'heavy'))
+
+# There are also builtin datasets that live in moria, and they can be directly
+# downloaded through torchani.
+
+# Downloading the builtin datasets performs a checksum to make sure the files
+# are correct. If the function is called again and the dataset is already on
+# the path, only the checksum is performed, the data is not downloaded. The
+# output is an ANIDataset class
+# Uncomment the following code to download (watch out, it may take some time):
+
+# ds_1x = torchani.datasets.ANI1x('./datasets/ani1x/', download=True)
+# ds_comp6 = torchani.datasets.COMP6v1('./datasets/comp6v1/', download=True)
+# ds_2x = torchani.datasets.ANI2x('./datasets/ani2x/', download=True)
 
 # ############## Conformer groups:  ###########################
 # To access groups of conformers we can just use the dataset as an ordered
