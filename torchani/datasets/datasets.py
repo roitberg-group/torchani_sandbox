@@ -1,5 +1,5 @@
 from typing import (Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set,
-                    Mapping, Any, Iterable, Callable, cast)
+                Mapping, Any, Iterable, Callable, cast)
 import inspect
 import pickle
 import warnings
@@ -20,16 +20,36 @@ from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 if _H5PY_AVAILABLE:
     import h5py
 
+# About _ELEMENT_KEYS:
+# Datasets are assumed to have a "numbers" or "species" property, which has
+# information about the elements. In the legacy format it may have either
+# atomic numbers (1, 6, 8, etc) or strings with the chemical symbols ("H", "C",
+# "O", etc), both are allowed for both names. In the new formats they **must be
+# integers** If both properties are present one should be deleted to avoid
+# redundancies
+
+_ELEMENT_KEYS = {'species', 'numbers'}
+_LEGACY_NONBATCH_KEYS = {'species', 'numbers'}
+_ALWAYS_STRING_KEYS = {'_id', 'smiles'}
+
 
 # Helper functions
-def _get_formulas(conformers: NumpyConformers) -> List[str]:
-    if 'species' in conformers.keys():
-        symbols = conformers['species']
-    elif 'numbers' in conformers.keys():
-        symbols = _numbers_to_symbols(conformers['numbers'])
+def _get_any_element_key(properties: Iterable[str]):
+    properties = {properties} if isinstance(properties, str) else set(properties)
+    if 'species' in properties:
+        return 'species'
     else:
-        raise KeyError("Either species or numbers must be present in conformers to parse formulas")
-    return species_to_formula(symbols)
+        try:
+            return next(iter(_ELEMENT_KEYS & properties))
+        except StopIteration:
+            raise ValueError("Either species or numbers must be present in conformers") from None
+
+
+def _get_formulas(conformers: NumpyConformers) -> List[str]:
+    elements = conformers[_get_any_element_key(conformers.keys())]
+    if issubclass(elements.dtype.type, np.integer):
+        elements = _numbers_to_symbols(elements)
+    return species_to_formula(elements)
 
 
 def _get_dim_size(conformers: NumpyConformers, common_keys: Set[str], dim: int) -> int:
@@ -57,7 +77,7 @@ def _to_strpath_list(obj: Union[Iterable[StrPath], StrPath]) -> List[StrPath]:
     return cast(List[StrPath], list_)
 
 
-# convert to / from species and atomic numbers properties
+# convert to / from symbols and atomic numbers properties
 _symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
 _numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
@@ -80,7 +100,6 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
         # store in store_dir/split
         if batches is not None and any(v is not None for v in (file_format, store_dir, transform)):
             raise ValueError('Batches is mutually exclusive with file_format/store_dir/transform')
-
         self.split = split
         self.properties = ('coordinates', 'species', 'energies') if properties is None else properties
         self.transform = (lambda x: x) if transform is None else transform
@@ -97,11 +116,9 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
             self._batch_paths = None
             self._extractor = lambda idx: self._data[idx]
             container = self._data
-
         # Drops last batch only if requested and if its smaller than the rest
         if drop_last and self.batch_size(-1) < self.batch_size(0):
             container.pop()
-
         self._len = len(container)
 
     def batch_size(self, idx: int) -> int:
@@ -126,7 +143,6 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
 
         if any(f.is_dir() for f in batch_paths):
             raise RuntimeError(f'Subdirectories found in {batches_dir.as_posix()}')
-
         return batch_paths
 
     # We use pickle or numpy or hdf5 since saving in
@@ -203,7 +219,6 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
 
 # Base class for ANIDataset and _ANISubdataset
 class _ANIDatasetBase(Mapping[str, Conformers]):
-
     def __init__(self, *args, **kwargs) -> None:
         # "properties" is read only, needed for validation of inputs, it may
         # change if a property is renamed or deleted. num_conformers and
@@ -261,7 +276,7 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
             yield c
 
 
-# Decorator for _ANISubdataset
+# Decorators for ANISubdataset:
 # Decorator that wraps functions that modify the dataset in place. Makes
 # sure that cache updating happens after dataset modification
 def _needs_cache_update(method: Callable[..., '_ANISubdataset']) -> Callable[..., '_ANISubdataset']:
@@ -273,8 +288,6 @@ def _needs_cache_update(method: Callable[..., '_ANISubdataset']) -> Callable[...
 
     return method_with_cache_update
 
-
-# Decorators for ANISubdataset
 
 # methods marked with this decorator
 # should be called on all subdatasets
@@ -301,7 +314,6 @@ def _delegate_with_return(method):
 # used for directories with npz files, or other backends. It should never ever
 # be used directly by user code.
 class _ANISubdataset(_ANIDatasetBase):
-
     def __init__(self,
                  store_location: StrPath,
                  create: bool = False,
@@ -319,11 +331,14 @@ class _ANISubdataset(_ANIDatasetBase):
             self._possible_nonbatch_properties = set()
         else:
             if grouping != 'by_formula':
-                raise ValueError("Can't specify grouping for an already existing dataset")
+                raise ValueError("Can't specify grouping, dataset already exists")
             self._store.validate_location()
             if self.grouping not in ['by_formula', 'by_num_atoms', 'legacy']:
-                raise RuntimeError(f'Reading a dataset with unsupported grouping {self.grouping}')
-            self._possible_nonbatch_properties = {'species', 'numbers'} if self.grouping == 'legacy' else set()
+                raise RuntimeError(f'Read with unsupported grouping {self.grouping}')
+            if self.grouping == 'legacy':
+                self._possible_nonbatch_properties = _LEGACY_NONBATCH_KEYS
+            else:
+                self._possible_nonbatch_properties = set()
             # In general properties of the dataset should be equal for all
             # groups, this can be an issue for HDF5. We check this in the first
             # call of _update_cache, if it isn't we raise an exception
@@ -373,30 +388,25 @@ class _ANISubdataset(_ANIDatasetBase):
                 f"Conformers: {self.num_conformers}\n"
                 f"Conformer groups: {self.num_conformer_groups}\n")
         try:
-            str_ += f"Elements: {self.present_species()}\n"
+            str_ += f"Elements: {self.present_elements()}\n"
         except ValueError:
             str_ += "Elements: Unknown\n"
         return str_
 
-    def present_species(self) -> List[str]:
-        r"""Get an ordered list with all species present in the dataset
+    def present_elements(self, chem_symbols: bool = False) -> List[Union[str, int]]:
+        r"""Get an ordered list with all elements present in the dataset
 
         list is ordered alphabetically. Function raises ValueError if neither
         'species' or 'numbers' properties are present.
         """
-        if 'species' in self.properties:
-            element_key = 'species'
-            parser = lambda s: s['species'].ravel()  # noqa E731
-        elif 'numbers' in self.properties:
-            element_key = 'numbers'
-            parser = lambda s: _numbers_to_symbols(s['numbers']).ravel()  # noqa E731
-        else:
-            raise ValueError('"species" or "numbers" must be present to parse symbols')
-        present_species: Set[str] = set()
+        element_key = _get_any_element_key(self.properties)
+        present_elements: Set[Union[str, int]] = set()
         for group_name in self.keys():
-            species = self.get_numpy_conformers(group_name, properties=element_key)
-            present_species.update(parser(species))
-        return sorted(present_species)
+            conformers = self.get_numpy_conformers(group_name,
+                                                   properties=element_key,
+                                                   chem_symbols=chem_symbols)
+            present_elements.update(conformers[element_key].ravel())
+        return sorted(present_elements)
 
     def _parse_index(self, idx: IdxLike) -> Optional[np.ndarray]:
         # internally, idx_ is always a numpy array or None, idx can be a tensor
@@ -409,7 +419,8 @@ class _ANISubdataset(_ANIDatasetBase):
                 idx_ = np.array(idx)
             else:
                 idx_ = np.asarray(idx)
-            assert idx_.ndim <= 1, "index must be a 0 or 1 dim tensor"
+            if idx_.ndim > 1:
+                raise ValueError("index must be a 0 or 1 dim tensor")
             return idx_
         return idx
 
@@ -423,52 +434,53 @@ class _ANISubdataset(_ANIDatasetBase):
         Can obtain conformers with specified indices, and including only
         specified properties. Conformers are dict of the form {property:
         Tensor}, where properties are strings"""
-        if properties is None:
-            properties = self.properties
-        needed_properties = {properties} if isinstance(properties, str) else set(properties)
-
-        numpy_conformers = self.get_numpy_conformers(group_name, idx, needed_properties)
-        conformers = {k: torch.tensor(numpy_conformers[k]) for k in needed_properties - {'species', '_id'}}
-
-        if 'species' in needed_properties:
-            species = _symbols_to_numbers(numpy_conformers['species'])
-            conformers.update({'species': torch.from_numpy(species)})
-        return conformers
+        numpy_conformers = self.get_numpy_conformers(group_name, idx, properties)
+        return {k: torch.tensor(numpy_conformers[k])
+                for k in set(numpy_conformers.keys()) - _ALWAYS_STRING_KEYS}
 
     @_delegate_with_return
     def get_numpy_conformers(self,
                              group_name: str,
                              idx: IdxLike = None,
-                             properties: Optional[Iterable[str]] = None) -> NumpyConformers:
+                             properties: Optional[Iterable[str]] = None,
+                             chem_symbols: bool = False) -> NumpyConformers:
         r"""Same as get_conformers but conformers are a dict {property: ndarray}"""
-
         if properties is None:
             properties = self.properties
         needed_properties = {properties} if isinstance(properties, str) else set(properties)
         self._check_properties_are_present(needed_properties)
-
-        # Determine which of the properties passed are batched and which are nonbatch
         nonbatch_properties = needed_properties & self._possible_nonbatch_properties
         batch_properties = needed_properties - self._possible_nonbatch_properties
-
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r')
             numpy_conformers = {p: f[group_name][p] for p in needed_properties}
-            idx_ = self._parse_index(idx)
-            if idx_ is not None:
-                numpy_conformers.update({k: numpy_conformers[k][idx_]
-                                         for k in batch_properties})
-
+        idx_ = self._parse_index(idx)
+        if idx_ is not None:
+            numpy_conformers.update({k: numpy_conformers[k][idx_]
+                                     for k in batch_properties})
+        # Nonbatch properties, if present, need tiling in the first dim
         if nonbatch_properties:
-            tile_shape = (_get_num_conformers(numpy_conformers), 1) if idx_ is None or idx_.ndim == 1 else (1,)
+            tile_shape: Tuple[int, ...]
+            if idx_ is None or idx_.ndim == 1:
+                tile_shape = (_get_num_conformers(numpy_conformers), 1)
+            else:
+                tile_shape = (1,)
             numpy_conformers.update({k: np.tile(numpy_conformers[k], tile_shape)
                                      for k in nonbatch_properties})
-
-        if 'species' in needed_properties:
-            numpy_conformers['species'] = numpy_conformers['species'].astype(str)
-        if '_id' in needed_properties:
-            numpy_conformers['_id'] = numpy_conformers['_id'].astype(str)
-
+        # Depending on "chem_symbols", "species" / "numbers" are returned as
+        # int64 or as str. In legacy grouping "species" and "numbers" can be
+        # str or ints themselves, so we check for that and convert.
+        for k in needed_properties & _ELEMENT_KEYS:
+            elements = numpy_conformers[k]
+            if issubclass(elements.dtype.type, np.integer):
+                if chem_symbols:
+                    numpy_conformers[k] = _numbers_to_symbols(elements)
+            else:
+                elements = elements.astype(str)
+                if not chem_symbols:
+                    numpy_conformers[k] = _symbols_to_numbers(elements)
+        for k in needed_properties & _ALWAYS_STRING_KEYS:
+            numpy_conformers[k] = numpy_conformers[k].astype(str)
         return numpy_conformers
 
     # Convert a dict that maybe has some numpy arrays and / or some torch
@@ -476,23 +488,19 @@ class _ANISubdataset(_ANIDatasetBase):
     def _to_numpy_conformers(self, mixed_conformers: MixedConformers) -> NumpyConformers:
         numpy_conformers: NumpyConformers = dict()
         properties = set(mixed_conformers.keys())
-        for k in properties - {'species'}:
-            # try to convert the input to numpy, if it is already a numpy
-            # arry this will fail. Species is a special case
+        for k in properties:
+            # try to convert to numpy, failure means it is already an ndarray
             try:
                 numpy_conformers[k] = mixed_conformers[k].detach().cpu().numpy()  # type: ignore
             except AttributeError:
                 numpy_conformers[k] = cast(np.ndarray, mixed_conformers[k])
-        if 'species' in properties:
-            # try to convert numerical species to symbols, if this fails,
-            # it means they are already symbols.
+        for k in properties & _ELEMENT_KEYS:
+            # try to interpret as numeric, failure means we should convert to ints
             try:
-                if (mixed_conformers['species'] <= 0).any():
-                    raise ValueError('Species are atomic numbers, must be positive')
-                numpy_conformers['species'] = _numbers_to_symbols(mixed_conformers['species'])
+                if (mixed_conformers[k] <= 0).any():
+                    raise ValueError(f'{k} are atomic numbers, must be positive')
             except TypeError:
-                assert isinstance(mixed_conformers['species'], np.ndarray)
-                numpy_conformers['species'] = mixed_conformers['species']
+                numpy_conformers[k] = _symbols_to_numbers(mixed_conformers[k])
         return numpy_conformers
 
     @_delegate
@@ -522,10 +530,8 @@ class _ANISubdataset(_ANIDatasetBase):
     @_needs_cache_update
     def delete_conformers(self, group_name: str, idx: IdxLike = None) -> '_ANISubdataset':
         r"""Delete a given selected set of conformers"""
-        idx_ = self._parse_index(idx)
         self._check_correct_grouping()
-        if group_name not in self.keys():
-            raise KeyError(group_name)
+        idx_ = self._parse_index(idx)
         all_conformers = self.get_numpy_conformers(group_name)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
@@ -545,32 +551,6 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @_broadcast
     @_needs_cache_update
-    def create_species_from_numbers(self, source_key: str = 'numbers', dest_key: str = 'species') -> '_ANISubdataset':
-        r"""Creates a 'species' property if a 'numbers' property exists"""
-        self._check_properties_are_present(source_key)
-        self._check_properties_are_not_present(dest_key)
-        with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r+')
-            for group_name in self.keys():
-                symbols = _numbers_to_symbols(f[group_name][source_key])
-                f[group_name].create_numpy_values({dest_key: symbols})
-        return self
-
-    @_broadcast
-    @_needs_cache_update
-    def create_numbers_from_species(self, source_key: str = 'species', dest_key: str = 'numbers') -> '_ANISubdataset':
-        r"""Creates a 'numbers' property if a 'species' property exists"""
-        self._check_properties_are_present(source_key)
-        self._check_properties_are_not_present(dest_key)
-        with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r+')
-            for group_name in self.keys():
-                numbers = _symbols_to_numbers(f[group_name][source_key].astype(str))
-                f[group_name].create_numpy_values({dest_key: numbers})
-        return self
-
-    @_broadcast
-    @_needs_cache_update
     def create_full_property(self,
                              dest_key: str,
                              is_atomic: bool = False,
@@ -583,13 +563,13 @@ class _ANISubdataset(_ANIDatasetBase):
         for all conformers in the dataset. Example usage:
 
         # shape (N,)
-        ds.create_full_property('my_new_property', fill_value=0.0, dtype=float)
+        ds.create_full_property('new', fill_value=0.0, dtype=np.float64)
         # shape (N, A)
-        ds.create_full_property('my_new_property', is_atomic=True, fill_value=0.0, dtype=int)
-        # shape (N, A, 3, 3)
-        ds.create_full_property('my_new_property', is_atomic=True, extra_dims=(3, 3), fill_value=0.0, dtype=np.float32)
-        # shape (N, 3)
-        ds.create_full_property('my_new_property', extra_dims=3, fill_value=0.0, dtype=np.int32)
+        ds.create_full_property('new', is_atomic=True, fill_value=1, dtype=int)
+        # shape (N, A, 3)
+        ds.create_full_property('new', extra_dims=3, fill_value=0.0, dtype=np.float32)
+        # shape (N, 3, 3)
+        ds.create_full_property('new', extra_dims=(3, 3), fill_value=5, dtype=int)
         """
         extra_dims_ = (extra_dims,) if isinstance(extra_dims, int) else extra_dims
         self._check_properties_are_not_present(dest_key)
@@ -598,10 +578,8 @@ class _ANISubdataset(_ANIDatasetBase):
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
                 shape = (_get_num_conformers(f[group_name]),)
-
                 if is_atomic:
                     shape += (_get_num_atoms(f[group_name]),)
-
                 data = np.full(shape=shape + extra_dims_, fill_value=fill_value, dtype=dtype)
                 f[group_name].create_numpy_values({dest_key: data})
         return self
@@ -650,6 +628,7 @@ class _ANISubdataset(_ANIDatasetBase):
         different stores are not mixed. See the 'repack' method for an
         explanation of that argument.
         """
+        self._check_unique_element_key()
         new_ds = self._make_empty_temporary_copy(grouping='by_formula')
         for group_name, conformers in tqdm(self.numpy_items(),
                                            total=self.num_conformer_groups,
@@ -681,6 +660,7 @@ class _ANISubdataset(_ANIDatasetBase):
         Conformers in different stores are not mixed. See the 'repack' method
         for an explanation of that argument.
         """
+        self._check_unique_element_key()
         new_ds = self._make_empty_temporary_copy(grouping='by_num_atoms')
         for group_name, conformers in tqdm(self.numpy_items(),
                                            total=self.num_conformer_groups,
@@ -739,6 +719,15 @@ class _ANISubdataset(_ANIDatasetBase):
             grouping = self._get_open_store(stack, 'r').grouping
         return grouping
 
+    def _check_unique_element_key(self, properties: Optional[Iterable[str]] = None) -> None:
+        if properties is None:
+            properties = self.properties
+        else:
+            properties = {properties} if isinstance(properties, str) else set(properties)
+        if len(properties.intersection(_ELEMENT_KEYS)) > 1:
+            raise ValueError(f'There can be at most one of {_ELEMENT_KEYS}'
+                             f' present, but found {set(properties)}')
+
     def _check_correct_grouping(self) -> None:
         if self.grouping not in ['by_formula', 'by_num_atoms']:
             calling_fn_name = inspect.stack()[1][3]
@@ -748,30 +737,24 @@ class _ANISubdataset(_ANIDatasetBase):
 
     def _check_append_input(self, group_name: str, conformers: NumpyConformers) -> None:
         self._check_correct_grouping()
-
+        conformers_properties = set(conformers.keys())
+        self._check_unique_element_key(conformers_properties)
         # check that all formulas are the same
         if self.grouping == 'by_formula':
             if len(set(_get_formulas(conformers))) > 1:
                 raise ValueError("All appended conformers must have the same formula")
-
         # If this is the first conformer added update the dataset to support
         # these properties, otherwise check that all properties are present
         if not self.properties:
-            self._properties = set(conformers.keys())
-        elif not self.properties == set(conformers.keys()):
-            raise ValueError(f'Expected {self.properties} but got {set(conformers.keys())}')
-
+            self._properties = conformers_properties
+        elif not self.properties == conformers_properties:
+            raise ValueError(f'Expected {self.properties} but got {conformers_properties}')
         if '/' in group_name:
             raise ValueError('Character "/" not supported in group_name')
-
         # All properties must have the same batch dimension
-        size = conformers[next(iter(conformers.keys()))].shape[0]
+        size = conformers[next(iter(conformers_properties))].shape[0]
         if not all(conformers[k].shape[0] == size for k in self.properties):
             raise ValueError(f"All batch keys {self.properties} must have the same batch dimension")
-
-        if {'species', 'numbers'}.issubset(self.properties):
-            if not (_symbols_to_numbers(conformers['species']) == conformers['numbers']).all():
-                raise ValueError("Tried to append inconsistent species and atomic numbers")
 
     def _check_properties_are_present(self, properties: Iterable[str]) -> None:
         properties = {properties} if isinstance(properties, str) else set(properties)
@@ -865,22 +848,16 @@ class ANIDataset(_ANIDatasetBase):
     """
     def __init__(self, locations: Union[Iterable[StrPath], StrPath], names: Optional[Union[Iterable[str], str]] = None, **kwargs):
         super().__init__()
-
-        # _datasets is an ordereddict {name: _ANISubdataset}.
+        # _datasets is an OrderedDict {name: _ANISubdataset}.
         # "locations" and "names" are collections used to build it
-
         # First we convert locations / names into lists of strpath / str
         # if no names are provided they are just '0', '1', '2', etc.
         locations = _to_strpath_list(locations)
-
         if names is None:
             names = (str(j) for j in range(len(locations)))
-
         names = [names] if isinstance(names, str) else [n for n in names]
-
         if not len(names) == len(locations):
             raise ValueError("Length of locations and names must be equal")
-
         self._datasets = OrderedDict((n, _ANISubdataset(loc, **kwargs)) for n, loc in zip(names, locations))
         self._update_cache()
 
@@ -895,8 +872,8 @@ class ANIDataset(_ANIDatasetBase):
                 self._datasets[k] = stack.enter_context(self._datasets[k].keep_open(mode))
             yield self
 
-    def present_species(self) -> List[str]:
-        return sorted({s for ds in self._datasets.values() for s in ds.present_species()})
+    def present_elements(self, chem_symbols: bool = False) -> List[Union[str, int]]:
+        return sorted({s for ds in self._datasets.values() for s in ds.present_elements(chem_symbols)})
 
     @property
     def store_locations(self) -> List[str]:
@@ -906,12 +883,11 @@ class ANIDataset(_ANIDatasetBase):
     def num_stores(self) -> int:
         return len(self._datasets)
 
+    # Mechanism for delegating calls to the correct _ANISubdatasets:
+    # Functions with a "group_name" argument are delegated to one specific
+    # subdataset, other ones are performed in all subdatasets on a loop
+    # (broadcasted)
     def __getattr__(self, method: str) -> Callable:
-        # Mechanism for delegating calls to the correct _ANISubdatasets
-        #
-        # Functions with a "group_name" argument are delegated to one specific
-        # subdataset, other ones are performed in all subdatasets on a loop
-        # (broadcasted)
         unbound_method = getattr(_ANISubdataset, method)
         mark = unbound_method._mark
         if mark == 'delegate':
@@ -973,14 +949,12 @@ class ANIDataset(_ANIDatasetBase):
 
 
 class AniH5Dataset(ANIDataset):
-
     def __init__(self, *args, **kwargs) -> None:
         warnings.warn("AniH5Dataset has been renamed to ANIDataset, please use ANIDataset instead")
         super().__init__(*args, **kwargs)
 
 
 class AniBatchedDataset(ANIBatchedDataset):
-
     def __init__(self, *args, **kwargs) -> None:
         warnings.warn("AniBatchedDataset has been renamed to ANIBatchedDataset, please use ANIBatchedDataset instead")
         super().__init__(*args, **kwargs)

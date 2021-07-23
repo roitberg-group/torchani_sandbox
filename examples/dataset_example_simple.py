@@ -54,15 +54,14 @@ print(conformer)
 conformer = dataset.get_conformers('C10H10', 1)
 print(conformer)
 
-# A tensor can also be passed for indexing, to fetch multiple conformers
-# from the same group, which is faster.
-# Since we copy the data for simplicity, this allows all fancy indexing
-# operations (directly indexing using h5py does not).
-# a numpy array or an int / list of ints can also be used.
+# A tensor / list / array can also be passed for indexing, to fetch multiple
+# conformers from the same group, which is faster. Since we copy the data forh
+# simplicity, this allows all fancy indexing operations (directly indexing
+# using h5py for example does not).
 conformers = dataset.get_conformers('C10H10', [0, 1])
 print(conformers)
 
-# We can also access all the group, same as with [] if we don't pass an index
+# We can also access all the group if we don't pass an index
 conformer = dataset.get_conformers('C10H10')
 print(conformer)
 
@@ -71,6 +70,12 @@ conformer = dataset.get_conformers('C10H10', include_properties=('species', 'ene
 print(conformer)
 
 conformer = dataset.get_conformers('C10H10', [0, 3], include_properties=('species', 'energies'))
+print(conformer)
+
+# If you want you can also get the conformers as numpy arrays by calling
+# get_numpy_conformers.  this has an optional flag "chem_symbols" which if
+# specified "True" will output the elements as strings ('C', 'H', 'H', ... etc)
+conformer = dataset.get_numpy_conformers('C10H10', [0, 3], include_properties=('species', 'energies'), chem_symbols=True)
 print(conformer)
 
 # We can iterate over all conformers sequentially by calling iter_conformer,
