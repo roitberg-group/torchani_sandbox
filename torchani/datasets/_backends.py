@@ -1,7 +1,8 @@
 import warnings
 from dataclasses import dataclass, field
-import uuid
+from uuid import uuid4
 import shutil
+import tempfile
 from pathlib import Path
 from functools import partial
 from abc import ABC, abstractmethod
@@ -43,16 +44,35 @@ def StoreAdaptorFactory(store_location: StrPath, backend: str) -> '_StoreAdaptor
         raise RuntimeError(f"Bad backend {backend}")
 
 
+def TemporaryLocation(backend: str) -> 'ContextManager[StrPath]':
+    if backend == 'h5py':
+        return _H5TemporaryLocation()
+    else:
+        raise ValueError(f"Bad backend {backend}")
+
+
 @dataclass
 class CacheHolder:
     group_sizes: 'OrderedDict[str, int]' = field(default_factory=OrderedDict)
     properties: Set[str] = field(default_factory=set)
 
 
+class _H5TemporaryLocation(ContextManager[StrPath]):
+    def __init__(self) -> None:
+        self._tmp_location = tempfile.TemporaryDirectory()
+        self._tmp_filename = Path(self._tmp_location.name).resolve() / f'{uuid4()}.h5'
+
+    def __enter__(self) -> str:
+        return self._tmp_filename.as_posix()
+
+    def __exit__(self, *args) -> None:
+        self._tmp_location.cleanup()
+
+
 def get_temporary_location(backend: str) -> str:
     if backend == 'h5py':
         # uuid4 gives a random string
-        tmp_location = Path('/tmp').resolve() / f'tmp_{uuid.uuid4()}.h5'
+        tmp_location = Path('/tmp').resolve() / f'tmp_{uuid4()}.h5'
         return tmp_location.as_posix()
     else:
         raise ValueError(f"Bad backend {backend}")

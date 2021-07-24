@@ -13,7 +13,7 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from ._backends import _H5PY_AVAILABLE, _StoreAdaptor, StoreAdaptorFactory, get_temporary_location, infer_backend
+from ._backends import _H5PY_AVAILABLE, _StoreAdaptor, StoreAdaptorFactory, TemporaryLocation, infer_backend
 from ._annotations import Transform, Conformers, NumpyConformers, MixedConformers, StrPath, DTypeLike, IdxLike
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
@@ -29,8 +29,14 @@ if _H5PY_AVAILABLE:
 # redundancies
 
 _ELEMENT_KEYS = {'species', 'numbers'}
-_LEGACY_NONBATCH_KEYS = {'species', 'numbers'}
+_LEGACY_NONBATCH_KEYS = {'species', 'numbers', 'smiles'}
 _ALWAYS_STRING_KEYS = {'_id', 'smiles'}
+# These broken keys are in some datasets and are basically impossible to parse
+# correctly. If grouping is "legacy" and these are found we give up and ask the
+# user to delete them in a warning
+_LEGACY_BROKEN_KEYS = {'coordinatesHE', 'energiesHE', 'smiles'}
+# This keys holds junk information, we recommend the user deletes them if found
+_LEGACY_USELESS_KEYS = {'cluster_mask'}
 
 
 # Helper functions
@@ -343,6 +349,18 @@ class _ANISubdataset(_ANIDatasetBase):
             # groups, this can be an issue for HDF5. We check this in the first
             # call of _update_cache, if it isn't we raise an exception
             self._update_cache(check_properties=True, verbose=verbose)
+            if self.grouping == 'legacy':
+                if self.properties & _LEGACY_BROKEN_KEYS:
+                    warnings.warn(f'Unsupported properties {_LEGACY_BROKEN_KEYS & self.properties}'
+                                   ' found in legacy dataset, this will generate'
+                                   ' unpredictable issues.'
+                                   ' Probably .items() and .values() will work but'
+                                   ' not much else. It is highly  recommended that'
+                                   ' you backup these properties if needed and'
+                                   ' delete them using dataset.delete_properties')
+                if self.properties & _LEGACY_USELESS_KEYS:
+                    warnings.warn(f'Property {self.properties & _LEGACY_USELESS_KEYS} '
+                                   ' holds junk data, it is recommended that you delete it')
 
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
@@ -584,15 +602,15 @@ class _ANISubdataset(_ANIDatasetBase):
                 f[group_name].create_numpy_values({dest_key: data})
         return self
 
-    def _make_empty_temporary_copy(self, grouping: Optional[str] = None, backend: Optional[str] = None) -> '_ANISubdataset':
-        backend = backend if backend is not None else self._backend
-        grouping = grouping if grouping is not None else self.grouping
-        new_ds = _ANISubdataset(get_temporary_location(backend),
-                                create=True,
-                                backend=backend,
-                                grouping=grouping,
-                                verbose=False)
-        return new_ds
+    def _make_empty_copy(self,
+                         location: StrPath,
+                         grouping: Optional[str] = None,
+                         backend: Optional[str] = None) -> '_ANISubdataset':
+        return _ANISubdataset(location,
+                              create=True,
+                              backend=backend if backend is not None else self._backend,
+                              grouping=grouping if grouping is not None else self.grouping,
+                              verbose=False)
 
     @_broadcast
     @_needs_cache_update
@@ -607,15 +625,16 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_correct_grouping()
         if not self._backend == 'h5py':
             return self
-        new_ds = self._make_empty_temporary_copy()
-        for group_name, conformers in tqdm(self.numpy_items(),
-                                           total=self.num_conformer_groups,
-                                           desc='Repacking HDF5 file',
-                                           disable=not verbose):
-            # mypy doesn't know that @wrap'ed functions have __wrapped__
-            # attribute, and fixing this is ugly
-            new_ds.append_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
-        self._store.transfer_location_to(new_ds._store)
+        with TemporaryLocation(self._backend) as location:
+            new_ds = self._make_empty_copy(location)
+            for group_name, conformers in tqdm(self.numpy_items(),
+                                               total=self.num_conformer_groups,
+                                               desc='Repacking HDF5 file',
+                                               disable=not verbose):
+                # mypy doesn't know that @wrap'ed functions have __wrapped__
+                # attribute, and fixing this is ugly
+                new_ds.append_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
+            self._store.transfer_location_to(new_ds._store)
         return new_ds
 
     @_broadcast
@@ -629,22 +648,23 @@ class _ANISubdataset(_ANIDatasetBase):
         explanation of that argument.
         """
         self._check_unique_element_key()
-        new_ds = self._make_empty_temporary_copy(grouping='by_formula')
-        for group_name, conformers in tqdm(self.numpy_items(),
-                                           total=self.num_conformer_groups,
-                                           desc='Regrouping by formulas',
-                                           disable=not verbose):
-            # Get all formulas in the group to discriminate conformers by
-            # formula and then attach conformers with the same formula to the
-            # same groups
-            formulas = np.asarray(_get_formulas(conformers))
-            unique_formulas = np.unique(formulas)
-            formula_idxs = ((formulas == el).nonzero()[0] for el in unique_formulas)
+        with TemporaryLocation(self._backend) as location:
+            new_ds = self._make_empty_copy(location, grouping='by_formula')
+            for group_name, conformers in tqdm(self.numpy_items(),
+                                               total=self.num_conformer_groups,
+                                               desc='Regrouping by formulas',
+                                               disable=not verbose):
+                # Get all formulas in the group to discriminate conformers by
+                # formula and then attach conformers with the same formula to the
+                # same groups
+                formulas = np.asarray(_get_formulas(conformers))
+                unique_formulas = np.unique(formulas)
+                formula_idxs = ((formulas == el).nonzero()[0] for el in unique_formulas)
 
-            for formula, idx in zip(unique_formulas, formula_idxs):
-                selected_conformers = {k: v[idx] for k, v in conformers.items()}
-                new_ds.append_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
-        self._store.transfer_location_to(new_ds._store)
+                for formula, idx in zip(unique_formulas, formula_idxs):
+                    selected_conformers = {k: v[idx] for k, v in conformers.items()}
+                    new_ds.append_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
+            self._store.transfer_location_to(new_ds._store)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
@@ -661,15 +681,16 @@ class _ANISubdataset(_ANIDatasetBase):
         for an explanation of that argument.
         """
         self._check_unique_element_key()
-        new_ds = self._make_empty_temporary_copy(grouping='by_num_atoms')
-        for group_name, conformers in tqdm(self.numpy_items(),
-                                           total=self.num_conformer_groups,
-                                           desc='Regrouping by number of atoms',
-                                           disable=not verbose):
-            # This is done to accomodate the current group convention
-            new_name = str(_get_num_atoms(conformers)).zfill(3)
-            new_ds.append_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
-        self._store.transfer_location_to(new_ds._store)
+        with TemporaryLocation(self._backend) as location:
+            new_ds = self._make_empty_copy(location, grouping='by_num_atoms')
+            for group_name, conformers in tqdm(self.numpy_items(),
+                                               total=self.num_conformer_groups,
+                                               desc='Regrouping by number of atoms',
+                                               disable=not verbose):
+                # This is done to accomodate the current group convention
+                new_name = str(_get_num_atoms(conformers)).zfill(3)
+                new_ds.append_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
+            self._store.transfer_location_to(new_ds._store)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
