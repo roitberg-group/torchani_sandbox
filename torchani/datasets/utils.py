@@ -1,14 +1,15 @@
 r"""Utilities for working with ANI Datasets"""
-from torch import Tensor
-from typing import List, Tuple, Optional, Sequence
+from pathlib import Path
+from typing import List, Tuple, Optional, Dict
 
 import torch
+from torch import Tensor
 
 from ..units import hartree2kcalmol
 from ..models import BuiltinModel
-from ..utils import pad_atomic_properties, tqdm
+from ..utils import tqdm
 from ..nn import Ensemble
-from ._annotations import KeyIdx, Conformers, StrPath
+from ._annotations import Conformers, StrPath
 from .datasets import ANIDataset
 
 
@@ -27,31 +28,35 @@ def concatenate(source: ANIDataset,
                       create=True,
                       grouping=source.grouping,
                       verbose=False)
-
-    for k, v in tqdm(source.numpy_items(),
-                  desc='Concatenating datasets',
-                  total=source.num_conformer_groups,
-                  disable=not verbose):
-        dest.append_numpy_conformers(k.split('/')[-1], v)
-
-    # TODO this depends on the original stores being files, it should be
-    # changed for generality
-    if delete_originals:
-        for p in tqdm(source.store_locations,
-                      desc='Deleting original store',
-                      total=source.num_stores,
+    try:
+        for k, v in tqdm(source.numpy_items(),
+                      desc='Concatenating datasets',
+                      total=source.num_conformer_groups,
                       disable=not verbose):
-            p.unlink()
-    return dest
+            dest.append_conformers(k.split('/')[-1], v)
+    except Exception:
+        # TODO this should be changed for generality
+        Path(dest_location).resolve().unlink()
+        raise
+    else:
+        # TODO this depends on the original stores being files, it should be
+        # changed for generality
+        if delete_originals:
+            for p in tqdm(source.store_locations,
+                          desc='Deleting original store',
+                          total=source.num_stores,
+                          disable=not verbose):
+                Path(p).resolve().unlink()
+        return dest
 
 
 def filter_by_high_force(dataset: ANIDataset,
-                         threshold: float = 2.0,
                          criteria: str = 'magnitude',
-                         device: str = 'cpu',
+                         threshold: float = 2.0,
                          max_split: int = 2560,
                          delete_inplace: bool = False,
-                         verbose: bool = True) -> Optional[Tuple[Tensor, Tensor, List[KeyIdx]]]:
+                         device: str = 'cpu',
+                         verbose: bool = True) -> Optional[Tuple[List[Conformers], Dict[str, Tensor]]]:
     r"""Filter outlier conformations either by force components or force magnitude"""
     if criteria == 'magnitude':
         desc = f"Filtering where force magnitude > {threshold} Ha / Angstrom"
@@ -59,10 +64,10 @@ def filter_by_high_force(dataset: ANIDataset,
         desc = f"Filtering where any force component > {threshold} Ha / Angstrom"
     else:
         raise ValueError('Criteria must be one of "magnitude" or "components"')
-
+    if dataset.grouping == 'legacy':
+        raise ValueError("Legacy grouping not supported in filters")
     # Threshold is by default 2 Ha / Angstrom
-    bad_conformations: List[Conformers] = []
-    bad_keys_and_idxs: List[KeyIdx] = []
+    bad_keys_and_idxs: Dict[str, Tensor] = dict()
     with torch.no_grad():
         for key, g in tqdm(dataset.items(),
                            total=dataset.num_conformer_groups,
@@ -81,26 +86,24 @@ def filter_by_high_force(dataset: ANIDataset,
                     # any over atoms
                     bad_idxs = (f.norm(dim=-1) > threshold).any(dim=-1).nonzero().squeeze()
                 if bad_idxs.numel() > 0:
-                    _append_bad_keys_and_idxs(bad_idxs, bad_keys_and_idxs, key, split_idx, max_split)
-                    _append_bad_conformations(bad_idxs, bad_conformations, s, c)
+                    bad_keys_and_idxs.update({key: bad_idxs + split_idx * max_split})
                 del s, c, f
-    if delete_inplace:
-        _delete_bad_conformations(dataset, bad_keys_and_idxs, verbose)
-    # None is returned if no bad_idxs are found (bad_conformations is an empty
-    # list in this case)
-    return _return_padded_conformations_or_none(bad_conformations, bad_keys_and_idxs, device)
+    if bad_keys_and_idxs:
+        return _fetch_and_delete_conformations(dataset, bad_keys_and_idxs, device, delete_inplace, verbose)
+    return None
 
 
 def filter_by_high_energy_error(dataset: ANIDataset,
                                 model: BuiltinModel,
                                 threshold: int = 100,
-                                device: str = 'cpu',
                                 max_split: int = 2560,
+                                device: str = 'cpu',
                                 delete_inplace: bool = False,
-                                verbose: bool = True) -> Optional[Tuple[Tensor, Tensor, List[KeyIdx]]]:
-    r"""Filter outlier conformations for which a given model has an excessively high absolute error"""
-    bad_conformations: List[Conformers] = []
-    bad_keys_and_idxs: List[KeyIdx] = []
+                                verbose: bool = True) -> Optional[Tuple[List[Conformers], Dict[str, Tensor]]]:
+    r"""Filter conformations for which a model has an excessively high absolute error"""
+    if dataset.grouping == 'legacy':
+        raise ValueError("Legacy grouping not supported in filters")
+    bad_keys_and_idxs: Dict[str, Tensor] = dict()
     model = model.to(device)
     if not model.periodic_table_index:
         raise ValueError("Periodic table index must be True to filter high energy error")
@@ -120,61 +123,37 @@ def filter_by_high_energy_error(dataset: ANIDataset,
                 # any over individual models of the ensemble
                 bad_idxs = (errors > threshold).any(dim=0).nonzero().squeeze()
                 if bad_idxs.numel() > 0:
-                    _append_bad_keys_and_idxs(bad_idxs, bad_keys_and_idxs, key, split_idx, max_split)
-                    _append_bad_conformations(bad_idxs, bad_conformations, s, c)
+                    bad_keys_and_idxs.update({key: bad_idxs + split_idx * max_split})
                 del s, c, ta
-    if delete_inplace:
-        _delete_bad_conformations(dataset, bad_keys_and_idxs, verbose)
-    return _return_padded_conformations_or_none(bad_conformations, bad_keys_and_idxs, device)
-
-
-def _delete_bad_conformations(dataset: ANIDataset, bad_keys_and_idxs: List[KeyIdx], verbose: bool) -> None:
     if bad_keys_and_idxs:
-        total_filtered = sum([v.numel() for (k, v) in bad_keys_and_idxs])
-        for (key, idx) in tqdm(bad_keys_and_idxs,
-                               total=len(bad_keys_and_idxs),
-                               desc='Deleting filtered conformers',
-                               disable=not verbose):
+        return _fetch_and_delete_conformations(dataset, bad_keys_and_idxs, device, delete_inplace, verbose)
+    return None
+
+
+def _fetch_and_delete_conformations(dataset: ANIDataset,
+                                    bad_keys_and_idxs: Dict[str, Tensor],
+                                    device: str,
+                                    delete_inplace: bool,
+                                    verbose: bool) -> Tuple[List[Conformers], Dict[str, Tensor]]:
+    bad_conformations: List[Conformers] = []
+    for k, idxs in bad_keys_and_idxs.items():
+        bad_conformations.append({k: v.to(device)
+                                  for k, v in dataset.get_conformers(k, idxs).items()})
+    if delete_inplace:
+        for key, idx in tqdm(bad_keys_and_idxs.items(),
+                             total=len(bad_keys_and_idxs),
+                             desc='Deleting filtered conformers',
+                             disable=not verbose):
             dataset.delete_conformers(key, idx)
-    else:
-        total_filtered = 0
     if verbose:
+        total_filtered = sum(v.numel() for v in bad_keys_and_idxs.values())
         print(f"Deleted {total_filtered} conformations")
+    return bad_conformations, bad_keys_and_idxs
 
 
-def _return_padded_conformations_or_none(bad_conformations: List[Conformers],
-                                         bad_keys_and_idxs: List[KeyIdx],
-                                         device: str) -> Optional[Tuple[Tensor, Tensor, List[KeyIdx]]]:
-    if bad_conformations:
-        conformers = pad_atomic_properties(bad_conformations)
-        return conformers['species'].to(device), conformers['coordinates'].to(device), bad_keys_and_idxs
-    else:
-        return None
-
-
-def _fetch_splitted(conformers: Conformers, keys_to_split: Sequence[str], max_split: int) -> Tuple[Tuple[Tensor, ...], ...]:
-    # NOTE: len of output tuple is the same as len of input keys_to_split
+# Input is a tuple of keys, output is a tuple of splitted tuples of tensors,
+# corresponding to the input keys, each of which has at most "max_split" len
+def _fetch_splitted(conformers: Conformers,
+                    keys_to_split: Tuple[str, ...],
+                    max_split: int) -> Tuple[Tuple[Tensor, ...], ...]:
     return tuple(torch.split(conformers[k], max_split) for k in keys_to_split)
-
-
-def _append_bad_keys_and_idxs(bad_idxs: Tensor,
-                              bad_keys_and_idxs: List[KeyIdx],
-                              key: str,
-                              split_idx: int,
-                              max_split: int) -> None:
-    bad_idxs_in_group = bad_idxs + split_idx * max_split
-    bad_keys_and_idxs.append((key, bad_idxs_in_group))
-
-
-def _append_bad_conformations(bad_idxs: Tensor,
-                              bad_conformations: List[Conformers],
-                              s: Tensor,
-                              c: Tensor) -> None:
-    bad_species_of_split = s[bad_idxs].cpu().clone()
-    bad_coordinates_of_split = c[bad_idxs].cpu().clone()
-    if not bad_species_of_split.dim() == 2:
-        bad_species_of_split = bad_species_of_split.unsqueeze(0)
-        bad_coordinates_of_split = bad_coordinates_of_split.unsqueeze(0)
-    assert bad_species_of_split.dim() == 2
-    assert bad_coordinates_of_split.dim() == 3
-    bad_conformations.append({'species': bad_species_of_split, 'coordinates': bad_coordinates_of_split})

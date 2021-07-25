@@ -1,6 +1,6 @@
 r"""Mypy type aliases"""
 import sys
-from typing import Tuple, Dict, Union, Callable, Iterable
+from typing import Dict, Union, Callable, Iterable
 from torch import Tensor
 from numpy import ndarray, dtype
 from collections import OrderedDict
@@ -15,7 +15,6 @@ else:
     from numpy import typing as numpy_typing
     DTypeLike = numpy_typing.DTypeLike
 
-KeyIdx = Tuple[str, Tensor]
 Transform = Callable[[Dict[str, Tensor]], Dict[str, Tensor]]
 
 # any of these should be interpretable as a 1D index sequence

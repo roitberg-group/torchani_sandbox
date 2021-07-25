@@ -406,7 +406,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 f"Conformers: {self.num_conformers}\n"
                 f"Conformer groups: {self.num_conformer_groups}\n")
         try:
-            str_ += f"Elements: {self.present_elements()}\n"
+            str_ += f"Elements: {self.present_elements(chem_symbols=True)}\n"
         except ValueError:
             str_ += "Elements: Unknown\n"
         return str_
@@ -417,6 +417,7 @@ class _ANISubdataset(_ANIDatasetBase):
         list is ordered alphabetically. Function raises ValueError if neither
         'species' or 'numbers' properties are present.
         """
+        self._check_correct_grouping()
         element_key = _get_any_element_key(self.properties)
         present_elements: Set[Union[str, int]] = set()
         for group_name in self.keys():
@@ -698,8 +699,9 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @_broadcast
     @_needs_cache_update
-    def delete_properties(self, properties: Sequence[str], verbose: bool = True) -> '_ANISubdataset':
+    def delete_properties(self, properties: Iterable[str], verbose: bool = True) -> '_ANISubdataset':
         r"""Delete some properties from the dataset"""
+        properties = {properties} if isinstance(properties, str) else set(properties)
         self._check_properties_are_present(properties)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')

@@ -46,7 +46,7 @@ def species_to_formula(species: np.ndarray) -> List[str]:
     formulas = []
     for s in species:
         symbol_counts: List[Tuple[str, int]] = sorted(Counter(s).items())
-        iterable = (str(i) for i in itertools.chain.from_iterable(symbol_counts))
+        iterable = (str(i) if str(i) != '1' else '' for i in itertools.chain.from_iterable(symbol_counts))
         formulas.append(''.join(iterable))
     return formulas
 
