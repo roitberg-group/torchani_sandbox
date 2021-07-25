@@ -2,7 +2,7 @@
 More advanced usage of the ANIDataset class
 ===========================================
 
-Example showing more involved conformer and property manipulation
+Example showing more involved conformer and property manipulation.
 """
 import shutil
 import torch
@@ -87,8 +87,6 @@ print(ds.grouping)
 #         /species, shape (5, 34)
 #         /energies, shape (5,)
 #
-
-###############################################################################
 # Property creation
 # -----------------
 #
@@ -99,7 +97,10 @@ print(ds.grouping)
 # docstring of the function.
 ds = ds.create_full_property('new_property', is_atomic=True, fill_value=0.0, dtype=float)
 print(ds.properties)
-ds.delete_properties('new_property')
+
+###############################################################################
+# We now delete the created property for cleanup
+ds.delete_properties('new_property', verbose=False)
 print(ds.properties)
 
 ###############################################################################
@@ -151,8 +152,7 @@ print(len(ds))
 # - That the name of the group is consistent with the formula / num atoms
 #
 # It is the responsibility of the user to make sure of those items.
-
-###############################################################################
+#
 # Utilities
 # ---------
 #

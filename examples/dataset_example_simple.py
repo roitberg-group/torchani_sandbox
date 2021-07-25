@@ -109,7 +109,7 @@ print(num_conformers)
 # Conformers
 # ----------
 #
-# To access individual conformers or subsets of conformers we use *_conformer
+# To access individual conformers or subsets of conformers we use "conformer"
 # methods, get_conformers and iter_conformers
 conformer = ds.get_conformers('file1/CH4', 0)
 print(conformer)
