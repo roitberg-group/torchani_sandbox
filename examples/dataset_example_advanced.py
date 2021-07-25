@@ -205,9 +205,8 @@ bad_conformers = {'species': np.array([['H', 'H', 'N', 'N'], ['H', 'H', 'N', 'N'
                   'dipoles': np.random.standard_normal((2, 3)),
                   'energies': np.random.standard_normal(2)}
 new_ds.append_conformers('C2H2', bad_conformers)
-filtered_conformers, filtered_ids = filter_by_high_force(new_ds, delete_inplace=True)
-print(filtered_conformers)
-print(filtered_ids)
+filtered_conformers_and_ids = filter_by_high_force(new_ds, delete_inplace=True)
+print(filtered_conformers_and_ids)
 
 ###############################################################################
 # Finally, lets delete the files we used for cleanup
