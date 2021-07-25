@@ -1,12 +1,13 @@
+"""
+Basic usage of the ANIDataset class
+========================================================
+
+This supersedes the obsolete anidataloader. There are also builtin datasets
+that live in moria, and they can be directly downloaded through torchani.
+"""
 import shutil
 from pathlib import Path
 from torchani.datasets import ANIDataset
-###############################################################################
-# Example of simple usage of ANIDataset
-# -------------------------------------
-#
-# This supersedes the obsolete anidataloader. There are also builtin datasets
-# that live in moria, and they can be directly downloaded through torchani.
 
 ###############################################################################
 # Downloading the builtin datasets performs a checksum to make sure the files
@@ -24,8 +25,8 @@ from torchani.datasets import ANIDataset
 # torchani/dataset, which can be downloaded by running the download.sh script
 file1_path = Path.cwd() / 'file1.h5'
 file2_path = Path.cwd() / 'file2.h5'
-shutil.copy(Path(__file__).parent / '../dataset/ani1-up_to_gdb4/ani_gdb_s01.h5', file1_path)
-shutil.copy(Path(__file__).parent / '../dataset/ani1-up_to_gdb4/ani_gdb_s02.h5', file2_path)
+shutil.copy(Path.cwd() / '../dataset/ani1-up_to_gdb4/ani_gdb_s01.h5', file1_path)
+shutil.copy(Path.cwd() / '../dataset/ani1-up_to_gdb4/ani_gdb_s02.h5', file2_path)
 
 ###############################################################################
 # ANIDataset accepts a path to an h5 file or a list of paths to many files

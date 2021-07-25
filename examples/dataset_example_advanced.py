@@ -1,3 +1,9 @@
+"""
+More advanced usage of the ANIDataset class
+===========================================
+
+Example showing more involved conformer and property manipulation
+"""
 import shutil
 import torch
 import numpy as np
@@ -5,31 +11,28 @@ from pathlib import Path
 from torchani.datasets import ANIDataset
 
 ###############################################################################
-# Example of more advanced usage of ANIDataset
-# -------------------------------------
-#
 # Again for the purposes of this example we will copy and modify two files
 # inside torchani/dataset, which can be downloaded by running the download.sh
-# script
+# script.
 file1_path = Path.cwd() / 'file1.h5'
 file2_path = Path.cwd() / 'file2.h5'
-shutil.copy(Path(__file__).parent / '../dataset/ani1-up_to_gdb4/ani_gdb_s01.h5', file1_path)
-shutil.copy(Path(__file__).parent / '../dataset/ani1-up_to_gdb4/ani_gdb_s02.h5', file2_path)
+shutil.copy(Path.cwd() / '../dataset/ani1-up_to_gdb4/ani_gdb_s01.h5', file1_path)
+shutil.copy(Path.cwd() / '../dataset/ani1-up_to_gdb4/ani_gdb_s02.h5', file2_path)
 ds = ANIDataset(locations=(file1_path, file2_path), names=('file1', 'file2'))
 
 ###############################################################################
 # Property deletion / renaming
-# -----------------------
+# ----------------------------
 #
-# All of the molecules in the dataset have the same properties
-# (energies, coordinates, etc...)
-# You can query which are these properties like this
+# All of the molecules in the dataset have the same properties, energies,
+# coordinates, etc. You can query which are these.
 print(ds.properties)
+
 ###############################################################################
 # It is possible to rename the properties by passing a dict of old-new names
-# (The class assumes at least one of "species" or "numbers" is always present,
-# so **Don't rename those**)
-# It is also possible to delete unwanted / unnedded properties
+# (the class assumes at least one of "species" or "numbers" is always present,
+# so don't rename those). It is also possible to delete unwanted / unnedded
+# properties.
 ds.delete_properties(('coordinatesHE', 'energiesHE', 'smiles'))
 print(ds.properties)
 ds.rename_properties({'energies': 'molecular_energies', 'coordinates': 'coord'})
@@ -65,28 +68,25 @@ print(ds.grouping)
 ###############################################################################
 # In these formats all of the first dimensions of all properties are the same
 # in all groups, and groups can only have depth one. In other words the tree
-# structure is just:
+# structure is for "by_formula"::
+#    /C10H22/coordinates, shape (10, 32, 3)
+#           /species, shape (10, 32)
+#           /energies, shape (10,)
+#    /C8H22N2/coordinates, shape (10, 32, 3)
+#           /species, shape (10, 32)
+#           /energies, shape (10,)
+#    /C12H22/coordinates, shape (5, 34, 3)
+#           /species, shape (5, 34)
+#           /energies, shape (5,)
 #
-# for "by_formula":
-# /C10H22/coordinates, shape (10, 32, 3)
-#        /species, shape (10, 32)
-#        /energies, shape (10,)
-# /C8H22N2/coordinates, shape (10, 32, 3)
-#        /species, shape (10, 32)
-#        /energies, shape (10,)
-# /C12H22/coordinates, shape (5, 34, 3)
-#        /species, shape (5, 34)
-#        /energies, shape (5,)
-# ...
+# for "by_num_atoms"::
+#    /032/coordinates, shape (20, 32, 3)
+#         /species, shape (20, 32)
+#         /energies, shape (20,)
+#    /034/coordinates, shape (5, 34, 3)
+#         /species, shape (5, 34)
+#         /energies, shape (5,)
 #
-# for "by_num_atoms":
-# /032/coordinates, shape (20, 32, 3)
-#      /species, shape (20, 32)
-#      /energies, shape (20,)
-# /034/coordinates, shape (5, 34, 3)
-#      /species, shape (5, 34)
-#      /energies, shape (5,)
-# ...
 
 ###############################################################################
 # Property creation
@@ -110,7 +110,7 @@ print(ds.properties)
 # Conformers as tensors can be appended by calling `append_conformers`.
 # Here I put random numbers as species and coordinates but you should put
 # something that makes sense, if you have only one store you can pass
-# "group_name" directly
+# "group_name" directly.
 conformers = {'species': torch.tensor([[1, 1, 6, 6], [1, 1, 6, 6]]),
               'coordinates': torch.randn(2, 4, 3),
               'energies': torch.randn(2)}
@@ -139,17 +139,17 @@ ds.delete_conformers('file1/004')
 print(len(ds))
 
 ###############################################################################
-# .. note: currently, when appending the class checks:
+# Currently, when appending the class checks:
 # - That the first dimension of all your properties is the same
 # - That you are appending a set of conformers with correct properties
 # - That all your formulas are correct when the grouping type is "by_formula",
 # - That your group name does not contain illegal "/" characters
 # - That you are only appending one of "species" or "numbers"
+#
 # It does NOT check:
 # - That the number of atoms is the same in all properties that are atomic
-# (It doesn't know which properties are atomic so it can't)
 # - That the name of the group is consistent with the formula / num atoms
-# (It allows arbitrary names)
+#
 # It is the responsibility of the user to make sure of those items.
 
 ###############################################################################
@@ -157,7 +157,7 @@ print(len(ds))
 # ---------
 #
 # Multiple datasets can be concatenated into one h5 file, optionally deleting the
-# original h5 files if the concatenation is successful
+# original h5 files if the concatenation is successful.
 from torchani.datasets.utils import concatenate  # noqa
 concat_path = Path.cwd() / 'concat.h5'
 ds = concatenate(ds, concat_path, delete_originals=True)
@@ -168,7 +168,7 @@ ds = concatenate(ds, concat_path, delete_originals=True)
 #
 # If you need to perform a lot of read/write operations in the dataset it can
 # be useful to keep all the underlying stores open, you can do this by using a
-# `keep_open` context:
+# `keep_open` context.
 with ds.keep_open('r+') as open_ds:
     for j, c in enumerate(open_ds.iter_conformers()):
         print(c)
@@ -179,12 +179,11 @@ with ds.keep_open('r+') as open_ds:
 # Creating a dataset from scratch
 # -------------------------------
 #
-# It is possible to create an ANIDataset from scratch by calling:
+# It is possible to create an ANIDataset from scratch by calling: By defalt the
+# grouping is "by_formula". The first set of conformers you append will
+# determine what properties this dataset will support.
 new_path = Path.cwd() / 'new_ds.h5'
 new_ds = ANIDataset(new_path, create=True)
-# By defalt the grouping is "by_formula"
-# The first set of conformers you append will determine what properties this
-# dataset will support
 numpy_conformers = {'species': np.array([['H', 'H', 'C', 'C'], ['H', 'C', 'H', 'C']]),
                     'coordinates': np.random.standard_normal((2, 4, 3)),
                     'forces': np.random.normal(size=(2, 4, 3), scale=0.1),
@@ -197,8 +196,8 @@ for c in new_ds.iter_conformers():
 
 ###############################################################################
 # Another useful feature is deleting inplace all conformers with force
-# magnitude above a given threshold, we will exemplify this by
-# introducing some conformers with extremely large forces
+# magnitude above a given threshold, we will exemplify this by introducing some
+# conformers with extremely large forces
 from torchani.datasets.utils import filter_by_high_force  # noqa
 bad_conformers = {'species': np.array([['H', 'H', 'N', 'N'], ['H', 'H', 'N', 'N']]),
                   'coordinates': np.random.standard_normal((2, 4, 3)),
