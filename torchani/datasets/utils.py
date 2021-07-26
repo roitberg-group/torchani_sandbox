@@ -1,5 +1,4 @@
 r"""Utilities for working with ANI Datasets"""
-from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 
 import torch
@@ -11,6 +10,7 @@ from ..utils import tqdm
 from ..nn import Ensemble
 from ._annotations import Conformers, StrPath
 from .datasets import ANIDataset
+from ._backends import TemporaryLocation
 
 
 __all__ = ['filter_by_high_force', 'filter_by_high_energy_error', 'concatenate']
@@ -24,30 +24,26 @@ def concatenate(source: ANIDataset,
     if source.grouping not in ['by_formula', 'by_num_atoms']:
         raise ValueError("Please regroup your dataset before concatenating")
 
-    dest = ANIDataset(dest_location,
-                      create=True,
-                      grouping=source.grouping,
-                      verbose=False)
-    try:
+    with TemporaryLocation(source._backend) as tmp_location:
+        dest = ANIDataset(tmp_location,
+                          create=True,
+                          grouping=source.grouping,
+                          verbose=False)
         for k, v in tqdm(source.numpy_items(),
                       desc='Concatenating datasets',
                       total=source.num_conformer_groups,
                       disable=not verbose):
             dest.append_conformers(k.split('/')[-1], v)
-    except Exception:
-        # TODO this should be changed for generality
-        Path(dest_location).resolve().unlink()
-        raise
-    else:
-        # TODO this depends on the original stores being files, it should be
-        # changed for generality
-        if delete_originals:
-            for p in tqdm(source.store_locations,
-                          desc='Deleting original store',
-                          total=source.num_stores,
-                          disable=not verbose):
-                Path(p).resolve().unlink()
-        return dest
+        dest._first_subds.location = dest_location
+    # TODO this depends on the original stores being files, it should be
+    # changed for generality
+    if delete_originals:
+        for store in tqdm(source._datasets.values(),
+                      desc='Deleting original store',
+                      total=source.num_stores,
+                      disable=not verbose):
+            store.delete_location()
+    return dest
 
 
 def filter_by_high_force(dataset: ANIDataset,

@@ -1,5 +1,4 @@
 import warnings
-from dataclasses import dataclass, field
 from uuid import uuid4
 import shutil
 import tempfile
@@ -8,7 +7,6 @@ from functools import partial
 from abc import ABC, abstractmethod
 from typing import ContextManager, Iterator, Mapping, Any, Set, Union, Tuple
 from collections import OrderedDict
-
 
 import numpy as np
 
@@ -51,10 +49,13 @@ def TemporaryLocation(backend: str) -> 'ContextManager[StrPath]':
         raise ValueError(f"Bad backend {backend}")
 
 
-@dataclass
 class CacheHolder:
-    group_sizes: 'OrderedDict[str, int]' = field(default_factory=OrderedDict)
-    properties: Set[str] = field(default_factory=set)
+    group_sizes: 'OrderedDict[str, int]'
+    properties: Set[str]
+
+    def __init__(self) -> None:
+        self.group_sizes = OrderedDict()
+        self.properties = set()
 
 
 class _H5TemporaryLocation(ContextManager[StrPath]):
@@ -67,15 +68,6 @@ class _H5TemporaryLocation(ContextManager[StrPath]):
 
     def __exit__(self, *args) -> None:
         self._tmp_location.cleanup()
-
-
-def get_temporary_location(backend: str) -> str:
-    if backend == 'h5py':
-        # uuid4 gives a random string
-        tmp_location = Path('/tmp').resolve() / f'tmp_{uuid4()}.h5'
-        return tmp_location.as_posix()
-    else:
-        raise ValueError(f"Bad backend {backend}")
 
 
 # ConformerGroupAdaptor and StoreAdaptor are abstract classes from which
@@ -130,8 +122,12 @@ class _StoreAdaptor(ContextManager['_StoreAdaptor'], Mapping[str, '_ConformerGro
     @abstractmethod
     def location(self) -> str: pass  # noqa E704
 
+    @location.setter
     @abstractmethod
-    def _set_location(self, value: str) -> None: pass  # noqa E704
+    def location(self, value: str) -> None: pass  # noqa E704
+
+    @abstractmethod
+    def delete_location(self) -> None: pass  # noqa E704
 
     @property
     @abstractmethod
@@ -176,13 +172,17 @@ class _H5StoreAdaptor(_StoreAdaptor):
 
     def transfer_location_to(self, other_store: '_StoreAdaptor') -> None:
         self._store_location.unlink()
-        other_store._set_location(self.location)
+        other_store.location = self.location
 
     @property
     def location(self) -> str:
         return self._store_location.as_posix()
 
-    def _set_location(self, value: str) -> None:
+    def delete_location(self) -> str:
+        return self._store_location.unlink()
+
+    @location.setter
+    def location(self, value: str) -> None:
         # pathlib.rename() may fail if src and dst are in different mounts
         shutil.move(self.location, value)
         self._store_location = Path(value).resolve()
