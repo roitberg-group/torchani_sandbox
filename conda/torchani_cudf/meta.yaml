@@ -20,8 +20,8 @@ requirements:
     - requests
     - h5py
     - defaults::numpy >=1.18
-    {{ environ.get('CONDA_PYTORCH_CONSTRAINT') }}
-    {{ environ.get('CONDA_CUDATOOLKIT_CONSTRAINT') }}
+    - pillow
+    - typing-extensions
 
   run:
     - python {{ python }}
@@ -31,14 +31,17 @@ requirements:
     - requests
     - h5py
     - defaults::numpy >=1.18
-    - torchvision
-    {{ environ.get('CONDA_PYTORCH_CONSTRAINT') }}
-    {{ environ.get('CONDA_CUDATOOLKIT_CONSTRAINT') }}
+    - pillow
+    - typing-extensions
+    - blazingsql=21.06
+    - cudf=21.06
+    - cudatoolkit=11.0
 
 build:
   number: 1
   string: py{{py}}_torch1.9.0_cuda11.1
   script:
+    - pip install torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
     - "{{ PYTHON }} setup.py install --ext-all-sms"
 
 test:
