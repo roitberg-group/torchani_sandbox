@@ -24,7 +24,7 @@ def concatenate(source: ANIDataset,
     if source.grouping not in ['by_formula', 'by_num_atoms']:
         raise ValueError("Please regroup your dataset before concatenating")
 
-    with TemporaryLocation(source._backend) as tmp_location:
+    with TemporaryLocation(source._first_subds._backend) as tmp_location:
         dest = ANIDataset(tmp_location,
                           create=True,
                           grouping=source.grouping,
@@ -34,15 +34,15 @@ def concatenate(source: ANIDataset,
                       total=source.num_conformer_groups,
                       disable=not verbose):
             dest.append_conformers(k.split('/')[-1], v)
-        dest._first_subds.location = dest_location
+        dest._first_subds._store.location = dest_location
     # TODO this depends on the original stores being files, it should be
     # changed for generality
     if delete_originals:
-        for store in tqdm(source._datasets.values(),
+        for subds in tqdm(source._datasets.values(),
                       desc='Deleting original store',
                       total=source.num_stores,
                       disable=not verbose):
-            store.delete_location()
+            subds._store.delete_location()
     return dest
 
 
