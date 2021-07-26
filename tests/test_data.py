@@ -27,6 +27,55 @@ def ignore_unshuffled_warning():
                             message="Dataset will not be shuffled, this should only be used for debugging")
 
 
+class TestDatasetUtils(TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.test_ds = torchani.datasets.TestData(self.tmpdir.name, download=True)
+        self.test_ds_single = ANIDataset(self.tmpdir.name / Path('test_data1.h5'))
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def testConcatenate(self):
+        ds = self.test_ds
+        with tempfile.NamedTemporaryFile(dir=self.tmpdir.name, suffix='.h5') as f:
+            cat_ds = torchani.datasets.utils.concatenate(ds, f.name, verbose=False, delete_originals=False)
+            self.assertEqual(cat_ds.num_conformers, ds.num_conformers)
+
+    def testFilterForce(self):
+        ds = self.test_ds_single
+        ds.create_full_property('forces', is_atomic=True, extra_dims=(3,), dtype=np.float32)
+        ds.append_conformers('H4', {'species': torch.ones((1, 4), dtype=torch.long),
+                              'coordinates': torch.ones((1, 4, 3), dtype=torch.float),
+                              'energies': torch.ones((1,), dtype=torch.double),
+                              'forces': torch.full((1, 4, 3), fill_value=3.0, dtype=torch.float)})
+        out = torchani.datasets.utils.filter_by_high_force(ds, threshold=0.5, delete_inplace=True)
+        self.assertEqual(len(out[0]), 1)
+        self.assertEqual(len(out[0][0]['coordinates']), 1)
+
+    def testFilterEnergyError(self):
+        ds = self.test_ds_single
+        model = torchani.models.ANI1x(periodic_table_index=True)[0]
+        out = torchani.datasets.utils.filter_by_high_energy_error(ds, model, threshold=1.0, delete_inplace=True)
+        self.assertEqual(len(out[0]), 3)
+        self.assertEqual(sum(len(c['coordinates']) for c in out[0]), 412)
+
+
+class TestBuiltinDatasets(TestCase):
+
+    def testSmallSample(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ds = torchani.datasets.TestData(tmpdir, download=True)
+            self.assertEqual(ds.grouping, 'by_formula')
+
+    def testBuiltins(self):
+        classes = ['ANI1x', 'ANI2x', 'COMP6v1']
+        for c in classes:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
+                    getattr(torchani.datasets, c)(tmpdir, download=False)
+
+
 class TestFineGrainedShuffle(TestCase):
 
     def setUp(self):

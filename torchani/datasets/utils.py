@@ -133,6 +133,8 @@ def _fetch_and_delete_conformations(dataset: ANIDataset,
                                     verbose: bool) -> Tuple[List[Conformers], Dict[str, Tensor]]:
     bad_conformations: List[Conformers] = []
     for k, idxs in bad_keys_and_idxs.items():
+        if idxs.ndim == 0:
+            idxs = idxs.unsqueeze(0)
         bad_conformations.append({k: v.to(device)
                                   for k, v in dataset.get_conformers(k, idxs).items()})
     if delete_inplace:

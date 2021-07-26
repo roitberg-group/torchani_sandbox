@@ -2,6 +2,7 @@ import warnings
 from uuid import uuid4
 import shutil
 import tempfile
+from os import fspath
 from pathlib import Path
 from functools import partial
 from abc import ABC, abstractmethod
@@ -120,11 +121,10 @@ class _StoreAdaptor(ContextManager['_StoreAdaptor'], Mapping[str, '_ConformerGro
 
     @property
     @abstractmethod
-    def location(self) -> str: pass  # noqa E704
+    def location(self) -> StrPath: pass  # noqa E704
 
     @location.setter
-    @abstractmethod
-    def location(self, value: str) -> None: pass  # noqa E704
+    def location(self, value: StrPath) -> None: pass  # noqa E704
 
     @abstractmethod
     def delete_location(self) -> None: pass  # noqa E704
@@ -175,17 +175,17 @@ class _H5StoreAdaptor(_StoreAdaptor):
         other_store.location = self.location
 
     @property
-    def location(self) -> str:
+    def location(self) -> StrPath:
         return self._store_location.as_posix()
 
-    def delete_location(self) -> str:
-        return self._store_location.unlink()
-
     @location.setter
-    def location(self, value: str) -> None:
+    def location(self, value: StrPath) -> None:
         # pathlib.rename() may fail if src and dst are in different mounts
-        shutil.move(self.location, value)
+        shutil.move(fspath(self.location), fspath(value))
         self._store_location = Path(value).resolve()
+
+    def delete_location(self) -> None:
+        self._store_location.unlink()
 
     def make_empty(self, grouping: str) -> None:
         self._has_standard_format = True

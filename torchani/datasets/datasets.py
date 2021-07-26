@@ -35,8 +35,6 @@ _ALWAYS_STRING_KEYS = {'_id', 'smiles'}
 # correctly. If grouping is "legacy" and these are found we give up and ask the
 # user to delete them in a warning
 _LEGACY_BROKEN_KEYS = {'coordinatesHE', 'energiesHE', 'smiles'}
-# This keys holds junk information, we recommend the user deletes them if found
-_LEGACY_USELESS_KEYS = {'cluster_mask'}
 
 
 # Helper functions
@@ -104,11 +102,12 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
         # exclusive options, batches is passed if the dataset directly lives in
         # memory and has no backing store, otherwise there should be a backing
         # store in store_dir/split
+        self.lambda_ = lambda x: x
         if batches is not None and any(v is not None for v in (file_format, store_dir, transform)):
             raise ValueError('Batches is mutually exclusive with file_format/store_dir/transform')
         self.split = split
         self.properties = ('coordinates', 'species', 'energies') if properties is None else properties
-        self.transform = (lambda x: x) if transform is None else transform
+        self.transform = self._identity if transform is None else transform
         container: Union[List[Path], List[Conformers]]
         if not batches:
             if store_dir is None:
@@ -120,12 +119,19 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
         else:
             self._data = batches
             self._batch_paths = None
-            self._extractor = lambda idx: self._data[idx]
+            self._extractor = self._memory_extractor
             container = self._data
         # Drops last batch only if requested and if its smaller than the rest
         if drop_last and self.batch_size(-1) < self.batch_size(0):
             container.pop()
         self._len = len(container)
+
+    @staticmethod
+    def _identity(x: Conformers) -> Conformers:
+        return x
+
+    def _memory_extractor(self, idx: int) -> Conformers:
+        return self._data[idx]
 
     def batch_size(self, idx: int) -> int:
         batch = self[idx]
@@ -199,7 +205,7 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
                                                           total=len(self),
                                                           disable=not verbose,
                                                           desc=desc)]
-            self.transform = lambda x: x
+            self.transform = self._identity
         if pin_memory:
             desc = 'Pinning memory; dont pin memory in torch DataLoader!'
             self._data = [{k: v.pin_memory()
@@ -208,7 +214,7 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
                                              total=len(self),
                                              disable=not verbose,
                                              desc=desc)]
-        self._extractor = lambda idx: self._data[idx]
+        self._extractor = self._memory_extractor
         return self
 
     def __getitem__(self, idx: int) -> Conformers:
@@ -358,9 +364,6 @@ class _ANISubdataset(_ANIDatasetBase):
                                    ' not much else. It is highly  recommended that'
                                    ' you backup these properties if needed and'
                                    ' delete them using dataset.delete_properties')
-                if self.properties & _LEGACY_USELESS_KEYS:
-                    warnings.warn(f'Property {self.properties & _LEGACY_USELESS_KEYS} '
-                                   ' holds junk data, it is recommended that you delete it')
 
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
@@ -900,7 +903,7 @@ class ANIDataset(_ANIDatasetBase):
 
     @property
     def store_locations(self) -> List[str]:
-        return [ds._store.location for ds in self._datasets.values()]
+        return [fspath(ds._store.location) for ds in self._datasets.values()]
 
     @property
     def num_stores(self) -> int:

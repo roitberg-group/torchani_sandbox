@@ -36,8 +36,8 @@ class _BaseBuiltinDataset(ANIDataset):
         dataset_paths = [Path(p).resolve() for p in list_files(root, suffix='.h5', prefix=True)]
 
         # Order dataset paths using the order given in "files and md5s"
-        filenames_order = {k: j for j, k in enumerate(self._files_and_md5s.keys())}
-        _filenames_and_paths = sorted([(p.name, p) for p in dataset_paths],
+        filenames_order = {Path(k).stem: j for j, k in enumerate(self._files_and_md5s.keys())}
+        _filenames_and_paths = sorted([(p.stem, p) for p in dataset_paths],
                                      key=lambda tup: filenames_order[tup[0]])
         filenames_and_paths = OrderedDict(_filenames_and_paths)
         super().__init__(locations=filenames_and_paths.values(), names=filenames_and_paths.keys(), **h5_dataset_kwargs)
@@ -69,9 +69,18 @@ class _BaseBuiltinDataset(ANIDataset):
         return self._check_hdf5_files_integrity(root)
 
 
+# NOTE: The order of the _FILES_AND_MD5S is important since it deterimenes the order of iteration over the files
+class TestData(_BaseBuiltinDataset):
+    _ARCHIVE = 'test-data.tar.gz'
+    _FILES_AND_MD5S = OrderedDict([('test_data1.h5', '05c8eb5f92cc2e1623355229b53b7f30'),
+                                   ('test_data2.h5', 'a496d2792c5fb7a9f6d9ce2116819626')])
+
+    def __init__(self, root: StrPath, download: bool = False, verbose: bool = True):
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
+
+
 class ANI1x(_BaseBuiltinDataset):
     _ARCHIVE = 'ANI-1x-wB97X-6-31Gd-data.tar.gz'
-    # NOTE: The order of this dictionary is important since it deterimenes the order of iteration over the files
     _FILES_AND_MD5S = OrderedDict([('ANI-1x-wB97X-6-31Gd.h5', 'c9d63bdbf90d093db9741c94d9b20972')])
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True):
@@ -79,9 +88,7 @@ class ANI1x(_BaseBuiltinDataset):
 
 
 class ANI2x(_BaseBuiltinDataset):
-
     _ARCHIVE = 'ANI-2x-wB97X-6-31Gd-data.tar.gz'
-    # NOTE: The order of this dictionary is important since it deterimenes the order of iteration over the files
     _FILES_AND_MD5S = OrderedDict([('ANI-1x-wB97X-6-31Gd.h5', 'c9d63bdbf90d093db9741c94d9b20972'),
                                    ('ANI-2x-heavy-wB97X-6-31Gd.h5', '49ec3dc5d046f5718802f5d1f102391c'),
                                    ('ANI-2x-dimers-wB97X-6-31Gd.h5', '3455d82a50c63c389126b68607fb9ca8')])
@@ -92,7 +99,6 @@ class ANI2x(_BaseBuiltinDataset):
 
 class COMP6v1(_BaseBuiltinDataset):
     _ARCHIVE = 'COMP6-v1-data.tar.gz'
-    # NOTE: The order of this dictionary is important since it deterimenes the order of iteration over the files
     _FILES_AND_MD5S = OrderedDict([('GDB11-07-test-500.h5', '9200755bfc755405e64100a53a9f7468'),
                                    ('GDB11-08-test-500.h5', '202b078f98a911a7a9bdc21ee0ae1af7'),
                                    ('GDB11-09-test-500.h5', '5d2f6573c07e01493e4c7f72edabe483'),

@@ -16,6 +16,7 @@ from torchani.datasets import ANIDataset
 # output is an ANIDataset class
 # Uncomment the following code to download (watch out, it may take some time):
 
+# import torchani  # noqa
 # ds_1x = torchani.datasets.ANI1x('./datasets/ani1x/', download=True)
 # ds_comp6 = torchani.datasets.COMP6v1('./datasets/comp6v1/', download=True)
 # ds_2x = torchani.datasets.ANI2x('./datasets/ani2x/', download=True)
