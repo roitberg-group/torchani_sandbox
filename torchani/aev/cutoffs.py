@@ -1,10 +1,12 @@
 import torch
 import math
+from typing import Union
 from torch import Tensor
+from torch.nn import Module
 from ..compat import Final
 
 
-def _parse_cutoff_fn(cutoff_fn):
+def _parse_cutoff_fn(cutoff_fn: Union[str, Module]) -> Module:
     # currently only cosine, smooth and custom cutoffs are supported
     if cutoff_fn == 'cosine':
         cutoff_fn = CutoffCosine()
@@ -15,9 +17,9 @@ def _parse_cutoff_fn(cutoff_fn):
     return cutoff_fn
 
 
-class CutoffCosine(torch.nn.Module):
+class CutoffCosine(Module):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
@@ -25,7 +27,7 @@ class CutoffCosine(torch.nn.Module):
         return 0.5 * torch.cos(distances * (math.pi / cutoff)) + 0.5
 
 
-class CutoffSmooth(torch.nn.Module):
+class CutoffSmooth(Module):
 
     order: Final[int]
     eps: Final[float]

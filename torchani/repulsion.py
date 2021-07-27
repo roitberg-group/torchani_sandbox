@@ -1,10 +1,10 @@
-from typing import Tuple
+from typing import Tuple, Sequence, Union
 
 import torch
 from torch import Tensor
 
 from . import units
-from .utils import PERIODIC_TABLE
+from .utils import ATOMIC_NUMBERS
 from .nn import SpeciesEnergies
 from .standalone import StandalonePairwiseWrapper
 from .parse_repulsion_constants import alpha_constants, y_eff_constants
@@ -21,45 +21,41 @@ class RepulsionCalculator(torch.nn.Module):
     sqrt_alpha_ab: Tensor
     k_rep_ab: Tensor
 
-    def __init__(self, cutoff=5.2, alpha=None, y_eff=None, k_rep_ab=None,
-            elements=('H', 'C', 'N', 'O'), cutoff_fn='smooth'):
+    def __init__(self,
+                 cutoff: float = 5.2,
+                 alpha: Sequence[float] = None,
+                 y_eff: Sequence[float] = None,
+                 k_rep_ab: torch.Tensor = None,
+                 elements: Sequence[str] = ('H', 'C', 'N', 'O'),
+                 cutoff_fn: Union[str, torch.nn.Module] = 'smooth'):
         super().__init__()
-        supported_znumbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
+        supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
 
+        # by default alpha, y_eff and krep parameters are taken from Grimme et. al.
         if alpha is None:
-            # by default alpha parameters are taken from Grimme et. al.
-            alpha = torch.tensor(alpha_constants)
-            alpha = alpha[supported_znumbers]
-
+            _alpha = torch.tensor(alpha_constants)[supported_znumbers]
         if y_eff is None:
-            # by default y_eff parameters are taken from Grimme et. al.
-            y_eff = torch.tensor(y_eff_constants)
-            y_eff = y_eff[supported_znumbers]
-
+            _y_eff = torch.tensor(y_eff_constants)[supported_znumbers]
         if k_rep_ab is None:
-            # by default krep is set to 1.0 for H-H and to 1.5 for all other
-            # interactions
-            k_rep_ab = torch.full((len(PERIODIC_TABLE), len(PERIODIC_TABLE)), 1.5)
+            k_rep_ab = torch.full((len(ATOMIC_NUMBERS) + 1, len(ATOMIC_NUMBERS) + 1), 1.5)
             k_rep_ab[1, 1] = 1.0
             k_rep_ab = k_rep_ab[supported_znumbers, :][:, supported_znumbers]
-
         assert k_rep_ab.shape[0] == len(elements)
         assert k_rep_ab.shape[1] == len(elements)
-        assert len(y_eff) == len(elements)
-        assert len(alpha) == len(elements)
-
-        # pre-calculate pairwise parameters
-        y_ab = torch.outer(y_eff, y_eff)
-        sqrt_alpha_ab = torch.sqrt(torch.outer(alpha, alpha))
+        assert len(_y_eff) == len(elements)
+        assert len(_alpha) == len(elements)
 
         self.cutoff_function = _parse_cutoff_fn(cutoff_fn)
         self.cutoff = cutoff
-        self.register_buffer('y_ab', y_ab)
-        self.register_buffer('sqrt_alpha_ab', sqrt_alpha_ab)
+        # pre-calculate pairwise parameters for efficiency
+        self.register_buffer('y_ab', torch.outer(_y_eff, _y_eff))
+        self.register_buffer('sqrt_alpha_ab', torch.sqrt(torch.outer(_alpha, _alpha)))
         self.register_buffer('k_rep_ab', k_rep_ab)
 
-    def _calculate_repulsion(self, species_energies: Tuple[Tensor, Tensor], atom_index12:
-            Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
+    def _calculate_repulsion(self,
+                             species_energies: Tuple[Tensor, Tensor],
+                             atom_index12: Tensor,
+                             distances: Tensor) -> Tuple[Tensor, Tensor]:
 
         # all internal calculations of this module are made with atomic units,
         # so distances are first converted to bohr
@@ -71,10 +67,9 @@ class RepulsionCalculator(torch.nn.Module):
         assert atom_index12.ndim == 2, "atom_index12 should be 2 dimensional"
         assert len(distances) == atom_index12.shape[1]
 
-        # distances has all interaction pairs within a given cutoff,
-        # for a molecule or set of molecules
-        # and atom_index12 holds all pairs of indices
-        # species is of shape (C x Atoms)
+        # Distances has all interaction pairs within a given cutoff, for a
+        # molecule or set of molecules and atom_index12 holds all pairs of
+        # indices species is of shape (C x Atoms)
         num_atoms = species.shape[1]
         species12 = species.flatten()[atom_index12]
 
@@ -96,13 +91,18 @@ class RepulsionCalculator(torch.nn.Module):
 
         return SpeciesEnergies(species, energies)
 
-    def forward(self, species_energies: Tuple[Tensor, Tensor], atom_index12: Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(self,
+                species_energies: Tuple[Tensor, Tensor],
+                atom_index12: Tensor,
+                distances: Tensor) -> Tuple[Tensor, Tensor]:
         return self._calculate_repulsion(species_energies, atom_index12, distances)
 
 
 class StandaloneRepulsionCalculator(StandalonePairwiseWrapper, RepulsionCalculator):
-    def _perform_module_actions(self, species_coordinates: Tuple[Tensor, Tensor], atom_index12: Tensor,
-            distances: Tensor) -> Tuple[Tensor, Tensor]:
+    def _perform_module_actions(self,
+                                species_coordinates: Tuple[Tensor, Tensor],
+                                atom_index12: Tensor,
+                                distances: Tensor) -> Tuple[Tensor, Tensor]:
         species, _ = species_coordinates
         energies = torch.zeros(species.shape[0], dtype=distances.dtype, device=distances.device)
         species_energies = (species, energies)

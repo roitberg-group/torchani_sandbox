@@ -1,19 +1,21 @@
-from .aev import FullPairwise, BaseNeighborlist
-from .utils import map_to_central
+from typing import Tuple, Optional
+
 import torch
 from torch import Tensor
-from typing import Tuple, Optional
+
 from .compat import Final
 from .nn import SpeciesConverter
+from .aev import FullPairwise, BaseNeighborlist
+from .utils import map_to_central
 
 
+# This helper class wraps modules so that they can function directly with
+# an input of species_coordinates, cell, pbc. This is useful for testing
+# purposes and for some special cases, it is especially useful for the
+# "repulsion" and "dispersion" computers
+# IMPORTANT: This should be inherited from FIRST (leftmost in inheritance list)
+# for the scheme to work properly
 class StandalonePairwiseWrapper(torch.nn.Module):
-    # this helper class wraps modules so that they can function directly with
-    # an input of species_coordinates, cell, pbc. This is useful for testing
-    # purposes and for some special cases, it is specially useful for the
-    # "repulsion" and "dispersion" computers
-    # IMPORTANT NOTE: This should be inherited from FIRST (leftmost in inheritance list)
-    # for the scheme to work properly
     periodic_table_index: Final[bool]
 
     def __init__(self, *args, **kwargs):
@@ -22,29 +24,30 @@ class StandalonePairwiseWrapper(torch.nn.Module):
         neighborlist = kwargs.pop('neighborlist', FullPairwise)
         cutoff = kwargs.pop('neighborlist_cutoff', 5.2)
         super().__init__(*args, **kwargs)
-        self.species_converter = SpeciesConverter(supported_species)
         # neighborlist uses radial cutoff only
         self.neighborlist = neighborlist(cutoff) if neighborlist is not None else BaseNeighborlist(cutoff)
-        self.register_buffer('default_cell', torch.eye(3, dtype=torch.float))
-        self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool))
+        self.species_converter = SpeciesConverter(supported_species)
 
-    def _validate_inputs(self, species_coordinates: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tensor]:
+    def _validate_inputs(self, species_coordinates: Tuple[Tensor, Tensor]) -> None:
         species, coordinates = species_coordinates
         # check shapes for correctness
         assert species.dim() == 2
         assert coordinates.dim() == 3
         assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
+
+    def _perform_module_actions(self,
+                                species_coordinates: Tuple[Tensor, Tensor],
+                                atom_index12: Tensor,
+                                distances: Tensor) -> Tuple[Tensor, Tensor]:
+        raise NotImplementedError("This method should be overriden by subclasses")
         return species_coordinates
 
-    def _perform_module_actions(self, species_coordinates: Tuple[Tensor, Tensor], atom_index12: Tensor,
-            distances: Tensor) -> Tuple[Tensor, Tensor]:
-        assert False, "This method should be overriden by subclasses"
-        return species_coordinates
-
-    def forward(self, species_coordinates: Tuple[Tensor, Tensor], cell: Optional[Tensor] = None,
+    def forward(self,
+                species_coordinates: Tuple[Tensor, Tensor],
+                cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
 
-        species_coordinates = self._validate_inputs(species_coordinates)
+        self._validate_inputs(species_coordinates)
 
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
