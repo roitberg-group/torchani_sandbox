@@ -9,8 +9,8 @@ from parameterized import parameterized_class
 
 path = os.path.dirname(os.path.realpath(__file__))
 
-skipIfNoGPU = unittest.skipIf(not torch.cuda.is_available(),
-                              'There is no device to run this test')
+skipIfNoGPU = unittest.skipIf(not torch.cuda.is_available(), 'There is no device to run this test')
+skipIfNoMultiGPU = unittest.skipIf(not torch.cuda.device_count() >= 2, 'There is not enough GPU devices to run this test')
 skipIfNoCUAEV = unittest.skipIf(not torchani.aev.cuaev_is_installed, "only valid when cuaev is installed")
 
 
@@ -32,6 +32,15 @@ class TestCUAEVNoGPU(TestCase):
         coordinates = make_tensor((8, 0, 3), 'cpu', torch.float32, low=-5, high=5)
         self.assertIn("cuaev::run", str(s.graph_for((species, coordinates))))
 
+    def testPickle(self):
+        aev_computer = torchani.AEVComputer.like_1x(use_cuda_extension=True)
+        tmpfile = '/tmp/cuaev.pkl'
+        with open(tmpfile, 'wb') as file:
+            pickle.dump(aev_computer, file)
+        with open(tmpfile, 'rb') as file:
+            aev_computer = pickle.load(file)
+        os.remove(tmpfile)
+
 
 @skipIfNoGPU
 @skipIfNoCUAEV
@@ -42,9 +51,9 @@ class TestCUAEV(TestCase):
     def setUpClass(cls):
         cls.ani2x = torchani.models.ANI2x(periodic_table_index=True, model_index=None)
 
-    def setUp(self):
+    def setUp(self, device='cuda:0'):
         self.tolerance = 5e-5
-        self.device = 'cuda'
+        self.device = device
         self.aev_computer_1x = torchani.AEVComputer.like_1x(cutoff_fn=self.cutoff_fn).to(self.device)
         self.cuaev_computer_1x = torchani.AEVComputer.like_1x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
         self.nn = torch.nn.Sequential(torch.nn.Linear(384, 1, False)).to(self.device)
@@ -131,6 +140,15 @@ class TestCUAEV(TestCase):
         _, cu_aev = self.cuaev_computer_1x((species, coordinates))
         self.assertEqual(cu_aev, aev)
 
+    @skipIfNoMultiGPU
+    def testMultiGPU(self):
+        self.setUp(device='cuda:1')
+        self.testSimple()
+        self.testSimpleBackward()
+        self.testSimpleDoubleBackward_1()
+        self.testSimpleDoubleBackward_2()
+        self.setUp(device='cuda:0')
+
     def testBatch(self):
         coordinates = torch.rand([100, 50, 3], device=self.device) * 5
         species = torch.randint(-1, 3, (100, 50), device=self.device)
@@ -138,6 +156,21 @@ class TestCUAEV(TestCase):
         _, aev = self.aev_computer_1x((species, coordinates))
         _, cu_aev = self.cuaev_computer_1x((species, coordinates))
         self.assertEqual(cu_aev, aev)
+
+    def testPickleCorrectness(self):
+        ref_aev_computer = self.cuaev_computer_1x
+        tmpfile = '/tmp/cuaev.pkl'
+        with open(tmpfile, 'wb') as file:
+            pickle.dump(ref_aev_computer, file)
+        with open(tmpfile, 'rb') as file:
+            test_aev_computer = pickle.load(file)
+        os.remove(tmpfile)
+
+        coordinates = torch.rand([2, 50, 3], device=self.device) * 5
+        species = torch.randint(-1, 3, (2, 50), device=self.device)
+        _, ref_aev = ref_aev_computer((species, coordinates))
+        _, test_aev = test_aev_computer((species, coordinates))
+        self.assertEqual(ref_aev, test_aev)
 
     def testSimpleBackward(self):
         coordinates = torch.tensor([
