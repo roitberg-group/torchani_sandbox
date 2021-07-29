@@ -13,6 +13,13 @@ from torchani.utils import PERIODIC_TABLE
 from torchani.testing import TestCase
 from torchani.datasets import ANIDataset, ANIBatchedDataset, create_batched_dataset
 
+# Optional tests for zarr
+try:
+    import zarr
+    ZARR_AVAILABLE = True
+except ImportError:
+    ZARR_AVAILABLE = False
+
 path = os.path.dirname(os.path.realpath(__file__))
 dataset_path = os.path.join(path, '../dataset/ani-1x/sample.h5')
 dataset_path_gdb = os.path.join(path, '../dataset/ani1-up_to_gdb4/ani_gdb_s02.h5')
@@ -542,7 +549,6 @@ class TestANIDataset(TestCase):
 
         # general getter of all conformers
         self.assertEqual(ds.get_conformers('HOO')['coordinates'], ds['HOO']['coordinates'].numpy())
-
         # test getting 1, 2, ... with a list
         idxs = [1, 2, 4]
         conformers = ds.get_conformers('HCHHH', idxs)
@@ -771,6 +777,39 @@ class TestANIDataset(TestCase):
             self.assertTrue(isinstance(c, dict))
             confs.append(c)
         self.assertEqual(len(confs), ds.num_conformers)
+
+
+@unittest.skipIf(not ZARR_AVAILABLE, 'Zarr not installed')
+class TestANIDatasetZarr(TestANIDataset):
+    def _make_random_test_data(self, numpy_conformers):
+        for j, (k, v) in enumerate(deepcopy(numpy_conformers).items()):
+            numpy_conformers[k]['species'] = np.tile(numpy_conformers[k]['species'].reshape(1, -1), (self.num_conformers[j], 1))
+        # create two HDF5 databases, one with 3 groups and one with one
+        # group, and fill them with some random data
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.tmp_store_one_group = tempfile.TemporaryDirectory(suffix='.zarr', dir=self.tmp_dir.name)
+        self.tmp_store_three_groups = tempfile.TemporaryDirectory(suffix='.zarr', dir=self.tmp_dir.name)
+        self.new_store_name = self.tmp_dir.name / Path('new.zarr')
+
+        store1 = zarr.DirectoryStore(self.tmp_store_one_group.name)
+        store3 = zarr.DirectoryStore(self.tmp_store_three_groups.name)
+        with zarr.hierarchy.open_group(store1, mode='w') as f1,\
+             zarr.hierarchy.open_group(store3, mode='w') as f3:
+            f3.attrs['grouping'] = 'by_formula'
+            f1.attrs['grouping'] = 'by_formula'
+            for j, (k, g) in enumerate(numpy_conformers.items()):
+                f3.create_group(''.join(k))
+                for p, v in g.items():
+                    f3[k].create_dataset(p, data=v)
+                if j == 0:
+                    f1.create_group(''.join(k))
+                    for p, v in g.items():
+                        f1[k].create_dataset(p, data=v)
+
+    def tearDown(self):
+        self.tmp_store_one_group.cleanup()
+        self.tmp_store_three_groups.cleanup()
+        self.tmp_dir.cleanup()
 
 
 class TestData(TestCase):
