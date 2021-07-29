@@ -5,6 +5,7 @@ import pickle
 import warnings
 from os import fspath
 from pathlib import Path
+from pprint import pformat
 from functools import partial, wraps
 from contextlib import ExitStack, contextmanager
 from collections import OrderedDict
@@ -364,6 +365,18 @@ class _ANISubdataset(_ANIDatasetBase):
                                    ' you backup these properties if needed and'
                                    ' delete them using dataset.delete_properties')
 
+    @property
+    def metadata(self) -> Mapping[str, str]:
+        r"""Get the dataset metadata
+        """
+        with ExitStack() as stack:
+            metadata = self._get_open_store(stack, 'r').metadata
+        return metadata
+
+    def _set_metadata(self, meta: Mapping[str, str]) -> None:
+        with ExitStack() as stack:
+            self._get_open_store(stack, 'r').set_metadata(meta)
+
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
         r"""Context manager to keep dataset open while iterating over it
@@ -403,15 +416,16 @@ class _ANISubdataset(_ANIDatasetBase):
             self._group_sizes, self._properties = store.update_cache(check_properties, verbose)
 
     def __str__(self) -> str:
-        str_ = (f"ANI {self._backend} store:\n"
-                f"Properties: {self.properties}\n"
-                f"Conformers: {self.num_conformers}\n"
-                f"Conformer groups: {self.num_conformer_groups}\n")
+        str_ = f"ANI {self._backend} store:\n"
+        d = {'Conformers': self.num_conformers}
+        d.update({'Conformer groups': self.num_conformer_groups})
         try:
-            str_ += f"Elements: {self.present_elements(chem_symbols=True)}\n"
+            d.update({"Present Elements": self.present_elements(chem_symbols=True)})
         except ValueError:
-            str_ += "Elements: Unknown\n"
-        return str_
+            d.update({"Present Elements": "Unknown"})
+        d.update({'Properties': sorted(self.properties)})
+        d.update({'Store Metadata': self.metadata})
+        return str_ + pformat(d)
 
     def present_elements(self, chem_symbols: bool = False) -> List[Union[str, int]]:
         r"""Get an ordered list with all elements present in the dataset
@@ -638,6 +652,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 # attribute, and fixing this is ugly
                 new_ds.append_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
             self._store.transfer_location_to(new_ds._store)
+            new_ds._set_metadata(self.metadata)
         return new_ds
 
     @_broadcast
@@ -668,6 +683,7 @@ class _ANISubdataset(_ANIDatasetBase):
                     selected_conformers = {k: v[idx] for k, v in conformers.items()}
                     new_ds.append_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
             self._store.transfer_location_to(new_ds._store)
+            new_ds._set_metadata(self.metadata)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
@@ -694,6 +710,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 new_name = str(_get_num_atoms(conformers)).zfill(3)
                 new_ds.append_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
             self._store.transfer_location_to(new_ds._store)
+            new_ds._set_metadata(self.metadata)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
@@ -889,6 +906,30 @@ class ANIDataset(_ANIDatasetBase):
     @property
     def grouping(self) -> str:
         return self._first_subds.grouping
+
+    @property
+    def metadata(self) -> Mapping[str, Mapping[str, str]]:
+        """ Get a dataset metadata
+
+        returns a mapping of the form
+        {subdataset_name: {'key': 'value'}}
+        with an arbitrary number of string key-value pairs
+        """
+        meta = dict()
+        for name, ds in self._datasets.items():
+            meta[name] = ds.metadata
+        return meta
+
+    def set_metadata(self, meta: Mapping[str, Mapping[str, str]]):
+        """ Set dataset metadata
+
+        Accepts a mapping of the form
+        {subdataset_name: {'key': 'value'}}
+        with an arbitrary number of string key-value pairs
+        """
+        for k, v in meta:
+            self._datasets[k]._set_metadata(v)
+        return self
 
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['ANIDataset']:
