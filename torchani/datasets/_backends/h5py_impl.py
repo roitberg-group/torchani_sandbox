@@ -53,7 +53,7 @@ class _H5StoreAdaptor(_StoreAdaptor):
 
     def transfer_location_to(self, other_store: '_StoreAdaptor') -> None:
         self._store_location.unlink()
-        other_store.location = self.location.with_suffix('')
+        other_store.location = Path(self.location).with_suffix('')
 
     @property
     def location(self) -> StrPath:

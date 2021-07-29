@@ -2,7 +2,7 @@ import shutil
 import tempfile
 from os import fspath
 from pathlib import Path
-from typing import ContextManager, Set, Tuple
+from typing import ContextManager, Set, Tuple, Optional
 from collections import OrderedDict
 
 import numpy as np
@@ -37,7 +37,7 @@ class _ZarrStoreAdaptor(_H5StoreAdaptor):
         self._store_location = Path(store_location).resolve()
         self._store_obj = None
         self._has_standard_format = True
-        self._mode = None
+        self._mode: Optional[str] = None
 
     def validate_location(self) -> None:
         if not self._store_location.is_dir():
@@ -45,7 +45,7 @@ class _ZarrStoreAdaptor(_H5StoreAdaptor):
 
     def transfer_location_to(self, other_store: '_StoreAdaptor') -> None:
         self.delete_location()
-        other_store.location = self.location.with_suffix('')
+        other_store.location = Path(self.location).with_suffix('')
 
     @property
     def location(self) -> StrPath:
