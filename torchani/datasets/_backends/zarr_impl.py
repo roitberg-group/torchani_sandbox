@@ -88,7 +88,7 @@ class _ZarrStoreAdaptor(_H5StoreAdaptor):
         return self
 
     @property
-    def _store(self) -> zarr.Group:
+    def _store(self) -> "zarr.Group":
         if self._store_obj is None:
             raise RuntimeError("Can't access store")
         return self._store_obj
@@ -104,7 +104,7 @@ class _ZarrStoreAdaptor(_H5StoreAdaptor):
             raise RuntimeError("Groups were not iterated upon alphanumerically")
         return cache.group_sizes, cache.properties
 
-    def _update_properties_cache(self, cache: CacheHolder, conformers: zarr.Group, check_properties: bool = False) -> None:
+    def _update_properties_cache(self, cache: CacheHolder, conformers: "zarr.Group", check_properties: bool = False) -> None:
         if not cache.properties:
             cache.properties = set(conformers.keys())
         elif check_properties and not set(conformers.keys()) == cache.properties:
@@ -112,7 +112,7 @@ class _ZarrStoreAdaptor(_H5StoreAdaptor):
                                f"found {set(conformers.keys())}, but expected "
                                f"{cache.properties}")
 
-    def _update_groups_cache(self, cache: CacheHolder, group: zarr.Group) -> None:
+    def _update_groups_cache(self, cache: CacheHolder, group: "zarr.Group") -> None:
         present_keys = {'coordinates', 'coord', 'energies'}.intersection(set(group.keys()))
         try:
             any_key = next(iter(present_keys))
@@ -140,7 +140,7 @@ class _ZarrStoreAdaptor(_H5StoreAdaptor):
 
 
 class _ZarrConformerGroupAdaptor(_H5ConformerGroupAdaptor):
-    def __init__(self, group_obj: zarr.Group):
+    def __init__(self, group_obj: "zarr.Group"):
         self._group_obj = group_obj
 
     @property
