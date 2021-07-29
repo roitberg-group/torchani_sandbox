@@ -9,6 +9,7 @@ import numpy as np
 
 from .._annotations import StrPath
 from .interface import _StoreAdaptor, _ConformerGroupAdaptor, CacheHolder
+from .h5py_impl import _H5StoreAdaptor, _H5ConformerGroupAdaptor
 
 
 try:
@@ -31,7 +32,7 @@ class _ZarrTemporaryLocation(ContextManager[StrPath]):
 
 
 # Backend Specific code starts here
-class _ZarrStoreAdaptor(_StoreAdaptor):
+class _ZarrStoreAdaptor(_H5StoreAdaptor):
     def __init__(self, store_location: StrPath):
         self._store_location = Path(store_location).resolve()
         self._store_obj = None
@@ -67,7 +68,7 @@ class _ZarrStoreAdaptor(_StoreAdaptor):
     def make_empty(self, grouping: str) -> None:
         self._has_standard_format = True
         store = zarr.storage.DirectoryStore(self._store_location)
-        with zarr.Group(store=store) as g:
+        with zarr.hierarchy.group(store=store, overwrite=True) as g:
             g.attrs['grouping'] = grouping
 
     def open(self, mode: str = 'r') -> '_StoreAdaptor':
@@ -77,8 +78,7 @@ class _ZarrStoreAdaptor(_StoreAdaptor):
         return self
 
     def close(self) -> '_StoreAdaptor':
-        # Zarr Groups actually wrap a store which exposes a "close" method
-        self._store.store.close()
+        # Zarr Groups actually wrap a store, but DirectoryStore has no "close" method
         self._store_obj = None
         return self
 
@@ -134,7 +134,7 @@ class _ZarrStoreAdaptor(_StoreAdaptor):
         return _ZarrConformerGroupAdaptor(self._store[name])
 
 
-class _ZarrConformerGroupAdaptor(_ConformerGroupAdaptor):
+class _ZarrConformerGroupAdaptor(_H5ConformerGroupAdaptor):
     def __init__(self, group_obj: zarr.Group):
         self._group_obj = group_obj
 
