@@ -79,6 +79,11 @@ class _ZarrStoreAdaptor(_H5StoreAdaptor):
 
     def close(self) -> '_StoreAdaptor':
         # Zarr Groups actually wrap a store, but DirectoryStore has no "close" method
+        # Other stores may have a "close" method though
+        try:
+            self._store.store.close()
+        except AttributeError:
+            pass
         self._store_obj = None
         return self
 
