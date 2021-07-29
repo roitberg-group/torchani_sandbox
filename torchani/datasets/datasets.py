@@ -636,6 +636,7 @@ class _ANISubdataset(_ANIDatasetBase):
         return new_ds
 
     @_broadcast
+    @_needs_cache_update
     def repack(self, verbose: bool = True) -> '_ANISubdataset':
         r"""Repacks underlying store if it is HDF5
 
@@ -644,7 +645,7 @@ class _ANISubdataset(_ANIDatasetBase):
         needed in order to reduce the size of the file. Note that this is only
         useful for the h5py backend, otherwise it is a no-op.
         """
-        return self.to_backend(self._backend, verbose=verbose)
+        return self.to_backend.__wrapped__(self, self._backend, verbose=verbose)  # type: ignore
 
     @_broadcast
     @_needs_cache_update

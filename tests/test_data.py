@@ -706,7 +706,7 @@ class TestANIDataset(TestCase):
             ds.rename_properties({'species': 'renamed_energies'})
 
     def testCreation(self):
-        with self.assertRaisesRegex(FileNotFoundError, "The h5 file in .* could not be found"):
+        with self.assertRaisesRegex(FileNotFoundError, "The store in .* could not be found"):
             ANIDataset(self.tmp_dir.name / Path('new.h5'))
 
     def testSizesOneGroup(self):
