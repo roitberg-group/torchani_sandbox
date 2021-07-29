@@ -44,17 +44,22 @@ class _ZarrStoreAdaptor(_StoreAdaptor):
 
     def transfer_location_to(self, other_store: '_StoreAdaptor') -> None:
         self.delete_location()
-        other_store.location = self.location
+        other_store.location = self.location.with_suffix('')
 
     @property
     def location(self) -> StrPath:
-        return self._store_location.as_posix()
+        return self._store_location
 
     @location.setter
     def location(self, value: StrPath) -> None:
+        value = Path(value).resolve()
+        if value.suffix == '':
+            value = value.with_suffix('.zarr')
+        if value.suffix != '.zarr':
+            raise ValueError(f"incorrect location {value}")
         # pathlib.rename() may fail if src and dst are in different mounts
         shutil.move(fspath(self.location), fspath(value))
-        self._store_location = Path(value).resolve()
+        self._store_location = value
 
     def delete_location(self) -> None:
         shutil.rmtree(self._store_location.as_posix())

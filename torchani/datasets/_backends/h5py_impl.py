@@ -53,17 +53,22 @@ class _H5StoreAdaptor(_StoreAdaptor):
 
     def transfer_location_to(self, other_store: '_StoreAdaptor') -> None:
         self._store_location.unlink()
-        other_store.location = self.location
+        other_store.location = self.location.with_suffix('')
 
     @property
     def location(self) -> StrPath:
-        return self._store_location.as_posix()
+        return self._store_location
 
     @location.setter
     def location(self, value: StrPath) -> None:
+        value = Path(value).resolve()
+        if value.suffix == '':
+            value = value.with_suffix('.h5')
+        if value.suffix != '.h5':
+            raise ValueError(f"Incorrect location {value}")
         # pathlib.rename() may fail if src and dst are in different mounts
         shutil.move(fspath(self.location), fspath(value))
-        self._store_location = Path(value).resolve()
+        self._store_location = value
 
     def delete_location(self) -> None:
         self._store_location.unlink()
