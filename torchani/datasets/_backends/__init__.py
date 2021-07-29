@@ -3,7 +3,6 @@ from ._backends import (
     TemporaryLocation,
     infer_backend,
     _H5PY_AVAILABLE,
-    _ZARR_AVAILABLE,
     _StoreAdaptor,
 )
 
@@ -12,6 +11,5 @@ __all__ = [
     "TemporaryLocation",
     "infer_backend",
     "_H5PY_AVAILABLE",
-    "_ZARR_AVAILABLE",
     "_StoreAdaptor",
 ]
