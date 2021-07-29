@@ -49,7 +49,7 @@ class _H5StoreAdaptor(_StoreAdaptor):
 
     def validate_location(self) -> None:
         if not self._store_location.is_file():
-            raise FileNotFoundError(f"The h5 file in {self._store_location} could not be found")
+            raise FileNotFoundError(f"The store in {self._store_location} could not be found")
 
     def transfer_location_to(self, other_store: '_StoreAdaptor') -> None:
         self._store_location.unlink()
@@ -96,7 +96,7 @@ class _H5StoreAdaptor(_StoreAdaptor):
             return False
         return True
 
-    def __enter__(self) -> '_H5StoreAdaptor':
+    def __enter__(self) -> '_StoreAdaptor':
         self._store.__enter__()
         return self
 
