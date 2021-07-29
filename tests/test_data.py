@@ -783,9 +783,9 @@ class TestANIDataset(TestCase):
 class TestANIDatasetZarr(TestANIDataset):
     def _make_random_test_data(self, numpy_conformers):
         for j, (k, v) in enumerate(deepcopy(numpy_conformers).items()):
+            # Zarr does not support legacy format, so we tile the species and add
+            # a "grouping" attribute
             numpy_conformers[k]['species'] = np.tile(numpy_conformers[k]['species'].reshape(1, -1), (self.num_conformers[j], 1))
-        # create two HDF5 databases, one with 3 groups and one with one
-        # group, and fill them with some random data
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.tmp_store_one_group = tempfile.TemporaryDirectory(suffix='.zarr', dir=self.tmp_dir.name)
         self.tmp_store_three_groups = tempfile.TemporaryDirectory(suffix='.zarr', dir=self.tmp_dir.name)
