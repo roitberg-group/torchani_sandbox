@@ -77,7 +77,7 @@ class TestASE(TestCase):
         atoms = Diamond(symbol="C", pbc=True, size=(repeats, repeats, repeats))
         calculator = model.ase()
         atoms.calc = calculator
-        dyn = Langevin(atoms, 0.5 * units.fs, 300, 0.002, rng=prng)
+        dyn = Langevin(atoms, 5 * units.fs, temperature_K=3820, friction=0.002, rng=prng)
         dyn.run(steps)
         f = atoms.get_forces()
         if only_get_forces:
@@ -124,9 +124,9 @@ class TestASE(TestCase):
         calculator = self.model.ase()
         benzene.calc = calculator
         dyn = NPTBerendsen(benzene, timestep=0.1 * units.fs,
-                           temperature=300 * units.kB,
-                           taut=0.1 * 1000 * units.fs, pressure=1.01325,
-                           taup=1.0 * 1000 * units.fs, compressibility=4.57e-5)
+                           temperature_K=300,
+                           taut=0.1 * 1000 * units.fs, pressure_au=1.0 * units.bar,
+                           taup=1.0 * 1000 * units.fs, compressibility_au=4.57e-5 / units.bar)
 
         def test_stress():
             stress = benzene.get_stress()
