@@ -9,8 +9,8 @@ from torch import Tensor
 from ..utils import cumsum_from_zero
 from ..compat import Final
 # modular parts of AEVComputer
-from .cutoffs import _parse_cutoff_fn
-from .aev_terms import _parse_angular_terms, _parse_radial_terms
+from .cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
+from .aev_terms import _parse_angular_terms, _parse_radial_terms, StandardAngular, StandardRadial
 from .neighbors import _parse_neighborlist
 
 
@@ -74,7 +74,6 @@ class AEVComputer(torch.nn.Module):
 
     use_cuda_extension: Final[bool]
     triu_index: Tensor
-    cuaev_is_initialized: Tensor
 
     def __init__(self,
                 Rcr: Optional[float] = None,
@@ -101,9 +100,6 @@ class AEVComputer(torch.nn.Module):
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
 
-        self.register_buffer('triu_index',
-                             self._calculate_triu_index(num_species))
-
         # currently only cosine, smooth and custom cutoffs are supported
         # only ANI-1 style angular terms or radial terms
         # and only full pairwise neighborlist
@@ -114,6 +110,18 @@ class AEVComputer(torch.nn.Module):
         self.radial_terms = _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr)
         self.neighborlist = _parse_neighborlist(neighborlist, self.radial_terms.cutoff)
         self._validate_cutoffs_init()
+        if isinstance(cutoff_fn, CutoffCosine):
+            self.cutoff_fn_type = 'cosine'
+        elif isinstance(cutoff_fn, CutoffSmooth):
+            if cutoff_fn.order == 2 and cutoff_fn.eps == 1e-10:
+                self.cutoff_fn_type = 'smooth'
+            else:
+                self.cutoff_fn_type = 'smooth_modified'
+        else:
+            self.cutoff_fn_type = 'others'
+
+        self.register_buffer('triu_index',
+                             self._calculate_triu_index(num_species).to(device=self.radial_terms.EtaR.device))
 
         # length variables are updated once radial and angular terms are initialized
         # The lengths of buffers can't be changed with load_state_dict so we can
@@ -127,14 +135,14 @@ class AEVComputer(torch.nn.Module):
         # cuda aev
         if self.use_cuda_extension:
             assert cuaev_is_installed, "AEV cuda extension is not installed"
-            assert angular_terms in ['standard', 'ani1x', 'ani2x'], 'nonstandard aev terms not supported for cuaev'
-            assert radial_terms in ['standard', 'ani1x', 'ani2x'], 'nonstandard aev terms not supported for cuaev'
+            assert isinstance(self.angular_terms, StandardAngular), 'nonstandard aev terms not supported for cuaev'
+            assert isinstance(self.radial_terms, StandardRadial), 'nonstandard aev terms not supported for cuaev'
         if cuaev_is_installed:
             self._register_cuaev_computer()
 
         # We defer true cuaev initialization to forward so that we ensure that
         # all tensors are in GPU once it is initialized.
-        self.register_buffer('cuaev_is_initialized', torch.tensor(False))
+        self.cuaev_is_initialized = False
 
     def _validate_cutoffs_init(self):
         # validate cutoffs and emit warnings for strange configurations
@@ -162,10 +170,13 @@ class AEVComputer(torch.nn.Module):
         # initialization, it is always necessary to reinitialize in forward at
         # least once, since some tensors may be on CPU at this point**
         empty = torch.empty(0)
-        self.cuaev_computer = torch.classes.cuaev.CuaevComputer(0.0, 0.0, empty, empty, empty, empty, empty, empty, 1)
+        self.cuaev_computer = torch.classes.cuaev.CuaevComputer(0.0, 0.0, empty, empty, empty, empty, empty, empty, 1, True)
 
     @jit_unused_if_no_cuaev()
     def _init_cuaev_computer(self):
+        assert self.cutoff_fn_type != 'others', 'cuaev currently only supports cosine and smooth cutoff functions'
+        assert self.cutoff_fn_type != 'smooth_modified', 'cuaev currently only supports standard parameters for smooth cutoff function'
+        use_cos_cutoff = self.cutoff_fn_type == 'cosine'
         self.cuaev_computer = torch.classes.cuaev.CuaevComputer(self.radial_terms.cutoff,
                                                                 self.angular_terms.cutoff,
                                                                 self.radial_terms.EtaR.flatten(),
@@ -174,7 +185,8 @@ class AEVComputer(torch.nn.Module):
                                                                 self.angular_terms.Zeta.flatten(),
                                                                 self.angular_terms.ShfA.flatten(),
                                                                 self.angular_terms.ShfZ.flatten(),
-                                                                self.num_species)
+                                                                self.num_species,
+                                                                use_cos_cutoff)
 
     @staticmethod
     def _calculate_triu_index(num_species: int) -> Tensor:
@@ -282,7 +294,7 @@ class AEVComputer(torch.nn.Module):
         if self.use_cuda_extension:
             if not self.cuaev_is_initialized:
                 self._init_cuaev_computer()
-                self.cuaev_is_initialized = torch.tensor(True)
+                self.cuaev_is_initialized = True
             assert pbc is None or (not pbc.any()), "cuaev currently does not support PBC"
             aev = self._compute_cuaev(species, coordinates)
             return SpeciesAEV(species, aev)
@@ -375,7 +387,7 @@ class AEVComputer(torch.nn.Module):
             sorted_ai1, return_inverse=False, return_counts=True)
 
         # compute central_atom_index
-        pair_sizes = counts * (counts - 1) // 2
+        pair_sizes = (counts * (counts - 1)).div(2, rounding_mode='floor')
         pair_indices = torch.repeat_interleave(pair_sizes)
         central_atom_index = uniqued_central_atom_index.index_select(
             0, pair_indices)
