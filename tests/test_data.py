@@ -668,6 +668,12 @@ class TestANIDataset(TestCase):
         for k, v in ds.items():
             self.assertEqual(v, new_groups[k])
 
+    def testMetadata(self):
+        ds = ANIDataset(locations=self.tmp_dir.name / Path('new.h5'), names="newfile", create=True)
+        meta = {'newfile': {'some metadata': 'metadata string', 'other metadata': 'other string'}}
+        ds.set_metadata(meta)
+        self.assertEqual(ds.metadata, meta)
+
     def testRegroupNumAtoms(self):
         ds = ANIDataset(self.tmp_dir.name / Path('new.h5'), create=True)
         new_groups = deepcopy(self.new_groups_torch)

@@ -375,7 +375,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
     def _set_metadata(self, meta: Mapping[str, str]) -> None:
         with ExitStack() as stack:
-            self._get_open_store(stack, 'r').set_metadata(meta)
+            self._get_open_store(stack, 'r+').set_metadata(meta)
 
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
