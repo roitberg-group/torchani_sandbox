@@ -34,7 +34,7 @@ class TestASE(TestCase):
         atoms = Diamond(symbol="C", pbc=True)
         calculator = self.model.ase()
         atoms.calc = calculator
-        dyn = Langevin(atoms, 5 * units.fs, 30000000 * units.kB, 0.002)
+        dyn = Langevin(atoms, 5 * units.fs, temperature_K=3820, friction=0.002)
         dyn.run(100)
         f = atoms.get_forces()
         fn = get_numeric_force(atoms, 0.001)
