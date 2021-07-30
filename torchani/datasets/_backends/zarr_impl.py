@@ -34,9 +34,8 @@ class _ZarrTemporaryLocation(ContextManager[StrPath]):
 # Backend Specific code starts here
 class _ZarrStoreAdaptor(_H5StoreAdaptor):
     def __init__(self, store_location: StrPath):
-        self._store_location = Path(store_location).resolve()
+        self.location = store_location
         self._store_obj = None
-        self._has_standard_format = True
         self._mode: Optional[str] = None
 
     def validate_location(self) -> None:
@@ -59,14 +58,16 @@ class _ZarrStoreAdaptor(_H5StoreAdaptor):
         if value.suffix != '.zarr':
             raise ValueError(f"incorrect location {value}")
         # pathlib.rename() may fail if src and dst are in different mounts
-        shutil.move(fspath(self.location), fspath(value))
+        try:
+            shutil.move(fspath(self.location), fspath(value))
+        except AttributeError:
+            pass
         self._store_location = value
 
     def delete_location(self) -> None:
         shutil.rmtree(self._store_location.as_posix())
 
     def make_empty(self, grouping: str) -> None:
-        self._has_standard_format = True
         store = zarr.storage.DirectoryStore(self._store_location)
         with zarr.hierarchy.group(store=store, overwrite=True) as g:
             g.attrs['grouping'] = grouping
@@ -78,8 +79,8 @@ class _ZarrStoreAdaptor(_H5StoreAdaptor):
         return self
 
     def close(self) -> '_StoreAdaptor':
-        # Zarr Groups actually wrap a store, but DirectoryStore has no "close" method
-        # Other stores may have a "close" method though
+        # Zarr Groups actually wrap a store, but DirectoryStore has no "close"
+        # method Other stores may have a "close" method though
         try:
             self._store.store.close()
         except AttributeError:
