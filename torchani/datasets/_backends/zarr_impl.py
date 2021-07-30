@@ -22,13 +22,13 @@ except ImportError:
 class _ZarrTemporaryLocation(ContextManager[StrPath]):
     def __init__(self) -> None:
         self._tmp_location = tempfile.TemporaryDirectory(suffix='.zarr')
-        self._tmp_name = Path(self._tmp_location.name).resolve()
 
     def __enter__(self) -> str:
-        return self._tmp_name.as_posix()
+        return self._tmp_location.__enter__()
 
     def __exit__(self, *args) -> None:
-        self._tmp_location.cleanup()
+        if Path(self._tmp_location.name).exists():  # check necessary for python 3.6
+            self._tmp_location.__exit__()
 
 
 # Backend Specific code starts here
