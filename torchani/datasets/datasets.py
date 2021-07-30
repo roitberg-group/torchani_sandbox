@@ -417,7 +417,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
     def __str__(self) -> str:
         str_ = f"ANI {self._backend} store:\n"
-        d = {'Conformers': self.num_conformers}
+        d: Dict[str, Any] = {'Conformers': self.num_conformers}
         d.update({'Conformer groups': self.num_conformer_groups})
         try:
             d.update({"Present Elements": self.present_elements(chem_symbols=True)})
@@ -927,7 +927,7 @@ class ANIDataset(_ANIDatasetBase):
         {subdataset_name: {'key': 'value'}}
         with an arbitrary number of string key-value pairs
         """
-        for k, v in meta:
+        for k, v in meta.items():
             self._datasets[k]._set_metadata(v)
         return self
 

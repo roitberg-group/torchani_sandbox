@@ -149,7 +149,7 @@ class _StoreAdaptor(ContextManager['_StoreAdaptor'], Mapping[str, '_ConformerGro
 
     @property
     @abstractmethod
-    def metadata(self) -> str: pass # noqa E704
+    def metadata(self) -> Mapping[str, str]: pass # noqa E704
 
     @abstractmethod
     def set_metadata(self, value: Mapping[str, str]) -> None: pass # noqa E704
@@ -341,7 +341,7 @@ class _H5StoreAdaptor(_StoreAdaptor):
         return mode
 
     @property
-    def metadata(self) -> str:
+    def metadata(self) -> Mapping[str, str]:
         try:
             meta = {name: attr for name, attr in self._store.attrs.items() if name != 'grouping'}
         except Exception:
@@ -351,7 +351,7 @@ class _H5StoreAdaptor(_StoreAdaptor):
     def set_metadata(self, value: Mapping[str, str]) -> None:
         if 'grouping' in value.keys():
             raise ValueError('Grouping is not a valid metadata key')
-        for k, v in value:
+        for k, v in value.items():
             self._store.attrs[k] = v
 
     @property
