@@ -24,11 +24,11 @@ class _ZarrTemporaryLocation(ContextManager[StrPath]):
         self._tmp_location = tempfile.TemporaryDirectory(suffix='.zarr')
 
     def __enter__(self) -> str:
-        return self._tmp_location.__enter__()
+        return self._tmp_location.name
 
     def __exit__(self, *args) -> None:
         if Path(self._tmp_location.name).exists():  # check necessary for python 3.6
-            self._tmp_location.__exit__()
+            self._tmp_location.cleanup()
 
 
 # Backend Specific code starts here
