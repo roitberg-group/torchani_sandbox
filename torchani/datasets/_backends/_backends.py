@@ -2,38 +2,42 @@ from pathlib import Path
 from typing import ContextManager
 
 from .._annotations import StrPath
-from .interface import _StoreAdaptor
-from .h5py_impl import _H5PY_AVAILABLE, _H5StoreAdaptor, _H5TemporaryLocation
-from .zarr_impl import _ZARR_AVAILABLE, _ZarrStoreAdaptor, _ZarrTemporaryLocation
+from .interface import _Store
+from .h5py_impl import _H5PY_AVAILABLE, _H5Store, _H5TemporaryLocation
+from .zarr_impl import _ZARR_AVAILABLE, _ZarrStore, _ZarrTemporaryLocation
+
+_BACKEND_AVAILABLE = {'h5py': _H5PY_AVAILABLE, 'zarr': _ZARR_AVAILABLE}
 
 
-def infer_backend(store_location: StrPath) -> str:
+def _infer_backend(store_location: StrPath) -> str:
     suffix = Path(store_location).resolve().suffix
     if suffix == '.h5':
         return 'h5py'
     elif suffix == '.zarr':
         return 'zarr'
-    else:
-        raise RuntimeError("Backend could not be infered from store location")
+    raise RuntimeError("Backend could not be infered from store location")
 
 
-def StoreAdaptorFactory(store_location: StrPath, backend: str) -> '_StoreAdaptor':
+def StoreFactory(store_location: StrPath, backend: str = None) -> '_Store':
+    if backend is None:
+        backend = _infer_backend(store_location)
+    if not _BACKEND_AVAILABLE.get(backend, False):
+        raise ValueError(f'{backend} could not be found, please install it if supported.'
+                         f' Supported backends are {set(_BACKEND_AVAILABLE.keys())}')
     if backend == 'h5py':
-        if not _H5PY_AVAILABLE:
-            raise ValueError('h5py backend was specified but h5py could not be found, please install h5py')
-        return _H5StoreAdaptor(store_location)
+        store = _H5Store(store_location)
     elif backend == 'zarr':
-        if not _ZARR_AVAILABLE:
-            raise ValueError('zarr backend was specified but zarr could not be found, please install zarr')
-        return _ZarrStoreAdaptor(store_location)
-    else:
-        raise RuntimeError(f"Bad backend {backend}")
+        store = _ZarrStore(store_location)
+    store.backend = backend
+    return store
 
 
 def TemporaryLocation(backend: str) -> 'ContextManager[StrPath]':
+    if not _BACKEND_AVAILABLE.get(backend, False):
+        raise ValueError(f'{backend} could not be found, please install it if supported.'
+                         f' Supported backends are {set(_BACKEND_AVAILABLE.keys())}')
     if backend == 'h5py':
-        return _H5TemporaryLocation()
+        tmp = _H5TemporaryLocation()
     elif backend == 'zarr':
-        return _ZarrTemporaryLocation()
-    else:
-        raise ValueError(f"Bad backend {backend}")
+        tmp = _ZarrTemporaryLocation()
+    return tmp

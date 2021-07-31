@@ -1,15 +1,15 @@
 from ._backends import (
-    StoreAdaptorFactory,
+    StoreFactory,
     TemporaryLocation,
-    infer_backend,
     _H5PY_AVAILABLE,
-    _StoreAdaptor,
+    _Store,
 )
+from .interface import _ConformerWrapper
 
 __all__ = [
-    "StoreAdaptorFactory",
+    "StoreFactory",
     "TemporaryLocation",
-    "infer_backend",
     "_H5PY_AVAILABLE",
-    "_StoreAdaptor",
+    "_Store",
+    "_ConformerWrapper"
 ]

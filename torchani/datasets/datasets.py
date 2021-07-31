@@ -13,7 +13,7 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from ._backends import _H5PY_AVAILABLE, _StoreAdaptor, StoreAdaptorFactory, TemporaryLocation, infer_backend
+from ._backends import _H5PY_AVAILABLE, _Store, StoreFactory, TemporaryLocation, _ConformerWrapper
 from ._annotations import Transform, Conformers, NumpyConformers, MixedConformers, StrPath, DTypeLike, IdxLike
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
@@ -332,8 +332,8 @@ class _ANISubdataset(_ANIDatasetBase):
                  backend: Optional[str] = None,
                  verbose: bool = True):
         super().__init__()
-        self._backend = infer_backend(store_location) if backend is None else backend
-        self._store = StoreAdaptorFactory(store_location, self._backend)
+        self._store = StoreFactory(store_location, backend)
+        self._backend = self._store.backend
         self._possible_nonbatch_properties: Set[str]
         if create:
             if grouping not in ['by_formula', 'by_num_atoms']:
@@ -386,7 +386,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
     # This trick makes methods fetch the open file directly
     # if they are being called from inside a "keep_open" context
-    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_StoreAdaptor':
+    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_Store':
         if mode not in ['r+', 'r']:
             raise ValueError(f"Unsupported mode {mode}")
 
@@ -537,14 +537,11 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_append_input(group_name, numpy_conformers)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
+            wrapper = _ConformerWrapper(numpy_conformers)
             try:
-                group = f.create_conformer_group(group_name)
-                group.create_numpy_values(numpy_conformers)
+                f[group_name] = wrapper
             except ValueError:
-                group = f[group_name]
-                if not group.is_resizable:
-                    raise RuntimeError("Dataset must be resizable to allow appending")
-                group.append_numpy_values(numpy_conformers)
+                f[group_name].append_conformers(wrapper)
         return self
 
     @_delegate
@@ -566,8 +563,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 # if we deleted everything in the group then just return,
                 # otherwise we recreate the group using the good conformers
                 return self
-            group = f.create_conformer_group(group_name)
-            group.create_numpy_values(good_conformers)
+            f[group_name] = _ConformerWrapper(good_conformers)
         return self
 
     @_broadcast
@@ -594,15 +590,14 @@ class _ANISubdataset(_ANIDatasetBase):
         """
         extra_dims_ = (extra_dims,) if isinstance(extra_dims, int) else extra_dims
         self._check_properties_are_not_present(dest_key)
-        shape: Tuple[int, ...]
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             for group_name in self.keys():
-                shape = (_get_num_conformers(f[group_name]),)
+                shape: Tuple[int, ...] = (_get_num_conformers(f[group_name]),)
                 if is_atomic:
                     shape += (_get_num_atoms(f[group_name]),)
-                data = np.full(shape=shape + extra_dims_, fill_value=fill_value, dtype=dtype)
-                f[group_name].create_numpy_values({dest_key: data})
+                shape += extra_dims_
+                f[group_name][dest_key] = np.full(shape, fill_value, dtype)
         return self
 
     def _make_empty_copy(self,
@@ -878,7 +873,9 @@ class ANIDataset(_ANIDatasetBase):
     the batch dimension). Property manipulation (renaming, deleting, adding)
     is also supported.
     """
-    def __init__(self, locations: Union[Iterable[StrPath], StrPath], names: Optional[Union[Iterable[str], str]] = None, **kwargs):
+    def __init__(self,
+                 locations: Union[Iterable[StrPath], StrPath],
+                 names: Optional[Union[Iterable[str], str]] = None, **kwargs):
         super().__init__()
         # _datasets is an OrderedDict {name: _ANISubdataset}.
         # "locations" and "names" are collections used to build it
