@@ -1,6 +1,6 @@
 r"""Mypy type aliases"""
 import sys
-from typing import Union, Callable, Iterable, MutableMapping
+from typing import Union, Callable, Iterable, MutableMapping, TypeVar
 from torch import Tensor
 from numpy import ndarray, dtype
 from collections import OrderedDict
@@ -15,7 +15,11 @@ else:
     from numpy import typing as numpy_typing
     DTypeLike = numpy_typing.DTypeLike
 
-Transform = Callable[[MutableMapping[str, Tensor]], MutableMapping[str, Tensor]]
+
+_MutMapSubtype = TypeVar('_MutMapSubtype', bound=MutableMapping[str, Tensor])
+
+# Transform = Callable[[MutableMapping[str, Tensor]], MutableMapping[str, Tensor]]
+Transform = Callable[[_MutMapSubtype], _MutMapSubtype]
 
 # any of these should be interpretable as a 1D index sequence
 IdxLike = Union[Tensor, ndarray, None, Iterable[int], int]
