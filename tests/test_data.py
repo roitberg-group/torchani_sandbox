@@ -805,8 +805,6 @@ class TestANIDatasetZarr(TestANIDataset):
         self.tmp_store_one_group.cleanup()
         self.tmp_store_three_groups.cleanup()
         self.tmp_dir.cleanup()
-<<<<<<< HEAD
-=======
 
     def testConvert(self):
         ds = ANIDataset(self.tmp_store_three_groups.name)
@@ -822,7 +820,6 @@ class TestANIDatasetZarr(TestANIDataset):
             self.assertEqual(d['coordinates'].shape[-1], 3)
             self.assertEqual(d['coordinates'].shape[0], d['energies'].shape[0])
         self.assertEqual(len(ds.values()), 3)
->>>>>>> master
 
 
 class TestData(TestCase):
