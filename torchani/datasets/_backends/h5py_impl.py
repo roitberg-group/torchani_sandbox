@@ -42,7 +42,7 @@ class _H5TemporaryLocation(ContextManager[StrPath]):
 # Backend Specific code starts here
 class _H5StoreAdaptor(_StoreAdaptor):
     def __init__(self, store_location: StrPath):
-        self._store_location = Path(store_location).resolve()
+        self.location = store_location
         self._store_obj = None
         self._has_standard_format = False
         self._made_quick_check = False
@@ -52,7 +52,7 @@ class _H5StoreAdaptor(_StoreAdaptor):
             raise FileNotFoundError(f"The store in {self._store_location} could not be found")
 
     def transfer_location_to(self, other_store: '_StoreAdaptor') -> None:
-        self._store_location.unlink()
+        self.delete_location()
         other_store.location = Path(self.location).with_suffix('')
 
     @property
@@ -67,7 +67,10 @@ class _H5StoreAdaptor(_StoreAdaptor):
         if value.suffix != '.h5':
             raise ValueError(f"Incorrect location {value}")
         # pathlib.rename() may fail if src and dst are in different mounts
-        shutil.move(fspath(self.location), fspath(value))
+        try:
+            shutil.move(fspath(self.location), fspath(value))
+        except AttributeError:
+            pass
         self._store_location = value
 
     def delete_location(self) -> None:

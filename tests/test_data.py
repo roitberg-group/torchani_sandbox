@@ -738,15 +738,13 @@ class TestANIDataset(TestCase):
         keys = set()
         for k in ds.keys():
             keys.update({k})
-        self.assertTrue(keys == {'HOO', 'HCNN', 'HCHHH'})
+        self.assertEqual(keys, {'HOO', 'HCNN', 'HCHHH'})
         self.assertEqual(len(ds.keys()), 3)
 
     def testValues(self):
         ds = ANIDataset(self.tmp_store_three_groups.name)
         for d in ds.values():
-            self.assertTrue('species' in d.keys())
-            self.assertTrue('coordinates' in d.keys())
-            self.assertTrue('energies' in d.keys())
+            self.assertEqual(set(d.keys()), {'species', 'coordinates', 'energies'})
             self.assertEqual(d['coordinates'].shape[-1], 3)
             self.assertEqual(d['coordinates'].shape[0], d['energies'].shape[0])
         self.assertEqual(len(ds.values()), 3)
@@ -756,9 +754,7 @@ class TestANIDataset(TestCase):
         for k, v in ds.items():
             self.assertTrue(isinstance(k, str))
             self.assertTrue(isinstance(v, dict))
-            self.assertTrue('species' in v.keys())
-            self.assertTrue('coordinates' in v.keys())
-            self.assertTrue('energies' in v.keys())
+            self.assertEqual(set(v.keys()), {'species', 'coordinates', 'energies'})
         self.assertEqual(len(ds.items()), 3)
 
     def testNumpyItems(self):
@@ -766,9 +762,7 @@ class TestANIDataset(TestCase):
         for k, v in ds.numpy_items():
             self.assertTrue(isinstance(k, str))
             self.assertTrue(isinstance(v, dict))
-            self.assertTrue('species' in v.keys())
-            self.assertTrue('coordinates' in v.keys())
-            self.assertTrue('energies' in v.keys())
+            self.assertEqual(set(v.keys()), {'species', 'coordinates', 'energies'})
         self.assertEqual(len(ds.items()), 3)
 
     def testIterConformers(self):
@@ -811,6 +805,24 @@ class TestANIDatasetZarr(TestANIDataset):
         self.tmp_store_one_group.cleanup()
         self.tmp_store_three_groups.cleanup()
         self.tmp_dir.cleanup()
+<<<<<<< HEAD
+=======
+
+    def testConvert(self):
+        ds = ANIDataset(self.tmp_store_three_groups.name)
+        ds.to_backend('h5py')
+        for d in ds.values():
+            self.assertEqual(set(d.keys()), {'species', 'coordinates', 'energies'})
+            self.assertEqual(d['coordinates'].shape[-1], 3)
+            self.assertEqual(d['coordinates'].shape[0], d['energies'].shape[0])
+        self.assertEqual(len(ds.values()), 3)
+        ds.to_backend('zarr')
+        for d in ds.values():
+            self.assertEqual(set(d.keys()), {'species', 'coordinates', 'energies'})
+            self.assertEqual(d['coordinates'].shape[-1], 3)
+            self.assertEqual(d['coordinates'].shape[0], d['energies'].shape[0])
+        self.assertEqual(len(ds.values()), 3)
+>>>>>>> master
 
 
 class TestData(TestCase):
