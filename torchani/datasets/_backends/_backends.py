@@ -33,7 +33,7 @@ def StoreFactory(store_location: StrPath, backend: str = None, grouping: str = N
         if grouping is not None:
             raise ValueError("Can't specify a grouping for an already existing dataset")
         store = cls(store_location)
-    store.backend = backend
+    setattr(store, 'backend', backend)  # Monkey patch
     return store
 
 

@@ -333,7 +333,8 @@ class _ANISubdataset(_ANIDatasetBase):
                  verbose: bool = True):
         super().__init__()
         self._store = StoreFactory(store_location, backend, grouping, create)
-        self._backend = self._store.backend
+        # we StoreFactory monkey patches all stores with "backend" attribute
+        self._backend = self._store.backend  # type: ignore
         self._possible_nonbatch_properties: Set[str]
         if create:
             self._possible_nonbatch_properties = set()
@@ -621,7 +622,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 # mypy doesn't know that @wrap'ed functions have __wrapped__
                 # attribute, and fixing this is ugly
                 new_ds.append_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
-            self._store.transfer_location_to(new_ds._store)
+            self._store.location.transfer_to(new_ds._store)
         return new_ds
 
     @_broadcast
@@ -663,7 +664,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 for formula, idx in zip(unique_formulas, formula_idxs):
                     selected_conformers = {k: v[idx] for k, v in conformers.items()}
                     new_ds.append_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
-            self._store.transfer_location_to(new_ds._store)
+            self._store.location.transfer_to(new_ds._store)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
@@ -689,7 +690,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 # This is done to accomodate the current group convention
                 new_name = str(_get_num_atoms(conformers)).zfill(3)
                 new_ds.append_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
-            self._store.transfer_location_to(new_ds._store)
+            self._store.location.transfer_to(new_ds._store)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore

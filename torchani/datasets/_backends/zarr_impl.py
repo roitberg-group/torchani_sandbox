@@ -1,14 +1,12 @@
 import tempfile
 from pathlib import Path
-from typing import ContextManager, Set, Tuple, Optional
+from typing import ContextManager, Set, Tuple
 from collections import OrderedDict
 
 import numpy as np
 
 from .._annotations import StrPath
-from .interface import _Store, _ConformerGroup, _ConformerWrapper, CacheHolder, _FileOrDirLocation
-from .h5py_impl import _H5Store
-
+from .interface import _Store, _ConformerGroup, _ConformerWrapper, CacheHolder, _HierarchicalStoreWrapper
 
 try:
     import zarr  # noqa
@@ -29,11 +27,9 @@ class _ZarrTemporaryLocation(ContextManager[StrPath]):
             self._tmp_location.cleanup()
 
 
-class _ZarrStore(_H5Store):
+class _ZarrStore(_HierarchicalStoreWrapper["zarr.Group"]):
     def __init__(self, store_location: StrPath):
-        self.location = _FileOrDirLocation(store_location, suffix='.zarr', kind='dir')
-        self._store_obj = None
-        self._mode: Optional[str] = None
+        super().__init__(store_location, '.zarr', 'dir')
 
     @classmethod
     def make_empty(cls, store_location: StrPath, grouping: str) -> '_Store':
@@ -45,24 +41,8 @@ class _ZarrStore(_H5Store):
     def open(self, mode: str = 'r') -> '_Store':
         store = zarr.storage.DirectoryStore(self.location.root)
         self._store_obj = zarr.hierarchy.open_group(store, mode)
-        self._mode = mode
+        setattr(self._store_obj, 'mode', mode)
         return self
-
-    def close(self) -> '_Store':
-        # Zarr Groups actually wrap a store, but DirectoryStore has no "close"
-        # method Other stores may have a "close" method though
-        try:
-            self._store.store.close()
-        except AttributeError:
-            pass
-        self._store_obj = None
-        return self
-
-    @property
-    def _store(self) -> "zarr.Group":
-        if self._store_obj is None:
-            raise RuntimeError("Can't access store")
-        return self._store_obj
 
     def update_cache(self,
                      check_properties: bool = False,
@@ -74,18 +54,6 @@ class _ZarrStore(_H5Store):
         if list(cache.group_sizes) != sorted(cache.group_sizes):
             raise RuntimeError("Groups were not iterated upon alphanumerically")
         return cache.group_sizes, cache.properties
-
-    @property
-    def mode(self) -> str:
-        if self._mode is None:
-            raise RuntimeError("Can't access a closed store")
-        return self._mode
-
-    @property
-    def grouping(self) -> str:
-        g = self._store.attrs['grouping']
-        assert isinstance(g, str)
-        return g
 
     def __getitem__(self, name: str) -> '_ConformerGroup':
         return _ZarrConformerGroup(self._store[name])

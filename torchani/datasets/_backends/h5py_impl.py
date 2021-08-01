@@ -3,14 +3,14 @@ from uuid import uuid4
 import tempfile
 from pathlib import Path
 from functools import partial
-from typing import ContextManager, Iterator, Any, Set, Union, Tuple, Mapping
+from typing import ContextManager, Any, Set, Union, Tuple
 from collections import OrderedDict
 
 import numpy as np
 
 from .._annotations import StrPath
 from ...utils import tqdm
-from .interface import _Store, _ConformerGroup, _ConformerWrapper, CacheHolder, _FileOrDirLocation
+from .interface import _Store, _ConformerGroup, _ConformerWrapper, CacheHolder, _HierarchicalStoreWrapper
 
 
 try:
@@ -25,10 +25,6 @@ except ImportError:
     _H5PY_AVAILABLE = False
 
 
-class NamedMapping(Mapping):
-    name: str
-
-
 class _H5TemporaryLocation(ContextManager[StrPath]):
     def __init__(self) -> None:
         self._tmp_location = tempfile.TemporaryDirectory()
@@ -41,10 +37,9 @@ class _H5TemporaryLocation(ContextManager[StrPath]):
         self._tmp_location.cleanup()
 
 
-class _H5Store(_Store):
+class _H5Store(_HierarchicalStoreWrapper["h5py.File"]):
     def __init__(self, store_location: StrPath):
-        self.location = _FileOrDirLocation(store_location, suffix='.h5', kind='file')
-        self._store_obj = None
+        super().__init__(store_location, '.h5', 'file')
         self._has_standard_format = False
         self._made_quick_check = False
 
@@ -59,33 +54,6 @@ class _H5Store(_Store):
     def open(self, mode: str = 'r') -> '_Store':
         self._store_obj = h5py.File(self.location.root, mode)
         return self
-
-    def close(self) -> '_Store':
-        self._store.close()
-        self._store_obj = None
-        return self
-
-    @property
-    def _store(self) -> "h5py.File":
-        if self._store_obj is None:
-            raise RuntimeError("Can't access store")
-        return self._store_obj
-
-    @property
-    def is_open(self) -> bool:
-        try:
-            self._store
-        except RuntimeError:
-            return False
-        return True
-
-    def __enter__(self) -> '_Store':
-        self._store.__enter__()
-        return self
-
-    def __exit__(self, *args, **kwargs) -> None:
-        self._store.__exit__(*args, **kwargs)
-        self._store_obj = None
 
     def update_cache(self,
                      check_properties: bool = False,
@@ -155,24 +123,6 @@ class _H5Store(_Store):
         has_standard_format = not any('/' in k[1:] for k in cache.group_sizes.keys())
         return has_standard_format
 
-    def _update_properties_cache(self, cache: CacheHolder, conformers: NamedMapping, check_properties: bool = False) -> None:
-        if not cache.properties:
-            cache.properties = set(conformers.keys())
-        elif check_properties and not set(conformers.keys()) == cache.properties:
-            raise RuntimeError(f"Group {conformers.name} has bad keys, "
-                               f"found {set(conformers.keys())}, but expected "
-                               f"{cache.properties}")
-
-    # updates "group_sizes" which holds the batch dimension (number of
-    # molecules) of all groups in the dataset.
-    def _update_groups_cache(self, cache: CacheHolder, group: NamedMapping) -> None:
-        present_keys = {'coordinates', 'coord', 'energies'}.intersection(set(group.keys()))
-        try:
-            any_key = next(iter(present_keys))
-        except StopIteration:
-            raise RuntimeError('To infer conformer size need one of "coordinates", "coord", "energies"')
-        cache.group_sizes.update({group.name[1:]: group[any_key].shape[0]})
-
     # Check if the raw hdf5 file is one of a number of known files that can be assumed
     # to have standard format.
     def _quick_standard_format_check(self) -> bool:
@@ -191,12 +141,6 @@ class _H5Store(_Store):
             return False
 
     @property
-    def mode(self) -> str:
-        mode = self._store.mode
-        assert isinstance(mode, str)
-        return mode
-
-    @property
     def grouping(self) -> str:
         # This detects Roman's formatting style which doesn't have a
         # 'grouping' key but is still grouped by num atoms.
@@ -212,21 +156,8 @@ class _H5Store(_Store):
         except (KeyError, OSError):
             return 'legacy'
 
-    def __delitem__(self, k: str) -> None:
-        del self._store[k]
-
-    def __setitem__(self, name: str, conformers: '_ConformerGroup') -> None:
-        self._store.create_group(name)
-        self[name].update(conformers)
-
     def __getitem__(self, name: str) -> '_ConformerGroup':
         return _H5ConformerGroup(self._store[name])
-
-    def __len__(self) -> int:
-        return len(self._store)
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._store)
 
 
 class _H5ConformerGroup(_ConformerWrapper["h5py.Group"]):

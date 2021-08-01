@@ -2,7 +2,8 @@ from abc import ABC, abstractmethod
 from os import fspath
 import shutil
 from pathlib import Path
-from typing import ContextManager, MutableMapping, Set, Tuple, Generic, TypeVar, Optional
+from typing import (ContextManager, MutableMapping, Set, Tuple,
+                    Generic, TypeVar, Optional, Iterator, cast, Mapping, Any)
 from collections import OrderedDict
 
 import numpy as np
@@ -19,9 +20,13 @@ class CacheHolder:
         self.properties = set()
 
 
-# _ConformerGroup and _Store are abstract classes from which all backends
-# should inherit in order to correctly interact with ANIDataset.  adding
-# support for a new backend can be done just by coding these two classes and
+class NamedMapping(Mapping):
+    name: str
+
+
+# _ConformerGroup, _Store and are abstract classes from which all backends
+# should inherit in order to correctly interact with ANIDataset. Adding
+# support for a new backend can be done just by coding these classes and
 # adding the support for the backend inside StoreFactory
 
 
@@ -89,9 +94,10 @@ class _LocationManager(ABC):
     def root(self) -> None:
         pass
 
-    @abstractmethod
-    def plain_root(self) -> StrPath:
-        pass
+    def transfer_to(self, other_store: '_Store') -> None:
+        root = Path(self.root).with_suffix('')
+        del self.root
+        other_store.location.root = root
 
 
 class _FileOrDirLocation(_LocationManager):
@@ -132,9 +138,6 @@ class _FileOrDirLocation(_LocationManager):
                 shutil.rmtree(self._root_location)
         self._root_location = None
 
-    def plain_root(self) -> StrPath:
-        return Path(self.root).with_suffix('')
-
     def _validate(self) -> None:
         root = Path(self.root)
         _kind = self._kind
@@ -146,11 +149,6 @@ class _FileOrDirLocation(_LocationManager):
 class _Store(ContextManager['_Store'], MutableMapping[str, '_ConformerGroup'], ABC):
     location: _LocationManager
 
-    def transfer_location_to(self, other_store: '_Store') -> None:
-        root = self.location.plain_root()
-        del self.location.root
-        other_store.location.root = root
-
     @classmethod
     @abstractmethod
     def make_empty(cls, store_location: StrPath, grouping: str) -> '_Store':
@@ -159,6 +157,11 @@ class _Store(ContextManager['_Store'], MutableMapping[str, '_ConformerGroup'], A
     @property
     @abstractmethod
     def mode(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def grouping(self) -> str:
         pass
 
     @property
@@ -174,11 +177,108 @@ class _Store(ContextManager['_Store'], MutableMapping[str, '_ConformerGroup'], A
     def open(self, mode: str = 'r') -> '_Store':
         pass
 
-    @property
     @abstractmethod
-    def grouping(self) -> str:
+    def update_cache(self,
+                     check_properties: bool = False,
+                     verbose: bool = True) -> Tuple['OrderedDict[str, int]', Set[str]]:
         pass
 
-    @abstractmethod
-    def update_cache(self, check_properties: bool = False, verbose: bool = True) -> Tuple['OrderedDict[str, int]', Set[str]]:
-        pass
+
+# mypy expects a Protocol here, which specifies that _T must
+# support Mapping and ContextManager methods, and also 'close' and 'create_group'
+# and have 'mode' and 'attr' attributes
+# this is similar to C++20 concepts and it is currently very verbose we avoid it
+_T = TypeVar('_T', bound=Any)
+
+
+# A store that wraps another hierarchical store (e.g. Zarr, Exedir, HDF5)
+# Wrapped store must implement:
+# __exit__, __enter__, create_group, __len__, __iter__ -> Iterator[str], __delitem__
+# and have a "mode" and "attr" attributes
+class _HierarchicalStoreWrapper(_Store, Generic[_T]):
+    def __init__(self, store_location: StrPath, suffix='', kind=''):
+        self.location = _FileOrDirLocation(store_location, suffix, kind)
+        self._store_obj = None
+
+    @property
+    def _store(self) -> _T:
+        if self._store_obj is None:
+            raise RuntimeError("Can't access store")
+        return self._store_obj
+
+    def close(self) -> '_Store':
+        try:
+            self._store.close()
+        except AttributeError:
+            pass
+        self._store_obj = None
+        return self
+
+    @property
+    def is_open(self) -> bool:
+        try:
+            self._store
+        except RuntimeError:
+            return False
+        return True
+
+    def __enter__(self) -> '_Store':
+        self._store.__enter__()
+        return self
+
+    def __exit__(self, *args) -> None:
+        self._store.__exit__(*args)
+        self._store_obj = None
+
+    def update_cache(self,
+                     check_properties: bool = False,
+                     verbose: bool = True) -> Tuple['OrderedDict[str, int]', Set[str]]:
+        cache = CacheHolder()
+        for k, g in self._store.items():
+            self._update_properties_cache(cache, g, check_properties)
+            self._update_groups_cache(cache, g)
+        if list(cache.group_sizes) != sorted(cache.group_sizes):
+            raise RuntimeError("Groups were not iterated upon alphanumerically")
+        return cache.group_sizes, cache.properties
+
+    def _update_properties_cache(self,
+                                 cache: CacheHolder,
+                                 conformers: NamedMapping,
+                                 check_properties: bool = False) -> None:
+        if not cache.properties:
+            cache.properties = set(conformers.keys())
+        elif check_properties and not set(conformers.keys()) == cache.properties:
+            raise RuntimeError(f"Group {conformers.name} has bad keys, "
+                               f"found {set(conformers.keys())}, but expected "
+                               f"{cache.properties}")
+
+    # updates "group_sizes" which holds the batch dimension (number of
+    # molecules) of all groups in the dataset.
+    def _update_groups_cache(self, cache: CacheHolder, group: NamedMapping) -> None:
+        present_keys = {'coordinates', 'coord', 'energies'}.intersection(set(group.keys()))
+        try:
+            any_key = next(iter(present_keys))
+        except StopIteration:
+            raise RuntimeError('To infer conformer size need one of "coordinates", "coord", "energies"')
+        cache.group_sizes.update({group.name[1:]: group[any_key].shape[0]})
+
+    @property
+    def mode(self) -> str:
+        return cast(str, self._store.mode)
+
+    @property
+    def grouping(self) -> str:
+        return cast(str, self._store.attrs['grouping'])
+
+    def __delitem__(self, k: str) -> None:
+        del self._store[k]
+
+    def __setitem__(self, name: str, conformers: '_ConformerGroup') -> None:
+        self._store.create_group(name)
+        self[name].update(conformers)
+
+    def __len__(self) -> int:
+        return len(self._store)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._store)
