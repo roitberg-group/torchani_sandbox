@@ -10,7 +10,7 @@ import numpy as np
 
 from .._annotations import StrPath
 from ...utils import tqdm
-from .interface import _Store, _ConformerGroup, _ConformerWrapper, CacheHolder, _OnDiskLocation
+from .interface import _Store, _ConformerGroup, _ConformerWrapper, CacheHolder, _FileOrDirLocation
 
 
 try:
@@ -42,25 +42,22 @@ class _H5TemporaryLocation(ContextManager[StrPath]):
 
 
 class _H5Store(_Store):
-    location = _OnDiskLocation('.h5', kind='file')
-
     def __init__(self, store_location: StrPath):
-        self.location = store_location
+        self.location = _FileOrDirLocation(store_location, suffix='.h5', kind='file')
         self._store_obj = None
         self._has_standard_format = False
         self._made_quick_check = False
 
-    def validate_location(self) -> None:
-        if not self.location.is_file():
-            raise FileNotFoundError(f"The store in {self._store_location} could not be found")
-
-    def make_empty(self, grouping: str) -> None:
-        self._has_standard_format = True
-        with h5py.File(self._store_location, 'x') as f:
+    @classmethod
+    def make_empty(cls, store_location: StrPath, grouping: str) -> '_Store':
+        with h5py.File(store_location, 'x') as f:
             f.attrs['grouping'] = grouping
+        obj = cls(store_location)
+        obj._has_standard_format = True
+        return obj
 
     def open(self, mode: str = 'r') -> '_Store':
-        self._store_obj = h5py.File(self._store_location, mode)
+        self._store_obj = h5py.File(self.location.root, mode)
         return self
 
     def close(self) -> '_Store':
@@ -69,7 +66,7 @@ class _H5Store(_Store):
         return self
 
     @property
-    def _store(self) -> h5py.File:
+    def _store(self) -> "h5py.File":
         if self._store_obj is None:
             raise RuntimeError("Can't access store")
         return self._store_obj
@@ -121,7 +118,7 @@ class _H5Store(_Store):
 
     def _update_cache_nonstandard(self, cache: CacheHolder, check_properties: bool, verbose: bool) -> bool:
         def visitor_fn(name: str,
-                       object_: Union[h5py.Dataset, h5py.Group],
+                       object_: Union["h5py.Dataset", "h5py.Group"],
                        store: '_H5Store',
                        cache: CacheHolder,
                        check_properties: bool,
@@ -232,10 +229,7 @@ class _H5Store(_Store):
         return iter(self._store)
 
 
-class _H5ConformerGroup(_ConformerWrapper):
-    def __init__(self, data: h5py.Group) -> None:
-        self._data = data
-
+class _H5ConformerGroup(_ConformerWrapper["h5py.Group"]):
     def _is_resizable(self) -> bool:
         return all(ds.maxshape[0] is None for ds in self._data.values())
 

@@ -34,7 +34,7 @@ def concatenate(source: ANIDataset,
                       total=source.num_conformer_groups,
                       disable=not verbose):
             dest.append_conformers(k.split('/')[-1], v)
-        dest._first_subds._store.location = dest_location
+        dest._first_subds._store.location.root = dest_location
     # TODO this depends on the original stores being files, it should be
     # changed for generality
     if delete_originals:
@@ -42,7 +42,7 @@ def concatenate(source: ANIDataset,
                       desc='Deleting original store',
                       total=source.num_stores,
                       disable=not verbose):
-            subds._store.delete_location()
+            del subds._store.location.root
     return dest
 
 

@@ -6,7 +6,7 @@ from collections import OrderedDict
 import numpy as np
 
 from .._annotations import StrPath
-from .interface import _Store, _ConformerGroup, _ConformerWrapper, CacheHolder, _OnDiskLocation
+from .interface import _Store, _ConformerGroup, _ConformerWrapper, CacheHolder, _FileOrDirLocation
 from .h5py_impl import _H5Store
 
 
@@ -29,27 +29,21 @@ class _ZarrTemporaryLocation(ContextManager[StrPath]):
             self._tmp_location.cleanup()
 
 
-# Backend Specific code starts here
 class _ZarrStore(_H5Store):
-
-    location = _OnDiskLocation('.zarr', kind='dir')
-
     def __init__(self, store_location: StrPath):
-        self.location = store_location
+        self.location = _FileOrDirLocation(store_location, suffix='.zarr', kind='dir')
         self._store_obj = None
         self._mode: Optional[str] = None
 
-    def validate_location(self) -> None:
-        if not self.location.is_dir():
-            raise FileNotFoundError(f"The store in {self._store_location} could not be found")
-
-    def make_empty(self, grouping: str) -> None:
-        store = zarr.storage.DirectoryStore(self._store_location)
+    @classmethod
+    def make_empty(cls, store_location: StrPath, grouping: str) -> '_Store':
+        store = zarr.storage.DirectoryStore(store_location)
         with zarr.hierarchy.group(store=store, overwrite=True) as g:
             g.attrs['grouping'] = grouping
+        return cls(store_location)
 
     def open(self, mode: str = 'r') -> '_Store':
-        store = zarr.storage.DirectoryStore(self._store_location)
+        store = zarr.storage.DirectoryStore(self.location.root)
         self._store_obj = zarr.hierarchy.open_group(store, mode)
         self._mode = mode
         return self
@@ -97,10 +91,7 @@ class _ZarrStore(_H5Store):
         return _ZarrConformerGroup(self._store[name])
 
 
-class _ZarrConformerGroup(_ConformerWrapper):
-    def __init__(self, data: "zarr.Group"):
-        self._data = data
-
+class _ZarrConformerGroup(_ConformerWrapper["zarr.Group"]):
     def _append_to_property(self, p: str, v: np.ndarray) -> None:
         try:
             self._data[p].append(v, axis=0)

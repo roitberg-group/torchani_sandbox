@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
+from os import fspath
 import shutil
 from pathlib import Path
-from typing import ContextManager, MutableMapping, Set, Tuple
-from typing_extensions import Protocol
+from typing import ContextManager, MutableMapping, Set, Tuple, Generic, TypeVar, Optional
 from collections import OrderedDict
 
 import numpy as np
@@ -47,8 +47,11 @@ class _ConformerGroup(MutableMapping[str, np.ndarray], ABC):
         pass
 
 
-class _ConformerWrapper(_ConformerGroup):
-    def __init__(self, data: MutableMapping[str, np.ndarray]) -> None:
+_MutMapSubtype = TypeVar('_MutMapSubtype', bound=MutableMapping[str, np.ndarray])
+
+
+class _ConformerWrapper(_ConformerGroup, Generic[_MutMapSubtype]):
+    def __init__(self, data: _MutMapSubtype) -> None:
         self._data = data
 
     def __setitem__(self, p: str, v: np.ndarray) -> None:
@@ -73,61 +76,84 @@ class _ConformerWrapper(_ConformerGroup):
         self._data[p] = np.append(self._data[p], v, axis=0)
 
 
-class _BaseLocation(Protocol):
-    def __set__(self, obj, value: StrPath) -> None:
+class _LocationManager(ABC):
+    @property
+    def root(self) -> StrPath:
         pass
 
-    def __get__(self, obj, objtype) -> StrPath:
+    @root.setter
+    def root(self, value: StrPath) -> None:
         pass
 
-    def __delete__(self, obj) -> None:
+    @root.deleter
+    def root(self) -> None:
+        pass
+
+    @abstractmethod
+    def plain_root(self) -> StrPath:
         pass
 
 
-class _OnDiskLocation:
-    def __init__(self, suffix: str, kind: str = 'file'):
+class _FileOrDirLocation(_LocationManager):
+    def __init__(self, root: StrPath, suffix: str = '', kind: str = 'file'):
         if kind not in ['file', 'dir']:
             raise ValueError("Kind must be one of 'file' or 'dir'")
         self._kind = kind
         self._suffix = suffix
+        self._root_location: Optional[Path] = None
+        self.root = root
 
-    def __set__(self, obj, value: StrPath) -> None:
+    @property
+    def root(self) -> StrPath:
+        root = self._root_location
+        if root is None:
+            raise ValueError("Location is invalid")
+        return root
+
+    @root.setter
+    def root(self, value: StrPath) -> None:
         value = Path(value).resolve()
         if value.suffix == '':
             value = value.with_suffix(self._suffix)
         if value.suffix != self._suffix:
             raise ValueError(f"incorrect location {value}")
-        if hasattr(obj, '_store_location'):
+        if self._root_location is not None:
             # pathlib.rename() may fail if src and dst are in different filesystems
-            shutil.move(obj._store_location, value)
-        obj._store_location = value
+            shutil.move(fspath(self._root_location), fspath(value))
+        self._root_location = Path(value).resolve()
+        self._validate()
 
-    def __get__(self, obj, objtype=None) -> StrPath:
-        return obj._store_location
+    @root.deleter
+    def root(self) -> None:
+        if self._root_location is not None:
+            if self._kind == 'file':
+                self._root_location.unlink()
+            else:
+                shutil.rmtree(self._root_location)
+        self._root_location = None
 
-    def __delete__(self, obj) -> None:
-        if self._kind == 'file':
-            obj._store_location.unlink()
-        else:
-            shutil.rmtree(obj._store_location)
-        delattr(obj, '_store_location')
+    def plain_root(self) -> StrPath:
+        return Path(self.root).with_suffix('')
+
+    def _validate(self) -> None:
+        root = Path(self.root)
+        _kind = self._kind
+        if (_kind == 'dir' and not root.is_dir()
+           or _kind == 'file' and not root.is_file()):
+            raise FileNotFoundError(f"The store in {root} could not be found")
 
 
 class _Store(ContextManager['_Store'], MutableMapping[str, '_ConformerGroup'], ABC):
-
-    location: _BaseLocation
+    location: _LocationManager
 
     def transfer_location_to(self, other_store: '_Store') -> None:
-        loc = self.location
-        del self.location
-        other_store.location = Path(loc).with_suffix('')
+        root = self.location.plain_root()
+        del self.location.root
+        other_store.location.root = root
 
+    @classmethod
     @abstractmethod
-    def validate_location(self) -> None:
-        pass
-
-    @abstractmethod
-    def make_empty(self, grouping: str) -> None:
+    def make_empty(cls, store_location: StrPath, grouping: str) -> '_Store':
         pass
 
     @property

@@ -328,22 +328,16 @@ class _ANISubdataset(_ANIDatasetBase):
     def __init__(self,
                  store_location: StrPath,
                  create: bool = False,
-                 grouping: str = 'by_formula',
+                 grouping: str = None,
                  backend: Optional[str] = None,
                  verbose: bool = True):
         super().__init__()
-        self._store = StoreFactory(store_location, backend)
+        self._store = StoreFactory(store_location, backend, grouping, create)
         self._backend = self._store.backend
         self._possible_nonbatch_properties: Set[str]
         if create:
-            if grouping not in ['by_formula', 'by_num_atoms']:
-                raise ValueError('invalid grouping')
-            self._store.make_empty(grouping)
             self._possible_nonbatch_properties = set()
         else:
-            if grouping != 'by_formula':
-                raise ValueError("Can't specify grouping, dataset already exists")
-            self._store.validate_location()
             if self.grouping not in ['by_formula', 'by_num_atoms', 'legacy']:
                 raise RuntimeError(f'Read with unsupported grouping {self.grouping}')
             if self.grouping == 'legacy':
@@ -906,7 +900,7 @@ class ANIDataset(_ANIDatasetBase):
 
     @property
     def store_locations(self) -> List[str]:
-        return [fspath(ds._store.location) for ds in self._datasets.values()]
+        return [fspath(ds._store.location.root) for ds in self._datasets.values()]
 
     @property
     def num_stores(self) -> int:
