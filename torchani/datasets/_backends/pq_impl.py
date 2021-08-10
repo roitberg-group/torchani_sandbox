@@ -1,4 +1,3 @@
-import shutil
 import json
 import tempfile
 from pathlib import Path
@@ -8,7 +7,7 @@ from collections import OrderedDict
 import numpy as np
 
 from .._annotations import StrPath
-from .interface import _Store, _ConformerGroup, CacheHolder
+from .interface import _Store, _ConformerGroup, CacheHolder, _FileOrDirLocation
 from .zarr_impl import _ZarrTemporaryLocation
 
 
@@ -33,13 +32,41 @@ def _to_dict_cudf(df, **kwargs):
     return df.to_pandas().to_dict(df, **kwargs)
 
 
+class _PqLocation(_FileOrDirLocation):
+    def __init__(self, root: StrPath):
+        self._meta_location: Path = None
+        self._pq_location: Path = None
+        super().__init__(root, '.pq', 'dir')
+
+    @property
+    def root(self) -> StrPath:
+        return super(__class__, __class__).root.fget(self)
+
+    @root.setter
+    def root(self, value: StrPath) -> None:
+        super(__class__, __class__).root.fset(self, value)
+        root = self._root_location
+        self._meta_location = root / root.with_suffix('.json').name
+        self._pq_location = root / root.name
+        if not (self._pq_location.is_file()
+               and self._meta_location.is_file()):
+            raise FileNotFoundError(f"The store in {self._root_location} could not be found or is invalid")
+
+    @root.deleter
+    def root(self) -> None:
+        super(__class__, __class__).root.fdel(self)
+        self._meta_location = None
+        self._pq_location = None
+
+
 class _PqTemporaryLocation(_ZarrTemporaryLocation):
     def __init__(self) -> None:
-        self._tmp_location = tempfile.TemporaryDirectory(suffix='.zarr')
+        self._tmp_location = tempfile.TemporaryDirectory(suffix='.pq')
 
 
 class _PqStore(_Store):
     def __init__(self, store_location: StrPath, use_cudf: bool = False):
+        self.location = _PqLocation(store_location)
         self._mode: Optional[str] = None
         self._store_obj = None
         self._store_location = Path(store_location).resolve()
@@ -53,48 +80,6 @@ class _PqStore(_Store):
         else:
             self._engine = pandas
             self._to_dict = _to_dict_pandas
-
-    @staticmethod
-    def _parse_store(store_location: Path) -> Tuple[Path, Path]:
-        name = store_location.stem
-        parquet_store = store_location / f'{name}_store.pq'
-        json_meta = store_location / f'{name}_meta.json'
-        return parquet_store, json_meta
-
-    def validate_location(self) -> None:
-        if (self._store_location.is_dir()
-           and self._pq_location.is_file()
-           and self._meta_location.is_file()):
-            return
-        raise FileNotFoundError(f"The store in {self._store_location} could not be found or is invalid")
-
-    def transfer_location_to(self, other_store: '_Store') -> None:
-        self.delete_location()
-        other_store.location = Path(self.location).with_suffix('')
-
-    @property
-    def location(self) -> StrPath:
-        return self._store_location
-
-    @location.setter
-    def location(self, value: StrPath) -> None:
-        value = Path(value).resolve()
-        if value.suffix == '':
-            value = value.with_suffix('.pq')
-        if value.suffix != '.pq':
-            raise ValueError(f"Incorrect location {value}")
-        _pq_location, _meta_location = self._parse_store(value)
-        # pathlib.rename() may fail if src and dst are in different mounts
-        value.mkdir()
-        shutil.move(self._pq_location, _pq_location)
-        shutil.move(self._meta_location, _meta_location)
-        self.delete_location()
-        self._pq_location = _pq_location
-        self._meta_location = _meta_location
-        self._store_location = value
-
-    def delete_location(self) -> None:
-        shutil.rmtree(self._store_location)
 
     @property
     def _store(self) -> Union["pandas.DataFrame", "cudf.DataFrame"]:

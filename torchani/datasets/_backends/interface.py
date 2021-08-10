@@ -2,8 +2,8 @@ from abc import ABC, abstractmethod
 from os import fspath
 import shutil
 from pathlib import Path
-from typing import (ContextManager, MutableMapping, Set, Tuple,
-                    Generic, TypeVar, Optional, Iterator, cast, Mapping, Any)
+from typing import (ContextManager, MutableMapping, Set, Tuple, Optional,
+                    Generic, TypeVar, Iterator, cast, Mapping, Any)
 from collections import OrderedDict
 
 import numpy as np
