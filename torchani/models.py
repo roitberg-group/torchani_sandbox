@@ -60,6 +60,7 @@ from pathlib import Path
 from collections import OrderedDict
 import torch
 from torch import Tensor
+from torch.nn import Module
 from typing import Tuple, Optional, NamedTuple, Sequence, Union, Type, Dict, Any
 from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
@@ -78,7 +79,7 @@ class SpeciesEnergiesQBC(NamedTuple):
     qbcs: Tensor
 
 
-class BuiltinModel(torch.nn.Module):
+class BuiltinModel(Module):
     r"""Private template for the builtin ANI models """
 
     atomic_numbers: Tensor
