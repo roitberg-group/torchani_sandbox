@@ -7,8 +7,8 @@ from typing import Optional, Sequence, Tuple, Union, Dict, Any
 from distutils import dir_util
 from pathlib import Path
 from ..aev import AEVComputer
-from ..nn import Ensemble, ANIModel
 from ..utils import EnergyShifter
+from ..nn import Ensemble, ANIModel
 from .neurochem import Constants, load_model_ensemble, load_model, load_sae
 
 

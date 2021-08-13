@@ -76,8 +76,8 @@ class TestASE(TestCase):
         prng = np.random.RandomState(seed=1234)
         atoms = Diamond(symbol="C", pbc=True, size=(repeats, repeats, repeats))
         calculator = model.ase()
-        atoms.set_calculator(calculator)
-        dyn = Langevin(atoms, 0.5 * units.fs, 300, 0.002, rng=prng)
+        atoms.calc = calculator
+        dyn = Langevin(atoms, 5 * units.fs, temperature_K=3820, friction=0.002, rng=prng)
         dyn.run(steps)
         f = atoms.get_forces()
         if only_get_forces:
@@ -121,12 +121,12 @@ class TestASE(TestCase):
         # Note that there are 4 benzene molecules, thus, 48 atoms in
         # Benzene.json
         benzene.set_velocities(np.full((48, 3), 1e-15))
-        calculator = model.ase()
-        benzene.set_calculator(calculator)
+        calculator = self.model.ase()
+        benzene.calc = calculator
         dyn = NPTBerendsen(benzene, timestep=0.1 * units.fs,
-                           temperature=300 * units.kB,
-                           taut=0.1 * 1000 * units.fs, pressure=1.01325,
-                           taup=1.0 * 1000 * units.fs, compressibility=4.57e-5)
+                           temperature_K=300,
+                           taut=0.1 * 1000 * units.fs, pressure_au=1.0 * units.bar,
+                           taup=1.0 * 1000 * units.fs, compressibility_au=4.57e-5 / units.bar)
 
         def test_stress():
             stress = benzene.get_stress()
@@ -154,8 +154,8 @@ class TestASEWithPeriodicTableIndex(unittest.TestCase):
         calculator = self.model.ase()
         atoms = Diamond(symbol="C", pbc=True)
         atoms_pti = Diamond(symbol="C", pbc=True)
-        atoms.set_calculator(calculator)
-        atoms_pti.set_calculator(calculator_pti)
+        atoms.calc = calculator
+        atoms_pti.calc = calculator_pti
         self.assertEqual(atoms.get_potential_energy(), atoms_pti.get_potential_energy())
 
     def testEqualOneModelPeriodicTableIndex(self):
@@ -163,8 +163,8 @@ class TestASEWithPeriodicTableIndex(unittest.TestCase):
         calculator = self.model[0].ase()
         atoms = Diamond(symbol="C", pbc=True)
         atoms_pti = Diamond(symbol="C", pbc=True)
-        atoms.set_calculator(calculator)
-        atoms_pti.set_calculator(calculator_pti)
+        atoms.calc = calculator
+        atoms_pti.calc = calculator_pti
         self.assertEqual(atoms.get_potential_energy(), atoms_pti.get_potential_energy())
 
 

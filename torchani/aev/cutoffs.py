@@ -1,10 +1,12 @@
 import torch
 import math
+from typing import Union
 from torch import Tensor
+from torch.nn import Module
 from ..compat import Final
 
 
-def _parse_cutoff_fn(cutoff_fn):
+def _parse_cutoff_fn(cutoff_fn: Union[str, Module]) -> Module:
     # currently only cosine, smooth and custom cutoffs are supported
     if cutoff_fn == 'cosine':
         cutoff_fn = CutoffCosine()
@@ -17,28 +19,24 @@ def _parse_cutoff_fn(cutoff_fn):
     return cutoff_fn
 
 
-class CutoffCosine(torch.nn.Module):
-
-    def __init__(self):
+# All cutoffs assume all elements in `distances` are smaller than cutoff
+class CutoffCosine(Module):
+    def __init__(self) -> None:
         super().__init__()
 
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
-        # assuming all elements in distances are smaller than cutoff
         return 0.5 * torch.cos(distances * (math.pi / cutoff)) + 0.5
 
 
 class CutoffDummy(torch.nn.Module):
-
     def __init__(self):
         super().__init__()
 
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
-        # assuming all elements in distances are smaller than cutoff
         return torch.ones_like(distances)
 
 
-class CutoffSmooth(torch.nn.Module):
-
+class CutoffSmooth(Module):
     order: Final[int]
     eps: Final[float]
 
@@ -49,11 +47,9 @@ class CutoffSmooth(torch.nn.Module):
         # lower orders distort the underlying function more
         assert order > 0, "order must be a positive integer greater than zero"
         assert order % 2 == 0, "Order must be even"
-
         self.order = order
         self.eps = eps
 
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
-        # assuming all elements in distances are smaller than cutoff
         e = 1 - 1 / (1 - (distances / cutoff) ** self.order).clamp(min=self.eps)
         return torch.exp(e)
