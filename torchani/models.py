@@ -420,6 +420,12 @@ def ANI1ccx(**kwargs):
 
 
 def ANIxx(**kwargs):
+    info_file = 'ani-1ccx_8x.info'
+    state_dict_file = 'ani1ccx_state_dict.pt'
+    return _load_ani_model(state_dict_file, info_file, **kwargs)
+
+
+def ANI2x(**kwargs):
     """The ANI-2x model as in `ANI2x Paper`_ and `ANI2x Results on GitHub`_.
 
     The ANI-2x model is an ensemble of 8 networks that was trained on the
