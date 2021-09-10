@@ -420,6 +420,7 @@ def ANI1ccx(**kwargs):
 
 
 def ANIxx(**kwargs):
+    "new docstring for this"
     info_file = 'ani-1ccx_8x.info'
     state_dict_file = 'ani1ccx_state_dict.pt'
     return _load_ani_model(state_dict_file, info_file, **kwargs)
