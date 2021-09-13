@@ -9,7 +9,7 @@ class TestExternalInterface(TestCase):
     def setUp(self):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.model_interface = torchani.models.ANI1x(periodic_table_index=False, external_neighborlist=True)
+        self.model_interface = torchani.models.ANI1x(periodic_table_index=False)
         self.model_interface = self.model_interface.to(device=self.device, dtype=torch.float)
 
         self.model = torchani.models.ANI1x(periodic_table_index=False)
@@ -47,7 +47,7 @@ class TestExternalInterface(TestCase):
             c = c.detach().requires_grad_(True)
             neighbors, shift_values, _, _ = neighborlist(s, c)
             shift_values = torch.zeros((neighbors.shape[-1], 3), dtype=torch.float, device=self.device)
-            e = self.model_interface((s, c), neighbors, shift_values).energies
+            e = self.model_interface.from_neighborlist((s, c), neighbors, shift_values).energies
             f = -torch.autograd.grad(e.sum(), c)[0]
 
             self.assertEqual(f_expect, f)
@@ -62,7 +62,7 @@ class TestExternalInterface(TestCase):
 
             neighbors, shift_values, _, _ = neighborlist(s, c)
             shift_values = torch.zeros((neighbors.shape[-1], 3), dtype=torch.float, device=self.device)
-            e = self.model_interface((s, c), neighbors, shift_values).energies
+            e = self.model_interface.from_neighborlist((s, c), neighbors, shift_values).energies
 
             self.assertEqual(e_expect, e)
 
