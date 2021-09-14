@@ -501,7 +501,7 @@ class _ANISubdataset(_ANIDatasetBase):
             else:
                 tile_shape = (1,)
             numpy_conformers.update({k: np.tile(numpy_conformers[k], tile_shape)
-                                     for k in nonbatch_properties})
+                                     for k in nonbatch_properties if numpy_conformers[k].ndim == 1})
         # Depending on "chem_symbols", "species" / "numbers" are returned as
         # int64 or as str. In legacy grouping "species" and "numbers" can be
         # str or ints themselves, so we check for that and convert.
