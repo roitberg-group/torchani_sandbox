@@ -77,7 +77,7 @@ class TestASE(TestCase):
         atoms = Diamond(symbol="C", pbc=True, size=(repeats, repeats, repeats))
         calculator = model.ase()
         atoms.calc = calculator
-        dyn = Langevin(atoms, 5 * units.fs, temperature_K=3820, friction=0.002, rng=prng)
+        dyn = Langevin(atoms, 0.5 * units.fs, temperature_K=3820, friction=0.002, rng=prng)
         dyn.run(steps)
         f = atoms.get_forces()
         if only_get_forces:
@@ -121,7 +121,7 @@ class TestASE(TestCase):
         # Note that there are 4 benzene molecules, thus, 48 atoms in
         # Benzene.json
         benzene.set_velocities(np.full((48, 3), 1e-15))
-        calculator = self.model.ase()
+        calculator = model.ase()
         benzene.calc = calculator
         dyn = NPTBerendsen(benzene, timestep=0.1 * units.fs,
                            temperature_K=300,
