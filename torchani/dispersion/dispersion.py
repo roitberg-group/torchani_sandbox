@@ -16,7 +16,6 @@ from ..utils import PERIODIC_TABLE
 
 def _init_df_constants(df_constants, functional):
     assert not (df_constants and functional)
-
     if (df_constants is None) and (functional is None):
         # by default constants are for BJ damp, for the wB97X density
         # functional
@@ -27,9 +26,9 @@ def _init_df_constants(df_constants, functional):
         return df_constants
 
 
+# D3M modifies parameters AND damp function for zero-damp and only
+# parameters for BJ damp cutoff radii are used for damp functions
 class DampFunction(torch.nn.Module):
-    # D3M modifies parameters AND damp function for zero-damp and only
-    # parameters for BJ damp cutoff radii are used for damp functions
     a1: Union[Tensor, None]
     a2: Union[Tensor, None]
     sr6: Union[Tensor, None]
@@ -50,8 +49,8 @@ class DampFunction(torch.nn.Module):
         self.register_buffer('beta', df_constants.get('beta', None))
 
 
+# AKA becke-johnson damping scheme
 class RationalDamp(DampFunction):
-
     cutoff_radii: Tensor
 
     def __init__(self, *args, **kwargs):
@@ -127,7 +126,6 @@ class ZeroDamp(DampFunction):
 
 class DispersionD3(torch.nn.Module):
     r"""Calculates the DFT-D3 dispersion corrections"""
-
     cutoff: Final[float]
     s6: Tensor
     s8: Tensor
@@ -202,7 +200,6 @@ class DispersionD3(torch.nn.Module):
             coordnums: Tensor, atom_index12: Tensor) -> Tensor:
         assert coordnums.ndim == 1, 'coordnums must be one dimensional'
         assert species12.ndim == 2, 'species12 must be 2 dimensional'
-
         num_pairs = species12.shape[1]
         # find pre-computed values for every species pair, and flatten over all references
         precalc_order6 = self.precalc_order6_coeffs[species12[0], species12[1]]
@@ -238,7 +235,6 @@ class DispersionD3(torch.nn.Module):
 
     def _calculate_dispersion_correction(self, species_energies: Tuple[Tensor, Tensor], atom_index12: Tensor,
                 distances: Tensor) -> Tuple[Tensor, Tensor]:
-
         # internally this module works in AU, so first we convert distances
         distances = units.angstrom2bohr(distances)
         species, energies = species_energies
@@ -274,15 +270,12 @@ class DispersionD3(torch.nn.Module):
         order6_energy = self.s6 * order6_coeffs / distances_damp6
         order8_energy = self.s8 * order8_coeffs / distances_damp8
         two_body_dispersion = -(order6_energy + order8_energy)
-
-        # factor of 1/2 is not needed for two body since we only add the
+        # Factor of 1/2 is not needed for two body since we only add the
         # interacting pairs once
         cutoff = units.angstrom2bohr(self.cutoff)
         two_body_dispersion *= self.cutoff_function(distances, cutoff)
-
         molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
         energies.index_add_(0, molecule_indices, two_body_dispersion)
-
         return SpeciesEnergies(species, energies)
 
     def forward(self, species_energies: Tuple[Tensor, Tensor], atom_index12: Tensor,
