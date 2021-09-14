@@ -415,7 +415,6 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         components = _get_component_modules(state_dict_file, model_index, use_cuda_extension)
 
     aev_computer, neural_networks, energy_shifter, elements = components
-
     model = BuiltinModel(aev_computer, neural_networks, energy_shifter, elements, **model_kwargs)
 
     if pretrained and not use_neurochem_source:
