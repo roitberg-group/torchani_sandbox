@@ -375,7 +375,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                          cell: Optional[Tensor] = None,
                          pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        assert self.neural_networks.size > 1, "There is only one set of atomic networks in your model"
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         if self.periodic_table_index:
             atomic_numbers, _ = species_coordinates
             species_coordinates = self.species_converter(species_coordinates)
