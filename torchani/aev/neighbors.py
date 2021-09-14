@@ -537,18 +537,20 @@ class CellList(BaseNeighborlist):
         # whole volume of the unit cell U, given by "cell", and the number of
         # flat buckets (F) (equal to the total number of buckets, F )
         #
-        # Gx, Gy, Gz is 1 + maximum index for \vb{g} Flat bucket indices are
+        # Gx, Gy, Gz is 1 + maximum index for vector g. Flat bucket indices are
         # indices for the buckets written in row major order (or equivalently
-        # dictionary order), the number F = Gx*Gy*Gz
+        # dictionary order), the number F = Gx * Gy * Gz
 
-        # bucket_length_lower_bound = B, unit cell U_mu = B * 3 - epsilon this means I need
-        # if my unit cell es B*3 + epsilon => I can cover it with 3 buckets plus
-        # some extra space that is less than a bucket, so I just stretch the buckets
-        # a little bit. In this particular case shape_buckets_grid = [3, 3, 3]
-        self.shape_buckets_grid = torch.floor(
-            self.cell_diagonal / self.bucket_length_lower_bound).to(torch.long)
+        # bucket_length_lower_bound = B, unit cell U_mu = B * 3 - epsilon this
+        # means I can cover it with 3 buckets plus some extra space that is
+        # less than a bucket, so I just stretch the buckets a little bit. In
+        # this particular case shape_buckets_grid = [3, 3, 3]
+        self.shape_buckets_grid = torch.div(
+            self.cell_diagonal, self.bucket_length_lower_bound, rounding_mode='floor').to(torch.long)
 
         self.total_buckets = self.shape_buckets_grid.prod()
+        if self.total_buckets == 0:
+            raise RuntimeError("Cell is too small to perform pbc calculations")
 
         # 3) This is needed to scale and flatten last dimension of bucket indices
         # for row major this is (Gy * Gz, Gz, 1)
@@ -568,7 +570,6 @@ class CellList(BaseNeighborlist):
             int(self.shape_buckets_grid[0]),
             int(self.shape_buckets_grid[1]),
             int(self.shape_buckets_grid[2]))
-
         self.vector_idx_to_flat = self._pad_circular(vector_idx_to_flat)
 
         # 5) I now create a tensor that when indexed with vector indices
@@ -606,7 +607,7 @@ class CellList(BaseNeighborlist):
         return x.squeeze()
 
     def _register_bucket_length_lower_bound(self,
-                                            extra_space: float = 0.00001):
+                                            extra_space: float = 1e-5):
         # Get the size (Bx, By, Bz) of the buckets in the grid.
         # extra space by default is consistent with Amber
         #
