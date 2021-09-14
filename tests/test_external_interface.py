@@ -5,7 +5,6 @@ from torchani.testing import TestCase
 
 
 class TestExternalInterface(TestCase):
-
     def setUp(self):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -35,7 +34,6 @@ class TestExternalInterface(TestCase):
         self._testEnergiesEqualWithExternal(neighborlist, self.N)
 
     def _testForcesEqualWithExternal(self, neighborlist, N=20):
-
         for j in range(N):
             c = torch.randn((2, 30, 3), dtype=torch.float, device=self.device) * 6
             s = torch.randint(low=0, high=4, size=(2, 30), dtype=torch.long, device=self.device)
@@ -53,7 +51,6 @@ class TestExternalInterface(TestCase):
             self.assertEqual(f_expect, f)
 
     def _testEnergiesEqualWithExternal(self, neighborlist, N=20):
-
         for j in range(N):
             c = torch.randn((2, 30, 3), dtype=torch.float, device=self.device) * 6
             s = torch.randint(low=0, high=4, size=(2, 30), dtype=torch.long, device=self.device)
@@ -68,7 +65,6 @@ class TestExternalInterface(TestCase):
 
 
 class TestExternalInterfaceJIT(TestExternalInterface):
-
     def setUp(self):
         super().setUp()
         # make the test faster due to JIT bug with dynamic shapes
