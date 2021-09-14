@@ -79,11 +79,6 @@ class TestASE(TestCase):
         atoms.calc = calculator
         dyn = Langevin(atoms, timestep=0.5 * units.fs, temperature_K=3820, friction=0.002, rng=prng)
         dyn.run(steps)
-        #atoms = Diamond(symbol="C", pbc=True)
-        #calculator = model.ase()
-        #atoms.calc = calculator
-        #dyn = Langevin(atoms, 5 * units.fs, temperature_K=3820, friction=0.002)
-        #dyn.run(100)
         f = atoms.get_forces()
         if only_get_forces:
             return f
