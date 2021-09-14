@@ -67,6 +67,7 @@ from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is
 from .aev import AEVComputer
 from .repulsion import RepulsionCalculator
 from .dispersion import DispersionD3
+from .short_range_basis import EnergySRB
 from .compat import Final
 from . import atomics
 
@@ -482,6 +483,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     pretrained = model_kwargs.pop('pretrained', True)
     repulsion = model_kwargs.pop('repulsion', False)
     dispersion = model_kwargs.pop('dispersion', False)
+    srb = model_kwargs.pop('srb', False)
     cutoff_fn = model_kwargs.pop('cutoff_fn', 'cosine')
 
     if pretrained:
@@ -511,13 +513,15 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     aev_computer, neural_networks, energy_shifter, elements = components
 
     model_class: Type[BuiltinModel]
-    if repulsion or dispersion:
+    if repulsion or dispersion or srb:
         cutoff = aev_computer.radial_terms.cutoff
         pairwise_potentials: Sequence[torch.nn.Module] = []
         if repulsion:
             pairwise_potentials.append(RepulsionCalculator(cutoff))
         if dispersion:
             pairwise_potentials.append(DispersionD3(cutoff))
+        if srb:
+            pairwise_potentials.append(EnergySRB(cutoff=cutoff))
         model_kwargs.update({'pairwise_potentials': pairwise_potentials})
         model_class = BuiltinModelPairInteractions
     else:

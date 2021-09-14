@@ -26,11 +26,13 @@ class EnergySRB(torch.nn.Module):
                  cutoff_fn: Union[str, torch.nn.Module] = 'smooth'):
         super().__init__()
         supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
-        # note that SRB uses the same covalent radii as D3
-        covalent_radii = units.angstrom2bohr(constants.get_covalent_radii())[supported_znumbers]
+        # note that SRB uses the same cutoff radii as D3
+        sqrt_q = constants.get_sqrt_empirical_charge()
+        cutoff_radii = torch.sqrt(3 * torch.outer(sqrt_q, sqrt_q))
+        cutoff_radii = cutoff_radii[:, supported_znumbers][supported_znumbers, :]
         # We will actually need to multiply the distances by scaled covalent
         # radii, so we precalculate the factor here
-        self.register_buffer('distances_factor', - scaling_radius / covalent_radii)
+        self.register_buffer('distances_factor', -scaling_radius / cutoff_radii)
         # The exponential prefactor is - q/2 * sqrt(Za * Zb), which we also
         # precalculate here for efficiency
         _exp_prefactor = torch.outer(supported_znumbers, supported_znumbers)
