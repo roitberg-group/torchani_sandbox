@@ -8,11 +8,13 @@ wavefunction_method/basis_set when appropriate.
     - wB97X/6-31G(d)
     - B97-3c/def2-mTZVP
     - wB97M-D3BJ/def2-TZVPP
+    - wB97MV/def2-TZVPP
 
 - ANI-2x, with LoT:
     - wB97X/6-31G(d)
     - B97-3c/def2-mTZVP
     - wB97M-D3BJ/def2-TZVPP
+    - wB97MV/def2-TZVPP
 
 - ANI-1ccx, with LoT:
     - CCSD(T)star/CBS
@@ -24,11 +26,13 @@ wavefunction_method/basis_set when appropriate.
     - wB97X/6-31G(d)
     - B97-3c/def2-mTZVP
     - wB97M-D3BJ/def2-TZVPP
+    - wB97MV/def2-TZVPP
 
 - COMP6-v2, with LoT:
     - wB97X/6-31G(d)
     - B97-3c/def2-mTZVP
     - wB97M-D3BJ/def2-TZVPP
+    - wB97MV/def2-TZVPP
 
 - AminoacidDimers, with LoT:
     - B97-3c/def2-mTZVP
