@@ -37,6 +37,7 @@ from . import neurochem
 from . import models
 from . import units
 from . import repulsion
+from . import dispersion
 from . import datasets
 from . import transforms
 from pkg_resources import get_distribution, DistributionNotFound
@@ -49,7 +50,7 @@ except DistributionNotFound:
     pass
 
 __all__ = ['AEVComputer', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
-           'utils', 'neurochem', 'models', 'units', 'repulsion', 'datasets', 'transforms']
+           'utils', 'neurochem', 'models', 'units', 'repulsion', 'dispersion', 'datasets', 'transforms']
 
 try:
     from . import ase  # noqa: F401

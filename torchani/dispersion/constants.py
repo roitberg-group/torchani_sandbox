@@ -175,7 +175,7 @@ def get_df_constants():
                          revPBE0    1.0     0.949   0.792
                          revPBE38   1.0     1.021   0.862
                          rPW86PBE   1.0     1.224   0.901
-                         B97-3c   1.0        1.060   1.500
+                         B97-3c     1.0     1.060   1.500
                          """
     # Parameters for B97-3c taken from https://aip.scitation.org/doi/pdf/10.1063/1.5012601
     _zero_constants = _zero_constants.split('\n')
@@ -226,6 +226,7 @@ def get_df_constants():
                        B97-3c        1.000   0.3700    1.5000    4.1000
                        """
     # Parameters for B97-3c taken from https://aip.scitation.org/doi/pdf/10.1063/1.5012601
+    # Other parameters taken directly from the Psi4 source code
     _bj_constants = _bj_constants.split('\n')
     for line in _bj_constants:
         df, s6_bj, a1, s8_bj, a0 = line.split()

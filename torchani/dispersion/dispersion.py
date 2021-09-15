@@ -11,7 +11,7 @@ from ..nn import SpeciesEnergies
 from . import constants
 from ..aev.cutoffs import _parse_cutoff_fn
 from ..compat import Final
-from ..utils import PERIODIC_TABLE
+from ..utils import ATOMIC_NUMBERS
 
 
 def _init_df_constants(df_constants, functional):
@@ -56,7 +56,7 @@ class RationalDamp(DampFunction):
     def __init__(self, *args, **kwargs):
         elements = kwargs.pop('elements', ('H', 'C', 'N', 'O'))
         super().__init__(*args, **kwargs)
-        supported_znumbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
+        supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
         assert self.a1 is not None
         assert self.a2 is not None
         sqrt_q = constants.get_sqrt_empirical_charge()
@@ -87,7 +87,7 @@ class ZeroDamp(DampFunction):
     def __init__(self, *args, **kwargs):
         elements = kwargs.pop('elements', ('H', 'C', 'N', 'O'))
         super().__init__(*args, **kwargs)
-        supported_znumbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
+        supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
 
         if self.beta is None:
             assert not kwargs['modified']
@@ -141,7 +141,7 @@ class DispersionD3(torch.nn.Module):
                  damp='rational',
                  modified_damp=False, use_three_body=False, cutoff_fn=None, cutoff=math.inf, elements=('H', 'C', 'N', 'O')):
         super().__init__()
-        supported_znumbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
+        supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
         # rational damp is becke-johnson
         assert not use_three_body, "Not yet implemented"
         assert damp in ['rational', 'zero'], 'Unsupported damp'
