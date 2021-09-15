@@ -129,9 +129,9 @@ class AminoacidDimers(_BaseBuiltinDataset):
 
 
 class ANI1x(_BaseBuiltinDataset):
-    _ARCHIVE = {'wB97X-631Gd': 'ANI-1x-wB97X-6-31Gd-data.tar.gz',
+    _ARCHIVE = {'wB97X-631Gd': 'ANI-1x-wB97X-631Gd-data.tar.gz',
                 'B973c-def2mTZVP': 'ANI-1x-B973c-def2mTZVP-data.tar.gz'}
-    _FILES_AND_MD5S = {'wB97X-631Gd': OrderedDict([('ANI-1x-wB97X-6-31Gd.h5', 'c9d63bdbf90d093db9741c94d9b20972')]),
+    _FILES_AND_MD5S = {'wB97X-631Gd': OrderedDict([('ANI-1x-wB97X-631Gd.h5', '2cd8cbc7a5106f88d8b21cde58074aef')]),
                        'B973c-def2mTZVP': OrderedDict([('ANI-1x-B973c-def2mTZVP.h5', '2f50da8c73236a41f33a8e561a80c77e')]),
                        }
 
@@ -143,11 +143,11 @@ class ANI1x(_BaseBuiltinDataset):
 
 
 class ANI2x(_BaseBuiltinDataset):
-    _ARCHIVE = {'wB97X-631Gd': 'ANI-2x-wB97X-6-31Gd-data.tar.gz',
+    _ARCHIVE = {'wB97X-631Gd': 'ANI-2x-wB97X-631Gd-data.tar.gz',
                 'B973c-def2mTZVP': 'ANI-2x-B973c-def2mTZVP-data.tar.gz'}
-    _FILES_AND_MD5S = {'wB97X-631Gd': OrderedDict([('ANI-1x-wB97X-6-31Gd.h5', 'c9d63bdbf90d093db9741c94d9b20972'),
-                                                   ('ANI-2x-heavy-wB97X-6-31Gd.h5', '49ec3dc5d046f5718802f5d1f102391c'),
-                                                   ('ANI-2x-dimers-wB97X-6-31Gd.h5', '3455d82a50c63c389126b68607fb9ca8')]),
+    _FILES_AND_MD5S = {'wB97X-631Gd': OrderedDict([('ANI-1x-wB97X-631Gd.h5', '2cd8cbc7a5106f88d8b21cde58074aef'),
+                                                    ('ANI-2x_heavy-wB97X-631Gd.h5', '0bf1f7fb8c97768116deea672cae8d8e'),
+                                                    ('ANI-2x_dimers-wB97X-631Gd.h5', '0043cc1f908851601d9cfbbec2d957e8')]),
                        'B973c-def2mTZVP': OrderedDict([('ANI-1x-B973c-def2mTZVP.h5', '2f50da8c73236a41f33a8e561a80c77e'),
                                                        ('ANI-2x-heavy_and_dimers-B973c-def2mTZVP.h5', 'cffbe6e0e076d2fa7de7c3d15d4dd1f2')])}
 
