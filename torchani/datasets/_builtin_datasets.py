@@ -36,7 +36,9 @@ wavefunction_method/basis_set when appropriate.
 (note that the conformations present in datasets with different LoT may be
 different).
 
-In all cases the "v2" and "2x" datasets are supersets of the "v1" and "1x" datasets.
+In all cases the "v2" and "2x" datasets are supersets of the "v1" and "1x"
+datasets, so everything that is in the v1/1x datasets is also in the v2/2x
+datasets, which contain extra structures.
 """
 from pathlib import Path
 from typing import Optional, Any
@@ -223,7 +225,7 @@ class COMP6v2(_BaseBuiltinDataset):
                                                    ('DrugBank-SFCl-wB97X-631Gd.h5', '76db51f3750d9322656682b104299442')]),
                        'B973c-def2mTZVP': OrderedDict([('COMP6-full_v1-B97c3-def2mTZVP.h5', '044556f8490cc9e92975b949c0da5099'),
                                                        ('COMP6-heavy-B97c3-def2mTZVP.h5', '425d73d6a1c14c5897907b415e6f7f92')]),
-                       'wB97MD3BJ-def2TZVPP': OrderedDict([('COMP6-heavy-wB97D3BJ-def2TZVPP.h5', '88aac626d4963aacf9e856ca1408f47b')
+                       'wB97MD3BJ-def2TZVPP': OrderedDict([('COMP6-heavy-wB97D3BJ-def2TZVPP.h5', '88aac626d4963aacf9e856ca1408f47b'),
                                                           ('COMP6-full_v1-wB97D3BJ-def2TZVPP.h5', '057d89c8d046ccd9155ee24f3f47faa6')])}
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
