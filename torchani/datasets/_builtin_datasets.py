@@ -111,7 +111,8 @@ class ANI2x(_BaseBuiltinDataset):
 
 class COMP6v1(_BaseBuiltinDataset):
     _ARCHIVE = {'wB97X-631Gd': 'COMP6-v1-wB97X-631Gd-data.tar.gz',
-                'B973c-def2mTZVP': 'COMP6-v1-B973c-def2mTZVP-data.tar.gz'}
+                'B973c-def2mTZVP': 'COMP6-v1-B973c-def2mTZVP-data.tar.gz',
+                'wB97D3BJ-def2TZVPP': 'COMP6-v1-wB97D3BJ-def2TZVPP-data.tar.gz'}
     _FILES_AND_MD5S = {'wB97X-631Gd': OrderedDict([('ANI-BenchMD-wB97X-631Gd.h5', '04c03ec8796359a0e3eb301346efbb03'),
                                                    ('S66x8-v1-wB97X-631Gd.h5', '2b932f920397ae92bf55cfbc26de9a33'),
                                                    ('DrugBank-testset-wB97X-631Gd.h5', 'ed92ec0b47061f8a1ae370390c8eff6e'),
@@ -123,7 +124,8 @@ class COMP6v1(_BaseBuiltinDataset):
                                                    ('GDB11-11-wB97X-631Gd.h5', '367c0fa78b8eac584009fbe81f7198ba'),
                                                    ('GDB13-12-wB97X-631Gd.h5', '9757ac7e7c937074894b314aa82de41a'),
                                                    ('GDB13-13-wB97X-631Gd.h5', '86fb89bb64066a60e6013e33c704565b')]),
-                       'B973c-def2mTZVP': OrderedDict([('COMP6-full_v1-B97c3-def2mTZVP.h5', '044556f8490cc9e92975b949c0da5099')])}
+                       'B973c-def2mTZVP': OrderedDict([('COMP6-full_v1-B97c3-def2mTZVP.h5', '044556f8490cc9e92975b949c0da5099')]),
+                       'wB97D3BJ-def2TZVPP': OrderedDict([('COMP6-full_v1-wB97D3BJ-def2TZVPP.h5', '057d89c8d046ccd9155ee24f3f47faa6')])}
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional}-{basis_set}'
@@ -134,7 +136,8 @@ class COMP6v1(_BaseBuiltinDataset):
 
 class COMP6v2(_BaseBuiltinDataset):
     _ARCHIVE = {'wB97X-631Gd': 'COMP6-v2-wB97X-631Gd-data.tar.gz',
-                'B973c-def2mTZVP': 'COMP6-v2-B973c-def2mTZVP-data.tar.gz'}
+                'B973c-def2mTZVP': 'COMP6-v2-B973c-def2mTZVP-data.tar.gz',
+                'wB97D3BJ-def2TZVPP': 'COMP6-v2-wB97D3BJ-def2TZVPP-data.tar.gz'}
     _FILES_AND_MD5S = {'wB97X-631Gd': OrderedDict([('ANI-BenchMD-wB97X-631Gd.h5', '04c03ec8796359a0e3eb301346efbb03'),
                                                    ('S66x8-v1-wB97X-631Gd.h5', '2b932f920397ae92bf55cfbc26de9a33'),
                                                    ('DrugBank-testset-wB97X-631Gd.h5', 'ed92ec0b47061f8a1ae370390c8eff6e'),
@@ -154,7 +157,9 @@ class COMP6v2(_BaseBuiltinDataset):
                                                    ('Tripeptides-sulphur-wB97X-631Gd.h5', '3309d50ede42ceaa96e5d3f897e9bac0'),
                                                    ('DrugBank-SFCl-wB97X-631Gd.h5', '76db51f3750d9322656682b104299442')]),
                        'B973c-def2mTZVP': OrderedDict([('COMP6-full_v1-B97c3-def2mTZVP.h5', '044556f8490cc9e92975b949c0da5099'),
-                                                       ('COMP6-heavy-B97c3-def2mTZVP.h5', '425d73d6a1c14c5897907b415e6f7f92')])}
+                                                       ('COMP6-heavy-B97c3-def2mTZVP.h5', '425d73d6a1c14c5897907b415e6f7f92')]),
+                       'wB97D3BJ-def2TZVPP': OrderedDict([('COMP6-heavy-wB97D3BJ-def2TZVPP.h5', '88aac626d4963aacf9e856ca1408f47b')
+                                                          ('COMP6-full_v1-wB97D3BJ-def2TZVPP.h5', '057d89c8d046ccd9155ee24f3f47faa6')])}
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional}-{basis_set}'
