@@ -46,9 +46,6 @@ datasets, which contain extra structures.
 
 Known issues:
 - The wB97X/def2-TZVPP datasets are still not available through this module
-- The wB97X/6-31G(d) 1x and 2x datasets may be "cleaned up" versions, slightly
-  different from the canonical ones. Also, this dataset is provided in legacy format
-  and has to be regrouped before further manipulation.
 - The B97-3c/def2-mTZVP dataset has slightly different names than the other datasets
   for some properties. The "charge" and "mult" properties are redundant, since
   all molecules are calculated with spin multiplicity 1 and zero charge in this
@@ -56,9 +53,6 @@ Known issues:
 - There are small inconsistencies with the names of some files:
     * COMP6 files are v1_full instead of full_v1 for wB97MV
     * for wB97M-D3BJ some files are labeled wB97D3BJ instead of wB97MD3BJ
-    * for wB97X/6-31G(d) some files are named 6-31Gd instead of 6-31G-d, the 2x
-      files are also labeled 2x-heavy and 2x-dimers instead of 2x_heavy and
-      2x_dimers.
     * for B97-3c/def2-mTZVP the 2x file is named 2x-heavy_and_dimers instead of
       2x_heavy_and_dimers
 """
