@@ -39,6 +39,16 @@ different).
 In all cases the "v2" and "2x" datasets are supersets of the "v1" and "1x"
 datasets, so everything that is in the v1/1x datasets is also in the v2/2x
 datasets, which contain extra structures.
+
+Known issues:
+- The wB97X/def2-TZVPP datasets are still not available through this module
+- The wB97X/6-31G(d) 1x and 2x datasets may be "cleaned up" versions, slightly
+  different from the canonical ones. Also, this dataset is provided in legacy format
+  and has to be regrouped before further manipulation.
+- The B97-3c/def2-mTZVP dataset has slightly different names than the other datasets
+  for some properties. The "charge" and "mult" properties are redundant, since
+  all molecules are calculated with spin multiplicity 1 and zero charge in this
+  dataset.
 """
 from pathlib import Path
 from typing import Optional, Any
@@ -145,10 +155,12 @@ class AminoacidDimers(_BaseBuiltinDataset):
 class ANI1x(_BaseBuiltinDataset):
     _ARCHIVE = {'wB97X-631Gd': 'ANI-1x-wB97X-6-31Gd-data.tar.gz',
                 'B973c-def2mTZVP': 'ANI-1x-B973c-def2mTZVP-data.tar.gz',
-                'wB97MD3BJ-def2TZVPP': 'ANI-1x-wB97MD3BJ-def2TZVPP-data.tar.gz'}
+                'wB97MD3BJ-def2TZVPP': 'ANI-1x-wB97MD3BJ-def2TZVPP-data.tar.gz',
+                'wB97MV-def2TZVPP': 'ANI-1x-wB97MV-def2TZVPP-data.tar.gz'}
     _FILES_AND_MD5S = {'wB97X-631Gd': OrderedDict([('ANI-1x-wB97X-6-31Gd.h5', 'c9d63bdbf90d093db9741c94d9b20972')]),
                        'B973c-def2mTZVP': OrderedDict([('ANI-1x-B973c-def2mTZVP.h5', '2f50da8c73236a41f33a8e561a80c77e')]),
-                       'wB97MD3BJ-def2TZVPP': OrderedDict([('ANI-1x-wB97D3BJ-def2TZVPP.h5', '6d7d3ba93d4c57e4ac6a6d5dc9598596')])}
+                       'wB97MD3BJ-def2TZVPP': OrderedDict([('ANI-1x-wB97D3BJ-def2TZVPP.h5', '6d7d3ba93d4c57e4ac6a6d5dc9598596')]),
+                       'wB97MV-def2TZVPP': OrderedDict([('ANI-1x-wB97MV-def2TZVPP.h5', '7f3107e3474f3f673922a0155e11d3aa')])}
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional}-{basis_set}'
@@ -160,14 +172,17 @@ class ANI1x(_BaseBuiltinDataset):
 class ANI2x(_BaseBuiltinDataset):
     _ARCHIVE = {'wB97X-631Gd': 'ANI-2x-wB97X-6-31Gd-data.tar.gz',
                 'B973c-def2mTZVP': 'ANI-2x-B973c-def2mTZVP-data.tar.gz',
-                'wB97MD3BJ-def2TZVPP': 'ANI-2x-wB97MD3BJ-def2TZVPP-data.tar.gz'}
+                'wB97MD3BJ-def2TZVPP': 'ANI-2x-wB97MD3BJ-def2TZVPP-data.tar.gz',
+                'wB97MV-def2TZVPP': 'ANI-2x-wB97MV-def2TZVPP-data.tar.gz'}
     _FILES_AND_MD5S = {'wB97X-631Gd': OrderedDict([('ANI-1x-wB97X-6-31Gd.h5', 'c9d63bdbf90d093db9741c94d9b20972'),
                                                    ('ANI-2x-heavy-wB97X-6-31Gd.h5', '49ec3dc5d046f5718802f5d1f102391c'),
                                                    ('ANI-2x-dimers-wB97X-6-31Gd.h5', '3455d82a50c63c389126b68607fb9ca8')]),
                        'B973c-def2mTZVP': OrderedDict([('ANI-1x-B973c-def2mTZVP.h5', '2f50da8c73236a41f33a8e561a80c77e'),
                                                        ('ANI-2x-heavy_and_dimers-B973c-def2mTZVP.h5', 'cffbe6e0e076d2fa7de7c3d15d4dd1f2')]),
                        'wB97MD3BJ-def2TZVPP': OrderedDict([('ANI-1x-wB97D3BJ-def2TZVPP.h5', '6d7d3ba93d4c57e4ac6a6d5dc9598596'),
-                                                           ('ANI-2x_heavy_and_dimers-wB97D3BJ-def2TZVPP.h5', '827a3eb6124ef2c0c3ab4487b63ff329')])}
+                                                           ('ANI-2x_heavy_and_dimers-wB97D3BJ-def2TZVPP.h5', '827a3eb6124ef2c0c3ab4487b63ff329')]),
+                       'wB97MV-def2TZVPP': OrderedDict([('ANI-1x-wB97MV-def2TZVPP.h5', '7f3107e3474f3f673922a0155e11d3aa'),
+                                                        ('ANI-2x_heavy_and_dimers-wB97MV-def2TZVPP.h5', 'b60d7938e16b776eb72209972c54721c')])}
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional}-{basis_set}'
@@ -179,7 +194,8 @@ class ANI2x(_BaseBuiltinDataset):
 class COMP6v1(_BaseBuiltinDataset):
     _ARCHIVE = {'wB97X-631Gd': 'COMP6-v1-wB97X-631Gd-data.tar.gz',
                 'B973c-def2mTZVP': 'COMP6-v1-B973c-def2mTZVP-data.tar.gz',
-                'wB97MD3BJ-def2TZVPP': 'COMP6-v1-wB97MD3BJ-def2TZVPP-data.tar.gz'}
+                'wB97MD3BJ-def2TZVPP': 'COMP6-v1-wB97MD3BJ-def2TZVPP-data.tar.gz',
+                'wB97MV-def2TZVPP': 'COMP6-v1-wB97MV-def2TZVPP-data.tar.gz'}
     _FILES_AND_MD5S = {'wB97X-631Gd': OrderedDict([('ANI-BenchMD-wB97X-631Gd.h5', '04c03ec8796359a0e3eb301346efbb03'),
                                                    ('S66x8-v1-wB97X-631Gd.h5', '2b932f920397ae92bf55cfbc26de9a33'),
                                                    ('DrugBank-testset-wB97X-631Gd.h5', 'ed92ec0b47061f8a1ae370390c8eff6e'),
@@ -192,7 +208,8 @@ class COMP6v1(_BaseBuiltinDataset):
                                                    ('GDB13-12-wB97X-631Gd.h5', '9757ac7e7c937074894b314aa82de41a'),
                                                    ('GDB13-13-wB97X-631Gd.h5', '86fb89bb64066a60e6013e33c704565b')]),
                        'B973c-def2mTZVP': OrderedDict([('COMP6-full_v1-B97c3-def2mTZVP.h5', '044556f8490cc9e92975b949c0da5099')]),
-                       'wB97MD3BJ-def2TZVPP': OrderedDict([('COMP6-full_v1-wB97D3BJ-def2TZVPP.h5', '057d89c8d046ccd9155ee24f3f47faa6')])}
+                       'wB97MD3BJ-def2TZVPP': OrderedDict([('COMP6-full_v1-wB97D3BJ-def2TZVPP.h5', '057d89c8d046ccd9155ee24f3f47faa6')]),
+                       'wB97MV-def2TZVPP': OrderedDict([('COMP6-full_v1-wB97MV-def2TZVPP.h5', 'bccdf302f361c0213450381b493e17d8')])}
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional}-{basis_set}'
@@ -204,7 +221,8 @@ class COMP6v1(_BaseBuiltinDataset):
 class COMP6v2(_BaseBuiltinDataset):
     _ARCHIVE = {'wB97X-631Gd': 'COMP6-v2-wB97X-631Gd-data.tar.gz',
                 'B973c-def2mTZVP': 'COMP6-v2-B973c-def2mTZVP-data.tar.gz',
-                'wB97MD3BJ-def2TZVPP': 'COMP6-v2-wB97MD3BJ-def2TZVPP-data.tar.gz'}
+                'wB97MD3BJ-def2TZVPP': 'COMP6-v2-wB97MD3BJ-def2TZVPP-data.tar.gz',
+                'wB97MV-def2TZVPP': 'COMP6-v2-wB97MV-def2TZVPP-data.tar.gz'}
     _FILES_AND_MD5S = {'wB97X-631Gd': OrderedDict([('ANI-BenchMD-wB97X-631Gd.h5', '04c03ec8796359a0e3eb301346efbb03'),
                                                    ('S66x8-v1-wB97X-631Gd.h5', '2b932f920397ae92bf55cfbc26de9a33'),
                                                    ('DrugBank-testset-wB97X-631Gd.h5', 'ed92ec0b47061f8a1ae370390c8eff6e'),
@@ -226,7 +244,9 @@ class COMP6v2(_BaseBuiltinDataset):
                        'B973c-def2mTZVP': OrderedDict([('COMP6-full_v1-B97c3-def2mTZVP.h5', '044556f8490cc9e92975b949c0da5099'),
                                                        ('COMP6-heavy-B97c3-def2mTZVP.h5', '425d73d6a1c14c5897907b415e6f7f92')]),
                        'wB97MD3BJ-def2TZVPP': OrderedDict([('COMP6-heavy-wB97D3BJ-def2TZVPP.h5', '88aac626d4963aacf9e856ca1408f47b'),
-                                                          ('COMP6-full_v1-wB97D3BJ-def2TZVPP.h5', '057d89c8d046ccd9155ee24f3f47faa6')])}
+                                                          ('COMP6-full_v1-wB97D3BJ-def2TZVPP.h5', '057d89c8d046ccd9155ee24f3f47faa6')]),
+                       'wB97MV-def2TZVPP': OrderedDict([('COMP6-heavy-wB97MV-def2TZVPP.h5', '804e7a7655903c8a4599f2c48bd584aa'),
+                                                          ('COMP6-full_v1-wB97MV-def2TZVPP.h5', 'bccdf302f361c0213450381b493e17d8')])}
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional}-{basis_set}'
