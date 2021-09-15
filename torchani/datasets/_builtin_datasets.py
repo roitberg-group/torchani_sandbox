@@ -98,6 +98,8 @@ class _BaseBuiltinDataset(ANIDataset):
                                      key=lambda tup: filenames_order[tup[0]])
         filenames_and_paths = OrderedDict(_filenames_and_paths)
         super().__init__(locations=filenames_and_paths.values(), names=filenames_and_paths.keys(), **h5_dataset_kwargs)
+        if h5_dataset_kwargs.get('verbose', True):
+            print(self)
 
     def _check_hdf5_files_integrity(self, root: Path) -> bool:
         # Checks that all HDF5 files in the provided path are equal to the
