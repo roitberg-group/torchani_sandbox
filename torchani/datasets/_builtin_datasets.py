@@ -48,7 +48,15 @@ Known issues:
 - The B97-3c/def2-mTZVP dataset has slightly different names than the other datasets
   for some properties. The "charge" and "mult" properties are redundant, since
   all molecules are calculated with spin multiplicity 1 and zero charge in this
-  dataset.
+  dataset (as in all others).
+- There are small inconsistencies with the names of some files:
+    * COMP6 files are v1_full instead of full_v1 for wB97MV
+    * for wB97M-D3BJ some files are labeled wB97D3BJ instead of wB97MD3BJ
+    * for wB97X/6-31G(d) some files are named 6-31Gd instead of 6-31G-d, the 2x
+      files are also labeled 2x-heavy and 2x-dimers instead of 2x_heavy and
+      2x_dimers.
+    * for B97-3c/def2-mTZVP the 2x file is named 2x-heavy_and_dimers instead of
+      2x_heavy_and_dimers
 """
 from pathlib import Path
 from typing import Optional, Any
@@ -209,7 +217,7 @@ class COMP6v1(_BaseBuiltinDataset):
                                                    ('GDB13-13-wB97X-631Gd.h5', '86fb89bb64066a60e6013e33c704565b')]),
                        'B973c-def2mTZVP': OrderedDict([('COMP6-full_v1-B97c3-def2mTZVP.h5', '044556f8490cc9e92975b949c0da5099')]),
                        'wB97MD3BJ-def2TZVPP': OrderedDict([('COMP6-full_v1-wB97D3BJ-def2TZVPP.h5', '057d89c8d046ccd9155ee24f3f47faa6')]),
-                       'wB97MV-def2TZVPP': OrderedDict([('COMP6-full_v1-wB97MV-def2TZVPP.h5', 'bccdf302f361c0213450381b493e17d8')])}
+                       'wB97MV-def2TZVPP': OrderedDict([('COMP6-v1_full-wB97MV-def2TZVPP.h5', 'bccdf302f361c0213450381b493e17d8')])}
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional}-{basis_set}'
@@ -246,7 +254,7 @@ class COMP6v2(_BaseBuiltinDataset):
                        'wB97MD3BJ-def2TZVPP': OrderedDict([('COMP6-heavy-wB97D3BJ-def2TZVPP.h5', '88aac626d4963aacf9e856ca1408f47b'),
                                                           ('COMP6-full_v1-wB97D3BJ-def2TZVPP.h5', '057d89c8d046ccd9155ee24f3f47faa6')]),
                        'wB97MV-def2TZVPP': OrderedDict([('COMP6-heavy-wB97MV-def2TZVPP.h5', '804e7a7655903c8a4599f2c48bd584aa'),
-                                                          ('COMP6-full_v1-wB97MV-def2TZVPP.h5', 'bccdf302f361c0213450381b493e17d8')])}
+                                                          ('COMP6-v1_full-wB97MV-def2TZVPP.h5', 'bccdf302f361c0213450381b493e17d8')])}
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional}-{basis_set}'
