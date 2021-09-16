@@ -51,15 +51,11 @@ class Runner:
         mean_epoch_rmse = torch.tensor(0.0, dtype=torch.float)
         count = 0
         self._model.train(train)
-        if use_tqdm:
-            desc = f"epoch {epoch}" if epoch is not None else None
-            batches = tqdm(dataset, total=len(dataset), desc=desc)
-        else:
-            batches = dataset
-
-        for properties in batches:
-            properties = {k: v.to(self._device, non_blocking=True) for k, v in properties.items()}
-            properties = self._transform(properties)
+        for properties in tqdm(dataset, total=len(dataset),
+                               desc=f"epoch {epoch}" if epoch is not None else None,
+                               disable=not use_tqdm):
+            properties = self._transform({k: v.to(self._device, non_blocking=True)
+                                          for k, v in properties.items()})
             species = properties['species'].long()
             coordinates = properties['coordinates'].float()
             target_energies = properties['energies'].float()
@@ -186,14 +182,13 @@ if __name__ == '__main__':
                                              batch_size=None)
 
     # Model
-    model = torchani.models.ANI1x(pretrained=False, model_index=0, use_cuda_extension=True).to(device)
-    model.subtract_saes_(False)
-    model.periodic_table_index_(False)
+    model = torchani.models.ANI1x(pretrained=False, model_index=0, use_cuda_extension=True, periodic_table_index=True).to(device)
+    model._shift_energies = False
 
     # Transforms
     elements = model.get_chemical_symbols()
     self_energies = [-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000]  # GSAEs
-    transform = transforms.Compose([transforms.AtomicNumbersToIndices(elements), transforms.SubtractSAE(elements, self_energies)]).to(device)
+    transform = transforms.Compose([transforms.SubtractSAE(elements, self_energies)]).to(device)
 
     # Optimizer and lr scheduler
     initial_lr = 1e-3
@@ -201,7 +196,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.AdamW(model.parameters(), weight_decay=weight_decay, lr=initial_lr)
 
     # Lr scheduler
-    max_epochs = 100
+    max_epochs = 100  # exclusive
     early_stopping_learning_rate = 1.0e-6
     track_metric = 'rmse_kcalpermol'
     scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=50, threshold=1e-4)
@@ -224,33 +219,26 @@ if __name__ == '__main__':
     # Main Training loop
     initial_epoch = scheduler.last_epoch  # type: ignore
     print("Training starting from epoch", initial_epoch)
-    if initial_epoch == 0:
+    if initial_epoch == 0:  # Zeroth epoch is just validating
         validate_metrics = runner.eval(validation, initial_epoch, track_metric=track_metric)
         logger.log_scalars(initial_epoch, validate_metrics=validate_metrics, other={'learning_rate': initial_lr})
 
-    for epoch in range(initial_epoch + 1, max_epochs + 1):
+    for epoch in range(initial_epoch + 1, max_epochs):
         start = time.time()
-
         # Run training and validation
         train_metrics = runner.train(training, epoch)
         validate_metrics = runner.eval(validation, epoch, track_metric=track_metric)
-
         # LR Scheduler update
-        if isinstance(scheduler, ReduceLROnPlateau):  # This scheduler has a different step function
-            scheduler.step(validate_metrics[track_metric])
-        else:
-            scheduler.step()
-
+        metric = (validate_metrics[track_metric],) if isinstance(scheduler, ReduceLROnPlateau) else tuple()
+        scheduler.step(*metric)
         # Checkpoint
         if runner.best_metric_improved_last_run:
             runner.best_metric_improved_last_run = False
             save_checkpoint(best_checkpoint, persistent_objects)
         save_checkpoint(latest_checkpoint, persistent_objects)
-
         # Logging
-        last_epoch = scheduler.last_epoch  # type: ignore
         learning_rate = optimizer.param_groups[0]['lr']
-        logger.log_scalars(last_epoch,
+        logger.log_scalars(scheduler.last_epoch,  # type: ignore
                            train_metrics=train_metrics,
                            validate_metrics=validate_metrics,
                            other={'learning_rate': learning_rate,
