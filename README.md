@@ -46,7 +46,7 @@ Install from anaconda by the following (Note that we are hosting the packages on
 ```bash
 conda create -n ani -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c pytorch -c nvidia -c defaults -c conda-forge sandbox python=3.8
 ```
-Which is equivalent to 
+Which is equivalent to the following. (In the case where multiple updates has been released within a day, you may need to add a `--force-reinstall` flag instead of waiting for the next nightly update.)
 ```bash
 conda create -n ani python=3.8
 conda activate ani
