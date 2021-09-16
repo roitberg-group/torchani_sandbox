@@ -101,6 +101,7 @@ class BuiltinModel(Module):
         self.energy_shifter = energy_shifter
         self.species_to_tensor = ChemicalSymbolsToInts(elements)
         self.species_converter = SpeciesConverter(elements)
+        self._shift_energies = True
 
         self.periodic_table_index = periodic_table_index
         numbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
@@ -158,7 +159,9 @@ class BuiltinModel(Module):
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         species_energies = self.neural_networks(species_aevs)
-        return self.energy_shifter(species_energies)
+        if self._shift_energies:
+            species_energies = self.energy_shifter(species_energies)
+        return species_energies
 
     @torch.jit.export
     def _maybe_convert_species(self, species_coordinates: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tensor]:
@@ -189,7 +192,8 @@ class BuiltinModel(Module):
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         atomic_energies = self.neural_networks._atomic_energies(species_aevs)
-        atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
+        if self._shift_energies:
+            atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
 
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
@@ -293,7 +297,9 @@ class BuiltinModel(Module):
         assert neighbors is not None
         aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
         species_energies = self.neural_networks((species, aevs))
-        return self.energy_shifter(species_energies)
+        if self._shift_energies:
+            species_energies = self.energy_shifter(species_energies)
+        return species_energies
 
     def _parse_neighborlist(self, species_coordinates: Tuple[Tensor, Tensor],
                                 neighbors: Tensor,
@@ -355,8 +361,9 @@ class BuiltinModelPairInteractions(BuiltinModel):
         # extra step w.r.t normal BuiltinModel
         for potential in self.pairwise_potentials:
             species_energies = potential(species_energies, atom_index12, distances)
-
-        return self.energy_shifter(species_energies)
+        if self._shift_energies:
+            species_energies = self.energy_shifter(species_energies)
+        return species_energies
 
     @torch.jit.export
     def from_neighborlist(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -369,7 +376,9 @@ class BuiltinModelPairInteractions(BuiltinModel):
         species_energies = self.neural_networks((species, aevs))
         for potential in self.pairwise_potentials:
             species_energies = potential(species_energies, neighbors, distances)
-        return self.energy_shifter(species_energies)
+        if self._shift_energies:
+            species_energies = self.energy_shifter(species_energies)
+        return species_energies
 
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -389,13 +398,14 @@ class BuiltinModelPairInteractions(BuiltinModel):
             # hint for JIT, this function can only be called if neural_networks
             # is an ensemble and not an ANIModel
             assert not isinstance(nnp, str)
-            unshifted_energies = nnp((species, aevs)).energies
-            shifted_energies = self.energy_shifter((species, unshifted_energies)).energies
+            energies = nnp((species, aevs)).energies
+            if self._shift_energies:
+                energies = self.energy_shifter((species, energies)).energies
 
             for potential in self.pairwise_potentials:
-                shifted_energies = potential((species, shifted_energies), atom_index12, distances).energies
+                energies = potential((species, energies), atom_index12, distances).energies
 
-            member_outputs.append(shifted_energies.unsqueeze(0))
+            member_outputs.append(energies.unsqueeze(0))
         return SpeciesEnergies(species, torch.cat(member_outputs, dim=0))
 
 
