@@ -60,7 +60,7 @@ if __name__ == '__main__':
     WEIGHT_DECAY = 1e-7
     optimizer = torch.optim.AdamW(model.parameters(), weight_decay=WEIGHT_DECAY, lr=INITIAL_LR)
     # Lr scheduler
-    MAX_EPOCHS = 100  # exclusive
+    MAX_EPOCHS = 1001  # exclusive
     EARLY_STOPPING_LR = 1.0e-6
     TRACK_METRIC = 'energy_rmse_kcalpermol'
     scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=50, threshold=1e-4)
