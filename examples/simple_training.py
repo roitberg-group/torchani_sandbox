@@ -62,16 +62,16 @@ class Runner:
 
             num_atoms = (species >= 0).sum(dim=1, dtype=predicted_energies.dtype)
             squared_error = self._squared_error(predicted_energies, target_energies)
-            scaled_mse = (squared_error / num_atoms.sqrt()).mean()
+            scaled_squared_error = squared_error / num_atoms.sqrt()
 
             if train:
-                loss = scaled_mse
+                loss = scaled_squared_error.mean()
                 self._optimizer.zero_grad()
                 loss.backward()
                 self._optimizer.step()
 
             # Update for logging
-            total_epoch_loss += scaled_mse.cpu().detach()
+            total_epoch_loss += scaled_squared_error.detach().sum().cpu()
             total_epoch_squared_error_sum += squared_error.detach().sum().cpu()
             count += species.shape[0]
 
