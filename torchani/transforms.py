@@ -37,6 +37,15 @@ class SubtractRepulsion(torch.nn.Module):
         return properties
 
 
+class Identity(torch.nn.Module):
+    r"""Placeholder transformation, does nothing"""
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, properties: Dict[str, Tensor]) -> Dict[str, Tensor]:
+        return properties
+
+
 class SubtractSAE(torch.nn.Module):
 
     atomic_numbers: Tensor
