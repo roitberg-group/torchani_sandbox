@@ -46,9 +46,11 @@ if __name__ == '__main__':
                                                                   BATCH_SIZE, NUM_WORKERS, PREFETCH_FACTOR,
                                                                   VALIDATION_SPLIT, TRAINING_SPLIT, SELECTED_PROPERTIES, SPLITS, FOLDS)
     USE_CUAEV = True
+    LOG_TENSORBOARD = True
+    LOG_CSV = True
     RUNS_ROOT_DIR = '/media/samsung1TBssd/Git-Repos/torchani-runs'
     SET_NAME = 'trials-2'
-    SPECIFIC_RUN_NAME = '1x-cuaev'
+    SPECIFIC_RUN_NAME = '1x-cuaev-log-csv'
     # Model
     model = torchani.models.ANI1x(pretrained=False, model_index=0, use_cuda_extension=USE_CUAEV, periodic_table_index=True)
     # GSAEs
@@ -79,4 +81,7 @@ if __name__ == '__main__':
                               TRACK_METRIC,
                               INITIAL_LR,
                               MAX_EPOCHS,
-                              EARLY_STOPPING_LR)
+                              EARLY_STOPPING_LR,
+                              LOG_TENSORBOARD,
+                              LOG_CSV,
+                              __file__)

@@ -1,8 +1,10 @@
 import time
+import csv
 import math
+import shutil
 from pathlib import Path
-from pprint import pprint
 from typing import Optional, Union, Dict, Callable, Tuple
+from collections import OrderedDict
 
 import torch
 from torch import Tensor
@@ -63,11 +65,11 @@ class Runner:
                    train: bool = False,
                    use_tqdm: bool = True,
                    verbose: bool = True) -> ScalarMetrics:
+        split = self._get_split(dataset)
+        msg = f"epoch {epoch}, {split}" if epoch is not None else split
         metrics = {'loss': 0.0, 'count': 0}
         metrics.update(self.set_extra_metrics())
-        for batch in tqdm(dataset, total=len(dataset),
-                          desc=f"epoch {epoch}" if epoch is not None else None,
-                          disable=not use_tqdm):
+        for batch in tqdm(dataset, total=len(dataset), desc=msg, disable=not use_tqdm):
             batch = self._transform({k: v.to(self._device, non_blocking=True)
                                      for k, v in batch.items()})
             batch_loss, count = self.inner_loop(batch, metrics)
@@ -78,7 +80,7 @@ class Runner:
         metrics = self._average_metrics(metrics)
         metrics = self._add_kcalpermol_metrics(metrics)
         if verbose:
-            self._print_metrics(dataset, metrics)
+            self._print_metrics(split, metrics, epoch)
         return metrics
 
     def _add_kcalpermol_metrics(self, metrics):
@@ -102,14 +104,20 @@ class Runner:
         batch_loss.backward()
         self._optimizer.step()
 
-    def _print_metrics(self, dataset, metrics):
+    @staticmethod
+    def _get_split(dataset):
         if isinstance(dataset, datasets.ANIBatchedDataset):
             split = dataset.split
         else:
             assert isinstance(dataset.dataset, datasets.ANIBatchedDataset)
             split = dataset.dataset.split
-        print(f'{split} metrics:')
-        pprint(metrics)
+        return split
+
+    def _print_metrics(self, split, metrics, epoch=None):
+        print(f'epoch {epoch}, {split} metrics:' if epoch is not None else f'{split} metrics:')
+        for k, v in metrics.items():
+            print(f'    {k} = {v}')
+        print()
 
     def train(self, dataset: DatasetType, epoch: int, **kwargs: bool) -> ScalarMetrics:
         self._model.train()
@@ -135,24 +143,51 @@ class Runner:
 
 
 class Logger:
-    def __init__(self, path: Optional[PathLike] = None):
+    def __init__(self, path: Optional[PathLike] = None, log_tensorboard=True, log_csv=True):
         path = Path(path).resolve() if path is not None else Path('./runs/default_set/default_run').resolve()
         assert path.is_dir()
-        self._writer = torch.utils.tensorboard.SummaryWriter(path)
+        self._log_tb = log_tensorboard
+        self._log_csv = log_csv
+        if log_tensorboard:
+            self._tb_writer = torch.utils.tensorboard.SummaryWriter(path)
+        if log_csv:
+            self._csv_train_path = path / 'metrics_train.csv'
+            self._csv_validate_path = path / 'metrics_validate.csv'
 
     def log_scalars(self, step: int,
                     train_metrics: Optional[ScalarMetrics] = None,
                     validate_metrics: Optional[ScalarMetrics] = None,
                     other: Optional[ScalarMetrics] = None) -> None:
-        if train_metrics is not None:
+        train_metrics = {} if train_metrics is None else train_metrics
+        validate_metrics = {} if validate_metrics is None else validate_metrics
+        other = {} if other is None else other
+
+        if self._log_tb:
             for k, v in train_metrics.items():
-                self._writer.add_scalar(f'{k}/train', v, step)
-        if validate_metrics is not None:
+                self._tb_writer.add_scalar(f'{k}/train', v, step)
             for k, v in validate_metrics.items():
-                self._writer.add_scalar(f'{k}/validate', v, step)
-        if other is not None:
+                self._tb_writer.add_scalar(f'{k}/validate', v, step)
             for k, v in other.items():
-                self._writer.add_scalar(k, v, step)
+                self._tb_writer.add_scalar(k, v, step)
+
+        if self._log_csv:
+            if train_metrics:
+                train_metrics.update(other)
+                self._dump_csv_metrics(step, self._csv_train_path, train_metrics, first_step=1)
+            if validate_metrics:
+                validate_metrics.update(other)
+                self._dump_csv_metrics(step, self._csv_validate_path, validate_metrics, first_step=0)
+
+    def _dump_csv_metrics(self, step, path, metrics, first_step):
+        metrics = OrderedDict(sorted(metrics.items()))
+        row = [step] + list(metrics.values())
+        with open(path, 'a') as f:
+            writer = csv.writer(f, delimiter=',')
+            if step == first_step:
+                writer.writerow(['epoch'] + sorted(metrics.keys()))
+                for j in range(0, first_step):
+                    writer.writerow([j] + [''] * len(metrics.keys()))
+            writer.writerow(row)
 
 
 # Checkpointing
@@ -204,24 +239,30 @@ def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_s
     return training_set, validation_set
 
 
-def execute_training(persistent_objects, scheduler, runner, optimizer, training_set, validation_set, run_output_path, TRACK_METRIC, INITIAL_LR, MAX_EPOCHS, EARLY_STOPPING_LR):
+def execute_training(persistent_objects, scheduler, runner, optimizer, training_set, validation_set, run_output_path: Path,
+        TRACK_METRIC: str, INITIAL_LR: float, MAX_EPOCHS: int, EARLY_STOPPING_LR: float, LOG_TB: bool, LOG_CSV: bool, SCRIPT_PATH: str):
     # Load latest checkpoint if it exists
     if run_output_path.is_dir() and any(run_output_path.iterdir()):
         is_restart = True
         _load_checkpoint(run_output_path, persistent_objects, kind='latest')
+        with open(run_output_path / 'script.py', 'rb') as restart_script, open(SCRIPT_PATH, 'rb') as input_script:
+            restart_bytes = restart_script.read()
+            input_bytes = input_script.read()
+            if not restart_bytes == input_bytes:
+                raise RuntimeError('Tried to run restart with a modified input file')
     else:
         is_restart = False
         run_output_path.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(Path(SCRIPT_PATH).resolve(), run_output_path / 'script.py')
 
     # Logging
-    logger = Logger(run_output_path)
+    logger = Logger(run_output_path, log_tensorboard=LOG_TB, log_csv=LOG_CSV)
 
     # Main Training loop
     initial_epoch = scheduler.last_epoch  # type: ignore
-    print("Training starting from epoch", initial_epoch)
     if not is_restart and initial_epoch == 0:  # Zeroth epoch is just validating
         validate_metrics = runner.eval(validation_set, initial_epoch, track_metric=TRACK_METRIC)
-        logger.log_scalars(initial_epoch, validate_metrics=validate_metrics, other={'learning_rate': INITIAL_LR})
+        logger.log_scalars(initial_epoch, validate_metrics=validate_metrics, other={'learning_rate': INITIAL_LR, 'epoch_time_seconds': 0.0})
         _save_checkpoint(run_output_path, persistent_objects, kind='latest')
 
     for epoch in range(initial_epoch + 1, MAX_EPOCHS):
