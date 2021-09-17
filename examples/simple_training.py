@@ -2,7 +2,7 @@ import time
 import math
 from pathlib import Path
 from pprint import pprint
-from typing import Optional, Union, Dict, Callable
+from typing import Optional, Union, Dict, Callable, Tuple
 
 import torch
 from torch import Tensor
@@ -40,60 +40,82 @@ class Runner:
         self.best_metric = best_metric
         self.best_metric_improved_last_run = False
 
+    def inner_loop(self, batch, metrics: Dict[str, Tensor], train: bool = False) -> Tuple[Tensor, int]:
+        # This method is the one that should be overriden, must return the batch loss
+        # (not averaged) and the number of conformations in the batch (shape of species)
+        species = batch['species'].long()
+        coordinates = batch['coordinates'].float()
+        target_energies = batch['energies'].float()
+
+        predicted_energies = self._model((species, coordinates)).energies
+
+        batch_loss = self._squared_error(predicted_energies, target_energies)
+        return batch_loss, species.shape[0]
+
+    def set_extra_metrics(self):
+        # Must return metric_name : initial value dict, metrics that end with
+        # "hartree" or "hartree_per_angstrom" are treated specially (other
+        # metrics with different units are added to them)
+        return {}
+
     def _run(self, dataset: DatasetType,
                    epoch: Optional[int] = None,
                    train: bool = False,
                    use_tqdm: bool = True,
                    verbose: bool = True) -> ScalarMetrics:
-        # outputs for logging
-        total_epoch_loss = torch.tensor(0.0, dtype=torch.float)
-        total_epoch_squared_error_sum = torch.tensor(0.0, dtype=torch.float)
-        count = 0
-        self._model.train(train)
+        metrics = {'loss': 0.0, 'count': 0}
+        metrics.update(self.set_extra_metrics())
         for batch in tqdm(dataset, total=len(dataset),
-                               desc=f"epoch {epoch}" if epoch is not None else None,
-                               disable=not use_tqdm):
+                          desc=f"epoch {epoch}" if epoch is not None else None,
+                          disable=not use_tqdm):
             batch = self._transform({k: v.to(self._device, non_blocking=True)
-                                          for k, v in batch.items()})
-            species = batch['species'].long()
-            coordinates = batch['coordinates'].float()
-            target_energies = batch['energies'].float()
-            predicted_energies = self._model((species, coordinates)).energies
-
-            num_atoms = (species >= 0).sum(dim=1, dtype=predicted_energies.dtype)
-            squared_error = self._squared_error(predicted_energies, target_energies)
-            scaled_squared_error = squared_error / num_atoms.sqrt()
-
+                                     for k, v in batch.items()})
+            batch_loss, count = self._inner_loop(batch, metrics)
             if train:
-                loss = scaled_squared_error.mean()
-                self._optimizer.zero_grad()
-                loss.backward()
-                self._optimizer.step()
-
-            # Update for logging
-            total_epoch_loss += scaled_squared_error.detach().sum().cpu()
-            total_epoch_squared_error_sum += squared_error.detach().sum().cpu()
-            count += species.shape[0]
-
-        metrics = {'loss_hartree': (total_epoch_loss / count).item(),
-                   'rmse_kcalpermol': units.hartree2kcalmol(torch.sqrt(total_epoch_squared_error_sum / count)).item()}
-        self._model.train(not train)
-
+                self._run_backwards(batch_loss.mean())
+            metrics['loss'] += batch_loss.detach().sum().cpu().item()
+            metrics['count'] += count
+        metrics = self._average_metrics(metrics)
+        metrics = self._add_kcalpermol_metrics(metrics)
         if verbose:
-            if isinstance(dataset, datasets.ANIBatchedDataset):
-                split = dataset.split
-            else:
-                assert isinstance(dataset.dataset, datasets.ANIBatchedDataset)
-                split = dataset.dataset.split
-            print(f'{split} metrics:')
-            pprint(metrics)
+            self._print_metrics(dataset, metrics)
         return metrics
 
+    def _add_kcalpermol_metrics(self, metrics):
+        for k in metrics.keys():
+            if k.endswith('_hartree'):
+                metrics[k.replace('_hartree', '_kcalpermol')] = units.hartree2kcalmol(metrics[k])
+            elif k.endswith('_hartree_per_angstrom'):
+                metrics[k.replace('_hartree_per_angstrom', '_kcalpermol_per_Angstrom')] = units.hartree2kcalmol(metrics[k])
+        return metrics
+
+    def _average_metrics(self, metrics):
+        count = metrics.pop('count')
+        for k in metrics.keys():
+            metrics[k] = (metrics[k] / count).item()
+        return metrics
+
+    def _run_backwards(self, batch_loss):
+        self._optimizer.zero_grad()
+        batch_loss.backward()
+        self._optimizer.step()
+
+    def _print_metrics(self, dataset, metrics):
+        if isinstance(dataset, datasets.ANIBatchedDataset):
+            split = dataset.split
+        else:
+            assert isinstance(dataset.dataset, datasets.ANIBatchedDataset)
+            split = dataset.dataset.split
+        print(f'{split} metrics:')
+        pprint(metrics)
+
     def train(self, dataset: DatasetType, epoch: int, **kwargs: bool) -> ScalarMetrics:
+        self._model.train()
         metrics = self._run(dataset, epoch, train=True, **kwargs)
         return metrics
 
     def eval(self, dataset: DatasetType, epoch: int, track_metric: Optional[str] = None, **kwargs: bool) -> ScalarMetrics:
+        self._model.eval()
         with torch.no_grad():
             metrics = self._run(dataset, epoch, train=False, **kwargs)
         if track_metric is not None:
@@ -112,6 +134,25 @@ class Runner:
 
     def state_dict(self) -> ScalarMetrics:
         return {'best_metric': self.best_metric}
+
+
+class EnergyRunner(Runner):
+    def inner_loop(self, batch, metrics: Dict[str, Tensor], train: bool = False) -> Tuple[Tensor, int]:
+        species = batch['species'].long()
+        coordinates = batch['coordinates'].float()
+        target_energies = batch['energies'].float()
+        num_atoms = (species >= 0).sum(dim=1).float()
+
+        predicted_energies = self._model((species, coordinates)).energies
+
+        squared_energy_error = self._squared_error(predicted_energies, target_energies)
+        batch_loss = squared_energy_error / num_atoms.sqrt()
+
+        metrics['energy_rmse_hartree'] += squared_energy_error.detach().sum().cpu()
+        return batch_loss, species.shape[0]
+
+    def set_extra_metrics(self):
+        return {'energy_rmse_hartree': 0.0}
 
 
 class Logger:
@@ -189,8 +230,8 @@ if __name__ == '__main__':
     # Model
     model = torchani.models.ANI1x(pretrained=False, model_index=0, use_cuda_extension=USE_CUAEV, periodic_table_index=True).to(device)
     # GSAEs
-    model.energy_shifter.self_energies = torch.tensor([-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000], dtype=torch.float, device=device)
-
+    model.energy_shifter.self_energies = torch.tensor([-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000],
+                                                       dtype=torch.float, device=device)
     # Transforms
     elements = model.get_chemical_symbols()
     transform = transforms.Compose([transforms.Identity()]).to(device)
@@ -203,7 +244,7 @@ if __name__ == '__main__':
     # Lr scheduler
     MAX_EPOCHS = 100  # exclusive
     EARLY_STOPPING_LR = 1.0e-6
-    track_metric = 'rmse_kcalpermol'
+    track_metric = 'energy_rmse_kcalpermol'
     scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=50, threshold=1e-4)
 
     # Training / Validation runner, the runner tracks the best metric
