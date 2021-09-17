@@ -70,10 +70,10 @@ class Runner:
                           disable=not use_tqdm):
             batch = self._transform({k: v.to(self._device, non_blocking=True)
                                      for k, v in batch.items()})
-            batch_loss, count = self._inner_loop(batch, metrics)
+            batch_loss, count = self.inner_loop(batch, metrics)
             if train:
                 self._run_backwards(batch_loss.mean())
-            metrics['loss'] += batch_loss.detach().sum().cpu().item()
+            metrics['loss'] += batch_loss.detach().sum().item()
             metrics['count'] += count
         metrics = self._average_metrics(metrics)
         metrics = self._add_kcalpermol_metrics(metrics)
@@ -82,7 +82,7 @@ class Runner:
         return metrics
 
     def _add_kcalpermol_metrics(self, metrics):
-        for k in metrics.keys():
+        for k in metrics.copy().keys():
             if k.endswith('_hartree'):
                 metrics[k.replace('_hartree', '_kcalpermol')] = units.hartree2kcalmol(metrics[k])
             elif k.endswith('_hartree_per_angstrom'):
@@ -91,8 +91,10 @@ class Runner:
 
     def _average_metrics(self, metrics):
         count = metrics.pop('count')
-        for k in metrics.keys():
-            metrics[k] = (metrics[k] / count).item()
+        for k in metrics.copy().keys():
+            metrics[k] = (metrics[k] / count)
+            if 'rmse' in k:
+                metrics[k] = math.sqrt(metrics[k])
         return metrics
 
     def _run_backwards(self, batch_loss):
@@ -148,11 +150,12 @@ class EnergyRunner(Runner):
         squared_energy_error = self._squared_error(predicted_energies, target_energies)
         batch_loss = squared_energy_error / num_atoms.sqrt()
 
-        metrics['energy_rmse_hartree'] += squared_energy_error.detach().sum().cpu()
+        metrics['energy_rmse_hartree'] += squared_energy_error.detach().sum().item()
+        metrics['energy_mae_hartree'] += squared_energy_error.detach().sqrt().sum().item()
         return batch_loss, species.shape[0]
 
     def set_extra_metrics(self):
-        return {'energy_rmse_hartree': 0.0}
+        return {'energy_rmse_hartree': 0.0, 'energy_mae_hartree': 0.0}
 
 
 class Logger:
@@ -248,7 +251,7 @@ if __name__ == '__main__':
     scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=50, threshold=1e-4)
 
     # Training / Validation runner, the runner tracks the best metric
-    runner = Runner(model, optimizer, transform).to(device)
+    runner = EnergyRunner(model, optimizer, transform).to(device)
 
     # Checkpoint paths
     latest_checkpoint = Path(f'./checkpoints/{SET_NAME}/{RUN_NAME}/latest.pt').resolve()
