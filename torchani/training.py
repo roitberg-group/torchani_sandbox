@@ -31,9 +31,9 @@ class Runner:
                        transform: Optional[Transform] = None,
                        device: Optional[DeviceType] = None,
                        best_metric: float = math.inf):
-        self._transform = transform
         self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if device is None else device
-        self._model = model
+        self._transform = transform.to(device)
+        self._model = model.to(device)
         self._optimizer = optimizer
         self._squared_error = torch.nn.MSELoss(reduction='none')
         # metric to track to check if it improves
@@ -126,12 +126,6 @@ class Runner:
                 self.best_metric_improved_last_run = True
             metrics.update({f'best_{track_metric}': self.best_metric})
         return metrics
-
-    def to(self, device: DeviceType) -> 'Runner':
-        self._device = device
-        self._model = self._model.to(device)
-        self._transform = self._transform.to(device)
-        return self
 
     def load_state_dict(self, state_dict: ScalarMetrics) -> None:
         self.__dict__.update(state_dict)
