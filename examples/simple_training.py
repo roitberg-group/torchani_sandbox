@@ -151,7 +151,7 @@ class EnergyRunner(Runner):
         batch_loss = squared_energy_error / num_atoms.sqrt()
 
         metrics['energy_rmse_hartree'] += squared_energy_error.detach().sum().item()
-        metrics['energy_mae_hartree'] += squared_energy_error.detach().sqrt().sum().item()
+        metrics['energy_mae_hartree'] += torch.abs(predicted_energies.detach() - target_energies.detach()).sum().item()
         return batch_loss, species.shape[0]
 
     def set_extra_metrics(self):
@@ -159,10 +159,8 @@ class EnergyRunner(Runner):
 
 
 class Logger:
-    def __init__(self, path: Optional[PathLike] = None, is_restart=False):
+    def __init__(self, path: Optional[PathLike] = None):
         path = Path(path).resolve() if path is not None else Path('./runs/default_set/default_run').resolve()
-        if not is_restart:
-            path.mkdir(parents=True, exist_ok=False)
         assert path.is_dir()
         self._writer = torch.utils.tensorboard.SummaryWriter(path)
 
@@ -188,16 +186,16 @@ def _ensure_state_dicts(objects):
         assert hasattr(v, 'load_state_dict')
 
 
-def save_checkpoint(path: PathLike, objects: Dict[str, Stateful]) -> None:
+def save_checkpoint(path: PathLike, objects: Dict[str, Stateful], kind: str = 'default') -> None:
     _ensure_state_dicts(objects)
-    torch.save({k: v.state_dict() for k, v in objects.items()}, Path(path).resolve())
+    for k, v in objects.items():
+        torch.save(v.state_dict(), Path(path).resolve().with_name(f'{k}_{kind}.pt'))
 
 
-def load_checkpoint(path: PathLike, objects: Dict[str, Stateful]) -> None:
+def load_checkpoint(path: PathLike, objects: Dict[str, Stateful], kind: str = 'default') -> None:
     _ensure_state_dicts(objects)
-    checkpoint = torch.load(Path(path).resolve())
     for k in objects.keys():
-        objects[k].load_state_dict(checkpoint[k])
+        objects[k].load_state_dict(torch.load(path.with_name(f'{k}_{kind}.pt')))
 
 
 if __name__ == '__main__':
@@ -247,49 +245,48 @@ if __name__ == '__main__':
     # Lr scheduler
     MAX_EPOCHS = 100  # exclusive
     EARLY_STOPPING_LR = 1.0e-6
-    track_metric = 'energy_rmse_kcalpermol'
+    TRACK_METRIC = 'energy_rmse_kcalpermol'
     scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=50, threshold=1e-4)
 
     # Training / Validation runner, the runner tracks the best metric
     runner = EnergyRunner(model, optimizer, transform).to(device)
 
     # Checkpoint paths
-    latest_checkpoint = Path(f'./checkpoints/{SET_NAME}/{RUN_NAME}/latest.pt').resolve()
-    best_checkpoint = Path(f'./checkpoints/{SET_NAME}/{RUN_NAME}/best.pt').resolve()
+    run_output_path = Path(f'./runs/{SET_NAME}/{RUN_NAME}/').resolve()
     persistent_objects = {'optimizer': optimizer, 'scheduler': scheduler, 'model': model, 'runner': runner}
 
     # Load latest checkpoint if it exists
-    if latest_checkpoint.is_file():
+    if run_output_path.is_dir() and any(run_output_path.iterdir()):
         is_restart = True
-        load_checkpoint(latest_checkpoint, persistent_objects)
+        load_checkpoint(run_output_path, persistent_objects, kind='latest')
     else:
         is_restart = False
-        latest_checkpoint.parent.mkdir(parents=True, exist_ok=False)
+        run_output_path.mkdir(parents=True, exist_ok=True)
 
     # Logging
-    logger = Logger(f'./runs/{SET_NAME}/{RUN_NAME}', is_restart)
+    logger = Logger(run_output_path)
 
     # Main Training loop
     initial_epoch = scheduler.last_epoch  # type: ignore
     print("Training starting from epoch", initial_epoch)
     if not is_restart and initial_epoch == 0:  # Zeroth epoch is just validating
-        validate_metrics = runner.eval(validation, initial_epoch, track_metric=track_metric)
+        validate_metrics = runner.eval(validation, initial_epoch, track_metric=TRACK_METRIC)
         logger.log_scalars(initial_epoch, validate_metrics=validate_metrics, other={'learning_rate': INITIAL_LR})
-        save_checkpoint(latest_checkpoint, persistent_objects)
+        save_checkpoint(run_output_path, persistent_objects, kind='latest')
 
     for epoch in range(initial_epoch + 1, MAX_EPOCHS):
         start = time.time()
         # Run training and validation
         train_metrics = runner.train(training, epoch)
-        validate_metrics = runner.eval(validation, epoch, track_metric=track_metric)
+        validate_metrics = runner.eval(validation, epoch, track_metric=TRACK_METRIC)
         # LR Scheduler update
-        metric = (validate_metrics[track_metric],) if isinstance(scheduler, ReduceLROnPlateau) else tuple()
+        metric = (validate_metrics[TRACK_METRIC],) if isinstance(scheduler, ReduceLROnPlateau) else tuple()
         scheduler.step(*metric)
         # Checkpoint
         if runner.best_metric_improved_last_run:
             runner.best_metric_improved_last_run = False
-            save_checkpoint(best_checkpoint, persistent_objects)
-        save_checkpoint(latest_checkpoint, persistent_objects)
+            save_checkpoint(run_output_path, persistent_objects, kind='best')
+        save_checkpoint(run_output_path, persistent_objects, kind='latest')
         # Logging
         learning_rate = optimizer.param_groups[0]['lr']
         logger.log_scalars(scheduler.last_epoch,  # type: ignore
