@@ -530,7 +530,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         if repulsion:
             pairwise_potentials.append(RepulsionCalculator(cutoff, elements=elements))
         if dispersion:
-            pairwise_potentials.append(DispersionD3(cutoff=cutoff, cutoff_fn=CutoffSmooth(order=4), elements=elements))
+            pairwise_potentials.append(DispersionD3(cutoff=cutoff, elements=elements, cutoff_fn=CutoffSmooth(order=4)))
         if srb:
             pairwise_potentials.append(EnergySRB(cutoff=cutoff, elements=elements))
         model_kwargs.update({'pairwise_potentials': pairwise_potentials})
