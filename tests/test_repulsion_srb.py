@@ -29,14 +29,14 @@ class TestRepulsion(TestCase):
         species = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
         energies = self.rep((species, energies), atom_index12, distances).energies
-        self.assertTrue(torch.isclose(torch.tensor(expected_energy), energies))
+        self.assertEqual(torch.tensor([expected_energy]), energies)
 
     def _testStandalone(self, expected_energy):
         coordinates = torch.tensor([[0.0, 0.0, 0.0],
                                     [3.5, 0.0, 0.0]]).unsqueeze(0)
         species = torch.tensor([[0, 0]])
         energies = self.stand_rep((species, coordinates)).energies
-        self.assertTrue(torch.isclose(torch.tensor(expected_energy), energies))
+        self.assertEqual(torch.tensor([expected_energy]), energies)
 
     def testBatches(self):
         coordinates1 = torch.tensor([[0.0, 0.0, 0.0],
@@ -60,7 +60,7 @@ class TestRepulsion(TestCase):
         energy3 = self.stand_rep((species3[:, 1:], coordinates3[:, 1:, :])).energies
         energies_cat = torch.cat((energy1, energy2, energy3))
         energies = self.stand_rep((species_cat, coordinates_cat)).energies
-        self.assertTrue(torch.isclose(energies, energies_cat).all())
+        self.assertEqual(energies, energies_cat)
 
     def testLongDistances(self):
         atom_index12 = torch.tensor([[0], [1]])
@@ -68,7 +68,7 @@ class TestRepulsion(TestCase):
         species = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
         energies = self.rep((species, energies), atom_index12, distances).energies
-        self.assertTrue(torch.isclose(torch.tensor(0.0), energies))
+        self.assertEqual(torch.tensor([0.0]), energies)
 
     def _testModelEnergy(self, path, repulsion=False, srb=False):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -97,10 +97,10 @@ class TestSRB(TestRepulsion):
         self.stand_rep = StandaloneEnergySRB(cutoff=5.2, neighborlist_cutoff=5.2)
 
     def testCalculator(self):
-        self._testCalculator(-1.8757)
+        self._testCalculator(-1.875715494155)
 
     def testStandalone(self):
-        self._testStandalone(-1.8757)
+        self._testStandalone(-1.875715494155)
 
     def testModelEnergy(self):
         path = Path(__file__).resolve().parent.joinpath('test_data/energies_srb_1x.pkl')
