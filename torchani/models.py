@@ -551,6 +551,8 @@ def _fetch_state_dict(state_dict_file: str,
 
 def _load_ani_model(state_dict_file: Optional[str] = None,
                     info_file: Optional[str] = None,
+                    dispersion_kwargs: Optional[Dict[str, Any]] = None,
+                    repulsion_kwargs: Optional[Dict[str, Any]] = None,
                     **model_kwargs) -> BuiltinModel:
     # Helper function to toggle if the loading is done from an NC file or
     # directly using torchani and state_dicts
@@ -591,10 +593,16 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     if repulsion or dispersion:
         cutoff = aev_computer.radial_terms.cutoff
         pairwise_potentials: Sequence[torch.nn.Module] = []
+        rep_module_kwargs = {'elements': elements, 'cutoff': cutoff}
+        disp_module_kwargs = {'elements': elements, 'cutoff': cutoff, 'cutoff_fn': CutoffSmooth(order=4)}
         if repulsion:
-            pairwise_potentials.append(RepulsionCalculator(cutoff, elements=elements))
+            if repulsion_kwargs is not None:
+                rep_module_kwargs.update(repulsion_kwargs)
+            pairwise_potentials.append(RepulsionCalculator(**rep_module_kwargs))
         if dispersion:
-            pairwise_potentials.append(DispersionD3(cutoff=cutoff, elements=elements, cutoff_fn=CutoffSmooth(order=4)))
+            if dispersion_kwargs is not None:
+                rep_module_kwargs.update(dispersion_kwargs)
+            pairwise_potentials.append(DispersionD3(**disp_module_kwargs))
         model_kwargs.update({'pairwise_potentials': pairwise_potentials})
         model_class = BuiltinModelPairInteractions
     else:
