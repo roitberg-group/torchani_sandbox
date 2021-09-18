@@ -168,7 +168,7 @@ class DispersionD3(torch.nn.Module):
         self.register_buffer('precalc_coordnums_a', coordnums_a[supported_znumbers, :][:, supported_znumbers])
         self.register_buffer('precalc_coordnums_b', coordnums_b[supported_znumbers, :][:, supported_znumbers])
         # covalent radii are in angstrom so we first convert to bohr
-        supported_znumbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
+        supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
         covalent_radii = units.angstrom2bohr(constants.get_covalent_radii())
         self.register_buffer('covalent_radii', covalent_radii[supported_znumbers])
         # the product of the sqrt of the empirical q's is stored directly
