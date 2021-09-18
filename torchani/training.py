@@ -209,14 +209,20 @@ def _load_checkpoint(path: PathLike, objects: Dict[str, Stateful], kind: str = '
         objects[k].load_state_dict(torch.load(path / f'{k}_{kind}.pt'))
 
 
-def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_size, num_workers, prefetch_factor, validation_split, training_split, selected_properties=None, splits=None, folds=None):
+def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_size, num_workers, prefetch_factor, validation_split, training_split,
+                          functional=None, basis_set=None, selected_properties=None, splits=None, folds=None):
     assert (splits is None or folds is None) and (splits is not folds)
     batched_dataset_path = (root_dataset_path / dataset_name) / '-batched'
     if not batched_dataset_path.is_dir():
         if type(DatasetClass) == datasets.ANIDataset:
             ds = DatasetClass(root_dataset_path / dataset_name)
         else:
-            ds = DatasetClass(root_dataset_path / dataset_name, download=True)
+            kwargs = {'download': True}
+            if functional is not None:
+                kwargs.update({'functional': functional})
+            if basis_set is not None:
+                kwargs.update({'basis_set': basis_set})
+            ds = DatasetClass(root_dataset_path / dataset_name, **kwargs)
         datasets.create_batched_dataset(ds,
                                         dest_path=batched_dataset_path,
                                         batch_size=batch_size,
@@ -242,6 +248,13 @@ def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_s
 def execute_training(persistent_objects, scheduler, runner, optimizer, training_set, validation_set, run_output_path: Path,
         TRACK_METRIC: str, INITIAL_LR: float, MAX_EPOCHS: int, EARLY_STOPPING_LR: float, LOG_TB: bool, LOG_CSV: bool, SCRIPT_PATH: str):
     # Load latest checkpoint if it exists
+    if run_output_path.is_dir():
+        files_in_path = list(run_output_path.iterdir())
+        if not any(f.name.endswith('latest.pt') for f in files_in_path):
+            for p in files_in_path:
+                if p.name.startswith('events') or p.name in ['script.py', 'train_metrics.csv', 'validate_metrics.csv']:
+                    p.unlink()
+
     if run_output_path.is_dir() and any(run_output_path.iterdir()):
         is_restart = True
         _load_checkpoint(run_output_path, persistent_objects, kind='latest')
