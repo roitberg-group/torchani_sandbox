@@ -65,6 +65,7 @@ from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type
 from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from .aev import AEVComputer
+from .aev.cutoffs import CutoffSmooth
 from .repulsion import RepulsionCalculator
 from .dispersion import DispersionD3
 from .short_range_basis import EnergySRB
@@ -529,7 +530,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         if repulsion:
             pairwise_potentials.append(RepulsionCalculator(cutoff, elements=elements))
         if dispersion:
-            pairwise_potentials.append(DispersionD3(cutoff, elements=elements))
+            pairwise_potentials.append(DispersionD3(cutoff=cutoff, cutoff_fn=CutoffSmooth(order=4), elements=elements))
         if srb:
             pairwise_potentials.append(EnergySRB(cutoff=cutoff, elements=elements))
         model_kwargs.update({'pairwise_potentials': pairwise_potentials})
