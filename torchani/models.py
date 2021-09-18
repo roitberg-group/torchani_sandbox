@@ -509,7 +509,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     model_class: Type[BuiltinModel]
     if repulsion:
         cutoff = aev_computer.radial_terms.cutoff
-        model_kwargs.update({'pairwise_potentials': [RepulsionCalculator(cutoff)]})
+        model_kwargs.update({'pairwise_potentials': [RepulsionCalculator(cutoff, elements=elements)]})
         model_class = BuiltinModelPairInteractions
     else:
         model_class = BuiltinModel
