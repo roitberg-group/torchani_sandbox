@@ -210,9 +210,9 @@ def _load_checkpoint(path: PathLike, objects: Dict[str, Stateful], kind: str = '
 
 
 def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_size, num_workers, prefetch_factor, validation_split, training_split,
-                          functional=None, basis_set=None, selected_properties=None, splits=None, folds=None):
+                          functional=None, basis_set=None, selected_properties=None, splits=None, folds=None, batch_all_properties=True):
     assert (splits is None or folds is None) and (splits is not folds)
-    batched_dataset_path = (root_dataset_path / dataset_name) / '-batched'
+    batched_dataset_path = root_dataset_path.joinpath(dataset_name).joinpath('-batched')
     if not batched_dataset_path.is_dir():
         if type(DatasetClass) == datasets.ANIDataset:
             ds = DatasetClass(root_dataset_path / dataset_name)
@@ -224,6 +224,7 @@ def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_s
                 kwargs.update({'basis_set': basis_set})
             ds = DatasetClass(root_dataset_path / dataset_name, **kwargs)
         datasets.create_batched_dataset(ds,
+                                        include_properties=None if batch_all_properties else selected_properties,
                                         dest_path=batched_dataset_path,
                                         batch_size=batch_size,
                                         shuffle_seed=123456789,
