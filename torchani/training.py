@@ -88,7 +88,7 @@ class Runner:
             if k.endswith('_hartree'):
                 metrics[k.replace('_hartree', '_kcalpermol')] = units.hartree2kcalmol(metrics[k])
             elif k.endswith('_hartree_per_angstrom'):
-                metrics[k.replace('_hartree_per_angstrom', '_kcalpermol_per_Angstrom')] = units.hartree2kcalmol(metrics[k])
+                metrics[k.replace('_hartree_per_angstrom', '_kcalpermol_per_angstrom')] = units.hartree2kcalmol(metrics[k])
         return metrics
 
     def _average_metrics(self, metrics):
