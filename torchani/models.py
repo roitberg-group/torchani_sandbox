@@ -342,12 +342,41 @@ class BuiltinModel(Module):
 
 class BuiltinModelPairInteractions(BuiltinModel):
     # NOTE: contribution of pairwise interactions to atomic energies is not implemented yet
-
     def __init__(self, *args, **kwargs):
         pairwise_potentials = kwargs.pop('pairwise_potentials', list())
         super().__init__(*args, **kwargs)
         assert isinstance(pairwise_potentials, (tuple, list))
-        self.pairwise_potentials = torch.nn.ModuleList(pairwise_potentials)
+
+        # We want to check the cutoffs of the pairwise potentials, and
+        # the cutoff os the aev computer, and sort the "aev energy" and the
+        # "pairwise energies" in order of decreasing cutoffs.
+        # this way the energy with the LARGEST cutoff is computed first, then sequentially
+        # things that need smaller cutoffs are computed.
+        #
+        # e.g. if the aev-potential has cutoff 10, and we have SRB with cutoff
+        # 5 and repulsion with cutoff 3, we want to calculate:
+        #
+        # coords -> screen r<10 -> aev-energy -> screen r<5 -> SRB -> screen r<3 -> rep
+        # to do this we first divide potentials into a set with larger cutoff than the
+        # aev-potential and a set with a smaller cutoff
+        #
+        pre_aev_potentials = []
+        post_aev_potentials = []
+        for p in pairwise_potentials:
+            if p.cutoff > self.aev_computer.radial_terms.cutoff:
+                pre_aev_potentials.append(p)
+            else:
+                post_aev_potentials.append(p)
+        if pre_aev_potentials:
+            pre_aev_potentials = sorted(pre_aev_potentials, key=lambda x: x.cutoff)
+        if post_aev_potentials:
+            post_aev_potentials = sorted(post_aev_potentials, key=lambda x: x.cutoff)
+        self.pre_aev_potentials = torch.nn.ModuleList(pre_aev_potentials)
+        self.post_aev_potentials = torch.nn.ModuleList(post_aev_potentials)
+
+        # Set the neighborlist cutoff to the largest cutoff in existence
+        if self.pre_aev_potentials:
+            self.aev_computer.neighborlist.cutoff = self.pre_aev_potentials[0].cutoff
 
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -355,13 +384,46 @@ class BuiltinModelPairInteractions(BuiltinModel):
 
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species, coordinates = species_coordinates
-        atom_index12, _, diff_vectors, distances = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
+        atom_index12, shift_values, diff_vectors, distances = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
+
+        # energy calculation for potentials with larger cutoff than the aev
+        pre_species_energies = (species, torch.zeros(size=(species.shape[0],), device=species.device, dtype=coordinates.dtype))
+        previous_cutoff = self.aev_computer.neighborlist.cutoff
+        for pot in self.pre_aev_potentials:
+            if pot.cutoff < previous_cutoff:
+                nl_out = self.aev_computer.neighborlist._screen_with_cutoff(pot.cutoff,
+                                                                            coordinates,
+                                                                            atom_index12,
+                                                                            shift_values,
+                                                                            (species == -1))
+                atom_index12, _, diff_vectors, distances = nl_out
+                previous_cutoff = pot.cutoff
+            pre_species_energies = pot(pre_species_energies, atom_index12, distances)
+
+        # aev-energy calculation
+        if self.aev_computer.radial_terms.cutoff < previous_cutoff:
+            nl_out = self.aev_computer.neighborlist._screen_with_cutoff(pot.cutoff,
+                                                                        coordinates,
+                                                                        atom_index12,
+                                                                        shift_values,
+                                                                        (species == -1))
+            atom_index12, shift_values, diff_vectors, distances = nl_out
+            previous_cutoff = self.aev_computer.radial_terms.cutoff
         aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vectors, distances)
         species_energies = self.neural_networks((species, aevs))
 
-        # extra step w.r.t normal BuiltinModel
-        for potential in self.pairwise_potentials:
-            species_energies = potential(species_energies, atom_index12, distances)
+        # calculation for potentials with smaller cutoff than the aev
+        for pot in self.post_aev_potentials:
+            if pot.cutoff < previous_cutoff:
+                nl_out = self.aev_computer.neighborlist._screen_with_cutoff(pot.cutoff,
+                                                                            coordinates,
+                                                                            atom_index12,
+                                                                            shift_values,
+                                                                            (species == -1))
+                atom_index12, shift_values, diff_vectors, distances = nl_out
+                previous_cutoff = pot.cutoff
+            species_energies = pot(species_energies, atom_index12, distances)
+        species_energies = (species, pre_species_energies[1] + species_energies[1])
         if self._shift_energies:
             species_energies = self.energy_shifter(species_energies)
         return species_energies
@@ -370,21 +432,36 @@ class BuiltinModelPairInteractions(BuiltinModel):
     def from_neighborlist(self, species_coordinates: Tuple[Tensor, Tensor],
                                 neighbors: Tensor,
                                 shift_values: Tensor, screened_input: bool = False) -> SpeciesEnergies:
+        # TODO: This doesn't support arbitrary potentials, it assumes post_aev_potentials with the
+        # same cutoff as the aev
         # This entrypoint allows input from an external neighborlist + shift values
         species, neighbors, diff_vectors, distances = self._parse_neighborlist(species_coordinates, neighbors, shift_values, screened_input)
         assert neighbors is not None
+
         aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
         species_energies = self.neural_networks((species, aevs))
-        for potential in self.pairwise_potentials:
+
+        for potential in self.post_aev_potentials:
             species_energies = potential(species_energies, neighbors, distances)
         if self._shift_energies:
             species_energies = self.energy_shifter(species_energies)
         return species_energies
 
+    def __getitem__(self, index: int) -> 'BuiltinModel':
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+        return BuiltinModelPairInteractions(self.aev_computer,
+                                            self.neural_networks[index],
+                                            self.energy_shifter,
+                                            self.get_chemical_symbols(),
+                                            self.periodic_table_index,
+                                            pairwise_potentials=[p for p in self.pre_aev_potentials] + [p for p in self.post_aev_potentials])
+
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                          cell: Optional[Tensor] = None,
                          pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        # TODO: This doesn't support arbitrary potentials, it assumes post_aev_potentials with the
+        # same cutoff as the aev
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         if self.periodic_table_index:
             atomic_numbers, _ = species_coordinates
@@ -403,7 +480,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
             if self._shift_energies:
                 energies = self.energy_shifter((species, energies)).energies
 
-            for potential in self.pairwise_potentials:
+            for potential in self.post_aev_potentials:
                 energies = potential((species, energies), atom_index12, distances).energies
 
             member_outputs.append(energies.unsqueeze(0))
@@ -486,6 +563,9 @@ def _fetch_state_dict(state_dict_file: str,
 
 def _load_ani_model(state_dict_file: Optional[str] = None,
                     info_file: Optional[str] = None,
+                    dispersion_kwargs: Optional[Dict[str, Any]] = None,
+                    repulsion_kwargs: Optional[Dict[str, Any]] = None,
+                    srb_kwargs: Optional[Dict[str, Any]] = None,
                     **model_kwargs) -> BuiltinModel:
     # Helper function to toggle if the loading is done from an NC file or
     # directly using torchani and state_dicts
@@ -527,12 +607,21 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     if repulsion or dispersion or srb:
         cutoff = aev_computer.radial_terms.cutoff
         pairwise_potentials: Sequence[torch.nn.Module] = []
+        rep_module_kwargs = {'elements': elements, 'cutoff': cutoff}
+        srb_module_kwargs = {'elements': elements, 'cutoff': cutoff}
+        disp_module_kwargs = {'elements': elements, 'cutoff': cutoff, 'cutoff_fn': CutoffSmooth(order=4)}
         if repulsion:
-            pairwise_potentials.append(RepulsionCalculator(cutoff, elements=elements))
+            if repulsion_kwargs is not None:
+                rep_module_kwargs.update(repulsion_kwargs)
+            pairwise_potentials.append(RepulsionCalculator(**rep_module_kwargs))
         if dispersion:
-            pairwise_potentials.append(DispersionD3(cutoff=cutoff, elements=elements, cutoff_fn=CutoffSmooth(order=4)))
+            if dispersion_kwargs is not None:
+                rep_module_kwargs.update(dispersion_kwargs)
+            pairwise_potentials.append(DispersionD3(**disp_module_kwargs))
         if srb:
-            pairwise_potentials.append(EnergySRB(cutoff=cutoff, elements=elements))
+            if srb_kwargs is not None:
+                srb_module_kwargs.update(srb_kwargs)
+            pairwise_potentials.append(EnergySRB(**srb_module_kwargs))
         model_kwargs.update({'pairwise_potentials': pairwise_potentials})
         model_class = BuiltinModelPairInteractions
     else:
