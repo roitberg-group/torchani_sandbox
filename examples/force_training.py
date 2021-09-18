@@ -17,9 +17,10 @@ class ForceRunner(training.Runner):
         target_forces = batch['forces'].float()
         num_atoms = (species >= 0).sum(dim=1).float()
         with torch.enable_grad():
-            coordinates = batch['coordinates'].float().requires_grad_(True)
-            predicted_energies = self._model((species, coordinates)).energies
-            predicted_forces = -torch.autograd.grad(predicted_energies.sum(), coordinates, create_graph=True, retain_graph=True)[0]
+            with torch.autograd.detect_anomaly():
+                coordinates = batch['coordinates'].float().requires_grad_(True)
+                predicted_energies = self._model((species, coordinates)).energies
+                predicted_forces = -torch.autograd.grad(predicted_energies.sum(), coordinates, create_graph=True, retain_graph=True)[0]
         force_coefficient = 0.1
         squared_energy_error = self._squared_error(predicted_energies, target_energies)
         energy_loss = squared_energy_error / num_atoms.sqrt()
@@ -45,25 +46,26 @@ if __name__ == '__main__':
     DATASET_CLASS = datasets.ANI2x
     FUNCTIONAL = 'B973c'
     BASIS_SET = 'def2mTZVP'
-    DATASET_NAME = f'2x-{FUNCTIONAL}-{BASIS_SET}'
     NUM_WORKERS = 2
     PREFETCH_FACTOR = 2
     SELECTED_PROPERTIES = {'energies', 'species', 'coordinates', 'forces'}
+    DATASET_NAME = f"2x-{FUNCTIONAL}-{BASIS_SET}"
     VALIDATION_SPLIT = 'validation'
     TRAINING_SPLIT = 'training'
+    BATCH_ALL_PROPERTIES = True
     training_set, validation_set = training.prepare_learning_sets(DATASET_CLASS, ROOT_DATASET_PATH, DATASET_NAME,
                                                                   BATCH_SIZE, NUM_WORKERS, PREFETCH_FACTOR,
                                                                   VALIDATION_SPLIT, TRAINING_SPLIT, FUNCTIONAL, BASIS_SET,
-                                                                  SELECTED_PROPERTIES, SPLITS, FOLDS)
-    DEVICE = 'cpu'
-    USE_CUAEV = False
+                                                                  SELECTED_PROPERTIES, SPLITS, FOLDS, BATCH_ALL_PROPERTIES)
+    DEVICE = 'cuda'
+    USE_CUAEV = True
     LOG_TENSORBOARD = True
     LOG_CSV = True
     RUNS_ROOT_DIR = '/media/samsung1TBssd/Git-Repos/torchani-runs'
     SET_NAME = f'trials-{DATASET_NAME}'
-    SPECIFIC_RUN_NAME = 'cuaev-repulsion-b973c'
+    SPECIFIC_RUN_NAME = 'cuaev-dispersion-b973c-actual-anomaly'
     # Model
-    model = torchani.models.ANI2x(pretrained=False, model_index=0, use_cuda_extension=USE_CUAEV, periodic_table_index=True, repulsion=True)
+    model = torchani.models.ANI2x(pretrained=False, model_index=0, use_cuda_extension=USE_CUAEV, periodic_table_index=True, repulsion=False, dispersion=True)
     # GSAEs
     #model.energy_shifter.self_energies = torch.tensor([-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000], dtype=torch.float)
     model.energy_shifter.self_energies = torch.tensor([-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000, -398.1577125334925, -99.80348506781634, -460.168193942], dtype=torch.float)
