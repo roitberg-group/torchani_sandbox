@@ -16,7 +16,7 @@ class TestRepulsion(TestCase):
         species = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
         energies = rep((species, energies), atom_index12, distances).energies
-        self.assertTrue(torch.isclose(torch.tensor(3.5325e-08), energies))
+        self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
     def testRepulsionStandalone(self):
         rep = StandaloneRepulsionCalculator(cutoff=5.2, neighborlist_cutoff=5.2)
@@ -25,7 +25,7 @@ class TestRepulsion(TestCase):
         species = torch.tensor([[0, 0]])
         energies = rep((species, coordinates)).energies
         print(energies)
-        self.assertTrue(torch.isclose(torch.tensor(3.5325e-08), energies))
+        self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
     def testRepulsionBatches(self):
         rep = StandaloneRepulsionCalculator(cutoff=5.2, neighborlist_cutoff=5.2)
@@ -50,7 +50,7 @@ class TestRepulsion(TestCase):
         energy3 = rep((species3[:, 1:], coordinates3[:, 1:, :])).energies
         energies_cat = torch.cat((energy1, energy2, energy3))
         energies = rep((species_cat, coordinates_cat)).energies
-        self.assertTrue(torch.isclose(energies, energies_cat).all())
+        self.assertEqual(energies, energies_cat)
 
     def testRepulsionLongDistances(self):
         rep = RepulsionCalculator(5.2)
@@ -59,7 +59,7 @@ class TestRepulsion(TestCase):
         species = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
         energies = rep((species, energies), atom_index12, distances).energies
-        self.assertTrue(torch.isclose(torch.tensor(0.0), energies))
+        self.assertEqual(torch.tensor([0.0]), energies)
 
     def testRepulsionEnergy(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -80,7 +80,7 @@ class TestRepulsion(TestCase):
         path = Path(__file__).resolve().parent.joinpath('test_data/energies_repulsion_1x.pkl')
         with open(path, 'rb') as f:
             energies_expect = torch.tensor(torch.load(f))
-        self.assertTrue(torch.isclose(energies_expect, energies).all())
+        self.assertEqual(energies_expect, energies)
 
 
 if __name__ == '__main__':
