@@ -222,8 +222,8 @@ class DispersionD3(torch.nn.Module):
         k3 = 4
         gauss_dist = (coordnums[atom_index12[0]].view(-1, 1) - precalc_cn_a)**2
         gauss_dist += (coordnums[atom_index12[1]].view(-1, 1) - precalc_cn_b)**2
-        max_gauss_dist = gauss_dist.max()
-        gauss_dist = torch.exp(-k3 * (gauss_dist - max_gauss_dist))
+        # Extra factor of gauss_dist.mean() and + 20 needed for numerical stability
+        gauss_dist = torch.exp(-k3 * (gauss_dist - gauss_dist.detach().mean()) + 20)
         # only consider C6 coefficients strictly greater than zero,
         # don't include -1 and 0.0 terms in the sums,
         # all missing parameters (with -1.0 values) are guaranteed to be the
@@ -232,7 +232,8 @@ class DispersionD3(torch.nn.Module):
         # sum over references for w factor and z factor
         w_factor = gauss_dist.sum(-1)
         z_factor = (precalc_order6 * gauss_dist).sum(-1)
-        order6_coeffs = z_factor / w_factor
+        # This is needed for numerical stability
+        order6_coeffs = torch.exp(torch.log(z_factor) - torch.log(w_factor))
         return order6_coeffs
 
     def _calculate_dispersion_correction(self, species_energies: Tuple[Tensor, Tensor], atom_index12: Tensor,
