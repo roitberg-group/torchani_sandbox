@@ -116,13 +116,13 @@ class TestDispersion(TestCase):
         disp = DispersionD3().to(self.device)
         energy = disp((self.species, energy), atom_index12, distances).energies
         energy = units.hartree2kcalmol(energy)
-        self.assertEqual(energy.cpu(), torch.tensor([-1.251336]).double())
+        self.assertEqual(energy.cpu(), torch.tensor([-1.251336]).double(), rtol=1e-6, atol=1e-6)
 
     def testMethaneStandalone(self):
         disp = StandaloneDispersionD3(neighborlist_cutoff=8.0, periodic_table_index=True).to(self.device)
         energy = disp((self.atomic_numbers, self.coordinates)).energies
         energy = units.hartree2kcalmol(energy)
-        self.assertEqual(energy.cpu(), torch.tensor([-1.251336]).double())
+        self.assertEqual(energy.cpu(), torch.tensor([-1.251336]).double(), rtol=1e-6, atol=1e-6)
 
     def testMethaneStandaloneBatch(self):
         disp = StandaloneDispersionD3(neighborlist_cutoff=8.0, periodic_table_index=True).to(self.device)
@@ -131,7 +131,7 @@ class TestDispersion(TestCase):
         species = self.atomic_numbers.repeat(r, 1)
         energy = disp((species, coordinates)).energies
         energy = units.hartree2kcalmol(energy)
-        self.assertEqual(energy.cpu(), torch.tensor([-1.251336, -1.251336]).double())
+        self.assertEqual(energy.cpu(), torch.tensor([-1.251336, -1.251336]).double(), rtol=1e-6, atol=1e-6)
 
     def testDispersionBatches(self):
         rep = StandaloneDispersionD3(neighborlist_cutoff=8.0, periodic_table_index=True)
