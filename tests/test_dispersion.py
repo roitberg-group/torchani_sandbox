@@ -45,12 +45,7 @@ class TestDispersion(TestCase):
                                         self.species.flatten()[atom_index12],
                                         atom_index12, distances)
         # coordination numbers taken directly from DFTD3 Grimme et. al. code
-        self.assertTrue(
-            torch.isclose(
-                coordnums.cpu(),
-                torch.tensor(
-                    [1.0052222, 1.0052222, 1.0052222, 1.0052222,
-                     3.999873048]).double()).all())
+        self.assertEqual(coordnums.cpu(), torch.tensor([1.0052222, 1.0052222, 1.0052222, 1.0052222, 3.999873048]).double())
 
     def testPrecomputedC6(self):
         atom_index12, _, _, distances = self.aev_computer.neighborlist(self.species, self.coordinates)
@@ -85,8 +80,7 @@ class TestDispersion(TestCase):
             ])
         }
         for k in diags.keys():
-            self.assertTrue(
-                torch.isclose(diags[k].cpu(), expect_diags[k]).all())
+            self.assertEqual(diags[k].cpu(), expect_diags[k])
 
     def testAllCarbonConstants(self):
         c6_constants, _, _ = constants.get_c6_constants()
@@ -96,8 +90,7 @@ class TestDispersion(TestCase):
              [37.8419, 35.5219, 29.3602, 27.5063, 22.9517],
              [35.4129, 33.2540, 27.5063, 25.7809, 21.5377],
              [29.2830, 27.5206, 22.9517, 21.5377, 18.2067]])
-        self.assertTrue(
-            torch.isclose(expect_c6_carbon, c6_constants[6, 6]).all())
+        self.assertEqual(expect_c6_carbon, c6_constants[6, 6])
 
     def testMethaneC6(self):
         atom_index12, _, _, distances = self.aev_computer.neighborlist(self.species, self.coordinates)
@@ -113,8 +106,7 @@ class TestDispersion(TestCase):
             3.0882003, 3.0882003, 3.0882003, 7.4632792, 3.0882003, 3.0882003,
             7.4632792, 3.0882003, 7.4632792, 7.4632792
         ]).double()
-        self.assertTrue(
-            torch.isclose(order6_coeffs.cpu(), expect_order6).all())
+        self.assertEqual(order6_coeffs.cpu(), expect_order6)
 
     def testMethaneEnergy(self):
         atom_index12, _, _, distances = self.aev_computer.neighborlist(self.species, self.coordinates)
@@ -124,17 +116,13 @@ class TestDispersion(TestCase):
         disp = DispersionD3().to(self.device)
         energy = disp((self.species, energy), atom_index12, distances).energies
         energy = units.hartree2kcalmol(energy)
-        self.assertTrue(
-            torch.isclose(energy.cpu(),
-                          torch.tensor([-1.251336]).double()))
+        self.assertEqual(energy.cpu(), torch.tensor([-1.251336]).double(), rtol=1e-6, atol=1e-6)
 
     def testMethaneStandalone(self):
         disp = StandaloneDispersionD3(neighborlist_cutoff=8.0, periodic_table_index=True).to(self.device)
         energy = disp((self.atomic_numbers, self.coordinates)).energies
         energy = units.hartree2kcalmol(energy)
-        self.assertTrue(
-            torch.isclose(energy.cpu(),
-                          torch.tensor([-1.251336]).double()))
+        self.assertEqual(energy.cpu(), torch.tensor([-1.251336]).double(), rtol=1e-6, atol=1e-6)
 
     def testMethaneStandaloneBatch(self):
         disp = StandaloneDispersionD3(neighborlist_cutoff=8.0, periodic_table_index=True).to(self.device)
@@ -143,9 +131,7 @@ class TestDispersion(TestCase):
         species = self.atomic_numbers.repeat(r, 1)
         energy = disp((species, coordinates)).energies
         energy = units.hartree2kcalmol(energy)
-        self.assertTrue(
-            torch.isclose(energy.cpu(),
-                          torch.tensor([-1.251336, -1.251336]).double()).all())
+        self.assertEqual(energy.cpu(), torch.tensor([-1.251336, -1.251336]).double(), rtol=1e-6, atol=1e-6)
 
     def testDispersionBatches(self):
         rep = StandaloneDispersionD3(neighborlist_cutoff=8.0, periodic_table_index=True)
@@ -170,7 +156,7 @@ class TestDispersion(TestCase):
         energy3 = rep((species3[:, 1:], coordinates3[:, 1:, :])).energies
         energies_cat = torch.cat((energy1, energy2, energy3))
         energies = rep((species_cat, coordinates_cat)).energies
-        self.assertTrue(torch.isclose(energies, energies_cat).all())
+        self.assertEqual(energies, energies_cat)
 
     def testForce(self):
         self.coordinates.requires_grad_(True)
@@ -194,7 +180,7 @@ class TestDispersion(TestCase):
             0.42656701194940E-05, 0.42656701194940E-05, -0.42656701194940E-05
         ], [0.00000000000000E+00, 0.00000000000000E+00,
             0.00000000000000E+00]]).double()
-        self.assertTrue(torch.isclose(expect_grad, gradient.cpu()).all())
+        self.assertEqual(expect_grad.unsqueeze(0), gradient.cpu())
 
 
 if __name__ == '__main__':
