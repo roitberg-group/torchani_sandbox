@@ -221,24 +221,17 @@ class DispersionD3(torch.nn.Module):
         k3 = 4
         gauss_dist = (coordnums[atom_index12[0]].view(-1, 1) - precalc_cn_a)**2
         gauss_dist += (coordnums[atom_index12[1]].view(-1, 1) - precalc_cn_b)**2
-        # Here we do a trick to prevent numerical issues that may arise from
-        # computing the quotient of two very small numbers (this may be
-        # memory intensive though). The idea is to compute:
-        # e^(-A) / Sum_j(e^(-B_j)) as 1 / Sum_j(e^(-(B_j - A)))
-        # this prevents the term from being undefined if both e^(-A) and the
-        # sum over j are small, but the result is "normal sized".
-        gauss_delta = -k3 * (gauss_dist.view(-1, 25, 1) - gauss_dist.view(-1, 1, 25))
-        gauss_delta = torch.exp(gauss_delta)
+        max_gauss_dist = gauss_dist.max()
+        gauss_dist = torch.exp(-k3 * (gauss_dist - max_gauss_dist))
         # only consider C6 coefficients strictly greater than zero,
         # don't include -1 and 0.0 terms in the sums,
         # all missing parameters (with -1.0 values) are guaranteed to be the
         # same for precalc_cn_a/b and precalc_order6
-        gauss_delta = gauss_delta.masked_fill(precalc_order6.view(-1, 1, 25) < 0.0, 0.0)
-        # The next two sum(-1) are summing over all references, and the masked fills
-        # get rid of references with -1 in them
-        gauss_factor = gauss_delta.sum(-1).pow(-1)
-        precalc_order6 = precalc_order6.masked_fill(precalc_order6 < 0.0, 0.0)
-        order6_coeffs = (precalc_order6 * gauss_factor).sum(-1)
+        gauss_dist = gauss_dist.masked_fill(precalc_order6 <= 0.0, 0.0)
+        # sum over references for w factor and z factor
+        w_factor = gauss_dist.sum(-1)
+        z_factor = (precalc_order6 * gauss_dist).sum(-1)
+        order6_coeffs = z_factor / w_factor
         return order6_coeffs
 
     def _calculate_dispersion_correction(self, species_energies: Tuple[Tensor, Tensor], atom_index12: Tensor,
