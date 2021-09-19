@@ -63,7 +63,7 @@ if __name__ == '__main__':
     LOG_CSV = True
     RUNS_ROOT_DIR = '/media/samsung1TBssd/Git-Repos/torchani-runs'
     SET_NAME = f'trials-{DATASET_NAME}'
-    SPECIFIC_RUN_NAME = 'cuaev-dispersion-b973c-actual-anomaly'
+    SPECIFIC_RUN_NAME = 'cuaev-dispersion-b973c-actual-anomaly-2'
     # Model
     model = torchani.models.ANI2x(pretrained=False, model_index=0, use_cuda_extension=USE_CUAEV, periodic_table_index=True, repulsion=False, dispersion=True)
     # GSAEs
