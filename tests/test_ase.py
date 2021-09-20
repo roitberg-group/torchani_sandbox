@@ -24,7 +24,7 @@ class TestASE(TestCase):
         # Run a Langevin thermostat dynamic for 100 steps and after the dynamic
         # check once that the numerical and analytical force agree to a given
         # relative tolerance
-        model_cell = torchani.models.ANI1x(model_index=0, torch_cell_list=True)
+        model_cell = torchani.models.ANI1x(model_index=0, cell_list=True)
         model_cell = model_cell.to(dtype=torch.double, device=self.device)
         model = torchani.models.ANI1x(model_index=0)
         model = model.to(dtype=torch.double, device=self.device)
@@ -37,9 +37,9 @@ class TestASE(TestCase):
         # Run a Langevin thermostat dynamic for 100 steps and after the dynamic
         # check once that the numerical and analytical force agree to a given
         # relative tolerance
-        model_cell = torchani.models.ANI1x(model_index=0, torch_cell_list=True)
+        model_cell = torchani.models.ANI1x(model_index=0, cell_list=True)
         model_cell = model_cell.to(dtype=torch.double, device=self.device)
-        model_dyn = torchani.models.ANI1x(model_index=0, torch_cell_list=True)
+        model_dyn = torchani.models.ANI1x(model_index=0, cell_list=True)
         model_dyn.aev_computer.neighborlist = CellList(model_dyn.aev_computer.radial_terms.cutoff, verlet=True)
         model_dyn = model_cell.to(dtype=torch.double, device=self.device)
 
@@ -53,18 +53,18 @@ class TestASE(TestCase):
         self._testForcesPBC(model, repeats=1)
 
     def testNumericalForcesCellList(self):
-        model = torchani.models.ANI1x(model_index=0, torch_cell_list=True)
+        model = torchani.models.ANI1x(model_index=0, cell_list=True)
         model = model.to(dtype=torch.double, device=self.device)
         self._testForcesPBC(model)
 
     def testNumericalForcesCellListVerlet(self):
-        model = torchani.models.ANI1x(model_index=0, torch_cell_list=True)
+        model = torchani.models.ANI1x(model_index=0, cell_list=True)
         model.aev_computer.neighborlist = CellList(model.aev_computer.radial_terms.cutoff, verlet=True)
         model = model.to(dtype=torch.double, device=self.device)
         self._testForcesPBC(model, steps=100)
 
     def testNumericalForcesCellListConstantV(self):
-        model = torchani.models.ANI1x(model_index=0, torch_cell_list=True)
+        model = torchani.models.ANI1x(model_index=0, cell_list=True)
         model.aev_computer.neighborlist = CellList(model.aev_computer.radial_terms.cutoff, constant_volume=True)
         model = model.to(dtype=torch.double, device=self.device)
         self._testForcesPBC(model)
@@ -105,7 +105,7 @@ class TestASE(TestCase):
         self._testWithNumericalStressPBC(model)
 
     def testWithNumericalStressCellList(self):
-        model = torchani.models.ANI1x(model_index=0, torch_cell_list=True)
+        model = torchani.models.ANI1x(model_index=0, cell_list=True)
         model = model.to(dtype=torch.double, device=self.device)
         self._testWithNumericalStressPBC(model)
 
