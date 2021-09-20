@@ -117,7 +117,7 @@ class TestASE(TestCase):
         benzene = read(filename)
         # set velocities to a very small value to avoid division by zero
         # warning due to initial zero temperature.
-
+        #
         # Note that there are 4 benzene molecules, thus, 48 atoms in
         # Benzene.json
         benzene.set_velocities(np.full((48, 3), 1e-15))
