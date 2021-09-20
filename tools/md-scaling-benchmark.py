@@ -135,12 +135,12 @@ def plot_many(path_to_files, comment, show=False):
         plt.show()
 
 
-def get_model(model_arg, torch_cell_list, model_index,
-              adaptive_torch_cell_list):
+def get_model(model_arg, cell_list, model_index,
+              verlet_cell_list):
     args = {
         'periodic_table_index': True,
-        'torch_cell_list': torch_cell_list,
-        'adaptive_torch_cell_list': adaptive_torch_cell_list
+        'cell_list': cell_list,
+        'verlet_cell_list': verlet_cell_list
     }
 
     if model_index:
@@ -203,7 +203,7 @@ if __name__ == "__main__":
                         action='store_true',
                         default=False,
                         help="Use a cell list")
-    parser.add_argument('--adaptive-cell-list',
+    parser.add_argument('--verlet-cell-list',
                         action='store_true',
                         default=False,
                         help="Reuse cell list")
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     # the output file name is the model name by default
     if args.cell_list:
         clist_str = '_clist_update_all_steps'
-    elif args.adaptive_cell_list:
+    elif args.verlet_cell_list:
         clist_str = '_clist_reuse'
     else:
         clist_str = ''
@@ -270,7 +270,7 @@ if __name__ == "__main__":
 
         print_info(device, args.steps, sizes)
         model = get_model(args.model, args.cell_list, args.model_index,
-                          args.adaptive_cell_list)
+                          args.verlet_cell_list)
 
         timers = {
             'forward': 0.0,
