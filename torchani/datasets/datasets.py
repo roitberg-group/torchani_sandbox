@@ -925,7 +925,7 @@ class ANIDataset(_ANIDatasetBase):
         dir_ = Path(dir_).resolve()
         if not dir_.is_dir():
             raise ValueError("Input should be a directory")
-        locations = sorted(dir_.iterdir())
+        locations = sorted([p for p in dir_.iterdir() if p.suffix != '.tar.gz'])
         names = [p.stem for p in locations]
         return cls(locations=locations, names=names, **kwargs)
 
