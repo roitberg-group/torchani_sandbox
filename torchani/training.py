@@ -213,22 +213,22 @@ def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_s
                           functional=None, basis_set=None, selected_properties=None, splits=None, folds=None, batch_all_properties=True):
     assert (splits is None or folds is None) and (splits is not folds)
     ds_path = root_dataset_path.joinpath(dataset_name)
-    assert ds_path.suffix != '.h5'
-    batched_dataset_path = ds_path.as_posix() + '-batched'
+    batched_dataset_path = Path(ds_path.as_posix() + '-batched').resolve()
     if not batched_dataset_path.is_dir():
         if DatasetClass.__name__ == 'ANIDataset':
-            ds = DatasetClass(ds_path)
+            ds = DatasetClass.from_dir(ds_path)
         else:
             kwargs = {'download': True}
             if functional is not None:
                 kwargs.update({'functional': functional})
             if basis_set is not None:
                 kwargs.update({'basis_set': basis_set})
-            ds = DatasetClass(ds_path.with_suffix('.h5'), **kwargs)
+            ds = DatasetClass(ds_path, **kwargs)
         datasets.create_batched_dataset(ds,
                                         include_properties=None if batch_all_properties else selected_properties,
                                         dest_path=batched_dataset_path,
                                         batch_size=batch_size,
+                                        max_batches_per_packet=1500,
                                         shuffle_seed=123456789,
                                         splits=splits, folds=folds)
 
