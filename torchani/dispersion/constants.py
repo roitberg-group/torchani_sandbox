@@ -180,9 +180,9 @@ def get_df_constants():
     _zero_constants = _zero_constants.split('\n')
     for line in _zero_constants:
         df, s6_zero, sr6, s8_zero = line.split()
-        df_constants[df] = {'s6_zero': s6_zero, 'sr6': sr6, 's8_zero': s8_zero}
+        df_constants[df] = {'s6_zero': float(s6_zero), 'sr6': float(sr6), 's8_zero': float(s8_zero)}
     # now D3BJ constants
-    # functional, s6_bj, a1, s8_bj, a0
+    # functional, s6_bj, a1, s8_bj, a2
     _bj_constants = """B1B95         1.000   0.2092    1.4507    5.5545
                        B2GPPLYP      0.560   0.0000    0.2597    6.3332
                        B3PW91        1.000   0.4312    2.8524    4.4693
@@ -227,6 +227,6 @@ def get_df_constants():
     # Other parameters taken directly from the Psi4 source code
     _bj_constants = _bj_constants.split('\n')
     for line in _bj_constants:
-        df, s6_bj, a1, s8_bj, a0 = line.split()
-        df_constants[df] = {'s6_bj': s6_bj, 'a1': a1, 's8_bj': s8_bj, 'a0': a0}
+        df, s6_bj, a1, s8_bj, a2 = line.split()
+        df_constants[df] = {'s6_bj': float(s6_bj), 'a1': float(a1), 's8_bj': float(s8_bj), 'a2': float(a2)}
     return df_constants
