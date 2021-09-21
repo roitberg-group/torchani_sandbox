@@ -1,5 +1,6 @@
 import time
 import csv
+import warnings
 import math
 import shutil
 from pathlib import Path
@@ -249,7 +250,9 @@ def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_s
 
 
 def execute_training(persistent_objects, scheduler, runner, optimizer, training_set, validation_set, run_output_path: Path,
-        TRACK_METRIC: str, INITIAL_LR: float, MAX_EPOCHS: int, EARLY_STOPPING_LR: float, LOG_TB: bool, LOG_CSV: bool, SCRIPT_PATH: str):
+        TRACK_METRIC: str, INITIAL_LR: float, MAX_EPOCHS: int, EARLY_STOPPING_LR: float, LOG_TB: bool, LOG_CSV: bool, SCRIPT_PATH: str, debug: bool = False):
+    if debug:
+        warnings.warn("Running in DEBUG mode, checkpoints and tensorboard files will not be saved!!!")
     # Load latest checkpoint if it exists
     if run_output_path.is_dir():
         files_in_path = list(run_output_path.iterdir())
@@ -258,28 +261,30 @@ def execute_training(persistent_objects, scheduler, runner, optimizer, training_
                 if p.name.startswith('events') or p.name in ['script.py', 'train_metrics.csv', 'validate_metrics.csv']:
                     p.unlink()
 
+    is_restart = False
     if run_output_path.is_dir() and any(run_output_path.iterdir()):
-        is_restart = True
-        _load_checkpoint(run_output_path, persistent_objects, kind='latest')
+        if not debug:
+            is_restart = True
+            _load_checkpoint(run_output_path, persistent_objects, kind='latest')
         with open(run_output_path / 'script.py', 'rb') as restart_script, open(SCRIPT_PATH, 'rb') as input_script:
             restart_bytes = restart_script.read()
             input_bytes = input_script.read()
             if not restart_bytes == input_bytes:
                 raise RuntimeError('Tried to run restart with a modified input file')
-    else:
-        is_restart = False
+    elif not debug:
         run_output_path.mkdir(parents=True, exist_ok=True)
         shutil.copy2(Path(SCRIPT_PATH).resolve(), run_output_path / 'script.py')
 
     # Logging
-    logger = Logger(run_output_path, log_tensorboard=LOG_TB, log_csv=LOG_CSV)
+    logger = Logger(run_output_path, log_tensorboard=LOG_TB, log_csv=LOG_CSV) if not debug else None
 
     # Main Training loop
     initial_epoch = scheduler.last_epoch  # type: ignore
     if not is_restart and initial_epoch == 0:  # Zeroth epoch is just validating
         validate_metrics = runner.eval(validation_set, initial_epoch, track_metric=TRACK_METRIC)
-        logger.log_scalars(initial_epoch, validate_metrics=validate_metrics, other={'learning_rate': INITIAL_LR, 'epoch_time_seconds': 0.0})
-        _save_checkpoint(run_output_path, persistent_objects, kind='latest')
+        if not debug:
+            logger.log_scalars(initial_epoch, validate_metrics=validate_metrics, other={'learning_rate': INITIAL_LR, 'epoch_time_seconds': 0.0})
+            _save_checkpoint(run_output_path, persistent_objects, kind='latest')
 
     for epoch in range(initial_epoch + 1, MAX_EPOCHS):
         start = time.time()
@@ -292,15 +297,18 @@ def execute_training(persistent_objects, scheduler, runner, optimizer, training_
         # Checkpoint
         if runner.best_metric_improved_last_run:
             runner.best_metric_improved_last_run = False
-            _save_checkpoint(run_output_path, persistent_objects, kind='best')
-        _save_checkpoint(run_output_path, persistent_objects, kind='latest')
+            if not debug:
+                _save_checkpoint(run_output_path, persistent_objects, kind='best')
+        if not debug:
+            _save_checkpoint(run_output_path, persistent_objects, kind='latest')
         # Logging
         learning_rate = optimizer.param_groups[0]['lr']
-        logger.log_scalars(scheduler.last_epoch,  # type: ignore
-                           train_metrics=train_metrics,
-                           validate_metrics=validate_metrics,
-                           other={'learning_rate': learning_rate,
-                                  'epoch_time_seconds': time.time() - start})
+        if not debug:
+            logger.log_scalars(scheduler.last_epoch,  # type: ignore
+                               train_metrics=train_metrics,
+                               validate_metrics=validate_metrics,
+                               other={'learning_rate': learning_rate,
+                                      'epoch_time_seconds': time.time() - start})
         # Early stopping
         if learning_rate < EARLY_STOPPING_LR:
             break
