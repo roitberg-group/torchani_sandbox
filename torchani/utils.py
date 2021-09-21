@@ -581,4 +581,4 @@ ATOMIC_NUMBERS = {symbol: z for z, symbol in enumerate(PERIODIC_TABLE)}
 
 __all__ = ['pad_atomic_properties', 'present_species', 'hessian',
            'vibrational_analysis', 'strip_redundant_padding',
-           'ChemicalSymbolsToInts', 'get_atomic_masses', 'tqdm']
+           'ChemicalSymbolsToInts', 'get_atomic_masses', 'tqdm', 'GSAES', 'PERIODIC_TABLE', 'ATOMIC_NUMBERS']
