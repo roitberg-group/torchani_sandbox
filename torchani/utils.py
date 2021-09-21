@@ -26,6 +26,7 @@ PADDING = {
 # GSAES were calculating using the following splin multiplicities:
 # H: 2, C: 3, N: 4, O: 3, S: 3, F: 2, Cl: 2
 # and using UKS in all cases, with tightscf, on orca 4.2.3
+# (except for the wB97X-631Gd energies, which were computed with Gaussian 09)
 # the coupled cluster energies are calculated using
 # DLPNO-CCSD def2-TZVPP def2-TZVPP/C which is not the exact same as
 # CCSD(T)*/CBS but is close enough for atomic energies. For H I set the E to
