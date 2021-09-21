@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Tuple, Dict
+import math
 
 import torch
 from torch import Tensor
@@ -8,6 +9,14 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import torchani
 from torchani import datasets, transforms, training
+from torchani.utils import GSAES
+
+
+def sort_by_element(self_energies, elements):
+    # sort GSAES by element
+    self_energies = sorted(self_energies.items(), key=lambda it: elements.index(it[0]) if it[0] in elements else math.inf)
+    self_energies = [it[1] for it in self_energies][:len(elements)]
+    return self_energies
 
 
 class ForceRunner(training.Runner):
@@ -67,10 +76,9 @@ if __name__ == '__main__':
     # Model
     model = torchani.models.ANI2x(pretrained=False, model_index=0, use_cuda_extension=USE_CUAEV, periodic_table_index=True, repulsion=False, dispersion=True)
     # GSAEs
-    #model.energy_shifter.self_energies = torch.tensor([-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000], dtype=torch.float)
-    model.energy_shifter.self_energies = torch.tensor([-0.499321200000, -37.83383340000, -54.57328250000, -75.04245190000, -398.1577125334925, -99.80348506781634, -460.168193942], dtype=torch.float)
-    # Transforms
     elements = model.get_chemical_symbols()
+    self_energies = sort_by_element(GSAES[f"{FUNCTIONAL}-{BASIS_SET}"], elements)
+    model.energy_shifter.self_energies = torch.tensor(self_energies, dtype=torch.float)
     # Optimizer
     INITIAL_LR = 1e-3
     WEIGHT_DECAY = 1e-7
