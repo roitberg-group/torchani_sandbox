@@ -212,17 +212,19 @@ def _load_checkpoint(path: PathLike, objects: Dict[str, Stateful], kind: str = '
 def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_size, num_workers, prefetch_factor, validation_split, training_split,
                           functional=None, basis_set=None, selected_properties=None, splits=None, folds=None, batch_all_properties=True):
     assert (splits is None or folds is None) and (splits is not folds)
-    batched_dataset_path = root_dataset_path.joinpath(dataset_name).joinpath('-batched')
+    ds_path = root_dataset_path.joinpath(dataset_name)
+    assert ds_path.suffix != '.h5'
+    batched_dataset_path = ds_path.as_posix() + '-batched'
     if not batched_dataset_path.is_dir():
-        if type(DatasetClass) == datasets.ANIDataset:
-            ds = DatasetClass(root_dataset_path / dataset_name)
+        if DatasetClass.__name__ == 'ANIDataset':
+            ds = DatasetClass(ds_path)
         else:
             kwargs = {'download': True}
             if functional is not None:
                 kwargs.update({'functional': functional})
             if basis_set is not None:
                 kwargs.update({'basis_set': basis_set})
-            ds = DatasetClass(root_dataset_path / dataset_name, **kwargs)
+            ds = DatasetClass(ds_path.with_suffix('.h5'), **kwargs)
         datasets.create_batched_dataset(ds,
                                         include_properties=None if batch_all_properties else selected_properties,
                                         dest_path=batched_dataset_path,
@@ -230,14 +232,14 @@ def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_s
                                         shuffle_seed=123456789,
                                         splits=splits, folds=folds)
 
-    training_set = torch.utils.data.DataLoader(datasets.ANIBatchedDataset(batched_dataset_path, split='training', properties=selected_properties),
+    training_set = torch.utils.data.DataLoader(datasets.ANIBatchedDataset(batched_dataset_path, split=training_split, properties=selected_properties),
                                                shuffle=True,
                                                num_workers=num_workers,
                                                prefetch_factor=prefetch_factor,
                                                pin_memory=True,
                                                batch_size=None)
 
-    validation_set = torch.utils.data.DataLoader(datasets.ANIBatchedDataset(batched_dataset_path, split='validation', properties=selected_properties),
+    validation_set = torch.utils.data.DataLoader(datasets.ANIBatchedDataset(batched_dataset_path, split=validation_split, properties=selected_properties),
                                                  shuffle=False,
                                                  num_workers=num_workers,
                                                  prefetch_factor=prefetch_factor,
