@@ -277,14 +277,24 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
             yield getattr(self, 'get_numpy_conformers')(group_name, **kwargs)
 
     def iter_key_idx_conformers(self, **kwargs) -> Iterator[Tuple[str, int, Conformers]]:
+        kwargs = kwargs.copy()
+        getter = kwargs.pop('getter', 'get_conformers')
         for k, size in self._group_sizes.items():
-            conformers = getattr(self, 'get_conformers')(k, **kwargs)
+            conformers = getattr(self, getter)(k, **kwargs)
             for idx in range(size):
                 single_conformer = {k: conformers[k][idx] for k in conformers.keys()}
                 yield k, idx, single_conformer
 
+    def iter_key_idx_numpy_conformers(self, **kwargs) -> Iterator[Tuple[str, int, Conformers]]:
+        kwargs.update({'getter': 'get_numpy_conformers'})
+        yield from self.iter_key_idx_conformers(**kwargs)
+
     def iter_conformers(self, **kwargs) -> Iterator[Conformers]:
         for _, _, c in self.iter_key_idx_conformers(**kwargs):
+            yield c
+
+    def iter_numpy_conformers(self, **kwargs) -> Iterator[Conformers]:
+        for _, _, c in self.iter_key_idx_numpy_conformers(**kwargs):
             yield c
 
 
@@ -908,6 +918,16 @@ class ANIDataset(_ANIDatasetBase):
             raise ValueError("Length of locations and names must be equal")
         self._datasets = OrderedDict((n, _ANISubdataset(loc, **kwargs)) for n, loc in zip(names, locations))
         self._update_cache()
+
+    @classmethod
+    def from_dir(cls, dir_: StrPath, **kwargs):
+        r"""Reads all files in a given directory"""
+        dir_ = Path(dir_).resolve()
+        if not dir_.is_dir():
+            raise ValueError("Input should be a directory")
+        locations = sorted([p for p in dir_.iterdir() if p.suffix != '.tar.gz'])
+        names = [p.stem for p in locations]
+        return cls(locations=locations, names=names, **kwargs)
 
     @property
     def grouping(self) -> str:
