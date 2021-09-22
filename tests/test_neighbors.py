@@ -5,7 +5,7 @@ import torch
 import torchani
 from torchani.testing import TestCase
 from torchani.aev import AEVComputer, CellList
-from torchani.geometry import tile_into_cube
+from torchani.geometry import tile_into_tight_cell
 
 
 class TestCellList(TestCase):
@@ -24,8 +24,8 @@ class TestCellList(TestCase):
             [[cut / 2, cut / 2, cut / 2],
              [cut / 2 + 0.1, cut / 2 + 0.1, cut / 2 + 0.1]]).unsqueeze(0)
         species = torch.tensor([0, 0]).unsqueeze(0)
-        species, coordinates = tile_into_cube((species, coordinates),
-                                              box_length=cut)
+        species, coordinates, _ = tile_into_tight_cell((species, coordinates),
+                                                     fixed_displacement_size=cut, make_coordinates_positive=False)
         assert species.shape[1] == 54
         assert coordinates.shape[1] == 54
 
@@ -206,9 +206,9 @@ class TestCellList(TestCase):
                 [[cut / 2, cut / 2, cut / 2],
                  [cut / 2 + 0.1, cut / 2 + 0.1, cut / 2 + 0.1]]).unsqueeze(0)
             species = torch.tensor([0, 0]).unsqueeze(0)
-            species, coordinates = tile_into_cube((species, coordinates),
-                                                  box_length=cut,
-                                                  noise=0.1)
+            species, coordinates, _ = tile_into_tight_cell((species, coordinates),
+                                                        fixed_displacement_size=cut,
+                                                        noise=0.1, make_coordinates_positive=False)
             self._check_neighborlists_consistency(coordinates, species)
 
     def testCellListIsConsistentRandomV2(self):

@@ -285,54 +285,6 @@ class BuiltinModel(Module):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         return self.neural_networks.size
 
-    @torch.jit.export
-    def from_neighborlist(self, species_coordinates: Tuple[Tensor, Tensor],
-                                neighbors: Tensor,
-                                shift_values: Tensor, screened_input: bool = False) -> SpeciesEnergies:
-        # This entrypoint allows input from an external neighborlist + shift values
-        species, neighbors, diff_vectors, distances = self._parse_neighborlist(species_coordinates, neighbors, shift_values, screened_input)
-        assert neighbors is not None
-        aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
-        species_energies = self.neural_networks((species, aevs))
-        return self.energy_shifter(species_energies)
-
-    def _parse_neighborlist(self, species_coordinates: Tuple[Tensor, Tensor],
-                                neighbors: Tensor,
-                                shift_values: Tensor, screened_input: bool = False) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
-        # check consistency of shapes of neighborlist and species_coordinates
-        assert neighbors.dim() == 2 and neighbors.shape[0] == 2
-        assert shift_values.dim() == 2 and shift_values.shape[1] == 3
-        assert neighbors.shape[1] == shift_values.shape[0]
-
-        # check shapes for correctness
-        species, coordinates = self._maybe_convert_species(species_coordinates)
-        assert species.dim() == 2
-        assert coordinates.dim() == 3
-        assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
-        if not screened_input:
-            # First we screen the input neighbors in case some of the
-            # values are at distances larger than the radial cutoff, or some of
-            # the values are masked with dummy atoms. The first may happen if
-            # the neighborlist uses some sort of skin value to rebuild itself
-            # (as in Loup Verlet lists), which is common in MD programs.
-            cutoff = self.aev_computer.radial_terms.cutoff
-            nl_out = self.aev_computer.neighborlist._screen_with_cutoff(cutoff,
-                                                           coordinates,
-                                                           neighbors,
-                                                           shift_values,
-                                                           (species == -1))
-            neighbors, _, diff_vectors, distances = nl_out
-        else:
-            # If the input neighbors is assumed to be pre screened then we
-            # just calculate the distances and diff_vector here
-            coordinates = coordinates.view(-1, 3)
-            coords0 = coordinates.index_select(0, neighbors[0])
-            coords1 = coordinates.index_select(0, neighbors[1])
-            diff_vectors = coords0 - coords1 + shift_values
-            distances = diff_vectors.norm(2, -1)
-        assert neighbors is not None
-        return species, neighbors, diff_vectors, distances
-
 
 class BuiltinModelPairInteractions(BuiltinModel):
     # NOTE: contribution of pairwise interactions to atomic energies is not implemented yet
@@ -419,23 +371,6 @@ class BuiltinModelPairInteractions(BuiltinModel):
             species_energies = pot(species_energies, atom_index12, distances)
 
         return self.energy_shifter((species, pre_species_energies[1] + species_energies[1]))
-
-    @torch.jit.export
-    def from_neighborlist(self, species_coordinates: Tuple[Tensor, Tensor],
-                                neighbors: Tensor,
-                                shift_values: Tensor, screened_input: bool = False) -> SpeciesEnergies:
-        # TODO: This doesn't support arbitrary potentials, it assumes post_aev_potentials with the
-        # same cutoff as the aev
-        # This entrypoint allows input from an external neighborlist + shift values
-        species, neighbors, diff_vectors, distances = self._parse_neighborlist(species_coordinates, neighbors, shift_values, screened_input)
-        assert neighbors is not None
-
-        aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
-        species_energies = self.neural_networks((species, aevs))
-
-        for potential in self.post_aev_potentials:
-            species_energies = potential(species_energies, neighbors, distances)
-        return self.energy_shifter(species_energies)
 
     def __getitem__(self, index: int) -> 'BuiltinModel':
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
@@ -571,9 +506,9 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         assert cutoff_fn == 'cosine', "No pretrained model with those characteristics exists"
 
     # aev computer args
-    if model_kwargs.pop('torch_cell_list', False):
+    if model_kwargs.pop('cell_list', False):
         neighborlist = 'cell_list'
-    elif model_kwargs.pop('adaptive_torch_cell_list', False):
+    elif model_kwargs.pop('verlet_cell_list', False):
         neighborlist = 'verlet_cell_list'
     else:
         neighborlist = 'full_pairwise'
