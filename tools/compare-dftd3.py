@@ -103,7 +103,7 @@ if __name__ == '__main__':
     else:
         cutoff_function = None
     pickle_name += '.pkl'
-    disp = StandaloneDispersionD3(neighborlist_cutoff=8.0, cutoff_function=cutoff_function).to(args.device)
+    disp = StandaloneDispersionD3(neighborlist_cutoff=8.0, cutoff_fn=cutoff_function, periodic_table_index=True).to(args.device)
     try:
         tmp_df_file = Path(__file__).resolve().parent.joinpath('.dftd3par.local')
         assert not tmp_df_file.exists()
