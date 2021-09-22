@@ -35,6 +35,14 @@ def align_geometry_to_bond(coordinates, atom1, atom2):
     return rotated_coordinates
 
 
+def displace_along_bond(species_coordinates, atom1, atom2, displacement):
+    # displaces a set of molecules along a specific bond
+    species, coordinates = species_coordinates
+    diff_vector = coordinates[:, atom2, :] - coordinates[:, atom1, :]
+    coordinates[:, atom2, :] += (diff_vector / diff_vector.norm(dim=-1)) * displacement
+    return species, coordinates
+
+
 def displace_dimer_along_bond(coordinates, atom1, atom2, distance, start_overlapped=True):
     # the dimer is assumed to be composed of an even number of atoms, the first
     # and second A/2 atoms correspond to both molecules in the dimer

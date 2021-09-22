@@ -19,6 +19,17 @@ def make_methane(device=None, eq_bond=1.09):
     return species, coordinates.double()
 
 
+def make_carbon_monoxide(device=None, eq_bond=1.13):
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    coordinates = torch.tensor(
+        [[[0.0, 0.0, 0.0], [0.0, 0.0, 1]]],
+        device=device,
+        dtype=torch.double) * eq_bond
+    species = torch.tensor([[1, 6]], device=device, dtype=torch.long)
+    return species, coordinates.double()
+
+
 def make_ammonia(device=None, eq_bond=1.008):
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
