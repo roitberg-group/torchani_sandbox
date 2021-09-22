@@ -8,6 +8,7 @@ import torch
 import re
 import subprocess
 import argparse
+from torchani.utils import tqdm
 from molecule_utils import tensor_to_xyz
 from torchani.aev.cutoffs import CutoffSmooth
 
@@ -21,6 +22,9 @@ if __name__ == '__main__':
         '--device',
         help='Device of modules and tensors',
         default=('cuda' if torch.cuda.is_available() else 'cpu'))
+    parser.add_argument('-v', '--verbose',
+                        action='store_true', default=False,
+                        help='Print energies and times for each molecule')
     parser.add_argument('--cutoff-smooth',
                         action='store_true', default=False,
                         help='Use a smooth cutoff for torchani')
@@ -34,9 +38,8 @@ if __name__ == '__main__':
                         default=500,
                         help='Number of molecules to compare')
     parser.add_argument('--dataset-path',
-                        default='../dataset/ani1-up_to_gdb4/ani_gdb_s03.h5',
-                        help='Path of the dataset, can a hdf5 file \
-                            or a directory containing hdf5 files')
+                        default=None,
+                        help='Path of the dataset, a directory containing hdf5 files')
     parser.add_argument('--plot', help='Path of file to plot')
     args = parser.parse_args()
 
@@ -59,22 +62,25 @@ if __name__ == '__main__':
         ax.set_ylabel('ANI D3 energies (Ha)')
         ax.set_xlim(min(dftd3_energies), max(dftd3_energies))
         ax.set_ylim(min(dftd3_energies), max(dftd3_energies))
-
+        plt.show(block=False)
         plt.savefig(f'dftd3{extra_string}.png')
 
         atoms = torch.tensor(atoms)
         ani_energies = torch.tensor(ani_energies)
         dftd3_energies = torch.tensor(dftd3_energies)
+        dftd3_energies = dftd3_energies[dftd3_energies != 0.0]
+        ani_energies = ani_energies[dftd3_energies != 0.0]
         mae = torch.abs(ani_energies - dftd3_energies).mean()
         rmse = torch.sqrt((ani_energies - dftd3_energies).pow(2).mean())
-        relative_error = torch.abs((ani_energies - dftd3_energies) / dftd3_energies) * 100
+        relative_error = torch.exp(torch.log(torch.abs(ani_energies - dftd3_energies)) - torch.log(torch.abs(dftd3_energies))) * 100
 
         fig, ax = plt.subplots()
         ax.scatter(dftd3_energies, relative_error, s=0.5)
         ax.set_xlabel('DFTD3 energies (Ha)')
         ax.set_ylabel(r'Relative error  $(E_{ani-d3} - E_{dftd3})/E_{dftd3}$ (%)')
         ax.set_xlim(min(dftd3_energies), max(dftd3_energies))
-        ax.set_ylim(min(relative_error), max(relative_error))
+        ax.set_ylim(0, max(relative_error))
+        plt.show(block=False)
         plt.savefig(f'dftd3_error{extra_string}.png')
 
         fig, ax = plt.subplots()
@@ -82,28 +88,50 @@ if __name__ == '__main__':
         ax.set_xlabel('Num. atoms')
         ax.set_ylabel(r'Relative error  $(E_{ani-d3} - E_{dftd3})/E_{dftd3}$ (%)')
         ax.set_xlim(min(atoms) - 1, max(atoms) + 1)
-        ax.set_ylim(min(relative_error), max(relative_error))
+        ax.set_ylim(0, max(relative_error))
+        plt.show(block=False)
         plt.savefig(f'dftd3_error_size{extra_string}.png')
 
-        print('MAE', mae)
-        print('RMSE', rmse)
-        print('mean relative error', relative_error.mean(), ' %')
+        print('MAE', mae.item())
+        print('RMSE', rmse.item())
+        print('mean relative error', relative_error.mean().item(), ' %')
         exit()
 
-    dataset = torchani.data.load(args.dataset_path).species_to_indices(
-        "periodic_table").shuffle().collate(1).cache()
+    if args.dataset_path is not None:
+        ds = torchani.datasets.ANIDataset.from_dir(args.dataset_path)
+    else:
+        ds = torchani.datasets.COMP6v1('./comp6v1', download=True)
+    try:
+        ds.delete_properties(('coordinatesHE', 'energiesHE', 'smiles'))
+    except Exception:
+        pass
+    sizes = ds.group_sizes
+
+    def get_correct_group(idx, group_sizes):
+        global_idx = 0
+        previous_global_idx = 0
+        for k, v in group_sizes.items():
+            previous_global_idx = global_idx
+            global_idx += v
+            if idx <= global_idx:
+                idx = idx - previous_global_idx - 1
+                return k, idx
+
+    indices = torch.randperm(ds.num_conformers)
+    if args.num_molecules:
+        indices = indices[:args.num_molecules]
 
     pickle_name = 'dispersion_energies'
     if args.cutoff_smooth:
         pickle_name += '_cut'
-        cutoff_function = CutoffSmooth(8.0)
+        cutoff_function = CutoffSmooth()
     elif args.cutoff_smooth4:
         pickle_name += '_cut4'
-        cutoff_function = CutoffSmooth(8.0, order=4)
+        cutoff_function = CutoffSmooth(order=4)
     else:
         cutoff_function = None
     pickle_name += '.pkl'
-    disp = StandaloneDispersionD3(neighborlist_cutoff=8.0, cutoff_function=cutoff_function).to(args.device)
+    disp = StandaloneDispersionD3(neighborlist_cutoff=8.0, cutoff_fn=cutoff_function, periodic_table_index=True).to(args.device)
     try:
         tmp_df_file = Path(__file__).resolve().parent.joinpath('.dftd3par.local')
         assert not tmp_df_file.exists()
@@ -112,12 +140,11 @@ if __name__ == '__main__':
         ani_energies = []
         dftd3_energies = []
         atoms = []
-        for i, properties in enumerate(dataset):
-            if not args.all_molecules:
-                if i == args.num_molecules:
-                    break
-            species = properties['species'].to(args.device)
-            coordinates = properties['coordinates'].to(args.device).float()
+        for idx in tqdm(indices):
+            key, idx = get_correct_group(idx, sizes)
+            properties = ds.get_conformers(key, idx, properties=('species', 'coordinates'))
+            species = properties['species'].to(args.device).unsqueeze(0)
+            coordinates = properties['coordinates'].to(args.device).float().unsqueeze(0)
             assert coordinates.shape[0] == 1
             assert species.shape[0] == 1
             num_atoms = species.shape[1]
@@ -151,7 +178,9 @@ if __name__ == '__main__':
             atoms.append(num_atoms)
             ani_energies.append(ani_dftd3_energy)
             dftd3_energies.append(dftd3_energy)
-            print(ani_dftd3_energy, dftd3_energy, time_for_ani, time_for_dftd3)
+            if args.verbose:
+                print(f'torch energy: {ani_dftd3_energy:.9f} fortran energy: {dftd3_energy:.9f}')
+                print(f'torch time: {time_for_ani} fortran time: {time_for_dftd3}')
             tmpfile.unlink()
         with open(pickle_name, 'wb') as f:
             pickle.dump({'ani': ani_energies, 'dftd3': dftd3_energies, 'atoms': atoms}, f)

@@ -5,9 +5,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import torch
 import numpy as np
+import math
 from torchani.models import ANI1x, ANI1ccx, ANI2x
 from molecule_utils import make_water, make_methane, make_ammonia, tensor_to_xyz
-from torchani.aev.cutoffs import CutoffSmooth
+from torchani.aev.cutoffs import CutoffSmooth, CutoffDummy
 from torchani.aev.neighbors import FullPairwise
 
 
@@ -16,7 +17,8 @@ def save_xyz_geometries(species, coordinates):
     if not root.is_dir():
         root.mkdir(parents=True)
     xyz_path = root.joinpath(f'{d:.3f}.xyz')
-    assert not xyz_path.exists(), "coordinate path already exists"
+    if xyz_path.exists():
+        print("Not saving coordinates since path already exists")
     tensor_to_xyz(xyz_path, (species, coordinates))
 
 
@@ -26,11 +28,11 @@ if __name__ == '__main__':
             'ammonia': make_ammonia}
     models = {'1x': ANI1x, '2x': ANI2x, '1ccx': ANI1ccx}
     displace_to_limit = True
-    use_ani = True
-    save_geometries = False
-    plot = True
-    plot_cutoffs = False
-    plot_dft_energies = True
+    use_ani = False
+    save_geometries = True
+    plot = False
+    plot_cutoffs = True
+    plot_dft_energies = False
 
     if use_ani:
         models_to_use = models.keys()
@@ -55,12 +57,12 @@ if __name__ == '__main__':
                         df_energies = data['df_energies'][idx]
                         dispersion_energies = data['dispersion_energies'][idx]
                         df_plus_disp = (df_energies + dispersion_energies).tolist()
-                    energies.update({'wB97X-D3BJ_df': df_energies.tolist(), 'wB97X-D3BJ_df+disp': df_plus_disp})
+                    energies.update({'wB97M': df_energies.tolist(), 'wB97MD3BJ': df_plus_disp})
                     with open(f'{molecule}_orca_energies.pkl', 'rb') as f:
                         data = pickle.load(f)
                         idx = np.argsort(data['distances'])
                         df_energies = data['total_energies'][idx]
-                    energies.update({'wB97X_df': df_energies.tolist()})
+                    energies.update({'wB97M': df_energies.tolist()})
 
                 colors = ['r', 'g', 'purple', 'b', 'orange', 'k', 'pink', 'darkred', 'fuchsia']
                 assert len(colors) >= len(energies.keys()), "not enough colors"
@@ -95,20 +97,17 @@ if __name__ == '__main__':
         else:
             cutoff = 8.0
             start_distance = 2.0  # or 0.1?
-            end_distance = 8.0
+            end_distance = 8.5
             orders = [2, 4, 6]
             if not use_ani:
-                disp_calcs = {or_:
-                        StandaloneDispersionD3(cutoff_function=CutoffSmooth(cutoff,
-                            order=or_), neighborlist_cutoff=cutoff) for or_ in orders}
-                disp_calcs.update({0: StandaloneDispersionD3()})
+                disp_calcs = {or_: StandaloneDispersionD3(cutoff_fn=CutoffSmooth(order=or_), neighborlist_cutoff=cutoff, periodic_table_index=True) for or_ in orders}
+                disp_calcs.update({0: StandaloneDispersionD3(cutoff_fn=CutoffDummy(), neighborlist_cutoff=math.inf, periodic_table_index=True)})
             else:
-                d3_only = StandaloneDispersionD3()
+                d3_only = StandaloneDispersionD3(cutoff_fn=CutoffDummy(), neighborlist_cutoff=math.inf, periodic_table_index=True)
                 ani_only = models[model_str](periodic_table_index=True).double()
                 disp_calcs = {or_: models[model_str](dispersion=True,
                     periodic_table_index=True,
-                    dispersion_cutoff_function=CutoffSmooth(cutoff,
-                        order=or_)).double() for or_ in orders}
+                    dispersion_cutoff_function=CutoffSmooth(order=or_)).double() for or_ in orders}
                 disp_calcs.update({0: models[model_str](dispersion=True, periodic_table_index=True).double()})
                 for or_ in orders:
                     disp_calcs[or_].aev_computer.neighborlist = FullPairwise(cutoff)
@@ -155,4 +154,4 @@ if __name__ == '__main__':
 
                 with open(f'{molecule}_d3_curves{suffix}{model_str}.pkl', 'wb') as f:
                     pickle.dump({'energies': energies,
-                        'displacements': displacements - bond_distance}, f)
+                                 'displacements': displacements - bond_distance}, f)
