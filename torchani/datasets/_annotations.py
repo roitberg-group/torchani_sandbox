@@ -8,7 +8,7 @@ from os import PathLike
 
 # This is needed for compatibility with python 3.6, where numpy typing doesn't
 # work correctly
-if sys.version_info[:2] < (3, 7):
+if sys.version_info[:2] < (3, 9):
     # This doesn't really matter anyways since it is only for mypy
     DTypeLike = dtype
 else:
