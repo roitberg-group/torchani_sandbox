@@ -36,7 +36,7 @@ def make_water(device=None, eq_bond=0.957582, eq_angle=104.485):
     d = eq_bond
     t = (math.pi / 180) * eq_angle  # convert to radians
     coordinates = torch.tensor(
-        [[d, 0, 0], [d * math.cos(t), d * math.sin(t), 0], [0, 0, 0]],
+        [[[d, 0, 0], [d * math.cos(t), d * math.sin(t), 0], [0, 0, 0]]],
         device=device).double()
     species = torch.tensor([[1, 1, 8]], device=device, dtype=torch.long)
     return species, coordinates.double()
