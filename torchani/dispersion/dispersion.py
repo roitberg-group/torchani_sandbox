@@ -43,7 +43,7 @@ class DampFunction(torch.nn.Module):
         df_constants = {k: torch.tensor(v) for k, v in df_constants.items()}
 
         self.register_buffer('sr6', df_constants.get('sr6', None))
-        self.register_buffer('sr8', df_constants.get('sr8', None))
+        self.register_buffer('sr8', torch.tensor(1.0))
         self.register_buffer('a1', df_constants.get('a1', None))
         self.register_buffer('a2', df_constants.get('a2', None))
         self.register_buffer('beta', df_constants.get('beta', None))
