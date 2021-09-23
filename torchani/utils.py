@@ -7,7 +7,7 @@ import math
 import os
 import warnings
 import itertools
-from collections import defaultdict, Counter
+from collections import defaultdict, OrderedDict, Counter
 from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
@@ -133,6 +133,78 @@ def check_openmp_threads():
         num_threads = int(os.environ["OMP_NUM_THREADS"])
         assert num_threads > 0
         print(f"OMP_NUM_THREADS is set as {num_threads}")
+
+
+def combine_state_dicts(state_dicts: Union[str, Path, Sequence[Union[str, Path]]],
+                        tag: str = 'neural_networks') -> 'OrderedDict[str, Tensor]':
+    r"""Takes state_dicts of individual ani
+        models and assembles one state dict for an ensemble from them
+
+        It can accept either an iterable of paths to state dicts, or a single
+        path to a directory that it assumes contains only state_dicts
+
+        This works for individual models that have one or more (not nested)
+        submodules with "neural_networks" in their name (or the string passed
+        to tag). It relables the keys:
+
+        (...).(...)tag(...).(...)
+
+        into:
+
+        (...).(...)tag(...).0.(...), (...).(...)tag(...).1.(...), etc
+
+        for the different state dicts passed, all the state dicts are then
+        merged into one unique state dict which is returned.
+
+        Arguments:
+            state_dicts: string, Path or iterable of string / paths of the
+                state_dicts for the individual members of the ensemble
+            tag: A part of the name that all the modules that need
+                ensembling have, by default it is "neural_networks"
+        Returns:
+            OrderedDict: A well formed state_dict for an ensemble of models
+        """
+    if isinstance(state_dicts, (str, Path)):
+        state_dicts = Path(state_dicts).resolve()
+        assert state_dicts.is_dir()
+        state_dicts_seq = [file_ for file_ in state_dicts.iterdir() if file_.suffix in ('.pt', '.pth')]
+    else:
+        # Ensure that these are paths
+        state_dicts_seq = [Path(s).resolve() for s in state_dicts]
+
+    def _load(path: Path) -> Dict[str, Tensor]:
+        try:
+            checkpoint = torch.load(path)['model']
+        except KeyError:
+            checkpoint = torch.load(path)
+        return checkpoint
+
+    checkpoints = [_load(p) for p in state_dicts_seq]
+    # All keys besides ones that have the tag in them should be equal
+    common_keys = {k for od in checkpoints for k in od.keys() if tag not in k}
+    ensembling_keys = {k for od in checkpoints for k in od.keys() if tag in k}
+    ensemble_state_dict = {k: checkpoints[0][k] for k in common_keys}
+    ensemble_state_dict = OrderedDict({k: checkpoints[0][k] for k in common_keys})
+
+    # Check that all common keys are equal
+    for j, od in enumerate(checkpoints[1:]):
+        for k in common_keys:
+            if (checkpoints[0][k] != od[k]).any():
+                raise ValueError(f"The value for {k} is different in {state_dicts_seq[0].as_posix()} and {state_dicts_seq[j].as_posix()}")
+
+    # add index for the ensemble after name of tagged modules
+    for j, od in enumerate(checkpoints):
+        for k in ensembling_keys:
+            tokens = k.split('.')
+            ensembling_names = [t for t in tokens if tag in t]
+            if len(ensembling_names) != 1:
+                raise ValueError("Modules to be ensembled can't be nested, error in {k}")
+            ensembling_name = ensembling_names[0]
+            tokens.insert(tokens.index(ensembling_name) + 1, str(j))
+            ensemble_state_dict['.'.join(tokens)] = od[k].clone()
+        del od
+
+    return ensemble_state_dict
 
 
 def species_to_formula(species: np.ndarray) -> List[str]:
