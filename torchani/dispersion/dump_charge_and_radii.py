@@ -1,6 +1,6 @@
 import pickle
 
-# cutoff radii are in angstroms
+# cutoff radii are in angstroms, and used for the zero-damping D3 only
 cutoff_radii = [
     2.1823, 1.8547, 1.7347, 2.9086, 2.5732, 3.4956, 2.3550, 2.5095, 2.9802,
     3.0982, 2.5141, 2.3917, 2.9977, 2.9484, 3.2160, 2.4492, 2.2527, 3.1933,
@@ -501,6 +501,9 @@ cutoff_radii = [
     4.4341
 ]
 
+
+# these values correspond to "sqrt_empirical_charge = sqrt(0.5 * r2r4(Z) * sqrt(Z) )"
+# in Grimme et. al. code, and they are used to compute the "D3BJ cutoff radii"
 sqrt_empirical_charge = [
     2.00734898, 1.56637132, 5.01986934, 3.85379032, 3.64446594, 3.10492822,
     2.71175247, 2.59361680, 2.38825250, 2.21522516, 6.58585536, 5.46295967,
