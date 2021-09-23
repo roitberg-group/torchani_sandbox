@@ -76,11 +76,24 @@ class TestBuiltinDatasets(TestCase):
             self.assertEqual(ds.grouping, 'by_formula')
 
     def testBuiltins(self):
-        classes = ['ANI1x', 'ANI2x', 'COMP6v1']
+        # all these have default levels of theory
+        classes = ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'ANI1ccx', 'AminoacidDimers']
         for c in classes:
             with tempfile.TemporaryDirectory() as tmpdir:
                 with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
                     getattr(torchani.datasets, c)(tmpdir, download=False)
+
+        # these also have the B973c/def2mTZVP LoT
+        for c in ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'AminoacidDimers']:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
+                    getattr(torchani.datasets, c)(tmpdir, download=False, basis_set='def2mTZVP', functional='B973c')
+
+        # these also have the wB97M-D3BJ/def2TZVPP LoT
+        for c in ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2']:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
+                    getattr(torchani.datasets, c)(tmpdir, download=False, basis_set='def2TZVPP', functional='wB97MD3BJ')
 
 
 class TestFineGrainedShuffle(TestCase):
@@ -678,6 +691,12 @@ class TestANIDataset(TestCase):
         ds.regroup_by_formula()
         for k, v in ds.items():
             self.assertEqual(v, new_groups[k])
+
+    def testMetadata(self):
+        ds = ANIDataset(locations=self.tmp_dir.name / Path('new.h5'), names="newfile", create=True)
+        meta = {'newfile': {'some metadata': 'metadata string', 'other metadata': 'other string'}}
+        ds.set_metadata(meta)
+        self.assertEqual(ds.metadata, meta)
 
     def testRegroupNumAtoms(self):
         ds = self._make_new_dataset()

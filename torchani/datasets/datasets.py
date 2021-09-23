@@ -5,6 +5,7 @@ import pickle
 import warnings
 from os import fspath
 from pathlib import Path
+from pprint import pformat
 from functools import partial, wraps
 from contextlib import ExitStack, contextmanager
 from collections import OrderedDict
@@ -29,8 +30,8 @@ if _H5PY_AVAILABLE:
 # redundancies
 
 _ELEMENT_KEYS = {'species', 'numbers', 'atomic_numbers'}
-_LEGACY_NONBATCH_KEYS = {'species', 'numbers', 'smiles', 'atomic_numbers'}
-_ALWAYS_STRING_KEYS = {'_id', 'smiles'}
+_LEGACY_NONBATCH_KEYS = {'species', 'numbers', 'smiles', 'atomic_numbers', 'lot'}
+_ALWAYS_STRING_KEYS = {'_id', 'smiles', 'lot'}
 # These broken keys are in some datasets and are basically impossible to parse
 # correctly. If grouping is "legacy" and these are found we give up and ask the
 # user to delete them in a warning
@@ -276,14 +277,24 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
             yield getattr(self, 'get_numpy_conformers')(group_name, **kwargs)
 
     def iter_key_idx_conformers(self, **kwargs) -> Iterator[Tuple[str, int, Conformers]]:
+        kwargs = kwargs.copy()
+        getter = kwargs.pop('getter', 'get_conformers')
         for k, size in self._group_sizes.items():
-            conformers = getattr(self, 'get_conformers')(k, **kwargs)
+            conformers = getattr(self, getter)(k, **kwargs)
             for idx in range(size):
                 single_conformer = {k: conformers[k][idx] for k in conformers.keys()}
                 yield k, idx, single_conformer
 
+    def iter_key_idx_numpy_conformers(self, **kwargs) -> Iterator[Tuple[str, int, Conformers]]:
+        kwargs.update({'getter': 'get_numpy_conformers'})
+        yield from self.iter_key_idx_conformers(**kwargs)
+
     def iter_conformers(self, **kwargs) -> Iterator[Conformers]:
         for _, _, c in self.iter_key_idx_conformers(**kwargs):
+            yield c
+
+    def iter_numpy_conformers(self, **kwargs) -> Iterator[Conformers]:
+        for _, _, c in self.iter_key_idx_numpy_conformers(**kwargs):
             yield c
 
 
@@ -364,6 +375,18 @@ class _ANISubdataset(_ANIDatasetBase):
                                    ' you backup these properties if needed and'
                                    ' delete them using dataset.delete_properties')
 
+    @property
+    def metadata(self) -> Mapping[str, str]:
+        r"""Get the dataset metadata
+        """
+        with ExitStack() as stack:
+            metadata = self._get_open_store(stack, 'r').metadata
+        return metadata
+
+    def _set_metadata(self, meta: Mapping[str, str]) -> None:
+        with ExitStack() as stack:
+            self._get_open_store(stack, 'r+').set_metadata(meta)
+
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
         r"""Context manager to keep dataset open while iterating over it
@@ -403,15 +426,12 @@ class _ANISubdataset(_ANIDatasetBase):
             self._group_sizes, self._properties = store.update_cache(check_properties, verbose)
 
     def __str__(self) -> str:
-        str_ = (f"ANI {self._backend} store:\n"
-                f"Properties: {self.properties}\n"
-                f"Conformers: {self.num_conformers}\n"
-                f"Conformer groups: {self.num_conformer_groups}\n")
-        try:
-            str_ += f"Elements: {self.present_elements(chem_symbols=True)}\n"
-        except ValueError:
-            str_ += "Elements: Unknown\n"
-        return str_
+        str_ = f"ANI {self._backend} store:\n"
+        d: Dict[str, Any] = {'Conformers': self.num_conformers}
+        d.update({'Conformer groups': self.num_conformer_groups})
+        d.update({'Properties': sorted(self.properties)})
+        d.update({'Store Metadata': self.metadata})
+        return str_ + pformat(d)
 
     def present_elements(self, chem_symbols: bool = False) -> List[Union[str, int]]:
         r"""Get an ordered list with all elements present in the dataset
@@ -487,7 +507,7 @@ class _ANISubdataset(_ANIDatasetBase):
             else:
                 tile_shape = (1,)
             numpy_conformers.update({k: np.tile(numpy_conformers[k], tile_shape)
-                                     for k in nonbatch_properties})
+                                     for k in nonbatch_properties if numpy_conformers[k].ndim == 1})
         # Depending on "chem_symbols", "species" / "numbers" are returned as
         # int64 or as str. In legacy grouping "species" and "numbers" can be
         # str or ints themselves, so we check for that and convert.
@@ -632,7 +652,9 @@ class _ANISubdataset(_ANIDatasetBase):
                 # mypy doesn't know that @wrap'ed functions have __wrapped__
                 # attribute, and fixing this is ugly
                 new_ds.append_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
+            meta = self.metadata
             self._store.transfer_location_to(new_ds._store)
+            new_ds._set_metadata(meta)
         return new_ds
 
     @_broadcast
@@ -674,7 +696,9 @@ class _ANISubdataset(_ANIDatasetBase):
                 for formula, idx in zip(unique_formulas, formula_idxs):
                     selected_conformers = {k: v[idx] for k, v in conformers.items()}
                     new_ds.append_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
+            meta = self.metadata
             self._store.transfer_location_to(new_ds._store)
+            new_ds._set_metadata(meta)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
@@ -700,7 +724,9 @@ class _ANISubdataset(_ANIDatasetBase):
                 # This is done to accomodate the current group convention
                 new_name = str(_get_num_atoms(conformers)).zfill(3)
                 new_ds.append_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
+            meta = self.metadata
             self._store.transfer_location_to(new_ds._store)
+            new_ds._set_metadata(meta)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
@@ -893,9 +919,43 @@ class ANIDataset(_ANIDatasetBase):
         self._datasets = OrderedDict((n, _ANISubdataset(loc, **kwargs)) for n, loc in zip(names, locations))
         self._update_cache()
 
+    @classmethod
+    def from_dir(cls, dir_: StrPath, **kwargs):
+        r"""Reads all files in a given directory"""
+        dir_ = Path(dir_).resolve()
+        if not dir_.is_dir():
+            raise ValueError("Input should be a directory")
+        locations = sorted([p for p in dir_.iterdir() if p.suffix != '.tar.gz'])
+        names = [p.stem for p in locations]
+        return cls(locations=locations, names=names, **kwargs)
+
     @property
     def grouping(self) -> str:
         return self._first_subds.grouping
+
+    @property
+    def metadata(self) -> Mapping[str, Mapping[str, str]]:
+        """ Get a dataset metadata
+
+        returns a mapping of the form
+        {subdataset_name: {'key': 'value'}}
+        with an arbitrary number of string key-value pairs
+        """
+        meta = dict()
+        for name, ds in self._datasets.items():
+            meta[name] = ds.metadata
+        return meta
+
+    def set_metadata(self, meta: Mapping[str, Mapping[str, str]]):
+        """ Set dataset metadata
+
+        Accepts a mapping of the form
+        {subdataset_name: {'key': 'value'}}
+        with an arbitrary number of string key-value pairs
+        """
+        for k, v in meta.items():
+            self._datasets[k]._set_metadata(v)
+        return self
 
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['ANIDataset']:
@@ -944,7 +1004,7 @@ class ANIDataset(_ANIDatasetBase):
         return delegated_call
 
     def __str__(self) -> str:
-        return '\n'.join(str(ds) for ds in self._datasets.values())
+        return '\n'.join(f'Name: {name}' + '\n' + str(ds) for name, ds in self._datasets.items())
 
     @property
     def _first_name(self) -> str:
