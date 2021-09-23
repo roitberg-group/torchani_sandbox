@@ -26,7 +26,7 @@ def make_carbon_monoxide(device=None, eq_bond=1.13):
         [[[0.0, 0.0, 0.0], [0.0, 0.0, 1]]],
         device=device,
         dtype=torch.double) * eq_bond
-    species = torch.tensor([[1, 6]], device=device, dtype=torch.long)
+    species = torch.tensor([[8, 6]], device=device, dtype=torch.long)
     return species, coordinates.double()
 
 
