@@ -92,6 +92,7 @@ class TestRepulsion(TestCase):
 
 
 class TestSRB(TestRepulsion):
+    # TODO: Test against orca values
     def setUp(self):
         self.rep = EnergySRB(cutoff=5.2)
         self.stand_rep = StandaloneEnergySRB(cutoff=5.2, neighborlist_cutoff=5.2)
