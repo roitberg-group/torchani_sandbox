@@ -4,7 +4,6 @@ B97-3c functional to account for systematically "too large" covalent bond length
 scaling radius and charge taken from https://aip.scitation.org/doi/pdf/10.1063/1.5012601"""
 import torch
 from torch import Tensor
-from . import units
 from .dispersion import constants
 from .utils import ATOMIC_NUMBERS
 from .standalone import StandalonePairwiseWrapper
@@ -32,7 +31,7 @@ class EnergySRB(torch.nn.Module):
         # produce energies that do not make physical sense.
         supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
         # note that SRB uses the same cutoff radii as Zero-D3, *NOT* the D3BJ
-        # cutoff radii
+        # cutoff radii, and these radii are given in angstroms directly
         cutoff_radii = constants.get_cutoff_radii()
         cutoff_radii = cutoff_radii[:, supported_znumbers][supported_znumbers, :]
         # We will actually need to multiply the distances by scaled covalent
@@ -51,9 +50,8 @@ class EnergySRB(torch.nn.Module):
                        species_energies: Tuple[Tensor, Tensor],
                        atom_index12: Tensor,
                        distances: Tensor) -> Tuple[Tensor, Tensor]:
-        # all internal calculations of this module are made with atomic units,
-        # so distances are first converted to bohr
-        distances = units.angstrom2bohr(distances)
+        # This module uses cutoff radii in angstroms, so there is no need to
+        # convert anything to Bohr
         species, energies = species_energies
         assert distances.ndim == 1, "distances should be 1 dimensional"
         assert species.ndim == 2, "species should be 2 dimensional"
@@ -73,8 +71,7 @@ class EnergySRB(torch.nn.Module):
         srb_energies = scaled_charge_prefactor * torch.exp(distances_factor * distances)
 
         if self.cutoff_function is not None:
-            cutoff = units.angstrom2bohr(self.cutoff)
-            srb_energies *= self.cutoff_function(distances, cutoff)
+            srb_energies *= self.cutoff_function(distances, self.cutoff)
 
         molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
         energies.index_add_(0, molecule_indices, srb_energies)
