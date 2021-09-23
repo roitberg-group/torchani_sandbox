@@ -97,10 +97,10 @@ class TestSRB(TestRepulsion):
         self.stand_rep = StandaloneEnergySRB(cutoff=5.2, neighborlist_cutoff=5.2)
 
     def testCalculator(self):
-        self._testCalculator(-1.875715494155)
+        self._testCalculator(-3.785397273414759e-10)
 
     def testStandalone(self):
-        self._testStandalone(-1.875715494155)
+        self._testStandalone(-3.785397273414759e-10)
 
     def testModelEnergy(self):
         path = Path(__file__).resolve().parent.joinpath('test_data/energies_srb_1x.pkl')
