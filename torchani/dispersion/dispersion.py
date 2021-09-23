@@ -43,7 +43,7 @@ class DampFunction(torch.nn.Module):
         df_constants = {k: torch.tensor(v) for k, v in df_constants.items()}
 
         self.register_buffer('sr6', df_constants.get('sr6', None))
-        self.register_buffer('sr8', df_constants.get('sr8', None))
+        self.register_buffer('sr8', torch.tensor(1.0))
         self.register_buffer('a1', df_constants.get('a1', None))
         self.register_buffer('a2', df_constants.get('a2', None))
         self.register_buffer('beta', df_constants.get('beta', None))
@@ -168,6 +168,7 @@ class DispersionD3(torch.nn.Module):
         self.register_buffer('precalc_coordnums_a', coordnums_a[supported_znumbers, :][:, supported_znumbers])
         self.register_buffer('precalc_coordnums_b', coordnums_b[supported_znumbers, :][:, supported_znumbers])
         # covalent radii are in angstrom so we first convert to bohr
+        supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
         covalent_radii = units.angstrom2bohr(constants.get_covalent_radii())
         self.register_buffer('covalent_radii', covalent_radii[supported_znumbers])
         # the product of the sqrt of the empirical q's is stored directly
