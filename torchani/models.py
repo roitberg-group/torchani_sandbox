@@ -518,6 +518,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
                     pretrained: bool = True,
                     model_index: int = None,
                     use_neurochem_source: bool = False,
+                    ensemble_size: int = 8,
                     **model_kwargs) -> BuiltinModel:
     # Helper function to toggle if the loading is done from an NC file or
     # directly using torchani and state_dicts
@@ -526,6 +527,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     elements = model_kwargs.pop('elements', None)
 
     if pretrained:
+        assert ensemble_size == 8
         assert not repulsion, "No pretrained model with those characteristics exists"
         assert cutoff_fn == 'cosine', "No pretrained model with those characteristics exists"
 
@@ -547,7 +549,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         components = neurochem.parse_resources._get_component_modules(info_file, model_index, aev_computer_kwargs)
     else:
         assert state_dict_file is not None
-        components = _get_component_modules(state_dict_file, model_index, aev_computer_kwargs, atomic_maker=atomic_maker, aev_maker=aev_maker, elements=elements)
+        components = _get_component_modules(state_dict_file, model_index, aev_computer_kwargs, atomic_maker=atomic_maker, aev_maker=aev_maker, elements=elements, ensemble_size=ensemble_size)
 
     aev_computer, neural_networks, energy_shifter, elements = components
 
