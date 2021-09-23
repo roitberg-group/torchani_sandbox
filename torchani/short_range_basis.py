@@ -20,15 +20,20 @@ class EnergySRB(torch.nn.Module):
 
     def __init__(self,
                  elements: Sequence[str] = ('H', 'C', 'N', 'O'),
-                 scaling_charge: float = 10.0,
-                 scaling_radius: float = 0.08,
+                 scaling_charge: float = 0.016,
+                 scaling_radius: float = 10.0,
                  cutoff: float = 5.2,
                  cutoff_fn: Union[str, torch.nn.Module] = 'smooth'):
         super().__init__()
+        # Important note: The actual SRB parameters for the B97-3c functional are
+        # scaling_radius = 10.0 and scaling_charge = 0.016, this is different
+        # from what the Grimme et. al. paper says, but it has been confirmed by
+        # checking against ORCA 4.2.3 calculations. Furthermore, the paper's parameters
+        # produce energies that do not make physical sense.
         supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
-        # note that SRB uses the same cutoff radii as D3
-        sqrt_q = constants.get_sqrt_empirical_charge()
-        cutoff_radii = torch.sqrt(3 * torch.outer(sqrt_q, sqrt_q))
+        # note that SRB uses the same cutoff radii as Zero-D3, *NOT* the D3BJ
+        # cutoff radii
+        cutoff_radii = constants.get_cutoff_radii()
         cutoff_radii = cutoff_radii[:, supported_znumbers][supported_znumbers, :]
         # We will actually need to multiply the distances by scaled covalent
         # radii, so we precalculate the factor here
