@@ -86,7 +86,7 @@ def get_cutoff_radii():
     with open(path, 'rb') as f:
         cutoff_radii = torch.tensor(pickle.load(f))
     assert len(cutoff_radii) == num_cutoff_radii
-    cutoff_radii = _make_symmetric(torch.tensor(cutoff_radii))
+    cutoff_radii = _make_symmetric(cutoff_radii)
     cutoff_radii = torch.cat((torch.zeros(len(cutoff_radii), dtype=cutoff_radii.dtype).unsqueeze(0), cutoff_radii), dim=0)
     cutoff_radii = torch.cat((torch.zeros(cutoff_radii.shape[0], dtype=cutoff_radii.dtype).unsqueeze(1), cutoff_radii), dim=1)
     return cutoff_radii
@@ -125,6 +125,7 @@ def get_df_constants():
     #    A. Najib, L. Goerigk, J. Comput. Theory Chem., 14 5725, 2018)
     #    N. Mardirossian, M. Head-Gordon, Phys. Chem. Chem. Phys, 16, 9904, 2014
     df_constants = defaultdict(dict)
+    # TODO: check where wB97X actually comes from
     df_constants['wB97X'] = {'s6_bj': 1.000, 'a1': 0.0000, 's8_bj': 0.2641, 'a2': 5.4959}
     # from Grimme's et al website directly:
     # first D3Zero constants
