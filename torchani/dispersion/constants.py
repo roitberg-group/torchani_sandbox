@@ -14,12 +14,11 @@ def _make_symmetric(x):
     assert size.is_integer(), \
             "input tensor must be of size x * (x + 1) / 2 where x is an integer"
     size = int(size)
-
-    _lower_diagonal_mask = torch.tril(
-        torch.ones((size, size), dtype=torch.bool))
     x_symmetric = torch.zeros((size, size))
-    x_symmetric.masked_scatter_(_lower_diagonal_mask, x)
     # TODO: parallelize symmetrization
+
+    _lower_diagonal_mask = torch.tril(torch.ones((size, size), dtype=torch.bool))
+    x_symmetric.masked_scatter_(_lower_diagonal_mask, x)
     for j in range(size):
         for i in range(size):
             x_symmetric[j, i] = x_symmetric[i, j]
@@ -87,9 +86,9 @@ def get_cutoff_radii():
     with open(path, 'rb') as f:
         cutoff_radii = torch.tensor(pickle.load(f))
     assert len(cutoff_radii) == num_cutoff_radii
-    # element 0 is a dummy element
-    cutoff_radii = torch.cat((torch.tensor([0.0]), cutoff_radii))
     cutoff_radii = _make_symmetric(torch.tensor(cutoff_radii))
+    cutoff_radii = torch.cat((torch.zeros(len(cutoff_radii), dtype=cutoff_radii.dtype).unsqueeze(0), cutoff_radii), dim=0)
+    cutoff_radii = torch.cat((torch.zeros(cutoff_radii.shape[0], dtype=cutoff_radii.dtype).unsqueeze(1), cutoff_radii), dim=1)
     return cutoff_radii
 
 
@@ -228,5 +227,5 @@ def get_df_constants():
     _bj_constants = _bj_constants.split('\n')
     for line in _bj_constants:
         df, s6_bj, a1, s8_bj, a2 = line.split()
-        df_constants[df] = {'s6_bj': float(s6_bj), 'a1': float(a1), 's8_bj': float(s8_bj), 'a2': float(a2)}
+        df_constants[df].update({'s6_bj': float(s6_bj), 'a1': float(a1), 's8_bj': float(s8_bj), 'a2': float(a2)})
     return df_constants
