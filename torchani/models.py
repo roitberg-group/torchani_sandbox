@@ -318,9 +318,9 @@ class BuiltinModelPairInteractions(BuiltinModel):
             else:
                 post_aev_potentials.append(p)
         if pre_aev_potentials:
-            pre_aev_potentials = sorted(pre_aev_potentials, key=lambda x: x.cutoff)
+            pre_aev_potentials = sorted(pre_aev_potentials, key=lambda x: x.cutoff, reverse=True)
         if post_aev_potentials:
-            post_aev_potentials = sorted(post_aev_potentials, key=lambda x: x.cutoff)
+            post_aev_potentials = sorted(post_aev_potentials, key=lambda x: x.cutoff, reverse=True)
         self.pre_aev_potentials = torch.nn.ModuleList(pre_aev_potentials)
         self.post_aev_potentials = torch.nn.ModuleList(post_aev_potentials)
 
@@ -568,7 +568,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
             pairwise_potentials.append(RepulsionCalculator(**base_repulsion_kwargs))
         if dispersion:
             if dispersion_kwargs is not None:
-                base_repulsion_kwargs.update(dispersion_kwargs)
+                base_dispersion_kwargs.update(dispersion_kwargs)
             pairwise_potentials.append(DispersionD3(**base_dispersion_kwargs))
         if srb:
             if srb_kwargs is not None:
