@@ -42,7 +42,7 @@ def make_angular(device=None, atom1: str = 'H', atom2: str = 'H', atom3: str = '
     coordinates = torch.tensor(
         [[[d, 0, 0], [d * math.cos(t), d * math.sin(t), 0], [0, 0, 0]]],
         device=device).double()
-    species = torch.tensor([[ATOMIC_NUMBERS[atom1], ATOMIC_NUMBERS[atom2], ATOMIC_NUMBERS[atom3]]], device=device, dtype=torch.long)
+    species = torch.tensor([[ATOMIC_NUMBERS[atom1], ATOMIC_NUMBERS[atom3], ATOMIC_NUMBERS[atom2]]], device=device, dtype=torch.long)
     return species, coordinates.double()
 
 
