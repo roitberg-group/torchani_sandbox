@@ -96,10 +96,13 @@ def plot_many(path_to_files, comment, show=False):
         assert len(std) == len(sizes)
         if '_clist_update_all_steps' in p.stem:
             c = 'b'
-            label = "TorchANI+pmemd (improved codebase)"
+            label = "TorchANI + cell list (non-Verlet)"
         elif 'clist_reuse' in p.stem:
             c = 'r'
-            label = "TorchANI + cell list (Not Updating every step)"
+            label = "TorchANI + cell list (Verlet)"
+        elif '_cuaev' in p.stem:
+            c = 'r'
+            label = "TorchANI + cuaev"
         else:
             c = 'g'
             label = 'Original TorchANI'
@@ -135,24 +138,17 @@ def plot_many(path_to_files, comment, show=False):
         plt.show()
 
 
-def get_model(model_arg, cell_list, model_index,
-              verlet_cell_list):
+def get_model(model_arg, cell_list, model_index, verlet_cell_list, cuaev):
     args = {
         'periodic_table_index': True,
         'cell_list': cell_list,
-        'verlet_cell_list': verlet_cell_list
+        'verlet_cell_list': verlet_cell_list,
+        'use_cuda_extension': cuaev
     }
 
     if model_index:
         args.update({'model_index': model_index})
-
-    if model_arg == 'ani1x':
-        model = torchani.models.ANI1x(**args).to(device, dtype=torch.double)
-    elif model_arg == 'ani2x':
-        model = torchani.models.ANI2x(**args).to(device, dtype=torch.double)
-    elif model_arg == 'ani1ccx':
-        model = torchani.models.ANI1ccx(**args).to(device, dtype=torch.double)
-    return model.to(torch.float)
+    return getattr(torchani.models, model_arg)(**args).to(device, dtype=torch.float)
 
 
 def print_info(device, steps, sizes):
@@ -169,8 +165,9 @@ if __name__ == "__main__":
         description='MD scaling benchmark for torchani')
     # generally good defaults
     parser.add_argument('-j', '--jit', action='store_true', default=False)
-    parser.add_argument('-m', '--model', default='ani1x')
+    parser.add_argument('-m', '--model', default='ANI1x')
     parser.add_argument('-d', '--device', type=str, default='cuda')
+    parser.add_argument('--cuaev', action='store_true', default=False)
     parser.add_argument('-s',
                         '--steps',
                         type=int,
@@ -227,6 +224,8 @@ if __name__ == "__main__":
         clist_str = '_clist_update_all_steps'
     elif args.verlet_cell_list:
         clist_str = '_clist_reuse'
+    elif args.cuaev:
+        clist_str = '_cuaev'
     else:
         clist_str = ''
     model_index_str = f'_network_{args.model_index}' if args.model_index else ''
@@ -261,15 +260,14 @@ if __name__ == "__main__":
             for f in xyz_files:
                 species, coordinates, _ = tensor_from_xyz(f)
                 sizes_list.append(len(species))
-            sizes = np.asarray(sizes_list)
+            sizes_list = np.asarray(sizes_list)
             xyz_files = np.asarray(xyz_files)
-            idx = np.argsort(sizes)
-            sizes = sizes[idx]
+            idx = np.argsort(sizes_list)
+            sizes_list = sizes_list[idx]
             xyz_files = xyz_files[idx].tolist()
 
-        print_info(device, args.steps, sizes)
-        model = get_model(args.model, args.cell_list, args.model_index,
-                          args.verlet_cell_list)
+        print_info(device, args.steps, sizes_list)
+        model = get_model(args.model, args.cell_list, args.model_index, args.verlet_cell_list, args.cuaev)
 
         timers = {
             'forward': 0.0,
@@ -327,15 +325,13 @@ if __name__ == "__main__":
                     species, coordinates, cell = tensor_from_xyz(r)
 
                 coordinates.requires_grad_()
+                model = get_model(args.model, args.cell_list, args.model_index, args.verlet_cell_list, args.cuaev)
+                calc = model.ase()
                 if args.jit:
-                    model = get_model(args.model, args.cell_list, args.model_index, args.adaptive_cell_list)
-                    calc = model.ase()
                     torch._C._jit_set_profiling_executor(False)
-                    torch._C._jit_set_profiling_mode(
-                        False)  # this also has an effect
+                    torch._C._jit_set_profiling_mode(False)  # this also has an effect
                     torch._C._jit_override_can_fuse_on_cpu(False)
-                    torch._C._jit_set_texpr_fuser_enabled(
-                        False)  # this has an effect
+                    torch._C._jit_set_texpr_fuser_enabled(False)  # this has an effect
                     torch._C._jit_set_nvfuser_enabled(False)
                     calc.model = torch.jit.script(calc.model)
                 atoms_args = {
@@ -368,7 +364,7 @@ if __name__ == "__main__":
             pickle.dump(
                 {
                     'times': all_trials,
-                    'atoms': sizes,
+                    'atoms': sizes_list,
                     'timers': timers_list,
                     'raw_times': raw_trials
                 }, fb)
@@ -381,7 +377,7 @@ if __name__ == "__main__":
             titles += '\n'
             fc.write(titles)
             all_trials_arr = np.array(all_trials)
-            for times, s in zip(all_trials_arr, sizes):
+            for times, s in zip(all_trials_arr, sizes_list):
                 assert isinstance(times, np.ndarray)
                 string = ' '.join(times.astype(str)) + f' {s}\n'
                 fc.write(string)
