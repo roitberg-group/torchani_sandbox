@@ -468,7 +468,8 @@ def _get_component_modules(state_dict_file: str,
 
 def _fetch_state_dict(state_dict_file: str,
                       model_index: Optional[int] = None,
-                      local: bool = False) -> 'OrderedDict[str, Tensor]':
+                      local: bool = False,
+                      private: bool = False) -> 'OrderedDict[str, Tensor]':
     # if we want a pretrained model then we load the state dict from a
     # remote url or a local path
     # NOTE: torch.hub caches remote state_dicts after they have been downloaded
@@ -478,11 +479,12 @@ def _fetch_state_dict(state_dict_file: str,
     model_dir = Path(__file__).parent.joinpath('resources/state_dicts').as_posix()
     if not path_is_writable(model_dir):
         model_dir = os.path.expanduser('~/.local/torchani/')
+    if private:
+        url = f'http://moria.chem.ufl.edu/animodel/private/{state_dict_file}'
+    else:
+        tag = 'v0.1'
+        url = f'https://github.com/roitberg-group/torchani_model_zoo/releases/download/{tag}/{state_dict_file}'
 
-    # NOTE: we need some private url for in-development models of the
-    # group, this url is for public models
-    tag = 'v0.1'
-    url = f'https://github.com/roitberg-group/torchani_model_zoo/releases/download/{tag}/{state_dict_file}'
     # for now for simplicity we load a state dict for the ensemble directly and
     # then parse if needed
     state_dict = torch.hub.load_state_dict_from_url(url, model_dir=model_dir)
