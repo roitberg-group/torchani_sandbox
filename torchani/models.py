@@ -643,3 +643,32 @@ def ANI2x(**kwargs):
     info_file = 'ani-2x_8x.info'
     state_dict_file = 'ani2x_state_dict.pt'
     return _load_ani_model(state_dict_file, info_file, **kwargs)
+
+
+def ANID(**kwargs):
+    # An ani model with dispersion
+    def dispersion_atomics(atom: str = 'H'):
+        dims_for_atoms = {'H': (1008, 256, 192, 160),
+                          'C': (1008, 256, 192, 160),
+                          'N': (1008, 192, 160, 128),
+                          'O': (1008, 192, 160, 128),
+                          'S': (1008, 160, 128, 96),
+                          'F': (1008, 160, 128, 96),
+                          'Cl': (1008, 160, 128, 96)}
+        return atomics.standard(dims_for_atoms[atom], activation=torch.nn.GELU(), bias=False)
+    elements = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
+    model = ANI2x(pretrained=False,
+                  cutoff_fn='smooth',
+                  atomic_maker=dispersion_atomics,
+                  ensemble_size=7,
+                  dispersion=True,
+                  dispersion_kwargs={'elements': elements,
+                                     'cutoff': 8.5,
+                                     'cutoff_fn': CutoffSmooth(order=4),
+                                     'functional': 'B97-3c'},
+                  repulsion=True,
+                  repulsion_kwargs={'elements': elements,
+                                    'cutoff': 5.3,
+                                    'cutoff_fn': CutoffSmooth(order=2)}, **kwargs)
+    model.load_state_dict(_fetch_state_dict('anid_state_dict.pt', private=True))
+    return model
