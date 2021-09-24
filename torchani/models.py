@@ -534,9 +534,11 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         assert cutoff_fn == 'cosine', "No pretrained model with those characteristics exists"
 
     # aev computer args
-    if model_kwargs.pop('cell_list', False):
+    cell_list = model_kwargs.pop('cell_list', False)
+    verlet_cell_list = model_kwargs.pop('verlet_cell_list', False)
+    if cell_list:
         neighborlist = 'cell_list'
-    elif model_kwargs.pop('verlet_cell_list', False):
+    elif verlet_cell_list:
         neighborlist = 'verlet_cell_list'
     else:
         neighborlist = 'full_pairwise'
