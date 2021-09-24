@@ -103,8 +103,7 @@ def tile_into_tight_cell(species_coordinates, repeats=(3, 3, 3), noise=None, del
     displace_r = torch.tensor([min_x, min_y, min_z], device=device, dtype=coordinates.dtype)
     assert (displace_r <= 0).all()
     coordinates_positive = coordinates - displace_r
-    coordinates_positive = coordinates + eps
-    assert (coordinates_positive > 0).all()
+    coordinates_positive = coordinates_positive + eps
 
     # get the maximum position vector in the set of coordinates ("diameter" of molecule)
     coordinates_positive = coordinates_positive.unsqueeze(0)
