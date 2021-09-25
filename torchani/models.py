@@ -346,7 +346,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
                                                                             atom_index12,
                                                                             shift_values,
                                                                             (species == -1))
-                atom_index12, _, diff_vectors, distances = nl_out
+                atom_index12, shift_values, diff_vectors, distances = nl_out
                 previous_cutoff = pot.cutoff
             pre_species_energies = pot(pre_species_energies, atom_index12, distances)
 
