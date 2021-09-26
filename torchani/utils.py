@@ -94,10 +94,11 @@ def tensor_from_xyz(path):
     return species, coordinates, cell
 
 
-def tensor_to_xyz(path, species_coordinates: Tuple[Tensor, Tensor], 
-                        cell: Optional[Tensor] = None, 
-                        no_exponent: bool = True, 
-                        comment: str = ''):
+def tensor_to_xyz(path, species_coordinates: Tuple[Tensor, Tensor],
+                        cell: Optional[Tensor] = None,
+                        no_exponent: bool = True,
+                        comment: str = '',
+                        append=False, truncate_output_file=False):
     path = Path(path).resolve()
     # input species must be atomic numbers
     species, coordinates = species_coordinates
@@ -110,8 +111,14 @@ def tensor_to_xyz(path, species_coordinates: Tuple[Tensor, Tensor],
 
     coordinates = coordinates.view(-1, 3)
     species = species.view(-1)
-
-    with open(path, 'w') as f:
+    if append:
+        mode = 'a'
+    else:
+        if truncate_output_file:
+            mode = 'w'
+        else:
+            mode = 'x'
+    with open(path, mode) as f:
         f.write(f'{num_atoms}\n')
         if cell is not None:
             warnings.warn("Cell printing is not yet implemented, ignoring cell")
@@ -122,6 +129,57 @@ def tensor_to_xyz(path, species_coordinates: Tuple[Tensor, Tensor],
             else:
                 line = f"{c[0]} {c[1]} {c[2]}\n"
             line = f"{PERIODIC_TABLE[s]} " + line
+            f.write(line)
+
+
+def tensor_to_lammpstrj(path, species_coordinates: Tuple[Tensor, Tensor],
+                        cell: Optional[Tensor] = None,
+                        no_exponent: bool = True,
+                        comment: str = '',
+                        append=False,
+                        timestep=0,
+                        scale=False, truncate_output_file=False):
+    path = Path(path).resolve()
+    # input species must be atomic numbers
+    species, coordinates = species_coordinates
+    num_atoms = species.shape[1]
+    cell_diag = torch.diag(cell)
+
+    assert coordinates.dim() == 3, "bad number of dimensions for coordinates"
+    assert species.dim() == 2, "bad number of dimensions for species"
+    assert coordinates.shape[0] == 1, "Batch printing not implemented"
+    assert species.shape[0] == 1, "Batch printing not implemented"
+
+    coordinates = coordinates.view(-1, 3)
+    species = species.view(-1)
+    if append:
+        mode = 'a'
+    else:
+        if truncate_output_file:
+            mode = 'w'
+        else:
+            mode = 'x'
+    with open(path, mode) as f:
+        f.write(f'ITEM: TIMESTEP\n')
+        f.write(f'{timestep}\n')
+        f.write(f'ITEM: NUMBER OF ATOMS\n')
+        f.write(f'{num_atoms}\n')
+        f.write(f'ITEM: BOX BOUNDS xx yy zz\n')
+        f.write(f'0.0 {cell_diag[0]}\n')
+        f.write(f'0.0 {cell_diag[1]}\n')
+        f.write(f'0.0 {cell_diag[2]}\n')
+        # postfix u means the coordinates are unwrapped
+        if scale:
+            coordinates = torch.frac(coordinates / cell_diag)
+            f.write(f'ITEM: ATOMS id type xs ys zs\n')
+        else:
+            f.write(f'ITEM: ATOMS id type xu yu zu\n')
+        for j, (s, c) in enumerate(zip(species, coordinates)):
+            if no_exponent:
+                line = f"{c[0]:.15f} {c[1]:.15f} {c[2]:.15f}\n"
+            else:
+                line = f"{c[0]} {c[1]} {c[2]}\n"
+            line = f"{j} {s} " + line
             f.write(line)
 
 
