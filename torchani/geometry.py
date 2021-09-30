@@ -43,6 +43,30 @@ def displace_along_bond(species_coordinates, atom1, atom2, displacement):
     return species, coordinates
 
 
+def displace_dimer_along_plane(coordinates, atom1, atom2, atom3, distance, start_overlapped=True):
+    # the dimer is assumed to be composed of an even number of atoms, the first
+    # and second A/2 atoms correspond to both molecules in the dimer
+    # respectively.
+    assert coordinates.shape[0] == 1
+    assert coordinates.shape[1] % 2 == 0
+    molecule_size = coordinates.shape[1] / 2
+    assert molecule_size.is_integer()
+    molecule_size = int(molecule_size)
+    coordinates = coordinates.view(-1, 3)
+    coordinates_a = coordinates[:molecule_size]
+    assert len(coordinates_a) == molecule_size
+    coordinates_b = coordinates[molecule_size:]
+    assert len(coordinates_b) == molecule_size
+
+    diff_vector1 = coordinates_a[atom1] - coordinates_b[atom2]
+    diff_vector2 = coordinates_a[atom3] - coordinates_b[atom2]
+    displace_direction = torch.cross(diff_vector1, diff_vector2)
+
+    coordinates_a += (displace_direction / displace_direction.norm()) * distance
+    coordinates = torch.cat((coordinates_a, coordinates_b), dim=0)
+    return coordinates.unsqueeze(0)
+
+
 def displace_dimer_along_bond(coordinates, atom1, atom2, distance, start_overlapped=True):
     # the dimer is assumed to be composed of an even number of atoms, the first
     # and second A/2 atoms correspond to both molecules in the dimer
