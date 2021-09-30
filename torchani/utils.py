@@ -134,6 +134,9 @@ def tensor_to_xyz(path, species_coordinates: Tuple[Tensor, Tensor],
 
 def tensor_to_lammpstrj(path, species_coordinates: Tuple[Tensor, Tensor],
                         cell: Optional[Tensor] = None,
+                        forces: Optional[Tensor] = None,
+                        velocities: Optional[Tensor] = None,
+                        charges: Optional[Tensor] = None,
                         no_exponent: bool = True,
                         comment: str = '',
                         append=False,
@@ -152,6 +155,18 @@ def tensor_to_lammpstrj(path, species_coordinates: Tuple[Tensor, Tensor],
 
     coordinates = coordinates.view(-1, 3)
     species = species.view(-1)
+    if forces is not None:
+        assert forces.dim() == 3
+        assert forces.shape[0] == 1, "Batch printing not implemented"
+        forces = forces.view(-1, 3)
+    if velocities is not None:
+        assert velocities.dim() == 3
+        assert velocities.shape[0] == 1, "Batch printing not implemented"
+        velocities = velocities.view(-1, 3)
+    if charges is not None:
+        assert charges.dim() == 3
+        assert charges.shape[0] == 1, "Batch printing not implemented"
+        charges = charges.view(-1, 3)
     if append:
         mode = 'a'
     else:
@@ -171,16 +186,31 @@ def tensor_to_lammpstrj(path, species_coordinates: Tuple[Tensor, Tensor],
         # postfix u means the coordinates are unwrapped
         if scale:
             coordinates = torch.frac(coordinates / cell_diag)
-            f.write(f'ITEM: ATOMS id type xs ys zs\n')
+            line = f'ITEM: ATOMS id type xs ys zs'
         else:
-            f.write(f'ITEM: ATOMS id type xu yu zu\n')
+            line = f'ITEM: ATOMS id type xu yu zu'
+        if forces is not None:
+            line += ' fx fy fz'
+        if velocities is not None:
+            line += ' vx vy vz'
+        if charges is not None:
+            line += ' q'
+        f.write(line + '\n')
         for j, (s, c) in enumerate(zip(species, coordinates)):
             if no_exponent:
-                line = f"{c[0]:.15f} {c[1]:.15f} {c[2]:.15f}\n"
+                line = f"{c[0]:.15f} {c[1]:.15f} {c[2]:.15f}"
             else:
-                line = f"{c[0]} {c[1]} {c[2]}\n"
+                line = f"{c[0]} {c[1]} {c[2]}"
             line = f"{j} {s} " + line
-            f.write(line)
+            if forces is not None:
+                force = forces[j]
+                line += f" {force[0]} {force[1]} {force[2]}"
+            if velocities is not None:
+                v = velocities[j]
+                line += f" {v[0]} {v[1]} {v[2]}"
+            if charges is not None:
+                line += f" {charges[j]}"
+            f.write(line + '\n')
 
 
 def check_openmp_threads():
