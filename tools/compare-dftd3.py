@@ -4,6 +4,7 @@ from pathlib import Path
 import time
 from torchani.dispersion import StandaloneDispersionD3
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import torch
 import re
 import subprocess
@@ -16,6 +17,7 @@ from torchani.aev.cutoffs import CutoffSmooth
 # be called directly with subprocess
 
 if __name__ == '__main__':
+    mpl.rc('font', size=20)
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '-d',
@@ -57,7 +59,8 @@ if __name__ == '__main__':
             dftd3_energies = data['dftd3']
             atoms = data['atoms']
         fig, ax = plt.subplots()
-        ax.scatter(dftd3_energies, ani_energies, s=0.5)
+        markersize = 15.0
+        ax.scatter(dftd3_energies, ani_energies, s=markersize, color='green')
         ax.set_xlabel('DFTD3 energies (Ha)')
         ax.set_ylabel('ANI D3 energies (Ha)')
         ax.set_xlim(min(dftd3_energies), max(dftd3_energies))
@@ -75,7 +78,7 @@ if __name__ == '__main__':
         relative_error = torch.exp(torch.log(torch.abs(ani_energies - dftd3_energies)) - torch.log(torch.abs(dftd3_energies))) * 100
 
         fig, ax = plt.subplots()
-        ax.scatter(dftd3_energies, relative_error, s=0.5)
+        ax.scatter(dftd3_energies, relative_error, s=markersize)
         ax.set_xlabel('DFTD3 energies (Ha)')
         ax.set_ylabel(r'Relative error  $(E_{ani-d3} - E_{dftd3})/E_{dftd3}$ (%)')
         ax.set_xlim(min(dftd3_energies), max(dftd3_energies))
@@ -84,12 +87,12 @@ if __name__ == '__main__':
         plt.savefig(f'dftd3_error{extra_string}.png')
 
         fig, ax = plt.subplots()
-        ax.scatter(atoms, relative_error, s=0.5)
+        ax.scatter(atoms, relative_error, s=markersize, color='darkblue')
         ax.set_xlabel('Num. atoms')
         ax.set_ylabel(r'Relative error  $(E_{ani-d3} - E_{dftd3})/E_{dftd3}$ (%)')
         ax.set_xlim(min(atoms) - 1, max(atoms) + 1)
         ax.set_ylim(0, max(relative_error))
-        plt.show(block=False)
+        plt.show(block=True)
         plt.savefig(f'dftd3_error_size{extra_string}.png')
 
         print('MAE', mae.item())
