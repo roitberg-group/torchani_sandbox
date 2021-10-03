@@ -41,6 +41,7 @@ from . import dispersion
 from . import short_range_basis
 from . import datasets
 from . import transforms
+from . import molecule_utils
 from pkg_resources import get_distribution, DistributionNotFound
 import warnings
 
@@ -51,7 +52,8 @@ except DistributionNotFound:
     pass
 
 __all__ = ['AEVComputer', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
-           'utils', 'neurochem', 'models', 'units', 'repulsion', 'dispersion', 'datasets', 'transforms', 'short_range_basis']
+           'utils', 'neurochem', 'models', 'units', 'repulsion', 'dispersion', 'datasets', 'transforms',
+           'short_range_basis', 'molecule_utils']
 
 try:
     from . import ase  # noqa: F401

@@ -11,7 +11,7 @@ from pathlib import Path
 import torch
 import math
 from torchani.models import ANI1x, ANI1ccx, ANI2x, ANID
-import molecule_utils as mu
+from torchani import molecule_utils
 from torchani.utils import PERIODIC_TABLE
 from torchani.aev.cutoffs import CutoffSmooth, CutoffDummy
 import numpy as np
@@ -31,7 +31,7 @@ def save_xyz_geometries(species_coordinates):
     xyz_path = root.joinpath(f'{d:.3f}.xyz')
     if xyz_path.exists():
         print("Not saving coordinates since path already exists")
-    mu.tensor_to_xyz(xyz_path, species_coordinates)
+    molecule_utils.tensor_to_xyz(xyz_path, species_coordinates)
 
 
 class DummyEnergies:
@@ -80,7 +80,7 @@ def dftd3_calculator(species_coordinates, periodic_table_index=True):
     # Periodic table index is a dummy variable
     tmpfile = Path(__file__).parent.resolve().joinpath('tmp')
     assert not tmpfile.exists()
-    mu.tensor_to_xyz(tmpfile, species_coordinates)
+    molecule_utils.tensor_to_xyz(tmpfile, species_coordinates)
 
     p = subprocess.run(f'time dftd3 {tmpfile.as_posix()}'.split(), capture_output=True)
     out_string = p.stdout.decode('ascii')
@@ -105,9 +105,9 @@ def dftd3_calculator(species_coordinates, periodic_table_index=True):
 
 
 if __name__ == '__main__':
-    makers = {'water': mu.make_water,
-            'methane': mu.make_methane,
-            'ammonia': mu.make_ammonia}
+    makers = {'water': molecule_utils.make_water,
+            'methane': molecule_utils.make_methane,
+            'ammonia': molecule_utils.make_ammonia}
     displace_to_limit = True
     # I want to plot the following:
     # D3 only (with different cutoffs_fn and/or cutoffs) and ANI + D3
@@ -143,8 +143,7 @@ if __name__ == '__main__':
     start_distance = 0.1  # or 0.1?
     end_distance = 4.0
     orders = [4]
-    # models = {'ANI-1x': ANI1x, 'ANI-2x': ANI2x, 'ANI-1ccx': ANI1ccx, 'ANI-D': ANID, 'ANInoD': ANInoD}
-    models = {'ANI-D3': ANID, 'ANI (No D3)': ANInoD, 'ANI-2x': ANI2x}
+    models = {'ANI-D3': ANID, 'ANI (No D3)': ANInoD, 'ANI-2x': ANI2x, 'ANI-1x': ANI1x, 'ANI-1ccx': ANI1ccx}
     energy_calculators = {}
     if pure_d3:
         for order in orders:

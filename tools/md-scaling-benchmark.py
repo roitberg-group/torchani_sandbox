@@ -16,7 +16,7 @@ from ase import units
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from pathlib import Path
-from molecule_utils import make_water, tensor_from_xyz
+from torchani.molecule_utils import make_water, tensor_from_xyz
 
 
 def plot_file(file_path, comment, show=False):

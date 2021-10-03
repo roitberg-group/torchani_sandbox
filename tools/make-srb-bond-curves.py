@@ -4,17 +4,17 @@ import matplotlib.pyplot as plt
 import torch
 import math
 from torchani import geometry
-import molecule_utils as mu
+from torchani import molecule_utils
 import matplotlib as mpl
 from torchani.short_range_basis import StandaloneEnergySRB
 from torchani.aev.cutoffs import CutoffDummy
 
 if __name__ == '__main__':
     mpl.rc('font', size=22)
-    makers = {'water': mu.make_water,
-              'methane': mu.make_methane,
-              'ammonia': mu.make_ammonia,
-              'carbon_monoxide': mu.make_carbon_monoxide}
+    makers = {'water': molecule_utils.make_water,
+              'methane': molecule_utils.make_methane,
+              'ammonia': molecule_utils.make_ammonia,
+              'carbon_monoxide': molecule_utils.make_carbon_monoxide}
     srb = StandaloneEnergySRB(cutoff_fn=CutoffDummy(), neighborlist_cutoff=math.inf, elements=('H', 'C', 'N', 'O'), periodic_table_index=True)
     models = {'ANID': torchani.models.ANID(periodic_table_index=True).double(), 'ANI2x': torchani.models.ANI2x(periodic_table_index=True).double()}
     energies = {}
