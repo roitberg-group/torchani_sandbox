@@ -77,11 +77,10 @@ def sorted_gsaes(elements: Sequence[str], functional: str, basis_set: str, ):
     gsaes = sorted_gsaes(('H', 'C', 'S'), 'wB97X', '631Gd')
     # gsaes = [-0.4993213, -37.8338334, -398.0814169]
     """
-    self_energies = GSAES[f'{functional}-{basis_set}']
+    gsaes = GSAES[f'{functional}-{basis_set}']
     # sort GSAES by element
-    self_energies = sorted(self_energies.items(), key=lambda it: elements.index(it[0]) if it[0] in elements else math.inf)
-    self_energies = [it[1] for it in self_energies][:len(elements)]
-    return self_energies
+    self_energies = sorted(gsaes.items(), key=lambda it: elements.index(it[0]) if it[0] in elements else math.inf)
+    return [it[1] for it in self_energies][:len(elements)]
 
 
 def check_openmp_threads():
