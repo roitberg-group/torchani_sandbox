@@ -83,8 +83,8 @@ def tensor_to_lammpstrj(path, species_coordinates: Tuple[Tensor, Tensor],
     r"""Dump a tensor as a lammpstrj file
 
     Dumps a species_coordinates tuple into a lammpstrj format file, optionally also
-    dumps forces, velocities and charges. Currently the simulation cell MUST be provided
-    if "append" is true then the tensor is appended to an existing file, otherwise
+    dumps forces, velocities and charges. Currently the simulation cell MUST be provided.
+    If "append" is true then the tensor is appended to an existing file, otherwise
     it is written to a new file.
     """
     path = Path(path).resolve()
