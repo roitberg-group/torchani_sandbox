@@ -12,7 +12,7 @@ import torch
 import math
 from torchani.models import ANI1x, ANI1ccx, ANI2x, ANID
 from torchani import molecule_utils
-from torchani.utils import PERIODIC_TABLE
+from torchani.utils import PERIODIC_TABLE, tensor_to_xyz
 from torchani.aev.cutoffs import CutoffSmooth, CutoffDummy
 import numpy as np
 from tqdm import tqdm
@@ -31,7 +31,7 @@ def save_xyz_geometries(species_coordinates):
     xyz_path = root.joinpath(f'{d:.3f}.xyz')
     if xyz_path.exists():
         print("Not saving coordinates since path already exists")
-    molecule_utils.tensor_to_xyz(xyz_path, species_coordinates)
+    tensor_to_xyz(xyz_path, species_coordinates)
 
 
 class DummyEnergies:
@@ -80,7 +80,7 @@ def dftd3_calculator(species_coordinates, periodic_table_index=True):
     # Periodic table index is a dummy variable
     tmpfile = Path(__file__).parent.resolve().joinpath('tmp')
     assert not tmpfile.exists()
-    molecule_utils.tensor_to_xyz(tmpfile, species_coordinates)
+    tensor_to_xyz(tmpfile, species_coordinates)
 
     p = subprocess.run(f'time dftd3 {tmpfile.as_posix()}'.split(), capture_output=True)
     out_string = p.stdout.decode('ascii')

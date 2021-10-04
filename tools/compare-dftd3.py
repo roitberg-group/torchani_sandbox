@@ -9,8 +9,7 @@ import torch
 import re
 import subprocess
 import argparse
-from torchani.molecule_utils import tensor_to_xyz
-from torchani.utils import tqdm
+from torchani.utils import tqdm, tensor_to_xyz
 from torchani.aev.cutoffs import CutoffSmooth
 
 # this comparison test assumes dftd3 is installed and in PATH, so that it can
