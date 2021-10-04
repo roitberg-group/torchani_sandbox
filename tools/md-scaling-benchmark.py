@@ -1,22 +1,23 @@
-import torch
-import torchani
 import time
 import pickle
-import ase
 import copy
-import numpy as np
-from typing import Union, List
-from tqdm import tqdm
 import timeit
-
-from torchani import geometry
-from ase.md.langevin import Langevin
-from ase import units
+from typing import Union, List
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from pathlib import Path
-from torchani.molecule_utils import make_water, tensor_from_xyz
+import ase
+from ase.md.langevin import Langevin
+from ase import units
+from tqdm import tqdm
+import numpy as np
+import torch
+
+import torchani
+from torchani import geometry
+from torchani.io import tensor_from_xyz
+from torchani.molecule_utils import make_water
 
 
 def plot_file(file_path, comment, show=False):

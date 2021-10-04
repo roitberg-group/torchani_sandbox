@@ -12,7 +12,8 @@ import torch
 import math
 from torchani.models import ANI1x, ANI1ccx, ANI2x, ANID
 from torchani import molecule_utils
-from torchani.utils import PERIODIC_TABLE, tensor_to_xyz
+from torchani.utils import PERIODIC_TABLE
+from torchani.io import tensor_to_xyz
 from torchani.aev.cutoffs import CutoffSmooth, CutoffDummy
 import numpy as np
 from tqdm import tqdm
