@@ -330,3 +330,38 @@ def _dump_lammpstrj(path, species: Tensor, coordinates: Tensor,
             if charges is not None:
                 line += f" {charges[j]}"
             f.write(line + '\n')
+
+
+class ParmtopWriter:
+
+    @staticmethod
+    def _flag_prefix(self, string_):
+        return '%FLAG ' + string_
+
+    @staticmethod
+    def _format_prefix(self, format_):
+        return f'%FORMAT({format_})'
+
+    # Write a dummy amber parmtop file
+    def write_dummy_parmtop(self):
+        return ''
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
