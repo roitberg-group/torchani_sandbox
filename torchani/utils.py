@@ -32,14 +32,14 @@ PADDING = {
 # CCSD(T)*/CBS but is close enough for atomic energies. For H I set the E to
 # -0.5 since that is the exact nonrelativistic solution and I believe CC can't
 # really converge for H.
-GSAES = {'B973c-def2mTZVP': {'C': -37.81441001258,
+GSAES = {'b973c-def2mtzvp': {'C': -37.81441001258,
                              'Cl': -460.082223445159,
                              'F': -99.688618987039,
                              'H': -0.506930113968,
                              'N': -54.556538547322,
                              'O': -75.029181326588,
                              'S': -398.043159341582},
-         'wB97X-631Gd': {'C': -37.8338334,
+         'wb97x-631gd': {'C': -37.8338334,
                          'Cl': -460.116700600,
                          'F': -99.6949007,
                          'H': -0.4993212,
@@ -47,21 +47,21 @@ GSAES = {'B973c-def2mTZVP': {'C': -37.81441001258,
                          'O': -75.0424519,
                          'S': -398.0814169},
 
-        'wB97MD3BJ-def2TZVPP': {'C': -37.870597534068,
+        'wB97md3bj-def2tzvpp': {'C': -37.870597534068,
                                 'Cl': -460.197921425433,
                                 'F': -99.784869113871,
                                 'H': -0.498639663159,
                                 'N': -54.621568655507,
                                 'O': -75.111870707635,
                                 'S': -398.158126819835},
-        'wB97MV-def2TZVPP': {'C': -37.844395699666,
+        'wb97mv-def2tzvpp': {'C': -37.844395699666,
                              'Cl': -460.124987825603,
                              'F': -99.745234404775,
                              'H': -0.494111111003,
                              'N': -54.590952163069,
                              'O': -75.076760965132,
                              'S': -398.089446664032},
-        'CCSD(T)star-CBS': {'C': -37.780724507998,
+        'ccsd(t)star-cbs': {'C': -37.780724507998,
                             'Cl': -459.664237510771,
                             'F': -99.624864557142,
                             'H': -0.5000000000000,
@@ -76,8 +76,10 @@ def sorted_gsaes(elements: Sequence[str], functional: str, basis_set: str, ):
     Example usage:
     gsaes = sorted_gsaes(('H', 'C', 'S'), 'wB97X', '631Gd')
     # gsaes = [-0.4993213, -37.8338334, -398.0814169]
+
+    Functional and basis set are case insensitive
     """
-    gsaes = GSAES[f'{functional}-{basis_set}']
+    gsaes = GSAES[f'{functional.lower()}-{basis_set.lower()}']
     # sort GSAES by element
     self_energies = sorted(gsaes.items(), key=lambda it: elements.index(it[0]) if it[0] in elements else math.inf)
     return [it[1] for it in self_energies][:len(elements)]
