@@ -6,14 +6,36 @@ from typing import Sequence
 import warnings
 from typing import Optional
 from pathlib import Path
+from torchani.utils import tqdm
 
 from torchani.utils import PERIODIC_TABLE, ATOMIC_NUMBERS
+try:
+    import ase
+    _ASE_AVAIL = True
+except ImportError:
+    _ASE_AVAIL = False
 
 
 def _advance(f, num):
     if num > 0:
         for j in range(num):
             f.readline()
+
+
+def tensor_from_asetraj(path, start_frame=0, end_frame=None, step=1, get_cell=True):
+    traj_file = Path(path).resolve()
+    traj = ase.io.Trajectory(traj_file.as_posix())
+    if end_frame is None:
+        end_frame = len(traj)
+    coordinates = []
+    species = []
+    cell = []
+    for j, a in enumerate(tqdm(traj[start_frame:end_frame:step])):
+        coordinates.append(torch.from_numpy(a.positions))
+        species.append(torch.from_numpy(a.numbers).long())
+        if get_cell:
+            cell.append(torch.as_tensor(a.cell))
+    return torch.stack(coordinates), torch.stack(species), torch.stack(cell)
 
 
 def tensor_to_xyz(path, species_coordinates, **kwargs):
@@ -330,38 +352,3 @@ def _dump_lammpstrj(path, species: Tensor, coordinates: Tensor,
             if charges is not None:
                 line += f" {charges[j]}"
             f.write(line + '\n')
-
-
-class ParmtopWriter:
-
-    @staticmethod
-    def _flag_prefix(self, string_):
-        return '%FLAG ' + string_
-
-    @staticmethod
-    def _format_prefix(self, format_):
-        return f'%FORMAT({format_})'
-
-    # Write a dummy amber parmtop file
-    def write_dummy_parmtop(self):
-        return ''
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
