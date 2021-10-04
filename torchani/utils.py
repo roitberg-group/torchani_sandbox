@@ -73,7 +73,7 @@ def sorted_gsaes(elements: Sequence[str], functional: str, basis_set: str, ):
     r"""Return sorted GSAES by element
 
     Example usage:
-    gsaes = sorted_gsaes('wB97X', '631Gd', ('H', 'C', 'S'))
+    gsaes = sorted_gsaes(('H', 'C', 'S'), 'wB97X', '631Gd')
     # gsaes = [-0.4993213, -37.8338334, -398.0814169]
     """
     self_energies = GSAES[f'{functional}-{basis_set}']
