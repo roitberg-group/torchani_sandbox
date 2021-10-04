@@ -287,6 +287,12 @@ class EnergyShifter(torch.nn.Module):
 
         self.register_buffer('self_energies', self_energies)
 
+    @classmethod
+    def with_gsaes(cls, elements: Sequence[str], functional: str, basis_set: str):
+        r"""Instantiate an EnergyShifter with a given set of precomputed atomic self energies"""
+        obj = cls(sorted_gsaes(elements, functional, basis_set), fit_intercept=False)
+        return obj
+
     @torch.jit.export
     def _atomic_saes(self, species: Tensor) -> Tensor:
         # Compute atomic self energies for a set of species.
