@@ -69,6 +69,20 @@ GSAES = {'B973c-def2mTZVP': {'C': -37.81441001258,
                             'S': -397.646401989238}}
 
 
+def sorted_gsaes(functional: str, basis_set: str, elements: Sequence[str]):
+    r"""Return sorted GSAES by element
+
+    Example usage:
+    gsaes = sorted_gsaes('wB97X', '631Gd', ('H', 'C', 'S'))
+    # gsaes = [-0.4993213, -37.8338334, -398.0814169]
+    """
+    self_energies = GSAES[f'{functional}-{basis_set}']
+    # sort GSAES by element
+    self_energies = sorted(self_energies.items(), key=lambda it: elements.index(it[0]) if it[0] in elements else math.inf)
+    self_energies = [it[1] for it in self_energies][:len(elements)]
+    return self_energies
+
+
 def check_openmp_threads():
     if "OMP_NUM_THREADS" not in os.environ:
         warnings.warn("""OMP_NUM_THREADS is not set, mnp works best if OMP_NUM_THREADS >= 2.
