@@ -30,6 +30,10 @@ class TestUtils(TestCase):
     def testHessianJIT(self):
         torch.jit.script(torchani.utils.hessian)
 
+    def testGSAES(self):
+        gsaes = torchani.utils.sorted_gsaes('wB97X', '631Gd', ('H', 'C', 'S'))
+        self.assertEqual(gsaes, [-0.4993213, -37.8338334, -398.0814169])
+
 
 if __name__ == '__main__':
     unittest.main()
