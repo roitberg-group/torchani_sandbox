@@ -69,7 +69,7 @@ GSAES = {'B973c-def2mTZVP': {'C': -37.81441001258,
                             'S': -397.646401989238}}
 
 
-def sorted_gsaes(functional: str, basis_set: str, elements: Sequence[str]):
+def sorted_gsaes(elements: Sequence[str], functional: str, basis_set: str, ):
     r"""Return sorted GSAES by element
 
     Example usage:
@@ -355,7 +355,7 @@ class EnergyShifter(torch.nn.Module):
     """
     self_energies: Tensor
 
-    def __init__(self, self_energies, fit_intercept=False):
+    def __init__(self, self_energies: Optional[List[float]] = None, fit_intercept=False):
         super().__init__()
 
         self.fit_intercept = fit_intercept
@@ -363,6 +363,12 @@ class EnergyShifter(torch.nn.Module):
             self_energies = torch.tensor(self_energies, dtype=torch.double)
 
         self.register_buffer('self_energies', self_energies)
+
+    @classmethod
+    def with_gsaes(cls, elements: Sequence[str], functional: str, basis_set: str):
+        r"""Instantiate an EnergyShifter with a given set of precomputed atomic self energies"""
+        obj = cls(sorted_gsaes(elements, functional, basis_set), fit_intercept=False)
+        return obj
 
     @torch.jit.export
     def _atomic_saes(self, species: Tensor) -> Tensor:
