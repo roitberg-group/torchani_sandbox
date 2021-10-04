@@ -134,8 +134,8 @@ class TestData(_BaseBuiltinDataset):
 
 
 class ANI1ccx(_BaseBuiltinDataset):
-    _ARCHIVE = {'CCSD(T)star-CBS': 'ANI-1ccx-CCSD_parentheses_T_star-CBS-data.tar.gz'}
-    _FILES_AND_MD5S = {'CCSD(T)star-CBS': OrderedDict([('ANI-1ccx-CCSD_parentheses_T_star-CBS.h5', 'a7218b99f843bc56a1ec195271082c40')])}
+    _ARCHIVE = {'ccsd(t)star-cbs': 'ANI-1ccx-CCSD_parentheses_T_star-CBS-data.tar.gz'}
+    _FILES_AND_MD5S = {'ccsd(t)star-cbs': OrderedDict([('ANI-1ccx-CCSD_parentheses_T_star-CBS.h5', 'a7218b99f843bc56a1ec195271082c40')])}
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='CBS', functional='CCSD(T)star'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
@@ -145,8 +145,8 @@ class ANI1ccx(_BaseBuiltinDataset):
 
 
 class AminoacidDimers(_BaseBuiltinDataset):
-    _ARCHIVE = {'B973c-def2mTZVP': 'Aminoacid-dimers-B973c-def2mTZVP-data.tar.gz'}
-    _FILES_AND_MD5S = {'B973c-def2mTZVP': OrderedDict([('Aminoacid-dimers-B973c-def2mTZVP.h5', '7db327a3cf191c19a06f5495453cfe56')])}
+    _ARCHIVE = {'b973c-def2mtzvp': 'Aminoacid-dimers-B973c-def2mTZVP-data.tar.gz'}
+    _FILES_AND_MD5S = {'b973c-def2mtzvp': OrderedDict([('Aminoacid-dimers-B973c-def2mTZVP.h5', '7db327a3cf191c19a06f5495453cfe56')])}
 
     def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
