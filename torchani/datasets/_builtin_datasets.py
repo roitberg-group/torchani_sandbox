@@ -116,14 +116,13 @@ class _BaseBuiltinDataset(ANIDataset):
                                    f"were found but file {f.name} failed integrity check, "
                                     "your dataset is corrupted or has been modified")
 
-    def _maybe_download_hdf5_archive_and_check_integrity(self, root: Path) -> bool:
+    def _maybe_download_hdf5_archive_and_check_integrity(self, root: Path) -> None:
         # Downloads only if the files have not been found,
         # If the files are corrupted it fails and asks you to delete them
         root = Path(root).resolve()
         if root.is_dir() and list(root.iterdir()):
             self._check_hdf5_files_integrity(root)
-            return True
-
+            return
         download_and_extract_archive(url=f'{_BASE_URL}{self._archive}', download_root=root, md5=None)
         tarfile = root / self._archive
         if tarfile.is_file():
