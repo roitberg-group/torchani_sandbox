@@ -120,7 +120,7 @@ class _BaseBuiltinDataset(ANIDataset):
         # Downloads only if the files have not been found,
         # If the files are corrupted it fails and asks you to delete them
         root = Path(root).resolve()
-        if root.is_dir():
+        if root.is_dir() and list(root.iterdir()):
             self._check_hdf5_files_integrity(root)
             return True
 
