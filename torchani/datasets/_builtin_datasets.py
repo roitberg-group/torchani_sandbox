@@ -120,7 +120,7 @@ class _BaseBuiltinDataset(ANIDataset):
         root = Path(root).resolve()
         if root.is_dir() and self._check_hdf5_files_integrity(root):
             return True
-        download_and_extract_archive(url=f'{_BASE_URL}{self._archive}', download_root=root, md5=None)
+        download_and_extract_archive(url=f'{_BASE_URL}{self._archive}', download_root=root, md5=None, remove_finished=True)
         return self._check_hdf5_files_integrity(root)
 
 
