@@ -61,6 +61,7 @@ from ._annotations import StrPath
 from ..utils import tqdm
 
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
+_DEFAULT_DATA_PATH = Path('~/.local/torchani/Datasets').resolve()
 
 
 class _BaseBuiltinDataset(ANIDataset):
@@ -129,7 +130,9 @@ class TestData(_BaseBuiltinDataset):
     _FILES_AND_MD5S = OrderedDict([('test_data1.h5', '05c8eb5f92cc2e1623355229b53b7f30'),
                                    ('test_data2.h5', 'a496d2792c5fb7a9f6d9ce2116819626')])
 
-    def __init__(self, root: StrPath, download: bool = False, verbose: bool = True):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True):
+        if root is None:
+            root = _DEFAULT_DATA_PATH.joinpath('Test-Data')
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
@@ -137,10 +140,12 @@ class ANI1ccx(_BaseBuiltinDataset):
     _ARCHIVE = {'ccsd(t)star-cbs': 'ANI-1ccx-CCSD_parentheses_T_star-CBS-data.tar.gz'}
     _FILES_AND_MD5S = {'ccsd(t)star-cbs': OrderedDict([('ANI-1ccx-CCSD_parentheses_T_star-CBS.h5', 'a7218b99f843bc56a1ec195271082c40')])}
 
-    def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='CBS', functional='CCSD(T)star'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='CBS', functional='CCSD(T)star'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
+        if root is None:
+            root = _DEFAULT_DATA_PATH.joinpath(f'ANI-1ccx-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
 
 
@@ -148,10 +153,12 @@ class AminoacidDimers(_BaseBuiltinDataset):
     _ARCHIVE = {'b973c-def2mtzvp': 'Aminoacid-dimers-B973c-def2mTZVP-data.tar.gz'}
     _FILES_AND_MD5S = {'b973c-def2mtzvp': OrderedDict([('Aminoacid-dimers-B973c-def2mTZVP.h5', '7db327a3cf191c19a06f5495453cfe56')])}
 
-    def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
+        if root is None:
+            root = _DEFAULT_DATA_PATH.joinpath(f'Aminoacid-Dimers-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
 
 
@@ -186,10 +193,12 @@ class ANI2x(_BaseBuiltinDataset):
     _ARCHIVE = _ANI2x_ARCHIVE
     _FILES_AND_MD5S = _ANI2x_FILES_AND_MD5S
 
-    def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
+        if root is None:
+            root = _DEFAULT_DATA_PATH.joinpath(f'ANI-2x-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
 
 
@@ -197,10 +206,12 @@ class ANI1x(_BaseBuiltinDataset):
     _ARCHIVE = _ANI1x_ARCHIVE
     _FILES_AND_MD5S = _ANI1x_FILES_AND_MD5S
 
-    def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
+        if root is None:
+            root = _DEFAULT_DATA_PATH.joinpath(f'ANI-1x-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
 
 
@@ -249,10 +260,12 @@ class COMP6v1(_BaseBuiltinDataset):
     _ARCHIVE = _COMP6v1_ARCHIVE
     _FILES_AND_MD5S = _COMP6v1_FILES_AND_MD5S
 
-    def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
+        if root is None:
+            root = _DEFAULT_DATA_PATH.joinpath(f'COMP6-v1-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
 
 
@@ -260,8 +273,10 @@ class COMP6v2(_BaseBuiltinDataset):
     _ARCHIVE = _COMP6v2_ARCHIVE
     _FILES_AND_MD5S = _COMP6v2_FILES_AND_MD5S
 
-    def __init__(self, root: StrPath, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
+        if root is None:
+            root = _DEFAULT_DATA_PATH.joinpath(f'COMP6-v2-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
