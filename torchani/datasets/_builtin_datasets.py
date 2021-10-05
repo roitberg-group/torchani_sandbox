@@ -61,7 +61,7 @@ from ._annotations import StrPath
 from ..utils import tqdm
 
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
-_DEFAULT_DATA_PATH = Path('~/.local/torchani/Datasets').resolve()
+_DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
 
 
 class _BaseBuiltinDataset(ANIDataset):
