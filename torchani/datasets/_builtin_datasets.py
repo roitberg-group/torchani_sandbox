@@ -177,9 +177,12 @@ class TestData(_BaseBuiltinDataset):
     _FILES_AND_MD5S = OrderedDict([('test_data1.h5', '05c8eb5f92cc2e1623355229b53b7f30'),
                                    ('test_data2.h5', 'a496d2792c5fb7a9f6d9ce2116819626')])
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+        assert basis_set.lower() == '631gd', "Only wB97X/631Gd data is available for this dataset"
+        assert functional.lower() == 'wb97x'
+        lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
-            root = _DEFAULT_DATA_PATH.joinpath('Test-Data')
+            root = _DEFAULT_DATA_PATH.joinpath(f'Test-Data-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
@@ -190,8 +193,9 @@ class VeryHeavyIons(_BaseBuiltinDataset):
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2mTZVP data is available for this dataset"
         assert functional.lower() == 'b973c'
+        lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
-            root = _DEFAULT_DATA_PATH.joinpath('Ions-very_heavy')
+            root = _DEFAULT_DATA_PATH.joinpath(f'Ions-very_heavy-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
@@ -202,8 +206,9 @@ class HeavyIons(_BaseBuiltinDataset):
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2mTZVP data is available for this dataset"
         assert functional.lower() == 'b973c'
+        lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
-            root = _DEFAULT_DATA_PATH.joinpath('Ions-heavy')
+            root = _DEFAULT_DATA_PATH.joinpath(f'Ions-heavy-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
@@ -214,8 +219,9 @@ class LightIons(_BaseBuiltinDataset):
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2mTZVP data is available for this dataset"
         assert functional.lower() == 'b973c'
+        lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
-            root = _DEFAULT_DATA_PATH.joinpath('Ions-light')
+            root = _DEFAULT_DATA_PATH.joinpath(f'Ions-light-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
@@ -230,8 +236,9 @@ class ANI1q(_BaseBuiltinDataset):
 
          Very limited subset of the wB97X/631G(d) ANI-1x dataset for which 'atomic CM5 charges',
         'QM dipoles' and 'QM quadrupoles' are available"""
+        lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
-            root = _DEFAULT_DATA_PATH.joinpath('ANI-1q')
+            root = _DEFAULT_DATA_PATH.joinpath(f'ANI-1q-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
@@ -247,8 +254,9 @@ class HeavyANI2q(_BaseBuiltinDataset):
         Subset of the wB97X/631G(d) ANI-2x dataset ("heavy" part only) for
         which 'atomic CM5 charges' and 'atomic hirshfeld dipole magnitudes' are
         available"""
+        lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
-            root = _DEFAULT_DATA_PATH.joinpath('ANI-2q_heavy')
+            root = _DEFAULT_DATA_PATH.joinpath(f'ANI-2q_heavy-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
