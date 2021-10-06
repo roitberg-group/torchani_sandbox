@@ -281,7 +281,7 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
         for k, v in self.numpy_items(**kwargs):
             yield v
 
-    def chunked_items(self, max_size: int = 2500, limit: float = math.inf, **kwargs) -> Iterator[Tuple[str, int, Conformers]]:
+    def chunked_items(self, max_size: int = 2500, limit: float = math.inf, **kwargs) -> Iterator[Tuple[str, int, MixedConformers]]:
         r"""Sequentially iterate over chunked pieces of the dataset with a maximum size
 
         The iteration is "chunked" into pieces, so instead of yielding groups
@@ -313,7 +313,7 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
                 if count >= limit:
                     return
 
-    def chunked_numpy_items(self, **kwargs) -> Iterator[Tuple[str, int, NumpyConformers]]:
+    def chunked_numpy_items(self, **kwargs) -> Iterator[Tuple[str, int, MixedConformers]]:
         kwargs.update({'getter': 'get_numpy_conformers'})
         yield from self.chunked_items(**kwargs)
 
