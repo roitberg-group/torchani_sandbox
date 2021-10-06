@@ -52,6 +52,7 @@ Known issues:
     * COMP6 files are v1_full instead of full_v1 for wB97MV
     * for wB97M-D3BJ some files are labeled wB97D3BJ instead of wB97MD3BJ
 """
+import os
 from pathlib import Path
 from typing import Optional, Any
 from collections import OrderedDict
@@ -63,7 +64,11 @@ from ._annotations import StrPath
 from ..utils import tqdm
 
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
-_DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
+
+if "TORCHANI_DATA_PATH" not in os.environ:
+    _DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
+else:
+    _DEFAULT_DATA_PATH = Path(os.environ["TORCHANI_DATA_PATH"]).resolve()
 
 
 class _BaseBuiltinDataset(ANIDataset):
