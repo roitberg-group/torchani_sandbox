@@ -48,7 +48,6 @@ datasets, so everything that is in the v1/1x datasets is also in the v2/2x
 datasets, which contain extra structures.
 
 Known issues:
-- The wB97X/def2-TZVPP datasets are still not available through this module
 - There are small inconsistencies with the names of some files:
     * COMP6 files are v1_full instead of full_v1 for wB97MV
     * for wB97M-D3BJ some files are labeled wB97D3BJ instead of wB97MD3BJ
