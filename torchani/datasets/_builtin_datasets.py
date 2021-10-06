@@ -65,10 +65,10 @@ from ..utils import tqdm
 
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
 
-if "TORCHANI_DATA_PATH" not in os.environ:
-    _DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
-else:
+if "TORCHANI_DATA_PATH" in os.environ:
     _DEFAULT_DATA_PATH = Path(os.environ["TORCHANI_DATA_PATH"]).resolve()
+else:
+    _DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
 
 
 class _BaseBuiltinDataset(ANIDataset):
