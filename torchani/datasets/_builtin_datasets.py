@@ -225,7 +225,7 @@ class ANI1q(_BaseBuiltinDataset):
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         assert basis_set.lower() == '631gd', "Only wB97X/631Gd data is available for this dataset"
-        assert functional.lower() == 'wB97x'
+        assert functional.lower() == 'wb97x'
         r"""ANI-1x subset with CM5 atomic charges and multipoles
 
          Very limited subset of the wB97X/631G(d) ANI-1x dataset for which 'atomic CM5 charges',
@@ -241,7 +241,7 @@ class HeavyANI2q(_BaseBuiltinDataset):
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         assert basis_set.lower() == '631gd', "Only wB97X/631Gd data is available for this dataset"
-        assert functional.lower() == 'wB97x'
+        assert functional.lower() == 'wb97x'
         r"""ANI-2x "heavy" subset with CM5 atomic charges
 
         Subset of the wB97X/631G(d) ANI-2x dataset ("heavy" part only) for
