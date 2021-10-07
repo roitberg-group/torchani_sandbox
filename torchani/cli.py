@@ -9,9 +9,9 @@ def build_parser():
 
     # dataset download parser
     parser_download = subparsers.add_parser('download', help='Download dataset from Moria (needs UF VPN to be able to work).')
-    parser_download.add_argument('dataset', type=str, choices=[*_BUILTIN_DATASETS], help='the dataset to download')
-    parser_download.add_argument('lot', type=str, choices=[*_BUILTIN_DATASETS_LOT], help='level of theory')
-    parser_download.add_argument('--root', type=str, default=None, help='root directory to save the dataset, default folder set as datasets/{dataset}-{lot}')
+    parser_download.add_argument('dataset', type=str, choices=_BUILTIN_DATASETS, help='the dataset to download')
+    parser_download.add_argument('lot', type=str, choices=_BUILTIN_DATASETS_LOT, help='level of theory')
+    parser_download.add_argument('--root', type=str, default=None, help='Optional root directory to save the dataset, default folder is set as datasets/{dataset}-{lot}')
 
     # parse args
     args = main_parser.parse_args()
