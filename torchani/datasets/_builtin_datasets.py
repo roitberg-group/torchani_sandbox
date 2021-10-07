@@ -109,7 +109,7 @@ _BUILTIN_DATASETS = ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'ANI1ccx', 'Aminoac
 _BUILTIN_DATASETS_LOT = ['wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp', 'wb97mv-def2tzvpp', 'wb97x-def2tzvpp', 'ccsd(t)star-cbs']
 
 
-def download_dataset(dataset, lot, root=None):
+def download_builtin_dataset(dataset, lot, root=None):
     """
     Download dataset at specified root folder, or at the default folder: ./datasets/{dataset}-{lot}/
     """

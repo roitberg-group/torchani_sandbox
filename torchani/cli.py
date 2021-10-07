@@ -1,5 +1,5 @@
 import argparse
-from .datasets._builtin_datasets import download_dataset, _BUILTIN_DATASETS, _BUILTIN_DATASETS_LOT
+from .datasets._builtin_datasets import download_builtin_dataset, _BUILTIN_DATASETS, _BUILTIN_DATASETS_LOT
 
 
 def build_parser():
@@ -22,7 +22,7 @@ def main():
     args = build_parser()
 
     if args.workflow == "download":
-        download_dataset(args.dataset, args.lot, args.root)
+        download_builtin_dataset(args.dataset, args.lot, args.root)
 
 
 if __name__ == '__main__':
