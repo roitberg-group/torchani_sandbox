@@ -68,6 +68,7 @@ from .aev import AEVComputer
 from .repulsion import RepulsionCalculator
 from .compat import Final
 from . import atomics
+from torchani.utils import map_to_central
 
 
 NN = Union[ANIModel, Ensemble]
@@ -328,6 +329,8 @@ class BuiltinModelPairInteractions(BuiltinModel):
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species, coordinates = species_coordinates
         atom_index12, shift_values, diff_vectors, distances = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
+        if pbc is not None and pbc.any():
+            coordinates = map_to_central(coordinates, cell, pbc)
 
         # energy calculation for potentials with larger cutoff than the aev
         pre_species_energies = (species, torch.zeros(size=(species.shape[0],), device=species.device, dtype=coordinates.dtype))
