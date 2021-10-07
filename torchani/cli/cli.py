@@ -10,7 +10,7 @@ def build_parser():
 
     # dataset download parser
     parser_download = subparsers.add_parser('download', help='download datasets',
-                                            description="Download dataset from Moria (needs UF VPN to be able to work).\n"
+                                            description="Download dataset from Moria (needs to be within UF network).\n"
                                             "Check avaiable dataset at: \n"
                                             "https://github.com/roitberg-group/torchani_sandbox/blob/master/torchani/datasets/_builtin_datasets.py",
                                             formatter_class=argparse.RawTextHelpFormatter)
