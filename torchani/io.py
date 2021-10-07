@@ -56,6 +56,7 @@ def _conformations_to_file(path, species_coordinates, dumper, frame_range=None, 
     elif dumper == 'lammpstrj':
         dumper = _dump_lammpstrj
     if frame_range is None:
+        assert kwargs.get('frame', None) is None
         frame_range = itertools.count(0)
     else:
         assert len(frame_range) == num_molecules
@@ -75,6 +76,7 @@ def _conformations_to_file(path, species_coordinates, dumper, frame_range=None, 
             assert tensor_.shape[0] == num_molecules, f"Bad number of molecules for {key}"
     for frame, j in zip(range(num_molecules), frame_range):
         append = kwargs.pop('append', (j != 0))
+        frame = kwargs.pop('frame', frame)
         kwargs.update({name: t[j] for name, t in tensors.items()})
         dumper(path, append=append, frame=frame, **kwargs)
 
