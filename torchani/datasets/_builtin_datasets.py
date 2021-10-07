@@ -57,7 +57,6 @@ from pathlib import Path
 from typing import Optional, Any
 from collections import OrderedDict
 from copy import deepcopy
-from torch import functional
 
 from torchvision.datasets.utils import download_and_extract_archive, list_files, check_integrity
 from .datasets import ANIDataset
