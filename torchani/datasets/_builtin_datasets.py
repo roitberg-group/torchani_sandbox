@@ -122,7 +122,10 @@ def download_builtin_dataset(dataset, lot, root=None):
     functional = parts[0]
     basis_set = parts[1]
     location = f'./datasets/{dataset}-{lot}/' if root is None else root
-    print(f"will download dataset at {Path(location).absolute().as_posix()}")
+    if Path(location).exists():
+        print(f"Found existing dataset at {Path(location).absolute().as_posix()}, will check files integrality.")
+    else:
+        print(f"Will download dataset at {Path(location).absolute().as_posix()}")
     getattr(sys.modules[__name__], dataset)(location, download=True, functional=functional, basis_set=basis_set)
 
 
