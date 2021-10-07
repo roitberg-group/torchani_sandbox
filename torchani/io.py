@@ -1,3 +1,4 @@
+r"""Simple IO module for basic parsing of common plaintext trajectory formats"""
 import torch
 from torch import Tensor
 import itertools
