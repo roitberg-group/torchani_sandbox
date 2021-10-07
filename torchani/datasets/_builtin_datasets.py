@@ -50,28 +50,28 @@ wavefunction_method/basis_set when appropriate.
   for which 'atomic CM5 charges' are available.
   This dataset is not meant to be trained to on its own.
 
-- HeavyANI2q, with LoT:
+- ANI2qHeavy, with LoT:
     - wB97X/631Gd
   Subset of ANI-2x "heavy"
   for which 'atomic CM5 charges' are available.
   This dataset is not meant to be trained to on its own.
 
-- LightIons, with LoT:
+- IonsLight, with LoT:
     - B973c/def2mTZVP
   Dataset that includes ions, with H,C,N,O elements only
   This dataset is not meant to be trained to on its own.
 
-- HeavyIons, with LoT:
+- IonsHeavy, with LoT:
     - B973c/def2mTZVP
   Dataset that includes ions, with H,C,N,O elements and at least one of F,S,Cl
-  (disjoint from LightIons)
+  (disjoint from IonsLight)
   This dataset is not meant to be trained to on its own.
 
-- VeryHeavyIons, with LoT:
+- IonsVeryHeavy, with LoT:
     - B973c/def2mTZVP
   Dataset that includes ions, with H,C,N,O,F,S,Cl elements and at least one of
   Si,As,Br,Se,P,B,I
-  (disjoint from LightIons and HeavyIons)
+  (disjoint from LightIons and IonsHeavy)
   This dataset is not meant to be trained to on its own.
 
 - TestData, with LoT:
@@ -186,7 +186,7 @@ class TestData(_BaseBuiltinDataset):
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
-class VeryHeavyIons(_BaseBuiltinDataset):
+class IonsVeryHeavy(_BaseBuiltinDataset):
     _ARCHIVE = 'Ions-very_heavy-B973c-def2mTZVP-data.tar.gz'
     _FILES_AND_MD5S = OrderedDict([('Ions-very_heavy-B973c-def2mTZVP.h5', '64d872442fb6226ce2010a50565fe7bb')])
 
@@ -199,7 +199,7 @@ class VeryHeavyIons(_BaseBuiltinDataset):
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
-class HeavyIons(_BaseBuiltinDataset):
+class IonsHeavy(_BaseBuiltinDataset):
     _ARCHIVE = 'Ions-heavy-B973c-def2mTZVP-data.tar.gz'
     _FILES_AND_MD5S = OrderedDict([('Ions-heavy-B973c-def2mTZVP.h5', 'ef1b406d453b71488683c1cf9f1aa316')])
 
@@ -212,7 +212,7 @@ class HeavyIons(_BaseBuiltinDataset):
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
-class LightIons(_BaseBuiltinDataset):
+class IonsLight(_BaseBuiltinDataset):
     _ARCHIVE = 'Ions-light-B973c-def2mTZVP-data.tar.gz'
     _FILES_AND_MD5S = OrderedDict([('Ions-light-B973c-def2mTZVP.h5', 'af2e520d3eace248a1ad7a8bdb8ec7c7')])
 
@@ -242,7 +242,7 @@ class ANI1q(_BaseBuiltinDataset):
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
-class HeavyANI2q(_BaseBuiltinDataset):
+class ANI2qHeavy(_BaseBuiltinDataset):
     _ARCHIVE = 'ANI-2q_heavy-wB97X-631Gd-data.tar.gz'
     _FILES_AND_MD5S = OrderedDict([('ANI-2q_heavy-wB97X-631Gd.h5', '3d5a1ab8f6065f130b89e633f453abaf')])
 
