@@ -102,18 +102,15 @@ def tensor_from_lammpstrj(path, start_frame=0, end_frame=None, step=1,
         num_atoms = int(f.readline())
         f.seek(0)
         frame_size = num_atoms + 9  # 4 headers + 3 box bounds + ts + num_atoms
-        if end_frame is not None:
-            lines_ = sum(1 for line in open(path, 'r'))
-            assert frame_size * end_frame <= lines_
-            iterable = range(start_frame * frame_size, end_frame * frame_size, step * frame_size)
-        else:
-            iterable = itertools.count(start_frame * frame_size, step * frame_size)
+        iterable = itertools.count(start_frame * frame_size, step * frame_size)
         cell = []
         coordinates = []
         species = []
         velocities = []
         forces = []
         for line_num in iterable:
+            if end_frame is not None and line_num == end_frame * frame_size:
+                break
             _advance(f, 5)
             try:
                 xlo, xhi = [float(v) for v in f.readline().split()]
@@ -144,10 +141,10 @@ def tensor_from_lammpstrj(path, start_frame=0, end_frame=None, step=1,
                         if coordinates_type == 'unscaled':
                             atom_coords[_get_index(h)] = float(v)
                         elif coordinates_type == 'scaled':
-                            atom_coords[_get_index(h)] = float(v) / cell_diag(_get_index(h))
+                            atom_coords[_get_index(h)] = float(v) / cell_diag[_get_index(h)]
                     elif 's' in h:
                         if coordinates_type == 'unscaled':
-                            atom_coords[_get_index(h)] = float(v) * cell_diag(_get_index(h))
+                            atom_coords[_get_index(h)] = float(v) * cell_diag[_get_index(h)]
                         elif coordinates_type == 'scaled':
                             atom_coords[_get_index(h)] = float(v)
                     elif 'f' in h:
@@ -169,6 +166,8 @@ def tensor_from_lammpstrj(path, start_frame=0, end_frame=None, step=1,
                 _advance(f, step * frame_size)
         species = torch.tensor(species, dtype=torch.long)
         coordinates = torch.tensor(coordinates, dtype=torch.float)
+        forces = torch.tensor(forces, dtype=torch.float)
+        velocities = torch.tensor(velocities, dtype=torch.float)
         if extract_atoms is None:
             assert coordinates.shape[1] == num_atoms
             assert species.shape[1] == num_atoms
@@ -176,7 +175,7 @@ def tensor_from_lammpstrj(path, start_frame=0, end_frame=None, step=1,
             assert coordinates.shape[1] == len(extract_atoms)
             assert species.shape[1] == len(extract_atoms)
         if get_cell:
-            cell = torch.cat(cell)
+            cell = torch.stack(cell)
         else:
             cell = None
         return species, coordinates, cell, forces, velocities
@@ -293,21 +292,6 @@ def _dump_lammpstrj(path, species: Tensor, coordinates: Tensor,
     # input species must be atomic numbers
     num_atoms = len(species)
     cell_diag = torch.diag(cell)
-
-    coordinates = coordinates.view(-1, 3)
-    species = species.view(-1)
-    if forces is not None:
-        assert forces.dim() == 3
-        assert forces.shape[0] == 1, "Batch printing not implemented"
-        forces = forces.view(-1, 3)
-    if velocities is not None:
-        assert velocities.dim() == 3
-        assert velocities.shape[0] == 1, "Batch printing not implemented"
-        velocities = velocities.view(-1, 3)
-    if charges is not None:
-        assert charges.dim() == 3
-        assert charges.shape[0] == 1, "Batch printing not implemented"
-        charges = charges.view(-1, 3)
     if append:
         mode = 'a'
     else:
