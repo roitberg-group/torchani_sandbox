@@ -74,7 +74,7 @@ def _conformations_to_file(path, species_coordinates, dumper, frame_range=None, 
             assert tensor_.dim() == nonbatch_dim + 1, f"Bad number of dimensions for {key}"
             assert tensor_.shape[0] == num_molecules, f"Bad number of molecules for {key}"
     for frame, j in zip(range(num_molecules), frame_range):
-        append = (j != 0)
+        append = kwargs.pop('append', (j != 0))
         kwargs.update({name: t[j] for name, t in tensors.items()})
         dumper(path, append=append, frame=frame, **kwargs)
 
