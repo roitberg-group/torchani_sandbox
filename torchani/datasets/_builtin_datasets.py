@@ -110,6 +110,9 @@ _BUILTIN_DATASETS_LOT = ['wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp'
 
 
 def download_dataset(dataset, lot, root=None):
+    """
+    Download dataset at specified root folder, or at the default folder: ./datasets/{dataset}-{lot}/
+    """
     assert dataset in _BUILTIN_DATASETS, f"{dataset} is not avaiable"
     assert lot in _BUILTIN_DATASETS_LOT, f"{lot} is not avaiable"
 
@@ -118,7 +121,7 @@ def download_dataset(dataset, lot, root=None):
 
     functional = parts[0]
     basis_set = parts[1]
-    location = f'./datasets/{dataset}-{lot}' if root is None else root
+    location = f'./datasets/{dataset}-{lot}/' if root is None else root
     print(f"will download dataset at {Path(location).absolute().as_posix()}")
     getattr(sys.modules[__name__], dataset)(location, download=True, functional=functional, basis_set=basis_set)
 
