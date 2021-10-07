@@ -173,7 +173,7 @@ setup(
         'importlib_metadata',
     ],
     entry_points={
-        'console_scripts': ['torchani = torchani.cli:main'],
+        'console_scripts': ['torchani = torchani.cli.cli:main'],
     },
     **ext_kwargs()
 )

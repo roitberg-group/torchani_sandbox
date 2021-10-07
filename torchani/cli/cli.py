@@ -1,5 +1,6 @@
 import argparse
-from .datasets._builtin_datasets import download_builtin_dataset, _BUILTIN_DATASETS, _BUILTIN_DATASETS_LOT
+from .utils import h5info
+from ..datasets._builtin_datasets import download_builtin_dataset, _BUILTIN_DATASETS, _BUILTIN_DATASETS_LOT
 
 
 def build_parser():
@@ -13,6 +14,10 @@ def build_parser():
     parser_download.add_argument('lot', type=str, choices=_BUILTIN_DATASETS_LOT, help='level of theory')
     parser_download.add_argument('--root', type=str, default=None, help='Optional root directory to save the dataset, default folder is set as datasets/{dataset}-{lot}')
 
+    # dataset download parser
+    parser_download = subparsers.add_parser('h5info', help='Show h5file informations')
+    parser_download.add_argument('path', type=str, help='path to a h5 dataset file or a directory')
+
     # parse args
     args = main_parser.parse_args()
     return args
@@ -23,6 +28,9 @@ def main():
 
     if args.workflow == "download":
         download_builtin_dataset(args.dataset, args.lot, args.root)
+
+    if args.workflow == "h5info":
+        h5info(args.path)
 
 
 if __name__ == '__main__':
