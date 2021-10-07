@@ -56,9 +56,9 @@ def _conformations_to_file(path, species_coordinates, dumper, frame_range=None, 
     elif dumper == 'lammpstrj':
         dumper = _dump_lammpstrj
     if frame_range is None:
-        assert kwargs.get('frame', None) is None
         frame_range = itertools.count(0)
     else:
+        assert kwargs.get('frame', None) is None
         assert len(frame_range) == num_molecules
 
     supported_tensors = ['species', 'coordinates', 'forces', 'velocities', 'charges', 'cell']
