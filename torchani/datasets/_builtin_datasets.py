@@ -52,10 +52,12 @@ Known issues:
     * COMP6 files are v1_full instead of full_v1 for wB97MV
     * for wB97M-D3BJ some files are labeled wB97D3BJ instead of wB97MD3BJ
 """
+import sys
 from pathlib import Path
 from typing import Optional, Any
 from collections import OrderedDict
 from copy import deepcopy
+from torch import functional
 
 from torchvision.datasets.utils import download_and_extract_archive, list_files, check_integrity
 from .datasets import ANIDataset
@@ -64,6 +66,23 @@ from ..utils import tqdm
 
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
 _DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
+
+_BUILTIN_DATASETS = ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'ANI1ccx', 'AminoacidDimers', 'ANI1q', 'HeavyANI2q', 'LightIons', 'HeavyIons', 'VeryHeavyIons', 'TestData']
+_BUILTIN_DATASETS_LOT = ['wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp', 'wb97mv-def2tzvpp', 'wb97x-def2tzvpp', 'ccsd(t)star-cbs']
+
+
+def download_dataset(dataset, lot, root=None):
+    assert dataset in _BUILTIN_DATASETS, f"{dataset} is not avaiable"
+    assert lot in _BUILTIN_DATASETS_LOT, f"{lot} is not avaiable"
+
+    parts = lot.split('-')
+    assert len(parts) == 2, f"bad LoT format: {lot}"
+
+    functional = parts[0]
+    basis_set = parts[1]
+    location = f'./datasets/{dataset}-{lot}' if root is None else root
+    print(f"will download dataset at {Path(location).absolute().as_posix()}")
+    getattr(sys.modules[__name__], dataset)(location, download=True, functional=functional, basis_set=basis_set)
 
 
 class _BaseBuiltinDataset(ANIDataset):
@@ -272,10 +291,10 @@ for lot in _COMP6_LOT:
 # grids may be slightly different, but the difference should not be significant
 _COMP6v1_FILES_AND_MD5S.update({'wb97x-def2tzvpp': OrderedDict([('ANI-BenchMD-wB97X-def2TZVPP.h5', '9cd6d267b2d3d651cba566650642ed62'),
                                                             ('S66x8-v1-wB97X-def2TZVPP.h5', 'a7aa6ce11497d182c1265219e5e2925f'),
-                                                            ('DrugBank-testset-wB97X-def2TZVPP.h5', '977e1d6863fccdbbc6340acb15b1eec2'),
-                                                            ('Tripeptides-v1-wB97X-def2TZVPP.h5', '6b838fee970244ad85419165bb71c557'),
-                                                            ('GDB-7to9-wB97X-def2TZVPP.h5', '23b80666f75cb71030534efdc7df7c97'),
-                                                            ('GDB-10to13-wB97X-def2TZVPP.h5', 'bd9730961eaf15a3d823b97f39c41908')])})
+    ('DrugBank-testset-wB97X-def2TZVPP.h5', '977e1d6863fccdbbc6340acb15b1eec2'),
+    ('Tripeptides-v1-wB97X-def2TZVPP.h5', '6b838fee970244ad85419165bb71c557'),
+    ('GDB-7to9-wB97X-def2TZVPP.h5', '23b80666f75cb71030534efdc7df7c97'),
+    ('GDB-10to13-wB97X-def2TZVPP.h5', 'bd9730961eaf15a3d823b97f39c41908')])})
 _COMP6v1_ARCHIVE.update({'wb97x-def2tzvpp': 'COMP6-v1-wB97X-def2TZVPP-data.tar.gz'})
 
 
