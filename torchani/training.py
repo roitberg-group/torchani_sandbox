@@ -214,7 +214,10 @@ def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_s
                           functional=None, basis_set=None, selected_properties=None, splits=None, folds=None, batch_all_properties=True):
     assert (splits is None or folds is None) and (splits is not folds)
     ds_path = root_dataset_path.joinpath(dataset_name)
-    batched_dataset_path = Path(ds_path.as_posix() + '-batched').resolve()
+    if splits is not None:
+        batched_dataset_path = Path(ds_path.as_posix() + '-batched').resolve()
+    else:
+        batched_dataset_path = Path(ds_path.as_posix() + '-ensemble-batched').resolve()
     if not batched_dataset_path.is_dir():
         if DatasetClass.__name__ == 'ANIDataset':
             ds = DatasetClass.from_dir(ds_path)
