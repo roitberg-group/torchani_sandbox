@@ -95,6 +95,7 @@ from pathlib import Path
 from typing import Optional, Any
 from collections import OrderedDict
 from copy import deepcopy
+import warnings
 
 from torchvision.datasets.utils import download_and_extract_archive, list_files, check_integrity
 from .datasets import ANIDataset
@@ -112,18 +113,21 @@ class _BaseBuiltinDataset(ANIDataset):
                        download: bool = False,
                        archive: Optional[str] = None,
                        files_and_md5s: Optional['OrderedDict[str, str]'] = None,
+                       skip_integrity_check: bool = False,
                        **h5_dataset_kwargs: Any):
         assert isinstance(files_and_md5s, OrderedDict)
 
         self._archive: str = '' if archive is None else archive
         self._files_and_md5s = OrderedDict([('', '')]) if files_and_md5s is None else files_and_md5s
+        if download and skip_integrity_check:
+            warnings.warn("Integrity check will not be skipped when the dataset is downloaded")
 
         root = Path(root).resolve()
         if download:
             # If the dataset is not found we download it, if the dataset is corrupted we
             # exit with error
             self._maybe_download_hdf5_archive_and_check_integrity(root)
-        else:
+        elif not skip_integrity_check:
             self._check_hdf5_files_integrity(root)
         dataset_paths = [Path(p).resolve() for p in list_files(root, suffix='.h5', prefix=True)]
 
@@ -177,59 +181,59 @@ class TestData(_BaseBuiltinDataset):
     _FILES_AND_MD5S = OrderedDict([('test_data1.h5', '05c8eb5f92cc2e1623355229b53b7f30'),
                                    ('test_data2.h5', 'a496d2792c5fb7a9f6d9ce2116819626')])
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X', **kwargs):
         assert basis_set.lower() == '631gd', "Only wB97X/631Gd data is available for this dataset"
         assert functional.lower() == 'wb97x'
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'Test-Data-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose, **kwargs)
 
 
 class IonsVeryHeavy(_BaseBuiltinDataset):
     _ARCHIVE = 'Ions-very_heavy-B973c-def2mTZVP-data.tar.gz'
     _FILES_AND_MD5S = OrderedDict([('Ions-very_heavy-B973c-def2mTZVP.h5', '64d872442fb6226ce2010a50565fe7bb')])
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c', **kwargs):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2mTZVP data is available for this dataset"
         assert functional.lower() == 'b973c'
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'Ions-very_heavy-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose, **kwargs)
 
 
 class IonsHeavy(_BaseBuiltinDataset):
     _ARCHIVE = 'Ions-heavy-B973c-def2mTZVP-data.tar.gz'
     _FILES_AND_MD5S = OrderedDict([('Ions-heavy-B973c-def2mTZVP.h5', 'ef1b406d453b71488683c1cf9f1aa316')])
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c', **kwargs):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2mTZVP data is available for this dataset"
         assert functional.lower() == 'b973c'
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'Ions-heavy-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose, **kwargs)
 
 
 class IonsLight(_BaseBuiltinDataset):
     _ARCHIVE = 'Ions-light-B973c-def2mTZVP-data.tar.gz'
     _FILES_AND_MD5S = OrderedDict([('Ions-light-B973c-def2mTZVP.h5', 'af2e520d3eace248a1ad7a8bdb8ec7c7')])
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c', **kwargs):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2mTZVP data is available for this dataset"
         assert functional.lower() == 'b973c'
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'Ions-light-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose, **kwargs)
 
 
 class ANI1q(_BaseBuiltinDataset):
     _ARCHIVE = 'ANI-1q-wB97X-631Gd-data.tar.gz'
     _FILES_AND_MD5S = OrderedDict([('ANI-1q-wB97X-631Gd.h5', 'a66e3d50e44ed0c863abc52e943ca1c2')])
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X', **kwargs):
         assert basis_set.lower() == '631gd', "Only wB97X/631Gd data is available for this dataset"
         assert functional.lower() == 'wb97x'
         r"""ANI-1x subset with CM5 atomic charges and multipoles
@@ -239,14 +243,14 @@ class ANI1q(_BaseBuiltinDataset):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'ANI-1q-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose, **kwargs)
 
 
 class ANI2qHeavy(_BaseBuiltinDataset):
     _ARCHIVE = 'ANI-2q_heavy-wB97X-631Gd-data.tar.gz'
     _FILES_AND_MD5S = OrderedDict([('ANI-2q_heavy-wB97X-631Gd.h5', '3d5a1ab8f6065f130b89e633f453abaf')])
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X', **kwargs):
         assert basis_set.lower() == '631gd', "Only wB97X/631Gd data is available for this dataset"
         assert functional.lower() == 'wb97x'
         r"""ANI-2x "heavy" subset with CM5 atomic charges
@@ -257,33 +261,33 @@ class ANI2qHeavy(_BaseBuiltinDataset):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'ANI-2q_heavy-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose, **kwargs)
 
 
 class ANI1ccx(_BaseBuiltinDataset):
     _ARCHIVE = {'ccsd(t)star-cbs': 'ANI-1ccx-CCSD_parentheses_T_star-CBS-data.tar.gz'}
     _FILES_AND_MD5S = {'ccsd(t)star-cbs': OrderedDict([('ANI-1ccx-CCSD_parentheses_T_star-CBS.h5', 'a7218b99f843bc56a1ec195271082c40')])}
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='CBS', functional='CCSD(T)star'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='CBS', functional='CCSD(T)star', **kwargs):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'ANI-1ccx-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose, **kwargs)
 
 
 class AminoacidDimers(_BaseBuiltinDataset):
     _ARCHIVE = {'b973c-def2mtzvp': 'Aminoacid-dimers-B973c-def2mTZVP-data.tar.gz'}
     _FILES_AND_MD5S = {'b973c-def2mtzvp': OrderedDict([('Aminoacid-dimers-B973c-def2mTZVP.h5', '7db327a3cf191c19a06f5495453cfe56')])}
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c', **kwargs):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'Aminoacid-Dimers-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose, **kwargs)
 
 
 _ANI_LOT = {'wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp', 'wb97mv-def2tzvpp', 'wb97x-def2tzvpp'}
@@ -320,26 +324,26 @@ class ANI2x(_BaseBuiltinDataset):
     _ARCHIVE = _ANI2x_ARCHIVE
     _FILES_AND_MD5S = _ANI2x_FILES_AND_MD5S
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X', **kwargs):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'ANI-2x-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose, **kwargs)
 
 
 class ANI1x(_BaseBuiltinDataset):
     _ARCHIVE = _ANI1x_ARCHIVE
     _FILES_AND_MD5S = _ANI1x_FILES_AND_MD5S
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X', **kwargs):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'ANI-1x-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose, **kwargs)
 
 
 _COMP6_LOT = {'wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp', 'wb97mv-def2tzvpp'}
@@ -399,23 +403,23 @@ class COMP6v1(_BaseBuiltinDataset):
     _ARCHIVE = _COMP6v1_ARCHIVE
     _FILES_AND_MD5S = _COMP6v1_FILES_AND_MD5S
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X', **kwargs):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'COMP6-v1-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose, **kwargs)
 
 
 class COMP6v2(_BaseBuiltinDataset):
     _ARCHIVE = _COMP6v2_ARCHIVE
     _FILES_AND_MD5S = _COMP6v2_FILES_AND_MD5S
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X', **kwargs):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'COMP6-v2-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose, **kwargs)
