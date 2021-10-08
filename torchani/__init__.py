@@ -43,6 +43,7 @@ from . import datasets
 from . import transforms
 from . import molecule_utils
 from . import io
+from . import cli
 from pkg_resources import get_distribution, DistributionNotFound
 import warnings
 
@@ -54,7 +55,7 @@ except DistributionNotFound:
 
 __all__ = ['AEVComputer', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
            'utils', 'neurochem', 'models', 'units', 'repulsion', 'dispersion', 'datasets', 'transforms',
-           'short_range_basis', 'molecule_utils', 'io']
+           'short_range_basis', 'molecule_utils', 'io', 'cli']
 
 try:
     from . import ase  # noqa: F401
