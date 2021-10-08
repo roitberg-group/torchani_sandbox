@@ -330,6 +330,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
         species, coordinates = species_coordinates
         atom_index12, shift_values, diff_vectors, distances = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
         if pbc is not None and pbc.any():
+            assert cell is not None
             coordinates = map_to_central(coordinates, cell, pbc)
 
         # energy calculation for potentials with larger cutoff than the aev
