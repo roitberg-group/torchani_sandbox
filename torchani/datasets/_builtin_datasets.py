@@ -216,8 +216,8 @@ class TestData(_BaseBuiltinDataset):
 
 class TestDataIons(_BaseBuiltinDataset):
     _ARCHIVE = 'TestData-ions-B973c-def2mTZVP.tar.gz'
-    _FILES_AND_MD5S = OrderedDict([('ANI-1x_sample-B973c-def2mTZVP.h5', 'a65e8e05b0e2af66eb344fb567ac5ea0'),
-                                   ('Ions-sample-B973c-def2mTZVP.h5', 'eccb41aee2a95237d50381a3174bed3d')])
+    _FILES_AND_MD5S = OrderedDict([('ANI-1x_sample-B973c-def2mTZVP.h5', '7294f4872ca9874814452f0411fe3ed6'),
+                                   ('Ions-sample-B973c-def2mTZVP.h5', 'd5821fca9d231a5e2c3f40d65ad245d6')])
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2-mTZVP data is available for this dataset"
