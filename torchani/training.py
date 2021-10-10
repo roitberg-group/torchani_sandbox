@@ -63,6 +63,12 @@ class Runner:
         # metrics with different units are added to them)
         return {}
 
+    def set_train_only_metrics(self):
+        return {}
+
+    def set_eval_only_metrics(self):
+        return {}
+
     def _run(self, dataset: DatasetType,
                    epoch: Optional[int] = None,
                    train: bool = False,
@@ -72,10 +78,14 @@ class Runner:
         msg = f"epoch {epoch}, {split}" if epoch is not None else split
         metrics = {'loss': 0.0, 'count': 0}
         metrics.update(self.set_extra_metrics())
+        if train:
+            metrics.update(self.set_train_only_metrics())
+        else:
+            metrics.update(self.set_eval_only_metrics())
         for batch in tqdm(dataset, total=len(dataset), desc=msg, disable=not use_tqdm):
             batch = self._transform({k: v.to(self._device, non_blocking=True)
                                      for k, v in batch.items()})
-            batch_loss, count = self.inner_loop(batch, metrics)
+            batch_loss, count = self.inner_loop(batch, metrics, train=train)
             if train:
                 self._run_backwards(batch_loss.mean())
             metrics['loss'] += batch_loss.detach().sum().item()
