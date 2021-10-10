@@ -13,7 +13,7 @@ from collections import OrderedDict
 
 import torch
 from torch import Tensor
-from torchvision.utils import calculate_md5
+from torchvision.datasets.utils import calculate_md5
 import numpy as np
 
 from ._backends import _H5PY_AVAILABLE, _StoreAdaptor, StoreAdaptorFactory, TemporaryLocation, infer_backend
