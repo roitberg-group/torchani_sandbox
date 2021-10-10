@@ -78,6 +78,11 @@ wavefunction_method/basis_set when appropriate.
     - wB97X/631Gd
   GDB subset, only for debugging and code testing purposes.
 
+- TestDataForcesDipoles, with LoT:
+    - wB97X/631Gd
+  ANI1q subset, only for debugging and code testing purposes, includes forces
+  and dipoles.
+
 
 (note that the conformations present in datasets with different LoT may be
 different).
@@ -105,7 +110,7 @@ from ..utils import tqdm
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
 _DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
 
-_BUILTIN_DATASETS = ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'ANI1ccx', 'AminoacidDimers', 'ANI1q', 'ANI2qHeavy', 'IonsLight', 'IonsHeavy', 'IonsVeryHeavy', 'TestData']
+_BUILTIN_DATASETS = ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'ANI1ccx', 'AminoacidDimers', 'ANI1q', 'ANI2qHeavy', 'IonsLight', 'IonsHeavy', 'IonsVeryHeavy', 'TestData', 'TestDataForcesDipoles']
 _BUILTIN_DATASETS_LOT = ['wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp', 'wb97mv-def2tzvpp', 'wb97x-def2tzvpp', 'ccsd(t)star-cbs']
 
 
@@ -207,6 +212,19 @@ class TestData(_BaseBuiltinDataset):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'Test-Data-{lot}')
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
+
+
+class TestDataForcesDipoles(_BaseBuiltinDataset):
+    _ARCHIVE = 'TestData-forces_dipoles-wB97X-631Gd.tar.gz'
+    _FILES_AND_MD5S = OrderedDict([('TestData-forces_dipoles-wB97X-631Gd.h5', 'fc99f34c03f9900c0f7e09d76045e041')])
+
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
+        assert basis_set.lower() == '631gd', "Only wB97X/631Gd data is available for this dataset"
+        assert functional.lower() == 'wb97x'
+        lot = f'{functional.lower()}-{basis_set.lower()}'
+        if root is None:
+            root = _DEFAULT_DATA_PATH.joinpath(f'TestData-forces_dipoles-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
