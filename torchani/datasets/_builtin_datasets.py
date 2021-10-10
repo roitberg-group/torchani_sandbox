@@ -78,6 +78,10 @@ wavefunction_method/basis_set when appropriate.
     - wB97X/631Gd
   GDB subset, only for debugging and code testing purposes.
 
+- TestDataIons, with LoT:
+    - B973c/def2mTZVP
+  Only for debugging and code testing purposes, includes forces, dipoles and charges.
+
 
 (note that the conformations present in datasets with different LoT may be
 different).
@@ -106,7 +110,7 @@ from ..utils import tqdm
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
 _DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
 
-_BUILTIN_DATASETS = ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'ANI1ccx', 'AminoacidDimers', 'ANI1q', 'ANI2qHeavy', 'IonsLight', 'IonsHeavy', 'IonsVeryHeavy', 'TestData']
+_BUILTIN_DATASETS = ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'ANI1ccx', 'AminoacidDimers', 'ANI1q', 'ANI2qHeavy', 'IonsLight', 'IonsHeavy', 'IonsVeryHeavy', 'TestData', 'TestDataIons']
 _BUILTIN_DATASETS_LOT = ['wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp', 'wb97mv-def2tzvpp', 'wb97x-def2tzvpp', 'ccsd(t)star-cbs']
 
 
@@ -212,6 +216,20 @@ class TestData(_BaseBuiltinDataset):
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'Test-Data-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose, **kwargs)
+
+
+class TestDataIons(_BaseBuiltinDataset):
+    _ARCHIVE = 'TestData-ions-B973c-def2mTZVP.tar.gz'
+    _FILES_AND_MD5S = OrderedDict([('ANI-1x_sample-B973c-def2mTZVP.h5', 'a65e8e05b0e2af66eb344fb567ac5ea0'),
+                                   ('Ions-sample-B973c-def2mTZVP.h5', 'eccb41aee2a95237d50381a3174bed3d')])
+
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
+        assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2-mTZVP data is available for this dataset"
+        assert functional.lower() == 'b973c'
+        lot = f'{functional.lower()}-{basis_set.lower()}'
+        if root is None:
+            root = _DEFAULT_DATA_PATH.joinpath(f'TestData-ions-{lot}')
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
 class IonsVeryHeavy(_BaseBuiltinDataset):
