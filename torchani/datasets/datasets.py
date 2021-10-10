@@ -13,6 +13,7 @@ from collections import OrderedDict
 
 import torch
 from torch import Tensor
+from torchvision.utils import calculate_md5
 import numpy as np
 
 from ._backends import _H5PY_AVAILABLE, _StoreAdaptor, StoreAdaptorFactory, TemporaryLocation, infer_backend
@@ -1018,6 +1019,10 @@ class ANIDataset(_ANIDatasetBase):
     @property
     def store_locations(self) -> List[str]:
         return [fspath(ds._store.location) for ds in self._datasets.values()]
+
+    @property
+    def store_md5s(self) -> List[str]:
+        return [calculate_md5(fspath(ds._store.location)) for ds in self._datasets.values()]
 
     @property
     def num_stores(self) -> int:

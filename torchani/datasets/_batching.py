@@ -99,6 +99,7 @@ def create_batched_dataset(locations: Union[Collection[StrPath], StrPath, ANIDat
     if not direct_cache:
         creation_log = {'datetime_created': str(datetime.datetime.now()),
                         'source_store_locations': dataset.store_locations,
+                        'source_md5s': dataset.store_md5s,
                         'splits': splits,
                         'folds': folds,
                         'padding': PADDING if padding is None else padding,
