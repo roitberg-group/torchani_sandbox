@@ -13,9 +13,11 @@ from torch.optim import Optimizer
 import torch.utils.tensorboard
 from torch.optim.lr_scheduler import ReduceLROnPlateau, _LRScheduler
 from tqdm import tqdm
+from ruamel.yaml import YAML
 
 import torchani
 from torchani import datasets, units
+from torchani import transforms
 
 # Mypy
 DatasetType = Union[torch.utils.data.DataLoader, datasets.ANIBatchedDataset]
@@ -35,7 +37,7 @@ class Runner:
                        device: Optional[DeviceType] = None,
                        best_metric: float = math.inf):
         self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if device is None else device
-        self._transform = transform.to(device)
+        self._transform = transform.to(device) if transform is not None else transforms.Identity().to(device)
         self._model = model.to(device)
         self._optimizer = optimizer
         self._squared_error = torch.nn.MSELoss(reduction='none')
@@ -210,10 +212,14 @@ def _load_checkpoint(path: PathLike, objects: Dict[str, Stateful], kind: str = '
         objects[k].load_state_dict(torch.load(path / f'{k}_{kind}.pt'))
 
 
-def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_size, num_workers, prefetch_factor, validation_split, training_split,
-                          functional=None, basis_set=None, selected_properties=None, splits=None, folds=None, batch_all_properties=True):
+def prepare_learning_sets(data_config, splits, folds, root_dataset_path, training_split, validation_split):
+    DatasetClass = getattr(torchani.datasets, data_config["class"])
+    batch_all_properties = data_config["batch_all_properties"]
+    functional = data_config.get("functional", None)
+    basis_set = data_config.get("basis_set", None)
+    selected_properties = data_config.get("selected_properties", None)
     assert (splits is None or folds is None) and (splits is not folds)
-    ds_path = root_dataset_path.joinpath(dataset_name)
+    ds_path = root_dataset_path.joinpath(data_config["dataset_name"])
     if splits is not None:
         batched_dataset_path = Path(ds_path.as_posix() + '-batched').resolve()
     else:
@@ -231,29 +237,35 @@ def prepare_learning_sets(DatasetClass, root_dataset_path, dataset_name, batch_s
         datasets.create_batched_dataset(ds,
                                         include_properties=None if batch_all_properties else selected_properties,
                                         dest_path=batched_dataset_path,
-                                        batch_size=batch_size,
+                                        batch_size=data_config["batch_size"],
                                         max_batches_per_packet=1500,
                                         shuffle_seed=123456789,
                                         splits=splits, folds=folds)
 
-    training_set = torch.utils.data.DataLoader(datasets.ANIBatchedDataset(batched_dataset_path, split=training_split, properties=selected_properties),
+    training_set = torch.utils.data.DataLoader(datasets.ANIBatchedDataset(batched_dataset_path,
+                                               split=training_split, properties=selected_properties),
                                                shuffle=True,
-                                               num_workers=num_workers,
-                                               prefetch_factor=prefetch_factor,
+                                               num_workers=data_config["num_workers"],
+                                               prefetch_factor=data_config["prefetch_factor"],
                                                pin_memory=True,
                                                batch_size=None)
 
-    validation_set = torch.utils.data.DataLoader(datasets.ANIBatchedDataset(batched_dataset_path, split=validation_split, properties=selected_properties),
+    validation_set = torch.utils.data.DataLoader(datasets.ANIBatchedDataset(batched_dataset_path,
+                                                 split=validation_split, properties=selected_properties),
                                                  shuffle=False,
-                                                 num_workers=num_workers,
-                                                 prefetch_factor=prefetch_factor,
+                                                 num_workers=data_config["num_workers"],
+                                                 prefetch_factor=data_config["prefetch_factor"],
                                                  pin_memory=True,
                                                  batch_size=None)
     return training_set, validation_set
 
 
-def execute_training(persistent_objects, scheduler, runner, optimizer, training_set, validation_set, run_output_path: Path,
-        TRACK_METRIC: str, INITIAL_LR: float, MAX_EPOCHS: int, EARLY_STOPPING_LR: float, LOG_TB: bool, LOG_CSV: bool, SCRIPT_PATH: str, debug: bool = False):
+def execute_training(persistent_objects, scheduler, runner, optimizer,
+                     training_set, validation_set, run_output_path: Path, config,
+                     script_path, debug=False):
+    MAX_EPOCHS = config["general"]["max_epochs"]
+    EARLY_STOPPING_LR = config["general"]["early_stopping_lr"]
+    TRACK_METRIC = config["general"]["track_metric"]
     if debug:
         warnings.warn("Running in DEBUG mode, checkpoints and tensorboard files will not be saved!!!")
     # Load latest checkpoint if it exists
@@ -269,24 +281,27 @@ def execute_training(persistent_objects, scheduler, runner, optimizer, training_
         if not debug:
             is_restart = True
             _load_checkpoint(run_output_path, persistent_objects, kind='latest')
-        with open(run_output_path / 'script.py', 'rb') as restart_script, open(SCRIPT_PATH, 'rb') as input_script:
+        with open(run_output_path / 'script.py', 'rb') as restart_script, open(script_path, 'rb') as input_script:
             restart_bytes = restart_script.read()
             input_bytes = input_script.read()
             if not restart_bytes == input_bytes:
                 raise RuntimeError('Tried to run restart with a modified input file')
     elif not debug:
         run_output_path.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(Path(SCRIPT_PATH).resolve(), run_output_path / 'script.py')
+        shutil.copy2(Path(script_path).resolve(), run_output_path / 'script.py')
+        yaml = YAML(typ='rt')
+        yaml.dump(config, (run_output_path / run_output_path.name).with_suffix('.yaml'))
 
     # Logging
-    logger = Logger(run_output_path, log_tensorboard=LOG_TB, log_csv=LOG_CSV) if not debug else None
+    logger = Logger(run_output_path, **config["logger"]) if not debug else None
 
     # Main Training loop
     initial_epoch = scheduler.last_epoch  # type: ignore
     if not is_restart and initial_epoch == 0:  # Zeroth epoch is just validating
         validate_metrics = runner.eval(validation_set, initial_epoch, track_metric=TRACK_METRIC)
         if not debug:
-            logger.log_scalars(initial_epoch, validate_metrics=validate_metrics, other={'learning_rate': INITIAL_LR, 'epoch_time_seconds': 0.0})
+            initial_lr = optimizer.param_groups[0]['lr']
+            logger.log_scalars(initial_epoch, validate_metrics=validate_metrics, other={'learning_rate': initial_lr, 'epoch_time_seconds': 0.0})
             _save_checkpoint(run_output_path, persistent_objects, kind='latest')
 
     for epoch in range(initial_epoch + 1, MAX_EPOCHS):
