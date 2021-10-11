@@ -520,16 +520,6 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
                            'cutoff_fn': cutoff_fn,
                            'use_cuda_extension': model_kwargs.pop('use_cuda_extension', False)}
 
-    # aev computer args
-    if model_kwargs.pop('cell_list', False):
-        neighborlist = 'cell_list'
-    elif model_kwargs.pop('verlet_cell_list', False):
-        neighborlist = 'verlet_cell_list'
-    else:
-        neighborlist = 'full_pairwise'
-    aev_computer_kwargs = {'neighborlist': neighborlist,
-                           'use_cuda_extension': model_kwargs.pop('use_cuda_extension', False)}
-
     if use_neurochem_source:
         assert info_file is not None, "Info file is needed to load from a neurochem source"
         assert pretrained, "Non pretrained models not available from neurochem source"
