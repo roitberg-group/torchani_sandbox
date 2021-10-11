@@ -187,7 +187,6 @@ def pad_atomic_properties(properties: List[Dict[str, Tensor]],
         device = tensor.device
         dtype = tensor.dtype
         if dtype in [torch.uint8, torch.int8, torch.int16, torch.int32]:
-            tensor = tensor.long()
             dtype = torch.long
         shape[0] = total_num_molecules
         shape[1] = padded_sizes[k]
