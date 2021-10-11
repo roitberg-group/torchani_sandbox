@@ -32,6 +32,7 @@ class DampFunction(torch.nn.Module):
     a1: Union[Tensor, None]
     a2: Union[Tensor, None]
     sr6: Union[Tensor, None]
+    sr8: Tensor
     beta: Union[Tensor, None]
 
     def __init__(self, functional=None, df_constants=None, modified=False):
