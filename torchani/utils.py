@@ -173,6 +173,10 @@ def pad_atomic_properties(properties: List[Dict[str, Tensor]],
     if padding_values is None:
         padding_values = PADDING
 
+    for k, v in properties.items():
+        if v.dtype in [torch.uint8, torch.int8, torch.int16, torch.int32]:
+            properties[k] = v.long()
+
     vectors = [k for k in properties[0].keys() if properties[0][k].dim() > 1]
     scalars = [k for k in properties[0].keys() if properties[0][k].dim() == 1]
     padded_sizes = {k: max(x[k].shape[1] for x in properties) for k in vectors}
@@ -186,9 +190,6 @@ def pad_atomic_properties(properties: List[Dict[str, Tensor]],
         shape = list(tensor.shape)
         device = tensor.device
         dtype = tensor.dtype
-        if dtype in [torch.uint8, torch.int8, torch.int16, torch.int32]:
-            tensor = tensor.long()
-            dtype = torch.long
         shape[0] = total_num_molecules
         shape[1] = padded_sizes[k]
         output[k] = torch.full(shape, padding_values.get(k, 0.0), device=device, dtype=dtype)
