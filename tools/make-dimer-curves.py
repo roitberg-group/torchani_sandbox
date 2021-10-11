@@ -1,3 +1,4 @@
+# type: ignore
 from torchani.geometry import displace_dimer_along_bond
 import pickle
 from torchani.dispersion import StandaloneDispersionD3

@@ -61,7 +61,7 @@ from collections import OrderedDict
 import torch
 from torch import Tensor
 from torch.nn import Module
-from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type, Callable
+from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type, Callable, List
 from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from .aev import AEVComputer
@@ -420,7 +420,7 @@ def _get_component_modules(state_dict_file: str,
                            aev_computer_kwargs: Optional[Dict[str, Any]] = None,
                            ensemble_size: int = 8,
                            atomic_maker: Optional[Callable[[str], torch.nn.Module]] = None,
-                           aev_maker: Optional[Callable[[Any], torch.nn.Module]] = None,
+                           aev_maker: Optional[Callable[..., AEVComputer]] = None,
                            elements: Optional[Sequence[str]] = None,
                            self_energies: Optional[Sequence[float]] = None
                            ) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
@@ -557,7 +557,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     model_class: Type[BuiltinModel]
     if repulsion or dispersion or srb:
         cutoff = aev_computer.radial_terms.cutoff
-        pairwise_potentials: Sequence[torch.nn.Module] = []
+        pairwise_potentials: List[torch.nn.Module] = []
         base_srb_kwargs = {'elements': elements, 'cutoff': cutoff}
         base_repulsion_kwargs = {'elements': elements, 'cutoff': cutoff}
         base_dispersion_kwargs = {'elements': elements, 'cutoff': cutoff, 'cutoff_fn': CutoffSmooth(order=4)}
