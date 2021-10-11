@@ -13,7 +13,7 @@ from .compat import Final
 
 
 class RepulsionCalculator(torch.nn.Module):
-    r"""Calculates the QMDFF repulsion energy terms for a given molecule as seen
+    r"""Calculates the xTB repulsion energy terms for a given molecule as seen
     in work by Grimme: https://pubs.acs.org/doi/10.1021/acs.jctc.8b01176"""
 
     cutoff: Final[float]

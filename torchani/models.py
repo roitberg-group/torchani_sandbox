@@ -61,7 +61,7 @@ from collections import OrderedDict
 import torch
 from torch import Tensor
 from torch.nn import Module
-from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type
+from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type, Callable
 from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from .aev import AEVComputer
@@ -315,9 +315,9 @@ class BuiltinModelPairInteractions(BuiltinModel):
             else:
                 post_aev_potentials.append(p)
         if pre_aev_potentials:
-            pre_aev_potentials = sorted(pre_aev_potentials, key=lambda x: x.cutoff)
+            pre_aev_potentials = sorted(pre_aev_potentials, key=lambda x: x.cutoff, reverse=True)
         if post_aev_potentials:
-            post_aev_potentials = sorted(post_aev_potentials, key=lambda x: x.cutoff)
+            post_aev_potentials = sorted(post_aev_potentials, key=lambda x: x.cutoff, reverse=True)
         self.pre_aev_potentials = torch.nn.ModuleList(pre_aev_potentials)
         self.post_aev_potentials = torch.nn.ModuleList(post_aev_potentials)
 
@@ -418,40 +418,55 @@ class BuiltinModelPairInteractions(BuiltinModel):
 def _get_component_modules(state_dict_file: str,
                            model_index: Optional[int] = None,
                            aev_computer_kwargs: Optional[Dict[str, Any]] = None,
-                           ensemble_size: int = 8) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
+                           ensemble_size: int = 8,
+                           atomic_maker: Optional[Callable[[str], torch.nn.Module]] = None,
+                           aev_maker: Optional[Callable[[Any], torch.nn.Module]] = None,
+                           elements: Optional[Sequence[str]] = None,
+                           self_energies: Optional[Sequence[float]] = None
+                           ) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
+    # Component modules are obtained by default from the name of the state_dict_file,
+    # but they can be overriden by passing specific parameters
+
     if aev_computer_kwargs is None:
         aev_computer_kwargs = dict()
     # This generates ani-style architectures without neurochem
     name = state_dict_file.split('_')[0]
-    elements: Tuple[str, ...]
+    _elements: Sequence[str]
     if name == 'ani1x':
-        aev_maker = AEVComputer.like_1x
-        atomic_maker = atomics.like_1x
-        elements = ('H', 'C', 'N', 'O')
+        _aev_maker = AEVComputer.like_1x
+        _atomic_maker = atomics.like_1x
+        _elements = ('H', 'C', 'N', 'O')
     elif name == 'ani1ccx':
-        aev_maker = AEVComputer.like_1ccx
-        atomic_maker = atomics.like_1ccx
-        elements = ('H', 'C', 'N', 'O')
+        _aev_maker = AEVComputer.like_1ccx
+        _atomic_maker = atomics.like_1ccx
+        _elements = ('H', 'C', 'N', 'O')
     elif name == 'ani2x':
-        aev_maker = AEVComputer.like_2x
-        atomic_maker = atomics.like_2x
-        elements = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
+        _aev_maker = AEVComputer.like_2x
+        _atomic_maker = atomics.like_2x
+        _elements = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
     else:
         raise ValueError(f'{name} is not a supported model')
+    aev_maker = _aev_maker if aev_maker is None else aev_maker
+    atomic_maker = _atomic_maker if atomic_maker is None else atomic_maker
+    elements = _elements if elements is None else elements
+    self_energies = [0.0 for _ in elements] if self_energies is None else self_energies
+
     aev_computer = aev_maker(**aev_computer_kwargs)
     atomic_networks = OrderedDict([(e, atomic_maker(e)) for e in elements])
-
+    energy_shifter = EnergyShifter(self_energies)
     neural_networks: NN
     if model_index is None:
         neural_networks = Ensemble([ANIModel(deepcopy(atomic_networks)) for _ in range(ensemble_size)])
     else:
         neural_networks = ANIModel(atomic_networks)
-    return aev_computer, neural_networks, EnergyShifter([0.0 for _ in elements]), elements
+
+    return aev_computer, neural_networks, energy_shifter, elements
 
 
 def _fetch_state_dict(state_dict_file: str,
                       model_index: Optional[int] = None,
-                      local: bool = False) -> 'OrderedDict[str, Tensor]':
+                      local: bool = False,
+                      private: bool = False) -> 'OrderedDict[str, Tensor]':
     # if we want a pretrained model then we load the state dict from a
     # remote url or a local path
     # NOTE: torch.hub caches remote state_dicts after they have been downloaded
@@ -461,11 +476,12 @@ def _fetch_state_dict(state_dict_file: str,
     model_dir = Path(__file__).parent.joinpath('resources/state_dicts').as_posix()
     if not path_is_writable(model_dir):
         model_dir = os.path.expanduser('~/.local/torchani/')
+    if private:
+        url = f'http://moria.chem.ufl.edu/animodel/private/{state_dict_file}'
+    else:
+        tag = 'v0.1'
+        url = f'https://github.com/roitberg-group/torchani_model_zoo/releases/download/{tag}/{state_dict_file}'
 
-    # NOTE: we need some private url for in-development models of the
-    # group, this url is for public models
-    tag = 'v0.1'
-    url = f'https://github.com/roitberg-group/torchani_model_zoo/releases/download/{tag}/{state_dict_file}'
     # for now for simplicity we load a state dict for the ensemble directly and
     # then parse if needed
     state_dict = torch.hub.load_state_dict_from_url(url, model_dir=model_dir)
@@ -494,25 +510,32 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
                     dispersion_kwargs: Optional[Dict[str, Any]] = None,
                     repulsion_kwargs: Optional[Dict[str, Any]] = None,
                     srb_kwargs: Optional[Dict[str, Any]] = None,
+                    repulsion: bool = False,
+                    dispersion: bool = False,
+                    srb: bool = False,
+                    cutoff_fn: Union[str, torch.nn.Module] = 'cosine',  # for aev
+                    pretrained: bool = True,
+                    model_index: int = None,
+                    use_neurochem_source: bool = False,
+                    ensemble_size: int = 8,
                     **model_kwargs) -> BuiltinModel:
     # Helper function to toggle if the loading is done from an NC file or
     # directly using torchani and state_dicts
-    use_neurochem_source = model_kwargs.pop('use_neurochem_source', False)
-    model_index = model_kwargs.pop('model_index', None)
-    pretrained = model_kwargs.pop('pretrained', True)
-    repulsion = model_kwargs.pop('repulsion', False)
-    dispersion = model_kwargs.pop('dispersion', False)
-    srb = model_kwargs.pop('srb', False)
-    cutoff_fn = model_kwargs.pop('cutoff_fn', 'cosine')
+    aev_maker = model_kwargs.pop('aev_maker', None)
+    atomic_maker = model_kwargs.pop('atomic_maker', None)
+    elements = model_kwargs.pop('elements', None)
 
     if pretrained:
+        assert ensemble_size == 8
         assert not repulsion, "No pretrained model with those characteristics exists"
         assert cutoff_fn == 'cosine', "No pretrained model with those characteristics exists"
 
     # aev computer args
-    if model_kwargs.pop('cell_list', False):
+    cell_list = model_kwargs.pop('cell_list', False)
+    verlet_cell_list = model_kwargs.pop('verlet_cell_list', False)
+    if cell_list:
         neighborlist = 'cell_list'
-    elif model_kwargs.pop('verlet_cell_list', False):
+    elif verlet_cell_list:
         neighborlist = 'verlet_cell_list'
     else:
         neighborlist = 'full_pairwise'
@@ -527,7 +550,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         components = neurochem.parse_resources._get_component_modules(info_file, model_index, aev_computer_kwargs)
     else:
         assert state_dict_file is not None
-        components = _get_component_modules(state_dict_file, model_index, aev_computer_kwargs)
+        components = _get_component_modules(state_dict_file, model_index, aev_computer_kwargs, atomic_maker=atomic_maker, aev_maker=aev_maker, elements=elements, ensemble_size=ensemble_size)
 
     aev_computer, neural_networks, energy_shifter, elements = components
 
@@ -535,21 +558,21 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     if repulsion or dispersion or srb:
         cutoff = aev_computer.radial_terms.cutoff
         pairwise_potentials: Sequence[torch.nn.Module] = []
-        rep_module_kwargs = {'elements': elements, 'cutoff': cutoff}
-        srb_module_kwargs = {'elements': elements, 'cutoff': cutoff}
-        disp_module_kwargs = {'elements': elements, 'cutoff': cutoff, 'cutoff_fn': CutoffSmooth(order=4)}
+        base_srb_kwargs = {'elements': elements, 'cutoff': cutoff}
+        base_repulsion_kwargs = {'elements': elements, 'cutoff': cutoff}
+        base_dispersion_kwargs = {'elements': elements, 'cutoff': cutoff, 'cutoff_fn': CutoffSmooth(order=4)}
         if repulsion:
             if repulsion_kwargs is not None:
-                rep_module_kwargs.update(repulsion_kwargs)
-            pairwise_potentials.append(RepulsionCalculator(**rep_module_kwargs))
+                base_repulsion_kwargs.update(repulsion_kwargs)
+            pairwise_potentials.append(RepulsionCalculator(**base_repulsion_kwargs))
         if dispersion:
             if dispersion_kwargs is not None:
-                rep_module_kwargs.update(dispersion_kwargs)
-            pairwise_potentials.append(DispersionD3(**disp_module_kwargs))
+                base_dispersion_kwargs.update(dispersion_kwargs)
+            pairwise_potentials.append(DispersionD3(**base_dispersion_kwargs))
         if srb:
             if srb_kwargs is not None:
-                srb_module_kwargs.update(srb_kwargs)
-            pairwise_potentials.append(EnergySRB(**srb_module_kwargs))
+                base_srb_kwargs.update(srb_kwargs)
+            pairwise_potentials.append(EnergySRB(**base_srb_kwargs))
         model_kwargs.update({'pairwise_potentials': pairwise_potentials})
         model_class = BuiltinModelPairInteractions
     else:
