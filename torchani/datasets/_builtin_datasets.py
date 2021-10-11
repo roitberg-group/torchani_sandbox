@@ -227,26 +227,26 @@ class TestDataIons(_BaseBuiltinDataset):
     _FILES_AND_MD5S = OrderedDict([('ANI-1x_sample-B973c-def2mTZVP.h5', '7294f4872ca9874814452f0411fe3ed6'),
                                    ('Ions-sample-B973c-def2mTZVP.h5', 'd5821fca9d231a5e2c3f40d65ad245d6')])
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c', **kwargs):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2-mTZVP data is available for this dataset"
         assert functional.lower() == 'b973c'
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'TestData-ions-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose, **kwargs)
 
 
 class TestDataForcesDipoles(_BaseBuiltinDataset):
     _ARCHIVE = 'TestData-forces_dipoles-B973c-def2mTZVP.tar.gz'
     _FILES_AND_MD5S = OrderedDict([('ANI-1x_sample-B973c-def2mTZVP.h5', '7294f4872ca9874814452f0411fe3ed6')])
 
-    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
+    def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c', **kwargs):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2-mTZVP data is available for this dataset"
         assert functional.lower() == 'b973c'
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'TestData-forces_dipoles-{lot}')
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
+        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose, **kwargs)
 
 
 class IonsVeryHeavy(_BaseBuiltinDataset):
