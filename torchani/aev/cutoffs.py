@@ -18,7 +18,7 @@ def _parse_cutoff_fn(cutoff_fn: Union[str, torch.nn.Module]) -> torch.nn.Module:
 
 class CutoffCosine(torch.nn.Module):
 
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
 
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
