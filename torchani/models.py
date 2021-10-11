@@ -61,7 +61,7 @@ from collections import OrderedDict
 import torch
 from torch import Tensor
 from torch.nn import Module
-from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type
+from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type, Callable
 from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from .aev import AEVComputer
