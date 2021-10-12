@@ -103,6 +103,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Any
 from collections import OrderedDict
+from copy import deepcopy
 
 from torchvision.datasets.utils import download_and_extract_archive, list_files, check_integrity
 from .datasets import ANIDataset
@@ -220,117 +221,131 @@ class _BaseBuiltinDataset(ANIDataset):
 
 
 class _ArchivedBuiltinDataset(_BaseBuiltinDataset):
-    def __init__(self, files, archives, basis_set, functional, root: StrPath = None, download: bool = False, verbose: bool = True):
+    def __init__(self, files, basis_set, functional, root: StrPath = None, download: bool = False, verbose: bool = True):
         lot = f'{functional.lower()}-{basis_set.lower()}'
-        if lot not in archives.keys():
-            raise ValueError(f"Unsupported functional-basis set combination, try one of {set(archives.keys())}")
-        archive = archives[lot]
-        files_and_md5s = OrderedDict([(k, _MD5S[k]) for k in files[lot]])
+        if lot not in files.keys():
+            raise ValueError(f"Unsupported functional-basis set combination, try one of {set(files.keys())}")
+        archive = files[lot][0]
+        files_and_md5s = OrderedDict([(k, _MD5S[k]) for k in files[lot][1]])
         if root is None:
             # the default name is the name of the tarred file, here we strip "tar" and "gz"
             root = _DEFAULT_DATA_PATH.joinpath(Path(archive).with_suffix('').with_suffix('').as_posix())
-        super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=files_and_md5s, verbose=verbose)
+        super().__init__(root, download, archive=archive, files_and_md5s=files_and_md5s, verbose=verbose)
 
 
-# NOTE: The order of the _FILES_AND_MD5S is important since it deterimenes the order of iteration over the files
+# NOTE: The order of the files is important since it deterimenes the order of iteration over the files
 class TestData(_ArchivedBuiltinDataset):
-    _FILES = {'wb97x-631gd': ('test-data.tar.gz', ['test_data1.h5', 'test_data2.h5'])}
+    _FILES = {'wb97x-631gd': ('test-data.tar.gz',
+                              ['test_data1.h5',
+                               'test_data2.h5'])}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 class TestDataIons(_ArchivedBuiltinDataset):
-    _FILES = {'b973c-def2mtzvp': ('TestData-ions-B973c-def2mTZVP.tar.gz', ['ANI-1x_sample-B973c-def2mTZVP.h5', 'Ions-sample-B973c-def2mTZVP.h5'])}
+    _FILES = {'b973c-def2mtzvp': ('TestData-ions-B973c-def2mTZVP.tar.gz',
+                                  ['ANI-1x_sample-B973c-def2mTZVP.h5',
+                                   'Ions-sample-B973c-def2mTZVP.h5'])}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 class TestDataForcesDipoles(_ArchivedBuiltinDataset):
     _FILES = {'b973c-def2mtzvp': ('TestData-forces_dipoles-B973c-def2mTZVP.tar.gz', ['ANI-1x_sample-B973c-def2mTZVP.h5'])}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 class IonsVeryHeavy(_ArchivedBuiltinDataset):
     _FILES = {'b973c-def2mtzvp': ('Ions-very_heavy-B973c-def2mTZVP-data.tar.gz', ['Ions-very_heavy-B973c-def2mTZVP.h5'])}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 class IonsHeavy(_ArchivedBuiltinDataset):
     _FILES = {'b973c-def2mtzvp': ('Ions-heavy-B973c-def2mTZVP-data.tar.gz', ['Ions-heavy-B973c-def2mTZVP.h5'])}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 class IonsLight(_ArchivedBuiltinDataset):
     _FILES = {'b973c-def2mtzvp': ('Ions-light-B973c-def2mTZVP-data.tar.gz', ['Ions-light-B973c-def2mTZVP.h5'])}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 class ANI1q(_ArchivedBuiltinDataset):
     _FILES = {'wb97x-631gd': ('ANI-1q-wB97X-631Gd-data.tar.gz', ['ANI-1q-wB97X-631Gd.h5'])}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 class ANI2qHeavy(_ArchivedBuiltinDataset):
     _FILES = {'wb97x-631gd': ('ANI-2q_heavy-wB97X-631Gd-data.tar.gz', ['ANI-2q_heavy-wB97X-631Gd.h5'])}
-    _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 class ANI1ccx(_ArchivedBuiltinDataset):
     _FILES = {'ccsd(t)star-cbs': ('ANI-1ccx-CCSD_parentheses_T_star-CBS-data.tar.gz', ['ANI-1ccx-CCSD_parentheses_T_star-CBS.h5'])}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='CBS', functional='CCSD(T)star'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 class AminoacidDimers(_ArchivedBuiltinDataset):
     _FILES = {'b973c-def2mtzvp': ('Aminoacid-dimers-B973c-def2mTZVP-data.tar.gz', ['Aminoacid-dimers-B973c-def2mTZVP.h5'])}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
-_ANI2x_FILES = {'wb97x-631gd': ('ANI-2x-wB97X-631Gd-data.tar.gz', ['ANI-1x-wB97X-631Gd.h5', 'ANI-2x_heavy-wB97X-631Gd.h5', 'ANI-2x_dimers-wB97X-631Gd.h5']),
-                'b973c-def2mtzvp': ('ANI-2x-B973c-def2mTZVP-data.tar.gz', ['ANI-1x-B973c-def2mTZVP.h5', 'ANI-2x_heavy_and_dimers-B973c-def2mTZVP.h5']),
-                'wb97md3bj-def2tzvpp': ('ANI-2x-wB97MD3BJ-def2TZVPP-data.tar.gz', ['ANI-1x-wB97D3BJ-def2TZVPP.h5', 'ANI-2x_heavy_and_dimers-wB97D3BJ-def2TZVPP.h5']),
-                'wb97mv-def2tzvpp': ('ANI-2x-wB97MV-def2TZVPP-data.tar.gz', ['ANI-1x-wB97MV-def2TZVPP.h5', 'ANI-2x_heavy_and_dimers-wB97MV-def2TZVPP.h5']),
-                'wb97x-def2tzvpp': ('ANI-2x-wB97X-def2TZVPP-data.tar.gz', ['ANI-1x-wB97X-def2TZVPP.h5', 'ANI-2x_subset-wB97X-def2TZVPP.h5'])}
+_ANI2x_FILES = {'wb97x-631gd': ('ANI-2x-wB97X-631Gd-data.tar.gz',
+                                ['ANI-1x-wB97X-631Gd.h5',
+                                 'ANI-2x_heavy-wB97X-631Gd.h5',
+                                 'ANI-2x_dimers-wB97X-631Gd.h5']),
+                'b973c-def2mtzvp': ('ANI-2x-B973c-def2mTZVP-data.tar.gz',
+                                    ['ANI-1x-B973c-def2mTZVP.h5',
+                                     'ANI-2x_heavy_and_dimers-B973c-def2mTZVP.h5']),
+                'wb97md3bj-def2tzvpp': ('ANI-2x-wB97MD3BJ-def2TZVPP-data.tar.gz',
+                                        ['ANI-1x-wB97D3BJ-def2TZVPP.h5',
+                                         'ANI-2x_heavy_and_dimers-wB97D3BJ-def2TZVPP.h5']),
+                'wb97mv-def2tzvpp': ('ANI-2x-wB97MV-def2TZVPP-data.tar.gz',
+                                     ['ANI-1x-wB97MV-def2TZVPP.h5',
+                                      'ANI-2x_heavy_and_dimers-wB97MV-def2TZVPP.h5']),
+                'wb97x-def2tzvpp': ('ANI-2x-wB97X-def2TZVPP-data.tar.gz',
+                                    ['ANI-1x-wB97X-def2TZVPP.h5',
+                                     'ANI-2x_subset-wB97X-def2TZVPP.h5'])}
 
 
 # ANI1x is the same as 2x, but all files that have heavy atoms or dimers are omitted
-_ANI1x_FILES = {k: (v[0].replace('-2x-', '-1x-'), v[1]) for k, v in _ANI2x_FILES.items()}
+_ANI1x_FILES = {k: (v[0].replace('-2x-', '-1x-'), deepcopy(v[1])) for k, v in _ANI2x_FILES.items()}
 for lot in _ANI2x_FILES.keys():
     for k in _ANI2x_FILES[lot][1]:
         if '-2x-' in k or '-2x_' in k:
-            _ANI1x_FILES[lot][1] = _ANI1x_FILES[lot][1].remove(k)
+            _ANI1x_FILES[lot][1].remove(k)
 
 
 class ANI2x(_ArchivedBuiltinDataset):
     _FILES = _ANI2x_FILES
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 class ANI1x(_ArchivedBuiltinDataset):
     _FILES = _ANI1x_FILES
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 _COMP6v2_FILES = {'wb97x-631gd': ('COMP6-v2-wB97X-631Gd-data.tar.gz',
@@ -364,11 +379,11 @@ _COMP6v2_FILES = {'wb97x-631gd': ('COMP6-v2-wB97X-631Gd-data.tar.gz',
 
 
 # COMP6v1 is the same as v2, but all files that have heavy atoms are omitted
-_COMP6v1_FILES = {k: (v[0].replace('-v2-', '-v1-'), v[1]) for k, v in _COMP6v2_FILES.items()}
+_COMP6v1_FILES = {k: (v[0].replace('-v2-', '-v1-'), deepcopy(v[1])) for k, v in _COMP6v2_FILES.items()}
 for lot in _COMP6v2_FILES.keys():
     for k in _COMP6v2_FILES[lot][1]:
         if '-heavy' in k or '-sulphur-' in k or '-SFCl-' in k:
-            _COMP6v1_FILES[lot][1] = _COMP6v1_FILES[lot][1].remove(k)
+            _COMP6v1_FILES[lot][1].remove(k)
 
 # There is some extra TZ data for which we have v1 values but not v2 values
 # Note that the ANI-BenchMD, S66x8 and the "13" molecules (with 13 heavy atoms)
@@ -387,11 +402,11 @@ class COMP6v1(_ArchivedBuiltinDataset):
     _FILES = _COMP6v1_FILES
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
 
 
 class COMP6v2(_ArchivedBuiltinDataset):
     _FILES = _COMP6v2_FILES
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
-        super().__init__(root, self._FILES, self._ARCHIVE, basis_set, functional, download, verbose)
+        super().__init__(self._FILES, basis_set, functional, root, download, verbose)
