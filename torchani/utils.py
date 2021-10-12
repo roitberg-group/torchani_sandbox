@@ -341,7 +341,7 @@ class EnergyShifter(torch.nn.Module):
     """
     self_energies: Tensor
 
-    def __init__(self, self_energies, fit_intercept=False):
+    def __init__(self, self_energies: Optional[List[float]] = None, fit_intercept=False):
         super().__init__()
 
         self.fit_intercept = fit_intercept
