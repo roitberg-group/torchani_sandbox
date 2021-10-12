@@ -125,7 +125,7 @@ def _read_md5_hashes():
     with open(Path(__file__).resolve().parent / "md5s.csv") as f:
         lines = f.readlines()
         _md5s = dict()
-        for line in lines:
+        for line in lines[1:]:
             file_, md5 = line.split(',')
             _md5s[file_.strip()] = md5.strip()
     return _md5s
