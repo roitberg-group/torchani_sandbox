@@ -1,3 +1,4 @@
+# type: ignore
 from torchani.geometry import displace_dimer_along_bond, displace_dimer_along_plane
 import pickle
 import re

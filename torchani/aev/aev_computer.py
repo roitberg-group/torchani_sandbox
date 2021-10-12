@@ -12,7 +12,6 @@ from ..compat import Final
 from .cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
 from .aev_terms import _parse_angular_terms, _parse_radial_terms, StandardAngular, StandardRadial
 from .neighbors import _parse_neighborlist
-from .aev_terms import StandardAngular, StandardRadial
 
 
 cuaev_is_installed = 'torchani.cuaev' in importlib_metadata.metadata(
@@ -229,15 +228,15 @@ class AEVComputer(torch.nn.Module):
         return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, **kwargs)
 
     @classmethod
-    def like_1x(cls, **kwargs):
+    def like_1x(cls, **kwargs) -> "AEVComputer":
         return cls(angular_terms='ani1x', radial_terms='ani1x', num_species=4, **kwargs)
 
     @classmethod
-    def like_2x(cls, **kwargs):
+    def like_2x(cls, **kwargs) -> "AEVComputer":
         return cls(angular_terms='ani2x', radial_terms='ani2x', num_species=7, **kwargs)
 
     @classmethod
-    def like_1ccx(cls, **kwargs):
+    def like_1ccx(cls, **kwargs) -> "AEVComputer":
         # just a synonym
         return cls.like_1x(**kwargs)
 
