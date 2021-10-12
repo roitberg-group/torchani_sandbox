@@ -93,11 +93,6 @@ different).
 In all cases the "v2" and "2x" datasets are supersets of the "v1" and "1x"
 datasets, so everything that is in the v1/1x datasets is also in the v2/2x
 datasets, which contain extra structures.
-
-Known issues:
-- There are small inconsistencies with the names of some files:
-    * COMP6 files are v1_full instead of full_v1 for wB97MV
-    * for wB97M-D3BJ some files are labeled wB97D3BJ instead of wB97MD3BJ
 """
 import sys
 from pathlib import Path
@@ -222,7 +217,7 @@ class _BaseBuiltinDataset(ANIDataset):
 
 # NOTE: The order of the _FILES_AND_MD5S is important since it deterimenes the order of iteration over the files
 class TestData(_BaseBuiltinDataset):
-    _ARCHIVE = 'test-data.tar.gz'
+    _ARCHIVE = 'TestData-sample-wB97x-631gd.tar.gz'
     _FILES = ['test_data1.h5', 'test_data2.h5']
     _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
@@ -231,12 +226,12 @@ class TestData(_BaseBuiltinDataset):
         assert functional.lower() == 'wb97x'
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
-            root = _DEFAULT_DATA_PATH.joinpath(f'Test-Data-{lot}')
+            root = _DEFAULT_DATA_PATH.joinpath(f'TestData-sample-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE, files_and_md5s=self._FILES_AND_MD5S, verbose=verbose)
 
 
 class TestDataIons(_BaseBuiltinDataset):
-    _ARCHIVE = 'TestData-ions-B973c-def2mTZVP.tar.gz'
+    _ARCHIVE = 'TestData-ions-b973c-def2mtzvp.tar.gz'
     _FILES = ['ANI-1x_sample-B973c-def2mTZVP.h5', 'Ions-sample-B973c-def2mTZVP.h5']
     _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
@@ -250,7 +245,7 @@ class TestDataIons(_BaseBuiltinDataset):
 
 
 class TestDataForcesDipoles(_BaseBuiltinDataset):
-    _ARCHIVE = 'TestData-forces_dipoles-B973c-def2mTZVP.tar.gz'
+    _ARCHIVE = 'TestData-forces_dipoles-b973c-def2mtzvp.tar.gz'
     _FILES = ['ANI-1x_sample-B973c-def2mTZVP.h5']
     _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
@@ -264,7 +259,7 @@ class TestDataForcesDipoles(_BaseBuiltinDataset):
 
 
 class IonsVeryHeavy(_BaseBuiltinDataset):
-    _ARCHIVE = 'Ions-very_heavy-B973c-def2mTZVP-data.tar.gz'
+    _ARCHIVE = 'Ions-very_heavy-b973c-def2mtzvp.tar.gz'
     _FILES = ['Ions-very_heavy-B973c-def2mTZVP.h5']
     _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
@@ -278,7 +273,7 @@ class IonsVeryHeavy(_BaseBuiltinDataset):
 
 
 class IonsHeavy(_BaseBuiltinDataset):
-    _ARCHIVE = 'Ions-heavy-B973c-def2mTZVP-data.tar.gz'
+    _ARCHIVE = 'Ions-heavy-b973c-def2mtzvp.tar.gz'
     _FILES = ['Ions-heavy-B973c-def2mTZVP.h5']
     _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
@@ -292,7 +287,7 @@ class IonsHeavy(_BaseBuiltinDataset):
 
 
 class IonsLight(_BaseBuiltinDataset):
-    _ARCHIVE = 'Ions-light-B973c-def2mTZVP-data.tar.gz'
+    _ARCHIVE = 'Ions-light-b973c-def2mtzvp.tar.gz'
     _FILES = ['Ions-light-B973c-def2mTZVP.h5']
     _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
@@ -306,7 +301,7 @@ class IonsLight(_BaseBuiltinDataset):
 
 
 class ANI1q(_BaseBuiltinDataset):
-    _ARCHIVE = 'ANI-1q-wB97X-631Gd-data.tar.gz'
+    _ARCHIVE = 'ANI-1q-wb97x-631gd.tar.gz'
     _FILES = ['ANI-1q-wB97X-631Gd.h5']
     _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
@@ -324,7 +319,7 @@ class ANI1q(_BaseBuiltinDataset):
 
 
 class ANI2qHeavy(_BaseBuiltinDataset):
-    _ARCHIVE = 'ANI-2q_heavy-wB97X-631Gd-data.tar.gz'
+    _ARCHIVE = 'ANI-2q_heavy-wb97x-631gd.tar.gz'
     _FILES = ['ANI-2q_heavy-wB97X-631Gd.h5']
     _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
@@ -343,7 +338,7 @@ class ANI2qHeavy(_BaseBuiltinDataset):
 
 
 class ANI1ccx(_BaseBuiltinDataset):
-    _ARCHIVE = {'ccsd(t)star-cbs': 'ANI-1ccx-CCSD_parentheses_T_star-CBS-data.tar.gz'}
+    _ARCHIVE = {'ccsd(t)star-cbs': 'ANI-1ccx-ccsd_t_star-cbs.tar.gz'}
     _FILES = {'ccsd(t)star-cbs': ['ANI-1ccx-CCSD_parentheses_T_star-CBS.h5']}
     _FILES_AND_MD5S = {lot: OrderedDict([(k, _MD5S[k]) for k in list_]) for lot, list_ in _FILES.items()}
 
@@ -352,12 +347,13 @@ class ANI1ccx(_BaseBuiltinDataset):
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
         if root is None:
-            root = _DEFAULT_DATA_PATH.joinpath(f'ANI-1ccx-{lot}')
+            lot_str = lot.replace('(', '_').replace(')', '_')
+            root = _DEFAULT_DATA_PATH.joinpath(f'ANI-1ccx-{lot_str}')
         super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
 
 
 class AminoacidDimers(_BaseBuiltinDataset):
-    _ARCHIVE = {'b973c-def2mtzvp': 'Aminoacid-dimers-B973c-def2mTZVP-data.tar.gz'}
+    _ARCHIVE = {'b973c-def2mtzvp': 'Aminoacid-dimers-b973c-def2mtzvp.tar.gz'}
     _FILES = {'b973c-def2mtzvp': ['Aminoacid-dimers-B973c-def2mTZVP.h5']}
     _FILES_AND_MD5S = {lot: OrderedDict([(k, _MD5S[k]) for k in list_]) for lot, list_ in _FILES.items()}
 
@@ -366,21 +362,21 @@ class AminoacidDimers(_BaseBuiltinDataset):
         if lot not in self._ARCHIVE.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(self._ARCHIVE.keys())}")
         if root is None:
-            root = _DEFAULT_DATA_PATH.joinpath(f'Aminoacid-Dimers-{lot}')
+            root = _DEFAULT_DATA_PATH.joinpath(f'Aminoacid-dimers-{lot}')
         super().__init__(root, download, archive=self._ARCHIVE[lot], files_and_md5s=self._FILES_AND_MD5S[lot], verbose=verbose)
 
 
 _ANI_LOT = {'wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp', 'wb97mv-def2tzvpp', 'wb97x-def2tzvpp'}
 
-_ANI2x_ARCHIVE = {'wb97x-631gd': 'ANI-2x-wB97X-631Gd-data.tar.gz',
-                  'b973c-def2mtzvp': 'ANI-2x-B973c-def2mTZVP-data.tar.gz',
-                  'wb97md3bj-def2tzvpp': 'ANI-2x-wB97MD3BJ-def2TZVPP-data.tar.gz',
-                  'wb97mv-def2tzvpp': 'ANI-2x-wB97MV-def2TZVPP-data.tar.gz',
-                  'wb97x-def2tzvpp': 'ANI-2x-wB97X-def2TZVPP-data.tar.gz'}
+_ANI2x_ARCHIVE = {'wb97x-631gd': 'ANI-2x-wb97x-631gd.tar.gz',
+                  'b973c-def2mtzvp': 'ANI-2x-b973c-def2mtzvp.tar.gz',
+                  'wb97md3bj-def2tzvpp': 'ANI-2x-wb97md3bj-def2tzvpp.tar.gz',
+                  'wb97mv-def2tzvpp': 'ANI-2x-wb97mv-def2tzvpp.tar.gz',
+                  'wb97x-def2tzvpp': 'ANI-2x-wb97x-def2tzvpp.tar.gz'}
 
 _ANI2x_FILES = {'wb97x-631gd': ['ANI-1x-wB97X-631Gd.h5', 'ANI-2x_heavy-wB97X-631Gd.h5', 'ANI-2x_dimers-wB97X-631Gd.h5'],
                 'b973c-def2mtzvp': ['ANI-1x-B973c-def2mTZVP.h5', 'ANI-2x_heavy_and_dimers-B973c-def2mTZVP.h5'],
-                'wb97md3bj-def2tzvpp': ['ANI-1x-wB97D3BJ-def2TZVPP.h5', 'ANI-2x_heavy_and_dimers-wB97D3BJ-def2TZVPP.h5'],
+                'wb97md3bj-def2tzvpp': ['ANI-1x-wB97MD3BJ-def2TZVPP.h5', 'ANI-2x_heavy_and_dimers-wB97MD3BJ-def2TZVPP.h5'],
                 'wb97mv-def2tzvpp': ['ANI-1x-wB97MV-def2TZVPP.h5', 'ANI-2x_heavy_and_dimers-wB97MV-def2TZVPP.h5'],
                 'wb97x-def2tzvpp': ['ANI-1x-wB97X-def2TZVPP.h5', 'ANI-2x_subset-wB97X-def2TZVPP.h5']}
 
@@ -424,33 +420,33 @@ class ANI1x(_BaseBuiltinDataset):
 
 _COMP6_LOT = {'wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp', 'wb97mv-def2tzvpp'}
 _COMP6v2_FILES = {'wb97x-631gd': ['ANI-BenchMD-wB97X-631Gd.h5',
-                         'S66x8-v1-wB97X-631Gd.h5',
-                         'DrugBank-testset-wB97X-631Gd.h5',
-                         'Tripeptides-v1-wB97X-631Gd.h5',
-                         'GDB11-07-wB97X-631Gd.h5',
-                         'GDB11-08-wB97X-631Gd.h5',
-                         'GDB11-09-wB97X-631Gd.h5',
-                         'GDB11-10-wB97X-631Gd.h5',
-                         'GDB11-11-wB97X-631Gd.h5',
-                         'GDB13-12-wB97X-631Gd.h5',
-                         'GDB13-13-wB97X-631Gd.h5',
-                         'GDB-heavy07-wB97X-631Gd.h5',
-                         'GDB-heavy08-wB97X-631Gd.h5',
-                         'GDB-heavy09-wB97X-631Gd.h5',
-                         'GDB-heavy10-wB97X-631Gd.h5',
-                         'GDB-heavy11-wB97X-631Gd.h5',
-                         'Tripeptides-sulphur-wB97X-631Gd.h5',
-                         'DrugBank-SFCl-wB97X-631Gd.h5'],
-                  'b973c-def2mtzvp': ['COMP6-full_v1-B97c3-def2mTZVP.h5', 'COMP6-heavy-B97c3-def2mTZVP.h5'],
-                  'wb97md3bj-def2tzvpp': ['COMP6-heavy-wB97D3BJ-def2TZVPP.h5',
-                                          'COMP6-full_v1-wB97D3BJ-def2TZVPP.h5'],
+                                  'S66x8-v1-wB97X-631Gd.h5',
+                                  'DrugBank-testset-wB97X-631Gd.h5',
+                                  'Tripeptides-v1-wB97X-631Gd.h5',
+                                  'GDB11-07-wB97X-631Gd.h5',
+                                  'GDB11-08-wB97X-631Gd.h5',
+                                  'GDB11-09-wB97X-631Gd.h5',
+                                  'GDB11-10-wB97X-631Gd.h5',
+                                  'GDB11-11-wB97X-631Gd.h5',
+                                  'GDB13-12-wB97X-631Gd.h5',
+                                  'GDB13-13-wB97X-631Gd.h5',
+                                  'GDB-heavy07-wB97X-631Gd.h5',
+                                  'GDB-heavy08-wB97X-631Gd.h5',
+                                  'GDB-heavy09-wB97X-631Gd.h5',
+                                  'GDB-heavy10-wB97X-631Gd.h5',
+                                  'GDB-heavy11-wB97X-631Gd.h5',
+                                  'Tripeptides-sulphur-wB97X-631Gd.h5',
+                                  'DrugBank-SFCl-wB97X-631Gd.h5'],
+                  'b973c-def2mtzvp': ['COMP6-v1_full-B97c3-def2mTZVP.h5', 'COMP6-heavy-B97c3-def2mTZVP.h5'],
+                  'wb97md3bj-def2tzvpp': ['COMP6-heavy-wB97MD3BJ-def2TZVPP.h5',
+                                          'COMP6-v1_full-wB97MD3BJ-def2TZVPP.h5'],
                   'wb97mv-def2tzvpp': ['COMP6-heavy-wB97MV-def2TZVPP.h5',
                                        'COMP6-v1_full-wB97MV-def2TZVPP.h5']}
 
-_COMP6v2_ARCHIVE = {'wb97x-631gd': 'COMP6-v2-wB97X-631Gd-data.tar.gz',
-                    'b973c-def2mtzvp': 'COMP6-v2-B973c-def2mTZVP-data.tar.gz',
-                    'wb97md3bj-def2tzvpp': 'COMP6-v2-wB97MD3BJ-def2TZVPP-data.tar.gz',
-                    'wb97mv-def2tzvpp': 'COMP6-v2-wB97MV-def2TZVPP-data.tar.gz'}
+_COMP6v2_ARCHIVE = {'wb97x-631gd': 'COMP6-v2-wb97x-631gd.tar.gz',
+                    'b973c-def2mtzvp': 'COMP6-v2-b973c-def2mtzvp.tar.gz',
+                    'wb97md3bj-def2tzvpp': 'COMP6-v2-wb97md3bj-def2tzvpp.tar.gz',
+                    'wb97mv-def2tzvpp': 'COMP6-v2-wb97mv-def2tzvpp.tar.gz'}
 
 # COMP6v1 is the same as v2, but all files that have heavy atoms are omitted
 _COMP6v1_ARCHIVE = {k: v.replace('-v2-', '-v1-') for k, v in _COMP6v2_ARCHIVE.items()}
@@ -470,7 +466,7 @@ _COMP6v1_FILES.update({'wb97x-def2tzvpp': ['ANI-BenchMD-wB97X-def2TZVPP.h5',
                                            'Tripeptides-v1-wB97X-def2TZVPP.h5',
                                            'GDB-7to9-wB97X-def2TZVPP.h5',
                                            'GDB-10to13-wB97X-def2TZVPP.h5']})
-_COMP6v1_ARCHIVE.update({'wb97x-def2tzvpp': 'COMP6-v1-wB97X-def2TZVPP-data.tar.gz'})
+_COMP6v1_ARCHIVE.update({'wb97x-def2tzvpp': 'COMP6-v1-wb97x-def2tzvpp.tar.gz'})
 
 
 class COMP6v1(_BaseBuiltinDataset):
