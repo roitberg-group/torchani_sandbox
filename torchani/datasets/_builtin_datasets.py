@@ -113,8 +113,25 @@ from ..utils import tqdm
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/datasets/'
 _DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
 
-_BUILTIN_DATASETS = ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'ANI1ccx', 'AminoacidDimers', 'ANI1q', 'ANI2qHeavy', 'IonsLight', 'IonsHeavy', 'IonsVeryHeavy', 'TestData', 'TestDataIons', 'TestDataForcesDipoles']
+_BUILTIN_DATASETS = ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'ANI1ccx', 'AminoacidDimers',
+                     'ANI1q', 'ANI2qHeavy', 'IonsLight', 'IonsHeavy',
+                     'IonsVeryHeavy', 'TestData', 'TestDataIons', 'TestDataForcesDipoles']
 _BUILTIN_DATASETS_LOT = ['wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp', 'wb97mv-def2tzvpp', 'wb97x-def2tzvpp', 'ccsd(t)star-cbs']
+
+
+def _read_md5_hashes():
+    # This function reads a csv file with format "file_name MD5-hash"
+    # and outputs a dictionary with all supported file names
+    with open(Path(__file__).resolve() / "md5s.csv") as f:
+        lines = f.readlines()
+        _md5s = dict()
+        for l in lines:
+            file_, md5 = l.split()
+            _md5s[file_] = md5
+    return _md5s
+
+
+_MD5S = _read_md5_hashes()
 
 
 def download_builtin_dataset(dataset, lot, root=None):
@@ -206,8 +223,8 @@ class _BaseBuiltinDataset(ANIDataset):
 # NOTE: The order of the _FILES_AND_MD5S is important since it deterimenes the order of iteration over the files
 class TestData(_BaseBuiltinDataset):
     _ARCHIVE = 'test-data.tar.gz'
-    _FILES_AND_MD5S = OrderedDict([('test_data1.h5', '05c8eb5f92cc2e1623355229b53b7f30'),
-                                   ('test_data2.h5', 'a496d2792c5fb7a9f6d9ce2116819626')])
+    _FILES = ['test_data1.h5', 'test_data2.h5']
+    _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         assert basis_set.lower() == '631gd', "Only wB97X/631Gd data is available for this dataset"
@@ -220,8 +237,8 @@ class TestData(_BaseBuiltinDataset):
 
 class TestDataIons(_BaseBuiltinDataset):
     _ARCHIVE = 'TestData-ions-B973c-def2mTZVP.tar.gz'
-    _FILES_AND_MD5S = OrderedDict([('ANI-1x_sample-B973c-def2mTZVP.h5', '7294f4872ca9874814452f0411fe3ed6'),
-                                   ('Ions-sample-B973c-def2mTZVP.h5', 'd5821fca9d231a5e2c3f40d65ad245d6')])
+    _FILES = ['ANI-1x_sample-B973c-def2mTZVP.h5', 'Ions-sample-B973c-def2mTZVP.h5']
+    _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2-mTZVP data is available for this dataset"
@@ -234,7 +251,8 @@ class TestDataIons(_BaseBuiltinDataset):
 
 class TestDataForcesDipoles(_BaseBuiltinDataset):
     _ARCHIVE = 'TestData-forces_dipoles-B973c-def2mTZVP.tar.gz'
-    _FILES_AND_MD5S = OrderedDict([('ANI-1x_sample-B973c-def2mTZVP.h5', '7294f4872ca9874814452f0411fe3ed6')])
+    _FILES = ['ANI-1x_sample-B973c-def2mTZVP.h5']
+    _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2-mTZVP data is available for this dataset"
@@ -247,7 +265,8 @@ class TestDataForcesDipoles(_BaseBuiltinDataset):
 
 class IonsVeryHeavy(_BaseBuiltinDataset):
     _ARCHIVE = 'Ions-very_heavy-B973c-def2mTZVP-data.tar.gz'
-    _FILES_AND_MD5S = OrderedDict([('Ions-very_heavy-B973c-def2mTZVP.h5', '64d872442fb6226ce2010a50565fe7bb')])
+    _FILES = ['Ions-very_heavy-B973c-def2mTZVP.h5']
+    _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2mTZVP data is available for this dataset"
@@ -260,7 +279,8 @@ class IonsVeryHeavy(_BaseBuiltinDataset):
 
 class IonsHeavy(_BaseBuiltinDataset):
     _ARCHIVE = 'Ions-heavy-B973c-def2mTZVP-data.tar.gz'
-    _FILES_AND_MD5S = OrderedDict([('Ions-heavy-B973c-def2mTZVP.h5', 'ef1b406d453b71488683c1cf9f1aa316')])
+    _FILES = ['Ions-heavy-B973c-def2mTZVP.h5']
+    _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2mTZVP data is available for this dataset"
@@ -273,7 +293,8 @@ class IonsHeavy(_BaseBuiltinDataset):
 
 class IonsLight(_BaseBuiltinDataset):
     _ARCHIVE = 'Ions-light-B973c-def2mTZVP-data.tar.gz'
-    _FILES_AND_MD5S = OrderedDict([('Ions-light-B973c-def2mTZVP.h5', 'af2e520d3eace248a1ad7a8bdb8ec7c7')])
+    _FILES = ['Ions-light-B973c-def2mTZVP.h5']
+    _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         assert basis_set.lower() == 'def2mtzvp', "Only B973c/def2mTZVP data is available for this dataset"
@@ -286,7 +307,8 @@ class IonsLight(_BaseBuiltinDataset):
 
 class ANI1q(_BaseBuiltinDataset):
     _ARCHIVE = 'ANI-1q-wB97X-631Gd-data.tar.gz'
-    _FILES_AND_MD5S = OrderedDict([('ANI-1q-wB97X-631Gd.h5', 'a66e3d50e44ed0c863abc52e943ca1c2')])
+    _FILES = ['ANI-1q-wB97X-631Gd.h5']
+    _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         assert basis_set.lower() == '631gd', "Only wB97X/631Gd data is available for this dataset"
@@ -303,16 +325,17 @@ class ANI1q(_BaseBuiltinDataset):
 
 class ANI2qHeavy(_BaseBuiltinDataset):
     _ARCHIVE = 'ANI-2q_heavy-wB97X-631Gd-data.tar.gz'
-    _FILES_AND_MD5S = OrderedDict([('ANI-2q_heavy-wB97X-631Gd.h5', '3d5a1ab8f6065f130b89e633f453abaf')])
+    _FILES = ['ANI-2q_heavy-wB97X-631Gd.h5']
+    _FILES_AND_MD5S = OrderedDict([(k, _MD5S[k]) for k in _FILES])
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
-        assert basis_set.lower() == '631gd', "Only wB97X/631Gd data is available for this dataset"
-        assert functional.lower() == 'wb97x'
         r"""ANI-2x "heavy" subset with CM5 atomic charges
 
         Subset of the wB97X/631G(d) ANI-2x dataset ("heavy" part only) for
         which 'atomic CM5 charges' and 'atomic hirshfeld dipole magnitudes' are
         available"""
+        assert basis_set.lower() == '631gd', "Only wB97X/631Gd data is available for this dataset"
+        assert functional.lower() == 'wb97x'
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if root is None:
             root = _DEFAULT_DATA_PATH.joinpath(f'ANI-2q_heavy-{lot}')
@@ -321,7 +344,8 @@ class ANI2qHeavy(_BaseBuiltinDataset):
 
 class ANI1ccx(_BaseBuiltinDataset):
     _ARCHIVE = {'ccsd(t)star-cbs': 'ANI-1ccx-CCSD_parentheses_T_star-CBS-data.tar.gz'}
-    _FILES_AND_MD5S = {'ccsd(t)star-cbs': OrderedDict([('ANI-1ccx-CCSD_parentheses_T_star-CBS.h5', 'a7218b99f843bc56a1ec195271082c40')])}
+    _FILES = {'ccsd(t)star-cbs': ['ANI-1ccx-CCSD_parentheses_T_star-CBS.h5']}
+    _FILES_AND_MD5S = {lot: OrderedDict([(k, _MD5S[k]) for k in list_]) for lot, list_ in _FILES.items()}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='CBS', functional='CCSD(T)star'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
@@ -334,7 +358,8 @@ class ANI1ccx(_BaseBuiltinDataset):
 
 class AminoacidDimers(_BaseBuiltinDataset):
     _ARCHIVE = {'b973c-def2mtzvp': 'Aminoacid-dimers-B973c-def2mTZVP-data.tar.gz'}
-    _FILES_AND_MD5S = {'b973c-def2mtzvp': OrderedDict([('Aminoacid-dimers-B973c-def2mTZVP.h5', '7db327a3cf191c19a06f5495453cfe56')])}
+    _FILES = {'b973c-def2mtzvp': ['Aminoacid-dimers-B973c-def2mTZVP.h5']}
+    _FILES_AND_MD5S = {lot: OrderedDict([(k, _MD5S[k]) for k in list_]) for lot, list_ in _FILES.items()}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='def2mTZVP', functional='B973c'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
@@ -353,31 +378,26 @@ _ANI2x_ARCHIVE = {'wb97x-631gd': 'ANI-2x-wB97X-631Gd-data.tar.gz',
                   'wb97mv-def2tzvpp': 'ANI-2x-wB97MV-def2TZVPP-data.tar.gz',
                   'wb97x-def2tzvpp': 'ANI-2x-wB97X-def2TZVPP-data.tar.gz'}
 
-_ANI2x_FILES_AND_MD5S = {'wb97x-631gd': OrderedDict([('ANI-1x-wB97X-631Gd.h5', '2cd8cbc7a5106f88d8b21cde58074aef'),
-                                                     ('ANI-2x_heavy-wB97X-631Gd.h5', '0bf1f7fb8c97768116deea672cae8d8e'),
-                                                     ('ANI-2x_dimers-wB97X-631Gd.h5', '0043cc1f908851601d9cfbbec2d957e8')]),
-                         'b973c-def2mtzvp': OrderedDict([('ANI-1x-B973c-def2mTZVP.h5', '4351aedf74683d858b834ccef3a727b8'),
-                                                         ('ANI-2x_heavy_and_dimers-B973c-def2mTZVP.h5', '09f7c991c78327d92c6de479aff69aca')]),
-                         'wb97md3bj-def2tzvpp': OrderedDict([('ANI-1x-wB97D3BJ-def2TZVPP.h5', '6d7d3ba93d4c57e4ac6a6d5dc9598596'),
-                                                             ('ANI-2x_heavy_and_dimers-wB97D3BJ-def2TZVPP.h5', '827a3eb6124ef2c0c3ab4487b63ff329')]),
-                         'wb97mv-def2tzvpp': OrderedDict([('ANI-1x-wB97MV-def2TZVPP.h5', '7f3107e3474f3f673922a0155e11d3aa'),
-                                                          ('ANI-2x_heavy_and_dimers-wB97MV-def2TZVPP.h5', 'b60d7938e16b776eb72209972c54721c')]),
-                         'wb97x-def2tzvpp': OrderedDict([('ANI-1x-wB97X-def2TZVPP.h5', '8bd2f258c8b4588d2d64499af199dc74'),
-                                                          ('ANI-2x_subset-wB97X-def2TZVPP.h5', '6db204f90128a9ad470575cb17373586')])}
+_ANI2x_FILES = {'wb97x-631gd': ['ANI-1x-wB97X-631Gd.h5', 'ANI-2x_heavy-wB97X-631Gd.h5', 'ANI-2x_dimers-wB97X-631Gd.h5'],
+                'b973c-def2mtzvp': ['ANI-1x-B973c-def2mTZVP.h5', 'ANI-2x_heavy_and_dimers-B973c-def2mTZVP.h5'],
+                'wb97md3bj-def2tzvpp': ['ANI-1x-wB97D3BJ-def2TZVPP.h5', 'ANI-2x_heavy_and_dimers-wB97D3BJ-def2TZVPP.h5'],
+                'wb97mv-def2tzvpp': ['ANI-1x-wB97MV-def2TZVPP.h5', 'ANI-2x_heavy_and_dimers-wB97MV-def2TZVPP.h5'],
+                'wb97x-def2tzvpp': ['ANI-1x-wB97X-def2TZVPP.h5', 'ANI-2x_subset-wB97X-def2TZVPP.h5']}
 
 
 # ANI1x is the same as 2x, but all files that have heavy atoms or dimers are omitted
 _ANI1x_ARCHIVE = {k: v.replace('-2x-', '-1x-') for k, v in _ANI2x_ARCHIVE.items()}
-_ANI1x_FILES_AND_MD5S = deepcopy(_ANI2x_FILES_AND_MD5S)
+_ANI1x_FILES = deepcopy(_ANI2x_FILES)
 for lot in _ANI_LOT:
-    for k in _ANI2x_FILES_AND_MD5S[lot]:
+    for j, k in enumerate(_ANI2x_FILES[lot]):
         if '-2x-' in k or '-2x_' in k:
-            del _ANI1x_FILES_AND_MD5S[lot][k]
+            _ANI1x_FILES[k].delete(j)
 
 
 class ANI2x(_BaseBuiltinDataset):
     _ARCHIVE = _ANI2x_ARCHIVE
-    _FILES_AND_MD5S = _ANI2x_FILES_AND_MD5S
+    _FILES = _ANI2x_FILES
+    _FILES_AND_MD5S = {lot: OrderedDict([(k, _MD5S[k]) for k in list_]) for lot, list_ in _FILES.items()}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
@@ -390,7 +410,8 @@ class ANI2x(_BaseBuiltinDataset):
 
 class ANI1x(_BaseBuiltinDataset):
     _ARCHIVE = _ANI1x_ARCHIVE
-    _FILES_AND_MD5S = _ANI1x_FILES_AND_MD5S
+    _FILES = _ANI1x_FILES
+    _FILES_AND_MD5S = {lot: OrderedDict([(k, _MD5S[k]) for k in list_]) for lot, list_ in _FILES.items()}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
@@ -402,31 +423,29 @@ class ANI1x(_BaseBuiltinDataset):
 
 
 _COMP6_LOT = {'wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp', 'wb97mv-def2tzvpp'}
-
-_COMP6v2_FILES_AND_MD5S = {'wb97x-631gd': OrderedDict([('ANI-BenchMD-wB97X-631Gd.h5', '04c03ec8796359a0e3eb301346efbb03'),
-                                                       ('S66x8-v1-wB97X-631Gd.h5', '2b932f920397ae92bf55cfbc26de9a33'),
-                                                       ('DrugBank-testset-wB97X-631Gd.h5', 'ed92ec0b47061f8a1ae370390c8eff6e'),
-                                                       ('Tripeptides-v1-wB97X-631Gd.h5', '7fd7ddf224b2c329135b16f80d5cad75'),
-                                                       ('GDB11-07-wB97X-631Gd.h5', '719d5442ddf1cd2f02b94eb048ce0c56'),
-                                                       ('GDB11-08-wB97X-631Gd.h5', 'abf76ddcfed962ba8b91d7a99fb86a1b'),
-                                                       ('GDB11-09-wB97X-631Gd.h5', '70841880e1bbdf063ed943af94367b70'),
-                                                       ('GDB11-10-wB97X-631Gd.h5', 'cb86b0ee9de2d719b7e7bca789f297d9'),
-                                                       ('GDB11-11-wB97X-631Gd.h5', '367c0fa78b8eac584009fbe81f7198ba'),
-                                                       ('GDB13-12-wB97X-631Gd.h5', '9757ac7e7c937074894b314aa82de41a'),
-                                                       ('GDB13-13-wB97X-631Gd.h5', '86fb89bb64066a60e6013e33c704565b'),
-                                                       ('GDB-heavy07-wB97X-631Gd.h5', '3b2b6fc298d06acb8380de70e4dca5dc'),
-                                                       ('GDB-heavy08-wB97X-631Gd.h5', '8877bdfc95419c6b818b6f07bf147fa0'),
-                                                       ('GDB-heavy09-wB97X-631Gd.h5', '416aa86b57ca9915135a6d99d4a2d23a'),
-                                                       ('GDB-heavy10-wB97X-631Gd.h5', 'e45852f95ec876dfd41984d1c159130b'),
-                                                       ('GDB-heavy11-wB97X-631Gd.h5', 'e4716b57d02e64e3b2bb7096d0ab70ab'),
-                                                       ('Tripeptides-sulphur-wB97X-631Gd.h5', '3309d50ede42ceaa96e5d3f897e9bac0'),
-                                                       ('DrugBank-SFCl-wB97X-631Gd.h5', '76db51f3750d9322656682b104299442')]),
-                           'b973c-def2mtzvp': OrderedDict([('COMP6-full_v1-B97c3-def2mTZVP.h5', '9cd1e1403c0ca91e07c480eda86332f8'),
-                                                           ('COMP6-heavy-B97c3-def2mTZVP.h5', '1cf3ecd2a2ec7257909c693350d66d18')]),
-                           'wb97md3bj-def2tzvpp': OrderedDict([('COMP6-heavy-wB97D3BJ-def2TZVPP.h5', '88aac626d4963aacf9e856ca1408f47b'),
-                                                               ('COMP6-full_v1-wB97D3BJ-def2TZVPP.h5', '057d89c8d046ccd9155ee24f3f47faa6')]),
-                           'wb97mv-def2tzvpp': OrderedDict([('COMP6-heavy-wB97MV-def2TZVPP.h5', '804e7a7655903c8a4599f2c48bd584aa'),
-                                                            ('COMP6-v1_full-wB97MV-def2TZVPP.h5', 'bccdf302f361c0213450381b493e17d8')])}
+_COMP6v2_FILES = {'wb97x-631gd': ['ANI-BenchMD-wB97X-631Gd.h5',
+                         'S66x8-v1-wB97X-631Gd.h5',
+                         'DrugBank-testset-wB97X-631Gd.h5',
+                         'Tripeptides-v1-wB97X-631Gd.h5',
+                         'GDB11-07-wB97X-631Gd.h5',
+                         'GDB11-08-wB97X-631Gd.h5',
+                         'GDB11-09-wB97X-631Gd.h5',
+                         'GDB11-10-wB97X-631Gd.h5',
+                         'GDB11-11-wB97X-631Gd.h5',
+                         'GDB13-12-wB97X-631Gd.h5',
+                         'GDB13-13-wB97X-631Gd.h5',
+                         'GDB-heavy07-wB97X-631Gd.h5',
+                         'GDB-heavy08-wB97X-631Gd.h5',
+                         'GDB-heavy09-wB97X-631Gd.h5',
+                         'GDB-heavy10-wB97X-631Gd.h5',
+                         'GDB-heavy11-wB97X-631Gd.h5',
+                         'Tripeptides-sulphur-wB97X-631Gd.h5',
+                         'DrugBank-SFCl-wB97X-631Gd.h5'],
+                  'b973c-def2mtzvp': ['COMP6-full_v1-B97c3-def2mTZVP.h5', 'COMP6-heavy-B97c3-def2mTZVP.h5'],
+                  'wb97md3bj-def2tzvpp': ['COMP6-heavy-wB97D3BJ-def2TZVPP.h5',
+                                          'COMP6-full_v1-wB97D3BJ-def2TZVPP.h5'],
+                  'wb97mv-def2tzvpp': ['COMP6-heavy-wB97MV-def2TZVPP.h5',
+                                       'COMP6-v1_full-wB97MV-def2TZVPP.h5']}
 
 _COMP6v2_ARCHIVE = {'wb97x-631gd': 'COMP6-v2-wB97X-631Gd-data.tar.gz',
                     'b973c-def2mtzvp': 'COMP6-v2-B973c-def2mTZVP-data.tar.gz',
@@ -435,28 +454,29 @@ _COMP6v2_ARCHIVE = {'wb97x-631gd': 'COMP6-v2-wB97X-631Gd-data.tar.gz',
 
 # COMP6v1 is the same as v2, but all files that have heavy atoms are omitted
 _COMP6v1_ARCHIVE = {k: v.replace('-v2-', '-v1-') for k, v in _COMP6v2_ARCHIVE.items()}
-_COMP6v1_FILES_AND_MD5S = deepcopy(_COMP6v2_FILES_AND_MD5S)
+_COMP6v1_FILES = deepcopy(_COMP6v2_FILES)
 for lot in _COMP6_LOT:
-    for k in _COMP6v2_FILES_AND_MD5S[lot]:
+    for j, k in enumerate(_COMP6v2_FILES[lot]):
         if '-heavy' in k or '-sulphur-' in k or '-SFCl-' in k:
-            del _COMP6v1_FILES_AND_MD5S[lot][k]
+            _COMP6v1_FILES[lot].delete(j)
 
 # There is some extra TZ data for which we have v1 values but not v2 values
 # Note that the ANI-BenchMD, S66x8 and the "13" molecules (with 13 heavy atoms)
 # of GDB-10to13 were recalculated using ORCA 5.0 instead of 4.2 so the integration
 # grids may be slightly different, but the difference should not be significant
-_COMP6v1_FILES_AND_MD5S.update({'wb97x-def2tzvpp': OrderedDict([('ANI-BenchMD-wB97X-def2TZVPP.h5', '9cd6d267b2d3d651cba566650642ed62'),
-                                                            ('S66x8-v1-wB97X-def2TZVPP.h5', 'a7aa6ce11497d182c1265219e5e2925f'),
-                                                            ('DrugBank-testset-wB97X-def2TZVPP.h5', '977e1d6863fccdbbc6340acb15b1eec2'),
-                                                            ('Tripeptides-v1-wB97X-def2TZVPP.h5', '6b838fee970244ad85419165bb71c557'),
-                                                            ('GDB-7to9-wB97X-def2TZVPP.h5', '23b80666f75cb71030534efdc7df7c97'),
-                                                            ('GDB-10to13-wB97X-def2TZVPP.h5', 'bd9730961eaf15a3d823b97f39c41908')])})
+_COMP6v1_FILES.update({'wb97x-def2tzvpp': ['ANI-BenchMD-wB97X-def2TZVPP.h5',
+                                           'S66x8-v1-wB97X-def2TZVPP.h5',
+                                           'DrugBank-testset-wB97X-def2TZVPP.h5',
+                                           'Tripeptides-v1-wB97X-def2TZVPP.h5',
+                                           'GDB-7to9-wB97X-def2TZVPP.h5',
+                                           'GDB-10to13-wB97X-def2TZVPP.h5']})
 _COMP6v1_ARCHIVE.update({'wb97x-def2tzvpp': 'COMP6-v1-wB97X-def2TZVPP-data.tar.gz'})
 
 
 class COMP6v1(_BaseBuiltinDataset):
     _ARCHIVE = _COMP6v1_ARCHIVE
-    _FILES_AND_MD5S = _COMP6v1_FILES_AND_MD5S
+    _FILES = _COMP6v1_FILES
+    _FILES_AND_MD5S = {lot: OrderedDict([(k, _MD5S[k]) for k in list_]) for lot, list_ in _FILES.items()}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
@@ -469,7 +489,8 @@ class COMP6v1(_BaseBuiltinDataset):
 
 class COMP6v2(_BaseBuiltinDataset):
     _ARCHIVE = _COMP6v2_ARCHIVE
-    _FILES_AND_MD5S = _COMP6v2_FILES_AND_MD5S
+    _FILES = _COMP6v2_FILES
+    _FILES_AND_MD5S = {lot: OrderedDict([(k, _MD5S[k]) for k in list_]) for lot, list_ in _FILES.items()}
 
     def __init__(self, root: StrPath = None, download: bool = False, verbose: bool = True, basis_set='631Gd', functional='wB97X'):
         lot = f'{functional.lower()}-{basis_set.lower()}'
