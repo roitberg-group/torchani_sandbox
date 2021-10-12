@@ -416,7 +416,7 @@ def _get_component_modules(state_dict_file: str,
                            aev_computer_kwargs: Optional[Dict[str, Any]] = None,
                            ensemble_size: int = 8,
                            atomic_maker: Optional[Callable[[str], torch.nn.Module]] = None,
-                           aev_maker: Optional[Callable[[Any], torch.nn.Module]] = None,
+                           aev_maker: Optional[Callable[..., AEVComputer]] = None,
                            elements: Optional[Sequence[str]] = None,
                            self_energies: Optional[Sequence[float]] = None
                            ) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
