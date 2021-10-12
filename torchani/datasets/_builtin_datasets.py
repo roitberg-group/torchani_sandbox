@@ -105,7 +105,7 @@ from .datasets import ANIDataset
 from ._annotations import StrPath
 from ..utils import tqdm
 
-_BASE_URL = 'http://moria.chem.ufl.edu/animodel/ground_truth_data'
+_BASE_URL = 'http://moria.chem.ufl.edu/animodel/ground_truth_data/'
 _DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
 
 _BUILTIN_DATASETS = ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'ANI1ccx', 'AminoacidDimers',
