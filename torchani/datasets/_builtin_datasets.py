@@ -122,7 +122,7 @@ _BUILTIN_DATASETS_LOT = ['wb97x-631gd', 'b973c-def2mtzvp', 'wb97md3bj-def2tzvpp'
 def _read_md5_hashes():
     # This function reads a csv file with format "file_name MD5-hash"
     # and outputs a dictionary with all supported file names
-    with open(Path(__file__).resolve() / "md5s.csv") as f:
+    with open(Path(__file__).resolve().parent / "md5s.csv") as f:
         lines = f.readlines()
         _md5s = dict()
         for l in lines:
@@ -391,7 +391,7 @@ _ANI1x_FILES = deepcopy(_ANI2x_FILES)
 for lot in _ANI_LOT:
     for j, k in enumerate(_ANI2x_FILES[lot]):
         if '-2x-' in k or '-2x_' in k:
-            _ANI1x_FILES[k].delete(j)
+            _ANI1x_FILES[lot].remove(k)
 
 
 class ANI2x(_BaseBuiltinDataset):
@@ -458,7 +458,7 @@ _COMP6v1_FILES = deepcopy(_COMP6v2_FILES)
 for lot in _COMP6_LOT:
     for j, k in enumerate(_COMP6v2_FILES[lot]):
         if '-heavy' in k or '-sulphur-' in k or '-SFCl-' in k:
-            _COMP6v1_FILES[lot].delete(j)
+            _COMP6v1_FILES[lot].remove(k)
 
 # There is some extra TZ data for which we have v1 values but not v2 values
 # Note that the ANI-BenchMD, S66x8 and the "13" molecules (with 13 heavy atoms)
