@@ -55,7 +55,7 @@ except DistributionNotFound:
 
 __all__ = ['AEVComputer', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
            'utils', 'neurochem', 'models', 'units', 'repulsion', 'dispersion', 'datasets', 'transforms',
-           'short_range_basis', 'molecule_utils', 'io', 'cli']
+           'short_range_basis', 'cli', 'molecule_utils', 'io']
 
 try:
     from . import ase  # noqa: F401
