@@ -215,7 +215,6 @@ class _BaseBuiltinDataset(ANIDataset):
         self._check_hdf5_files_integrity(root)
 
 
-# NOTE: The order of the _FILES_AND_MD5S is important since it deterimenes the order of iteration over the files
 class _ArchivedBuiltinDataset(_BaseBuiltinDataset):
     def __init__(self, files, basis_set, functional, root: StrPath = None, download: bool = False, verbose: bool = True):
         lot = f'{functional.lower()}-{basis_set.lower()}'
@@ -224,7 +223,8 @@ class _ArchivedBuiltinDataset(_BaseBuiltinDataset):
         archive = files[lot][0]
         files_and_md5s = OrderedDict([(k, _MD5S[k]) for k in files[lot][1]])
         if root is None:
-            root = _DEFAULT_DATA_PATH.joinpath(f'TestData-sample-{lot}')
+            # the default name is the name of the tarred file, here we strip "tar" and "gz"
+            root = _DEFAULT_DATA_PATH.joinpath(Path(archive).with_suffix('').with_suffix('').as_posix())
         super().__init__(root, download, archive=archive, files_and_md5s=files_and_md5s, verbose=verbose)
 
 
@@ -362,15 +362,16 @@ _COMP6v2_FILES = {'wb97x-631gd': ('COMP6-v2-wb97x-631gd.tar.gz',
                                    'GDB-heavy11-wB97X-631Gd.h5',
                                    'Tripeptides-sulphur-wB97X-631Gd.h5',
                                    'DrugBank-SFCl-wB97X-631Gd.h5']),
-                  'b973c-def2mtzvp': ('COMP6-v2-B973c-def2mTZVP.tar.gz',
+                  'b973c-def2mtzvp': ('COMP6-v2-B973c-def2mTZVP-data.tar.gz',
                                       ['COMP6-full_v1-B97c3-def2mTZVP.h5',
                                        'COMP6-heavy-B97c3-def2mTZVP.h5']),
-                  'wb97md3bj-def2tzvpp': ('COMP6-v2-wB97MD3BJ-def2TZVPP.tar.gz',
+                  'wb97md3bj-def2tzvpp': ('COMP6-v2-wB97MD3BJ-def2TZVPP-data.tar.gz',
                                           ['COMP6-heavy-wB97D3BJ-def2TZVPP.h5',
                                            'COMP6-full_v1-wB97D3BJ-def2TZVPP.h5']),
-                  'wb97mv-def2tzvpp': ('COMP6-v2-wB97MV-def2TZVPP.tar.gz',
+                  'wb97mv-def2tzvpp': ('COMP6-v2-wB97MV-def2TZVPP-data.tar.gz',
                                        ['COMP6-heavy-wB97MV-def2TZVPP.h5',
                                         'COMP6-v1_full-wB97MV-def2TZVPP.h5'])}
+
 
 # COMP6v1 is the same as v2, but all files that have heavy atoms are omitted
 _COMP6v1_FILES = {k: (v[0].replace('-v2-', '-v1-'), deepcopy(v[1])) for k, v in _COMP6v2_FILES.items()}
