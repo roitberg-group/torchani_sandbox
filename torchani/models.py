@@ -350,8 +350,9 @@ class BuiltinModelPairInteractions(BuiltinModel):
             pre_species_energies = pot(pre_species_energies, atom_index12, distances)
 
         # aev-energy calculation
-        if self.aev_computer.radial_terms.cutoff < previous_cutoff:
-            nl_out = self.aev_computer.neighborlist._screen_with_cutoff(pot.cutoff,
+        aev_cutoff = self.aev_computer.radial_terms.cutoff
+        if aev_cutoff < previous_cutoff:
+            nl_out = self.aev_computer.neighborlist._screen_with_cutoff(aev_cutoff,
                                                                         coordinates,
                                                                         atom_index12,
                                                                         shift_values,
