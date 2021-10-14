@@ -14,7 +14,7 @@ def h5info(path):
     ds = ANIDataset(locations=files, names=names)
     print(ds)
     groups = list(ds.keys())
-    conformer = ds.get_conformers(groups[0], 0)
+    conformer = ds.get_numpy_conformers(groups[0], 0)
     key_max_len = max([len(k) for k in conformer.keys()]) + 3
     shapes = [str(list(conformer[k].shape)) for k in conformer.keys()]
     shape_max_len = max([len(s) for s in shapes]) + 3
