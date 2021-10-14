@@ -13,3 +13,9 @@ def h5info(path):
     names = [f.stem for f in files]
     ds = ANIDataset(locations=files, names=names)
     print(ds)
+    groups = list(ds.keys())
+    conformer = ds.get_conformers(groups[0], 0)
+    print('\nFirst Conformer Properties (Non-batched): ')
+    key_max_len = max([len(k)for k in conformer.keys()]) + 3
+    for k, value in conformer.items():
+        print(f'  {k.ljust(key_max_len)} shape: {str(list(value.shape)).ljust(10)} dtype: {value.dtype}')
