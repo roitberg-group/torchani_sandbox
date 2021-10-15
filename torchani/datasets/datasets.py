@@ -698,10 +698,10 @@ class _ANISubdataset(_ANIDatasetBase):
             f._dummy_properties = dummy_properties
 
     @property
-    def _dummy_properties(self) -> None:
+    def _dummy_properties(self) -> Mapping[str, Any]:
         with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r+')
-            return f._dummy_properties
+            dummy = self._get_open_store(stack, 'r+')._dummy_properties
+        return dummy
 
     @_broadcast
     @_needs_cache_update
