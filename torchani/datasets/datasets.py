@@ -389,10 +389,16 @@ class _ANISubdataset(_ANIDatasetBase):
                  create: bool = False,
                  grouping: str = 'by_formula',
                  backend: Optional[str] = None,
-                 verbose: bool = True):
+                 verbose: bool = True,
+                 dummy_properties: Dict[str, Any] = None):
+        # dummy_properties must be a dict of the form
+        # {'name': {'dtype': dtype, 'is_atomic': is_atomic, 'extra_dims': extra_dims, 'fill_value': fill_value}, ...}
+        # with one or more dummy properties. These will be created on the fly only if they are not
+        # present in the dataset already.
         super().__init__()
+        dummy_properties = dict() if dummy_properties is None else dummy_properties
         self._backend = infer_backend(store_location) if backend is None else backend
-        self._store = StoreAdaptorFactory(store_location, self._backend)
+        self._store = StoreAdaptorFactory(store_location, self._backend, dummy_properties)
         self._possible_nonbatch_properties: Set[str]
         if create:
             if grouping not in ['by_formula', 'by_num_atoms']:
@@ -788,6 +794,12 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_properties_are_present(properties)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
+
+            for property_ in properties.copy():
+                if property_ in f._dummy_properties.keys():
+                    f._dummy_properties.pop(property_)
+                    properties.remove(property_)
+
             for group_key in tqdm(self.keys(),
                                   total=self.num_conformer_groups,
                                   desc='Deleting properties',
