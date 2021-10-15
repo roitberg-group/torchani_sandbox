@@ -53,6 +53,7 @@ HARTREE_TO_KCALMOL = HARTREE_TO_JOULE * JOULE_TO_KCAL * AVOGADROS_NUMBER
 HARTREE_TO_KJOULEMOL = HARTREE_TO_JOULE * AVOGADROS_NUMBER / 1000
 EV_TO_KCALMOL = EV_TO_JOULE * JOULE_TO_KCAL * AVOGADROS_NUMBER
 EV_TO_KJOULEMOL = EV_TO_JOULE * AVOGADROS_NUMBER / 1000
+DEBYE_TO_ELECTRON_ANGSTROM = 0.2081943
 
 # For vibrational analysis:
 
@@ -135,6 +136,11 @@ def hartree2kcalmol(x):
     return x * HARTREE_TO_KCALMOL
 
 
+def ea2debye(x):
+    """Dipole conversion, eA to Debye from NIST CCCBDB """
+    return x / DEBYE_TO_ELECTRON_ANGSTROM
+
+
 # Add actual values to docstrings on import
 angstrom2bohr.__doc__ = str(angstrom2bohr.__doc__) + f'\n\n1 Angstrom = {angstrom2bohr(1)} Bohr'
 hartree2ev.__doc__ = str(hartree2ev.__doc__) + f'\n\n1 Hartree = {hartree2ev(1)} eV'
@@ -145,3 +151,4 @@ ev2kcalmol.__doc__ = str(ev2kcalmol.__doc__) + f'\n\n1 eV = {ev2kcalmol(1)} kcal
 mhessian2fconst.__doc__ = str(mhessian2fconst.__doc__) + f'\n\n1 Hartree / (AMU * Angstrom^2) = {ev2kcalmol(1)} mDyne/Angstrom'
 sqrt_mhessian2milliev.__doc__ = str(sqrt_mhessian2milliev.__doc__) + f'\n\n1 sqrt(Hartree / (AMU * Angstrom^2)) = {sqrt_mhessian2milliev(1)} meV'
 sqrt_mhessian2invcm.__doc__ = str(sqrt_mhessian2invcm.__doc__) + f'\n\n1 sqrt(Hartree / (AMU * Angstrom^2)) = {sqrt_mhessian2invcm(1)} cm^-1'
+ea2debye.__doc__ = str(ea2debye.__doc__) + f'\n\n1 Debye = {DEBYE_TO_ELECTRON_ANGSTROM} electron Angstroms'
