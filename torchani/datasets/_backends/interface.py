@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import ContextManager, Mapping, Set, Tuple
+from typing import ContextManager, Mapping, Set, Tuple, Any
 from collections import OrderedDict
 
 import numpy as np
@@ -43,14 +43,8 @@ class _ConformerGroupAdaptor(Mapping[str, np.ndarray], ABC):
     @abstractmethod
     def _create_property_with_data(self, p: str, data: np.ndarray) -> None: pass  # noqa E704
 
-    def move(self, src: str, dest: str) -> None:
-        try:
-            self._move_impl(src, dest)
-        except KeyError:
-            self._dummy_properties[dest] = self._dummy_properties.pop(dest)
-
     @abstractmethod
-    def _move_impl(self, src: str, dest: str) -> None: pass  # noqa E704
+    def move(self, src: str, dest: str) -> None: pass  # noqa E704
 
     @abstractmethod
     def __delitem__(self, k: str) -> None: pass  # noqa E704
@@ -72,7 +66,12 @@ class _ConformerGroupAdaptor(Mapping[str, np.ndarray], ABC):
     def _getitem_impl(self, p: str) -> np.ndarray: pass  # noqa E704
 
     def _make_dummy_property(self, extra_dims: Tuple[int, ...] = tuple(), is_atomic: bool = False, fill_value: float = 0.0, dtype=np.int64):
-        species = self._getitem_impl('species')
+        try:
+            species = self._getitem_impl('species')
+        except KeyError:
+            species = self._getitem_impl('numbers')
+        if species.ndim != 2:
+            raise RuntimeError("Attempted to create dummy properties in a legacy dataset, this is not supported!")
         shape: Tuple[int, ...] = (species.shape[0],)
         if is_atomic:
             shape += (species.shape[1],)
@@ -83,6 +82,10 @@ class _StoreAdaptor(ContextManager['_StoreAdaptor'], Mapping[str, '_ConformerGro
 
     def __init__(self, *args, **kwargs) -> None:
         self._dummy_properties = kwargs.pop("dummy_properties", dict())
+
+    @property
+    def dummy_properties(self) -> Mapping[str, Any]:
+        return self._dummy_properties.copy()
 
     @abstractmethod
     def transfer_location_to(self, other_store: '_StoreAdaptor') -> None: pass  # noqa E704

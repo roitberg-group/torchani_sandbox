@@ -298,7 +298,7 @@ class _H5ConformerGroupAdaptor(_ConformerGroupAdaptor):
         except TypeError:
             self._group_obj.create_dataset(name=p, data=data.astype(bytes), maxshape=maxshape)
 
-    def _move_impl(self, src: str, dest: str) -> None:
+    def move(self, src: str, dest: str) -> None:
         self._group_obj.move(src, dest)
 
     def __delitem__(self, k: str) -> None:

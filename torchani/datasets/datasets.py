@@ -538,7 +538,8 @@ class _ANISubdataset(_ANIDatasetBase):
                              group_name: str,
                              idx: IdxLike = None,
                              properties: Optional[Iterable[str]] = None,
-                             chem_symbols: bool = False) -> NumpyConformers:
+                             chem_symbols: bool = False,
+                             exclude_dummy: bool = False) -> NumpyConformers:
         r"""Same as get_conformers but conformers are a dict {property: ndarray}"""
         if properties is None:
             properties = self.properties
@@ -548,6 +549,8 @@ class _ANISubdataset(_ANIDatasetBase):
         batch_properties = needed_properties - self._possible_nonbatch_properties
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r')
+            if exclude_dummy:
+                needed_properties = needed_properties - set(f._dummy_properties.keys())
             numpy_conformers = {p: f[group_name][p] for p in needed_properties}
         idx_ = self._parse_index(idx)
         if idx_ is not None:
@@ -689,6 +692,17 @@ class _ANISubdataset(_ANIDatasetBase):
                               grouping=grouping if grouping is not None else self.grouping,
                               verbose=False)
 
+    def _attach_dummy_properties(self, dummy_properties: Mapping[str, Any]) -> None:
+        with ExitStack() as stack:
+            f = self._get_open_store(stack, 'r+')
+            f._dummy_properties = dummy_properties
+
+    @property
+    def _dummy_properties(self) -> None:
+        with ExitStack() as stack:
+            f = self._get_open_store(stack, 'r+')
+            return f._dummy_properties
+
     @_broadcast
     @_needs_cache_update
     def to_backend(self, backend: str, verbose: bool = True) -> '_ANISubdataset':
@@ -699,7 +713,7 @@ class _ANISubdataset(_ANIDatasetBase):
             return self
         with TemporaryLocation(backend) as location:
             new_ds = self._make_empty_copy(location, backend=backend)
-            for group_name, conformers in tqdm(self.numpy_items(),
+            for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
                                                total=self.num_conformer_groups,
                                                desc=f'Converting to {backend}',
                                                disable=not verbose):
@@ -707,6 +721,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 # attribute, and fixing this is ugly
                 new_ds.append_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
             meta = self.metadata
+            new_ds._attach_dummy_properties(self._dummy_properties)
             self._store.transfer_location_to(new_ds._store)
             new_ds._set_metadata(meta)
         return new_ds
@@ -736,7 +751,7 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_unique_element_key()
         with TemporaryLocation(self._backend) as location:
             new_ds = self._make_empty_copy(location, grouping='by_formula')
-            for group_name, conformers in tqdm(self.numpy_items(),
+            for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
                                                total=self.num_conformer_groups,
                                                desc='Regrouping by formulas',
                                                disable=not verbose):
@@ -751,6 +766,7 @@ class _ANISubdataset(_ANIDatasetBase):
                     selected_conformers = {k: v[idx] for k, v in conformers.items()}
                     new_ds.append_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
             meta = self.metadata
+            new_ds._attach_dummy_properties(self._dummy_properties)
             self._store.transfer_location_to(new_ds._store)
             new_ds._set_metadata(meta)
         if repack:
@@ -771,7 +787,7 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_unique_element_key()
         with TemporaryLocation(self._backend) as location:
             new_ds = self._make_empty_copy(location, grouping='by_num_atoms')
-            for group_name, conformers in tqdm(self.numpy_items(),
+            for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
                                                total=self.num_conformer_groups,
                                                desc='Regrouping by number of atoms',
                                                disable=not verbose):
@@ -779,6 +795,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 new_name = str(_get_num_atoms(conformers)).zfill(3)
                 new_ds.append_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
             meta = self.metadata
+            new_ds._attach_dummy_properties(self._dummy_properties)
             self._store.transfer_location_to(new_ds._store)
             new_ds._set_metadata(meta)
         if repack:
@@ -821,6 +838,12 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_properties_are_not_present(old_new_dict.values())
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
+
+            for old_name, new_name in old_new_dict.copy().items():
+                if old_name in f._dummy_properties.keys():
+                    f._dummy_properties[new_name] = f._dummy_properties.pop(old_name)
+                    old_new_dict.pop(old_name)
+
             for k in self.keys():
                 for old_name, new_name in old_new_dict.items():
                     f[k].move(old_name, new_name)
