@@ -1,7 +1,9 @@
 import json
+import shutil
+from os import fspath
 import tempfile
 from pathlib import Path
-from typing import Iterator, Set, Union, Tuple
+from typing import Iterator, Set, Union, Tuple, Dict, Iterable, Mapping, Any
 from collections import OrderedDict
 
 import numpy as np
@@ -30,11 +32,11 @@ _PQ_AVAILABLE = _PANDAS_AVAILABLE or _CUDF_AVAILABLE
 
 
 def _to_dict_pandas(df, **kwargs):
-    return df.to_dict(df, **kwargs)
+    return df.to_dict(**kwargs)
 
 
 def _to_dict_cudf(df, **kwargs):
-    return df.to_pandas().to_dict(df, **kwargs)
+    return df.to_pandas().to_dict(**kwargs)
 
 
 class _PqLocation(_FileOrDirLocation):
@@ -57,13 +59,28 @@ class _PqLocation(_FileOrDirLocation):
 
     @root.setter
     def root(self, value: StrPath) -> None:
-        super(__class__, __class__).root.fset(self, value)
+        value = Path(value).resolve()
+        if value.suffix == '':
+            value = value.with_suffix(self._suffix)
+        if value.suffix != self._suffix:
+            raise ValueError(f"Incorrect location {value}")
+        meta = self._meta_location
+        pq = self._pq_location
+        if meta is not None:
+            meta.rename(meta.with_name(value.with_suffix('.json').name))
+        if pq is not None:
+            pq.rename(pq.with_name(value.with_suffix('.pq').name))
+
+        if self._root_location is not None:
+            # pathlib.rename() may fail if src and dst are in different filesystems
+            shutil.move(fspath(self._root_location), fspath(value))
+        self._root_location = Path(value).resolve()
         root = self._root_location
         self._meta_location = root / root.with_suffix('.json').name
         self._pq_location = root / root.with_suffix('.pq').name
-        if not (self._pq_location.is_file()
-               and self._meta_location.is_file()):
+        if not (self._pq_location.is_file() or self._meta_location.is_file()):
             raise FileNotFoundError(f"The store in {self._root_location} could not be found or is invalid")
+        self._validate
 
     @root.deleter
     def root(self) -> None:
@@ -78,9 +95,9 @@ class _PqTemporaryLocation(_ZarrTemporaryLocation):
 
 
 class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
-    def __init__(self, store_location: StrPath, use_cudf: bool = False):
+    def __init__(self, store_location: StrPath, use_cudf: bool = False, dummy_properties: Mapping[str, Any] = None):
+        super().__init__(dummy_properties=dummy_properties)
         self.location = _PqLocation(store_location)
-        self._store_obj = None
         if use_cudf:
             self._engine = cudf
             self._to_dict = _to_dict_cudf
@@ -88,19 +105,42 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
             self._engine = pandas
             self._to_dict = _to_dict_pandas
 
+    # Avoid pickling modules
+    def __getstate__(self):
+        d = self.__dict__.copy()
+        d['_engine'] = self._engine.__name__
+        return d
+
+    # Restore modules from names when unpickling
+    def __setstate__(self, d):
+        if d['_engine'] == 'pandas':
+            import pandas  # noqa
+            d['_engine'] == pandas
+        elif d['_engine'] == 'cudf':
+            import cudf  # noqa
+            d['_engine'] == cudf
+        else:
+            raise RuntimeError("Incorrect _engine value")
+        self.__dict__ = d
+
     def update_cache(self,
                      check_properties: bool = False,
                      verbose: bool = True) -> Tuple['OrderedDict[str, int]', Set[str]]:
         cache = CacheHolder()
-        group_sizes_df = self._df['group'].value_counts().sort_index()
+        try:
+            group_sizes_df = self._store['group'].value_counts().sort_index()
+        except KeyError:
+            return cache.group_sizes, cache.properties
         cache.group_sizes = OrderedDict(sorted([(k, v) for k, v in self._to_dict(group_sizes_df).items()]))
-        cache.properties = set(self._df.columns.tolist()).difference({'group'})
-        return cache.group_sizes, cache.properties
+        cache.properties = set(self._store.columns.tolist()).difference({'group'})
+        self._dummy_properties = {k: v for k, v in self._dummy_properties.items() if k not in cache.properties}
+        return cache.group_sizes, cache.properties.union(self._dummy_properties)
 
     @classmethod
     def make_empty(cls, store_location: StrPath, grouping: str, **kwargs) -> '_Store':
         root = Path(store_location).resolve()
-        store_location.mkdir(exist_ok=False)
+        root.mkdir(exist_ok=True)
+        assert not list(root.iterdir()), "location is not empty"
         meta_location = root / root.with_suffix('.json').name
         pq_location = root / root.with_suffix('.pq').name
         default_engine.DataFrame().to_parquet(pq_location)
@@ -111,18 +151,22 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
     # File-like
     def open(self, mode: str = 'r', only_meta: bool = False) -> '_Store':
         if not only_meta:
-            self._store = self._engine.read_parquet(self._pq_location)
+            self._store_obj = self._engine.read_parquet(self.location.pq)
         else:
             class DummyStore:
                 pass
-            self._store = DummyStore()
-        with open(self.location.mota, mode) as f:
-            meta = json.loads(f)
-        self._store.attrs = meta
+            self._store_obj = DummyStore()
+        with open(self.location.meta, mode) as f:
+            meta = json.load(f)
+        if 'extra_dims' not in meta.keys():
+            meta['extra_dims'] = dict()
+        if 'dtypes' not in meta.keys():
+            meta['dtypes'] = dict()
+        self._store_obj.attrs = meta
         # monkey patch
-        self._store.mode = mode
-        self._store._is_dirty = False
-        self._store._meta_is_dirty = False
+        self._store_obj.mode = mode
+        self._store_obj._is_dirty = False
+        self._store_obj._meta_is_dirty = False
         return self
 
     def close(self) -> '_Store':
@@ -141,27 +185,76 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
     # Mapping
     def __getitem__(self, name: str) -> '_ConformerGroup':
         df_group = self._store[self._store['group'] == name]
-        return _PqConformerGroup(df_group, self._meta_location, self._dummy_properties)
+        return _PqConformerGroup(df_group, self._dummy_properties, self._store)
+
+    def __setitem__(self, name: str, conformers: '_ConformerGroup') -> None:
+        num_conformers = conformers[next(iter(conformers.keys()))].shape[0]
+        frames = [self._store]
+        tmp_df = self._engine.DataFrame()
+        tmp_df['group'] = self._engine.Series([name] * num_conformers)
+        for k, v in conformers.items():
+            if v.ndim == 1:
+                tmp_df[k] = self._engine.Series(v)
+            elif v.ndim == 2:
+                tmp_df[k] = self._engine.Series(v.tolist())
+            else:
+                extra_dims = self._store.attrs['extra_dims'].get(k, None)
+                if extra_dims is not None:
+                    assert v.shape[2:] == tuple(extra_dims), "Bad dimensions in appended property"
+                else:
+                    self._store.attrs['extra_dims'][k] = v.shape[2:]
+                tmp_df[k] = self._engine.Series(v.reshape(num_conformers, -1).tolist())
+            dtype = self._store.attrs['dtypes'].get(k, None)
+            if dtype is not None:
+                assert np.dtype(v.dtype).name == dtype, "Bad dtype in appended property"
+            else:
+                self._store.attrs['dtypes'][k] = np.dtype(v.dtype).name
+        frames.append(tmp_df)
+        meta = self._store_obj.attrs
+        mode = self._store_obj.mode
+        self._store_obj = self._engine.concat(frames)
+        self._store.attrs = meta
+        self._store.mode = mode
+        self._store._is_dirty = True
+        self._store._meta_is_dirty = True
 
     def __delitem__(self, name: str) -> None:
         # Instead of deleting we just reassign the store to everything that is
         # not the requested name here, since this dirties the dataset,
         # only this part will be written to disk on closing
-        self._store = self._store[self._store['group'] != name]
+        meta = self._store_obj.attrs
+        mode = self._store_obj.mode
+        meta_is_dirty = self._store_obj._meta_is_dirty
+        self._store_obj = self._store[self._store['group'] != name]
+        self._store.attrs = meta
+        self._store.mode = mode
+        self._store._meta_is_dirty = meta_is_dirty
         self._store._is_dirty = True
 
     def __len__(self) -> int:
         return len(self._store['group'].unique())
 
     def __iter__(self) -> Iterator[str]:
-        keys = self._df['group'].unique().tolist()
+        keys = self._store['group'].unique().tolist()
         keys.sort()
         return iter(keys)
 
+    def rename_direct(self, old_new_dict: Dict[str, str]) -> None:
+        self._store.rename(columns=old_new_dict, inplace=True)
+        self._store._is_dirty = True
+
+    def delete_direct(self, properties: Iterable[str]) -> None:
+        self._store.drop(labels=list(properties), inplace=True, axis='columns')
+        if self._store.columns.tolist() == ['group']:
+            self._store.drop(labels=['group'], inplace=True, axis='columns')
+        self._store._is_dirty = True
+
 
 class _PqConformerGroup(_ConformerGroup):
-    def __init__(self, group_obj, dummy_properties):
+    def __init__(self, group_obj, dummy_properties, store_pointer):
+        super().__init__(dummy_properties=dummy_properties)
         self._group_obj = group_obj
+        self._store_pointer = store_pointer
 
     # parquet groups are immutable, mutable operations are done directly in the
     # store
@@ -177,12 +270,24 @@ class _PqConformerGroup(_ConformerGroup):
     def __delitem__(self, k: str) -> None:
         raise ValueError("Not implemented for pq groups")
 
-    # TODO: implement these
+    def __setitem__(self, p: str, v: np.ndarray) -> None:
+        raise ValueError("Not implemented for pq groups")
+
     def _getitem_impl(self, p: str) -> np.ndarray:
-        pass
+        property_ = np.stack(self._group_obj[p].to_numpy())
+        extra_dims = self._store_pointer.attrs['extra_dims'].get(p, None)
+        dtype = self._store_pointer.attrs['dtypes'].get(p, None)
+        if extra_dims is not None:
+            if property_.ndim == 1:
+                property_ = property_.reshape(-1, *extra_dims)
+            else:
+                property_ = property_.reshape(property_.shape[0], -1, *extra_dims)
+        return property_.astype(dtype)
 
     def _len_impl(self) -> int:
-        pass
+        return len(self._group_obj.columns) - 1
 
     def _iter_impl(self):
-        pass
+        for c in self._group_obj.columns:
+            if c != 'group':
+                yield c

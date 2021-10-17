@@ -302,7 +302,7 @@ class _StoreWrapper(ContextManager['_Store'], MutableMapping[str, '_ConformerGro
     @property
     def metadata(self) -> Mapping[str, str]:
         try:
-            meta = {name: attr for name, attr in self._store.attrs.items() if name != 'grouping'}
+            meta = {name: attr for name, attr in self._store.attrs.items() if name not in ['grouping', 'dtypes', 'extra_dims']}
         except Exception:
             meta = dict()
         return meta

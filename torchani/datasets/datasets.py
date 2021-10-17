@@ -673,8 +673,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 shape: Tuple[int, ...] = (_get_num_conformers(f[group_name]),)
                 if is_atomic:
                     shape += (_get_num_atoms(f[group_name]),)
-                shape += extra_dims_
-                f[group_name][dest_key] = np.full(shape, fill_value, dtype)
+                f[group_name][dest_key] = np.full(shape + extra_dims_, fill_value, dtype)
         return self
 
     def _make_empty_copy(self,
@@ -811,15 +810,17 @@ class _ANISubdataset(_ANIDatasetBase):
                 if property_ in f._dummy_properties.keys():
                     f._dummy_properties.pop(property_)
                     properties.remove(property_)
-
-            for group_key in tqdm(self.keys(),
-                                  total=self.num_conformer_groups,
-                                  desc='Deleting properties',
-                                  disable=not verbose):
-                for property_ in properties:
-                    del f[group_key][property_]
-                if not f[group_key].keys():
-                    del f[group_key]
+            if hasattr(f, "delete_direct"):
+                f.delete_direct(properties)
+            else:
+                for group_key in tqdm(self.keys(),
+                                      total=self.num_conformer_groups,
+                                      desc='Deleting properties',
+                                      disable=not verbose):
+                    for property_ in properties:
+                        del f[group_key][property_]
+                    if not f[group_key].keys():
+                        del f[group_key]
         return self
 
     @_broadcast
@@ -839,9 +840,12 @@ class _ANISubdataset(_ANIDatasetBase):
                     f._dummy_properties[new_name] = f._dummy_properties.pop(old_name)
                     old_new_dict.pop(old_name)
 
-            for k in self.keys():
-                for old_name, new_name in old_new_dict.items():
-                    f[k].move(old_name, new_name)
+            if hasattr(f, "rename_direct"):
+                f.rename_direct(old_new_dict)
+            else:
+                for k in self.keys():
+                    for old_name, new_name in old_new_dict.items():
+                        f[k].move(old_name, new_name)
         return self
 
     @property
@@ -982,9 +986,7 @@ class ANIDataset(_ANIDatasetBase):
     the batch dimension). Property manipulation (renaming, deleting, adding)
     is also supported.
     """
-    def __init__(self,
-                 locations: Union[Iterable[StrPath], StrPath],
-                 names: Optional[Union[Iterable[str], str]] = None, **kwargs):
+    def __init__(self, locations: Union[Iterable[StrPath], StrPath], names: Optional[Union[Iterable[str], str]] = None, **kwargs):
         super().__init__()
         # _datasets is an OrderedDict {name: _ANISubdataset}.
         # "locations" and "names" are collections used to build it

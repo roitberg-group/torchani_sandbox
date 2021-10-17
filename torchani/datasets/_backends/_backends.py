@@ -11,13 +11,13 @@ from .pq_impl import _PQ_AVAILABLE, _PqStore, _PqTemporaryLocation
 _BACKEND_AVAILABLE = {'h5py': _H5PY_AVAILABLE, 'zarr': _ZARR_AVAILABLE, 'pq': _PQ_AVAILABLE}
 _CONCRETE_STORES = {'h5py': _H5Store, 'zarr': _ZarrStore, 'pq': _PqStore}
 _CONCRETE_LOCATIONS = {'h5py': _H5TemporaryLocation, 'zarr': _ZarrTemporaryLocation, 'pq': _PqTemporaryLocation}
-_CONCRETE_CHECKERS = {'h5py': lambda x: x.suffix == '.h5', 'zarr': lambda x: x.suffix == '.zarr', 'pq': lambda x: x.as_posix.endswith('_pq')}
+_SUFFIXES = {'h5py': '.h5', 'zarr': '.zarr', 'pq': '.pqdir'}
 
 
 def _infer_backend(store_location: StrPath) -> str:
-    location = Path(store_location).resolve()
-    for k, checker in _CONCRETE_CHECKERS.items():
-        if checker(location):
+    suffix = Path(store_location).resolve().suffix
+    for k, v in _SUFFIXES.items():
+        if suffix == v:
             return k
     raise RuntimeError("Backend could not be infered from store location")
 
