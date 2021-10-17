@@ -160,3 +160,11 @@ class _H5ConformerGroup(_ConformerWrapper["h5py.Group"]):
             h5_dataset[-v.shape[0]:] = v
         except TypeError:
             h5_dataset[-v.shape[0]:] = v.astype(bytes)
+
+    def __setitem__(self, p: str, data: np.ndarray) -> None:
+        # This correctly handles strings and make the first axis resizable
+        maxshape = (None,) + data.shape[1:]
+        try:
+            self._data.create_dataset(name=p, data=data, maxshape=maxshape)
+        except TypeError:
+            self._data.create_dataset(name=p, data=data.astype(bytes), maxshape=maxshape)
