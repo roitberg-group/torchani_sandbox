@@ -1,6 +1,7 @@
-from abc import ABC, abstractmethod
-from os import fspath
 import shutil
+from itertools import chain
+from os import fspath
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import (ContextManager, MutableMapping, Set, Tuple, Optional,
                     Generic, TypeVar, Iterator, cast, Mapping, Any)
@@ -9,8 +10,11 @@ from collections import OrderedDict
 import numpy as np
 
 from .._annotations import NumpyConformers, StrPath
+from ..exceptions import IncompatibleDummyProperty
 
 
+# Keeps track of variables that must be updated each time the datasets get
+# modified or the first time they are read from disk
 class CacheHolder:
     group_sizes: 'OrderedDict[str, int]'
     properties: Set[str]
@@ -24,39 +28,100 @@ class NamedMapping(Mapping):
     name: str
 
 
-# _ConformerGroup, _Store and are abstract classes from which all backends
+_MutMapSubtype = TypeVar('_MutMapSubtype', bound=MutableMapping[str, np.ndarray])
+
+# _ConformerGroup and _Store are abstract classes from which all backends
 # should inherit in order to correctly interact with ANIDataset. Adding
 # support for a new backend can be done just by coding these classes and
-# adding the support for the backend inside StoreFactory
+# adding the support for the backend inside interface.py
 
 
 # This is kind of like a dict, but with the extra functionality that you can
-# directly "append" to it, and rename its keys
+# directly "append" to it, and rename its keys, it can also create dummy
+# properties on the fly.
 class _ConformerGroup(MutableMapping[str, np.ndarray], ABC):
+    def __init__(self, *args, dummy_properties: Mapping[str, Any] = None, **kwargs) -> None:
+        self._dummy_properties = dict() if dummy_properties is None else dummy_properties
+
     def _is_resizable(self) -> bool:
         return True
+
+    def append_conformers(self, conformers: NumpyConformers) -> None:
+        if self._is_resizable():
+            # We discard all dummy properties that we try to append if they are equal
+            # to the ones already present, but if they are not equal we raise an error.
+            # The responsibility of materializing the dummy properties before doing the
+            # append is the caller's
+            incompatibles = dict()
+            for p in set(conformers.keys()).intersection(self._dummy_properties.keys()):
+                if (conformers[p] == self._dummy_properties[p]['fill_value']).all():
+                    conformers.pop(p)
+                else:
+                    incompatibles.update({p: self._dummy_properties[p]})
+            if incompatibles:
+                raise IncompatibleDummyProperty(incompatibles)
+
+            for p, v in conformers.items():
+                self._append_to_property(p, v)
+            return
+        raise ValueError("Can't append conformers, conformer group is not resizable")
+
+    def __getitem__(self, p: str) -> np.ndarray:
+        try:
+            array = self._getitem_impl(p)
+        except KeyError:
+            # A dummy property is defined with a padding value, a dtype, a shape, and an "is atomic" flag
+            # example: dummy_params =
+            # {'dtype': np.int64, 'extra_dims': (3,), 'is_atomic': True, 'fill_value': 0.0}
+            # this generates a property with shape (C, A, extra_dims), filled with value 0.0
+            params = self._dummy_properties[p]
+            array = self._make_dummy_property(**params)
+        assert isinstance(array, np.ndarray)
+        return array
+
+    # creates a dummy property on the fly
+    def _make_dummy_property(self, extra_dims: Tuple[int, ...] = tuple(), is_atomic: bool = False, fill_value: float = 0.0, dtype=np.int64):
+        try:
+            species = self._getitem_impl('species')
+        except KeyError:
+            species = self._getitem_impl('numbers')
+        if species.ndim != 2:
+            raise RuntimeError("Attempted to create dummy properties in a legacy dataset, this is not supported!")
+        shape: Tuple[int, ...] = (species.shape[0],)
+        if is_atomic:
+            shape += (species.shape[1],)
+        return np.full(shape + extra_dims, fill_value, dtype)
+
+    def __len__(self) -> int:
+        return self._len_impl() + len(self._dummy_properties)
+
+    def __iter__(self):
+        yield from chain(self._iter_impl(), self._dummy_properties.keys())
 
     @abstractmethod
     def _append_to_property(self, p: str, v: np.ndarray) -> None:
         pass
 
-    def append_conformers(self, conformers: NumpyConformers) -> None:
-        if self._is_resizable():
-            for p, v in conformers.items():
-                self._append_to_property(p, v)
-            return
-        raise ValueError("Can't append conformers, conformer group is not resizable")
+    @abstractmethod
+    def _getitem_impl(self, p: str) -> np.ndarray:
+        pass
+
+    @abstractmethod
+    def _iter_impl(self, p: str):
+        pass
+
+    @abstractmethod
+    def _len_impl(self, p: str) -> int:
+        pass
 
     @abstractmethod
     def move(self, src_p: str, dest_p: str) -> None:
         pass
 
 
-_MutMapSubtype = TypeVar('_MutMapSubtype', bound=MutableMapping[str, np.ndarray])
-
-
 class _ConformerWrapper(_ConformerGroup, Generic[_MutMapSubtype]):
-    def __init__(self, data: _MutMapSubtype) -> None:
+    def __init__(self, data: _MutMapSubtype, **kwargs) -> None:
+        super().__init__(**kwargs)
         self._data = data
 
     def __setitem__(self, p: str, v: np.ndarray) -> None:
@@ -65,13 +130,15 @@ class _ConformerWrapper(_ConformerGroup, Generic[_MutMapSubtype]):
     def __delitem__(self, p: str) -> None:
         del self._data[p]
 
-    def __getitem__(self, p: str) -> np.ndarray:
-        return self._data[p][()]
+    def _getitem_impl(self, p: str) -> np.ndarray:
+        array = self._data[p][()]
+        assert isinstance(array, np.ndarray)
+        return array
 
-    def __len__(self):
+    def _len_impl(self) -> int:
         return len(self._data)
 
-    def __iter__(self):
+    def _iter_impl(self):
         yield from self._data.keys()
 
     def move(self, src_p: str, dest_p: str) -> None:
@@ -100,6 +167,8 @@ class _LocationManager(ABC):
         other_store.location.root = root
 
 
+# Base location manager for datasets that use either directories or files as
+# locations
 class _FileOrDirLocation(_LocationManager):
     def __init__(self, root: StrPath, suffix: str = '', kind: str = 'file'):
         if kind not in ['file', 'dir']:
@@ -122,7 +191,7 @@ class _FileOrDirLocation(_LocationManager):
         if value.suffix == '':
             value = value.with_suffix(self._suffix)
         if value.suffix != self._suffix:
-            raise ValueError(f"incorrect location {value}")
+            raise ValueError(f"Incorrect location {value}")
         if self._root_location is not None:
             # pathlib.rename() may fail if src and dst are in different filesystems
             shutil.move(fspath(self._root_location), fspath(value))
@@ -146,35 +215,30 @@ class _FileOrDirLocation(_LocationManager):
             raise FileNotFoundError(f"The store in {root} could not be found")
 
 
-class _Store(ContextManager['_Store'], MutableMapping[str, '_ConformerGroup'], ABC):
+# mypy expects a Protocol here, which specifies that _T must
+# support Mapping and ContextManager methods, and also 'close' and 'create_group'
+# and have 'mode' and 'attr' attributes
+# this is similar to C++20 concepts and it is currently very verbose, so we avoid it
+_T = TypeVar('_T', bound=Any)
+
+
+# A store that wraps another store class (e.g. Zarr, Exedir, HDF5, DataFrame)
+# Wrapped store must have a "mode" and "attr" attributes, it may implement close()
+# __exit__, __enter__, , __delitem__
+class _StoreWrapper(ContextManager['_Store'], MutableMapping[str, '_ConformerGroup'], ABC, Generic[_T]):
     location: _LocationManager
+
+    def __init__(self, *args, dummy_properties: Mapping[str, Any] = None, **kwargs):
+        self._dummy_properties = dict() if dummy_properties is None else dummy_properties
+        self._store_obj = None
+
+    @property
+    def dummy_properties(self) -> Mapping[str, Any]:
+        return self._dummy_properties.copy()
 
     @classmethod
     @abstractmethod
-    def make_empty(cls, store_location: StrPath, grouping: str) -> '_Store':
-        pass
-
-    @property
-    @abstractmethod
-    def mode(self) -> str:
-        pass
-
-    @property
-    @abstractmethod
-    def grouping(self) -> str:
-        pass
-
-    @property
-    @abstractmethod
-    def is_open(self) -> bool:
-        pass
-
-    @abstractmethod
-    def close(self) -> '_Store':
-        pass
-
-    @abstractmethod
-    def open(self, mode: str = 'r') -> '_Store':
+    def make_empty(cls, store_location: StrPath, grouping: str, **kwargs) -> '_Store':
         pass
 
     @abstractmethod
@@ -183,28 +247,15 @@ class _Store(ContextManager['_Store'], MutableMapping[str, '_ConformerGroup'], A
                      verbose: bool = True) -> Tuple['OrderedDict[str, int]', Set[str]]:
         pass
 
-
-# mypy expects a Protocol here, which specifies that _T must
-# support Mapping and ContextManager methods, and also 'close' and 'create_group'
-# and have 'mode' and 'attr' attributes
-# this is similar to C++20 concepts and it is currently very verbose we avoid it
-_T = TypeVar('_T', bound=Any)
-
-
-# A store that wraps another hierarchical store (e.g. Zarr, Exedir, HDF5)
-# Wrapped store must implement:
-# __exit__, __enter__, create_group, __len__, __iter__ -> Iterator[str], __delitem__
-# and have a "mode" and "attr" attributes
-class _HierarchicalStoreWrapper(_Store, Generic[_T]):
-    def __init__(self, store_location: StrPath, suffix='', kind=''):
-        self.location = _FileOrDirLocation(store_location, suffix, kind)
-        self._store_obj = None
-
     @property
     def _store(self) -> _T:
         if self._store_obj is None:
             raise RuntimeError("Can't access store")
         return self._store_obj
+
+    @abstractmethod
+    def open(self, mode: str = 'r') -> '_Store':
+        pass
 
     def close(self) -> '_Store':
         try:
@@ -222,13 +273,68 @@ class _HierarchicalStoreWrapper(_Store, Generic[_T]):
             return False
         return True
 
+    @property
+    def mode(self) -> str:
+        return cast(str, self._store.mode)
+
     def __enter__(self) -> '_Store':
-        self._store.__enter__()
+        try:
+            self._store.__enter__()
+        except AttributeError:
+            pass
         return self
 
+    @property
+    def grouping(self) -> str:
+        # This detects Roman's formatting style which doesn't have a
+        # 'grouping' key but is still grouped by num atoms.
+        try:
+            self._store.attrs['readme']
+            return 'by_num_atoms'
+        except (KeyError, OSError):
+            pass
+        try:
+            g = self._store.attrs['grouping']
+            return cast(str, g)
+        except (KeyError, OSError):
+            return 'legacy'
+
+    @property
+    def metadata(self) -> Mapping[str, str]:
+        try:
+            meta = {name: attr for name, attr in self._store.attrs.items() if name != 'grouping'}
+        except Exception:
+            meta = dict()
+        return meta
+
+    def set_metadata(self, value: Mapping[str, str]) -> None:
+        if 'grouping' in value.keys():
+            raise ValueError('Grouping is not a valid metadata key')
+        for k, v in value.items():
+            self._store.attrs[k] = v
+        if hasattr(self._store, "_meta_is_dirty"):
+            self._store._meta_is_dirty = True
+
     def __exit__(self, *args) -> None:
-        self._store.__exit__(*args)
+        try:
+            self._store.__exit__(*args)
+        except AttributeError:
+            pass
         self._store_obj = None
+
+
+# alias for convenience
+_Store = _StoreWrapper
+
+
+# A store that wraps another hierarchical store (e.g. Zarr, Exedir, HDF5)
+# Wrapped store must implement:
+# __exit__, __enter__, create_group, __len__, __iter__ -> Iterator[str], __delitem__
+# and have a "mode" and "attr" attributes
+class _HierarchicalStoreWrapper(_StoreWrapper[_T]):
+    def __init__(self, store_location: StrPath, suffix='', kind='', dummy_properties: Mapping[str, Any] = None):
+        super().__init__(dummy_properties=dummy_properties)
+        self.location = _FileOrDirLocation(store_location, suffix, kind)
 
     def update_cache(self,
                      check_properties: bool = False,
@@ -239,7 +345,8 @@ class _HierarchicalStoreWrapper(_Store, Generic[_T]):
             self._update_groups_cache(cache, g)
         if list(cache.group_sizes) != sorted(cache.group_sizes):
             raise RuntimeError("Groups were not iterated upon alphanumerically")
-        return cache.group_sizes, cache.properties
+        self._dummy_properties = {k: v for k, v in self._dummy_properties.items() if k not in cache.properties}
+        return cache.group_sizes, cache.properties.union(self._dummy_properties)
 
     def _update_properties_cache(self,
                                  cache: CacheHolder,
@@ -261,14 +368,6 @@ class _HierarchicalStoreWrapper(_Store, Generic[_T]):
         except StopIteration:
             raise RuntimeError('To infer conformer size need one of "coordinates", "coord", "energies"')
         cache.group_sizes.update({group.name[1:]: group[any_key].shape[0]})
-
-    @property
-    def mode(self) -> str:
-        return cast(str, self._store.mode)
-
-    @property
-    def grouping(self) -> str:
-        return cast(str, self._store.attrs['grouping'])
 
     def __delitem__(self, k: str) -> None:
         del self._store[k]

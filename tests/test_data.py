@@ -12,6 +12,7 @@ from torchani.transforms import AtomicNumbersToIndices, SubtractSAE, Compose, ca
 from torchani.utils import PERIODIC_TABLE
 from torchani.testing import TestCase
 from torchani.datasets import ANIDataset, ANIBatchedDataset, create_batched_dataset
+from torchani.datasets._builtin_datasets import _BUILTIN_DATASETS
 
 # Optional tests for zarr
 try:
@@ -73,14 +74,36 @@ class TestBuiltinDatasets(TestCase):
     def testSmallSample(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             ds = torchani.datasets.TestData(tmpdir, download=True)
-            self.assertEqual(ds.grouping, 'by_formula')
+            self.assertEqual(ds.grouping, 'by_num_atoms')
+
+    def testDownloadSmallSample(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            torchani.datasets.download_builtin_dataset('TestData', 'wb97x-631gd', tmpdir)
+            num_h5_files = len(list(Path(tmpdir).glob("*.h5")))
+            self.assertGreater(num_h5_files, 0)
 
     def testBuiltins(self):
-        classes = ['ANI1x', 'ANI2x', 'COMP6v1']
+        # all these have default levels of theory
+        classes = _BUILTIN_DATASETS
         for c in classes:
             with tempfile.TemporaryDirectory() as tmpdir:
                 with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
                     getattr(torchani.datasets, c)(tmpdir, download=False)
+
+        # these also have the B973c/def2mTZVP LoT
+        for c in ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'AminoacidDimers']:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
+                    getattr(torchani.datasets, c)(tmpdir, download=False, basis_set='def2mTZVP', functional='B973c')
+
+        # these also have the wB97M-D3BJ/def2TZVPP LoT
+        for c in ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2']:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
+                    getattr(torchani.datasets, c)(tmpdir, download=False, basis_set='def2TZVPP', functional='wB97MD3BJ')
+                # Case insensitivity
+                with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
+                    getattr(torchani.datasets, c)(tmpdir, download=False, basis_set='DEF2tZvPp', functional='Wb97md3Bj')
 
 
 class TestFineGrainedShuffle(TestCase):
@@ -625,6 +648,41 @@ class TestANIDataset(TestCase):
             new_groups_copy['species'] = torch.ones((5, 6, 1), dtype=torch.long)
             ds.append_conformers('O6', new_groups_copy)
 
+    def testChunkedIteration(self):
+        ds = self._make_new_dataset()
+        # first we build numpy conformers with ints and str as species (both
+        # allowed)
+        conformers = dict()
+        for gn in self.torch_conformers.keys():
+            conformers[gn] = {k: v.detach().cpu().numpy()
+                                  for k, v in self.torch_conformers[gn].items()}
+
+        # Build the dataset using conformers
+        for k, v in conformers.items():
+            ds.append_conformers(k, v)
+
+        keys = {}
+        coords = []
+        for k, _, v in ds.chunked_numpy_items(max_size=10):
+            coords.append(torch.from_numpy(v['coordinates']))
+            keys.update({k})
+
+        keys_large = {}
+        coords_large = []
+        for k, _, v in ds.chunked_numpy_items(max_size=100000):
+            coords_large.append(torch.from_numpy(v['coordinates']))
+            keys_large.update({k})
+
+        keys_expect = {}
+        coords_expect = []
+        for k, v in ds.numpy_items():
+            coords_expect.append(torch.from_numpy(v['coordinates']))
+            keys_expect.update({k})
+        self.assertEqual(keys_expect, keys)
+        self.assertEqual(torch.cat(coords_expect), torch.cat(coords))
+        self.assertEqual(keys_expect, keys_large)
+        self.assertEqual(torch.cat(coords_expect), torch.cat(coords_large))
+
     def testAppendAndDeleteNumpyConformers(self):
         ds = self._make_new_dataset()
         # first we build numpy conformers with ints and str as species (both
@@ -678,6 +736,12 @@ class TestANIDataset(TestCase):
         ds.regroup_by_formula()
         for k, v in ds.items():
             self.assertEqual(v, new_groups[k])
+
+    def testMetadata(self):
+        ds = ANIDataset(locations=self.tmp_dir.name / Path('new.h5'), names="newfile", create=True)
+        meta = {'newfile': {'some metadata': 'metadata string', 'other metadata': 'other string'}}
+        ds.set_metadata(meta)
+        self.assertEqual(ds.metadata, meta)
 
     def testRegroupNumAtoms(self):
         ds = self._make_new_dataset()
@@ -764,6 +828,52 @@ class TestANIDataset(TestCase):
             self.assertTrue(isinstance(v, dict))
             self.assertEqual(set(v.keys()), {'species', 'coordinates', 'energies'})
         self.assertEqual(len(ds.items()), 3)
+
+    def testDummyPropertiesAlreadyPresent(self):
+        # creating dummy properties in a dataset that already has them does nothing
+        ds = ANIDataset(self.tmp_store_three_groups.name)
+        for k, v in ds.numpy_items(limit=1):
+            expect_coords = v['coordinates']
+        ds = ANIDataset(self.tmp_store_three_groups.name, dummy_properties={'coordinates': {'fill_value': 0}})
+        for k, v in ds.numpy_items(limit=1):
+            self.assertEqual(v['coordinates'], expect_coords)
+
+    def testDummyPropertiesRegroup(self):
+        # creating dummy properties in a dataset that already has them does nothing
+        ANIDataset(self.tmp_store_three_groups.name).regroup_by_num_atoms()
+        ds = ANIDataset(self.tmp_store_three_groups.name, dummy_properties={'charges': dict(), 'dipoles': dict()})
+        self.assertEqual(ds.properties, {'charges', 'dipoles', 'species', 'coordinates', 'energies'})
+        ds = ANIDataset(self.tmp_store_three_groups.name)
+        self.assertEqual(ds.properties, {'species', 'coordinates', 'energies'})
+
+    def testDummyPropertiesNotPresent(self):
+        charges_params = {'fill_value': 0, 'dtype': np.int64, 'extra_dims': tuple(), 'is_atomic': False}
+        dipoles_params = {'fill_value': 1, 'dtype': np.float64, 'extra_dims': (3,), 'is_atomic': True}
+        ANIDataset(self.tmp_store_three_groups.name).regroup_by_num_atoms()
+        ds = ANIDataset(self.tmp_store_three_groups.name, dummy_properties={'charges': charges_params, 'atomic_dipoles': dipoles_params})
+        self.assertEqual(ds.properties, {'species', 'coordinates', 'energies', 'charges', 'atomic_dipoles'})
+        for k, v in ds.numpy_items():
+            self.assertTrue((v['charges'] == 0).all())
+            self.assertTrue(v['charges'].dtype == np.int64)
+            self.assertEqual(v['charges'].shape, (v['species'].shape[0],))
+            self.assertTrue((v['atomic_dipoles'] == 1.0).all())
+            self.assertTrue(v['atomic_dipoles'].dtype == np.float64)
+            self.assertEqual(v['atomic_dipoles'].shape, v['species'].shape + (3,))
+            self.assertEqual(set(v.keys()), {'species', 'coordinates', 'energies', 'charges', 'atomic_dipoles'})
+
+        # renaming works as expected
+        ds.rename_properties({'charges': 'other_charges', 'atomic_dipoles': 'other_atomic_dipoles'})
+        self.assertEqual(ds.properties, {'species', 'coordinates', 'energies', 'other_charges', 'other_atomic_dipoles'})
+        for k, v in ds.numpy_items():
+            self.assertTrue((v['other_charges'] == 0).all())
+            self.assertTrue((v['other_atomic_dipoles'] == 1.0).all())
+            self.assertEqual(set(v.keys()), {'species', 'coordinates', 'energies', 'other_charges', 'other_atomic_dipoles'})
+
+        # deleting works as expected
+        ds.delete_properties(('other_charges', 'other_atomic_dipoles'))
+        self.assertEqual(ds.properties, {'species', 'coordinates', 'energies'})
+        for k, v in ds.numpy_items():
+            self.assertEqual(set(v.keys()), {'species', 'coordinates', 'energies'})
 
     def testIterConformers(self):
         ds = ANIDataset(self.tmp_store_three_groups.name)

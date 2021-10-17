@@ -1,27 +1,32 @@
 import json
 import tempfile
 from pathlib import Path
-from typing import Iterator, Set, Union, Tuple, Optional
+from typing import Iterator, Set, Union, Tuple
 from collections import OrderedDict
 
 import numpy as np
 
 from .._annotations import StrPath
-from .interface import _Store, _ConformerGroup, CacheHolder, _FileOrDirLocation
+from .interface import _Store, _StoreWrapper, _ConformerGroup, CacheHolder, _FileOrDirLocation
 from .zarr_impl import _ZarrTemporaryLocation
 
 
 try:
     import cudf
     _CUDF_AVAILABLE = True
+    default_engine = cudf
 except ImportError:
     _CUDF_AVAILABLE = False
 
 try:
     import pandas
     _PANDAS_AVAILABLE = True
+    if not _CUDF_AVAILABLE:
+        default_engine = pandas
 except ImportError:
     _PANDAS_AVAILABLE = False
+
+_PQ_AVAILABLE = _PANDAS_AVAILABLE or _CUDF_AVAILABLE
 
 
 def _to_dict_pandas(df, **kwargs):
@@ -36,7 +41,15 @@ class _PqLocation(_FileOrDirLocation):
     def __init__(self, root: StrPath):
         self._meta_location: Path = None
         self._pq_location: Path = None
-        super().__init__(root, '.pq', 'dir')
+        super().__init__(root, '.pqdir', 'dir')
+
+    @property
+    def meta(self) -> StrPath:
+        return self._meta_location
+
+    @property
+    def pq(self) -> StrPath:
+        return self._pq_location
 
     @property
     def root(self) -> StrPath:
@@ -47,7 +60,7 @@ class _PqLocation(_FileOrDirLocation):
         super(__class__, __class__).root.fset(self, value)
         root = self._root_location
         self._meta_location = root / root.with_suffix('.json').name
-        self._pq_location = root / root.name
+        self._pq_location = root / root.with_suffix('.pq').name
         if not (self._pq_location.is_file()
                and self._meta_location.is_file()):
             raise FileNotFoundError(f"The store in {self._root_location} could not be found or is invalid")
@@ -61,31 +74,19 @@ class _PqLocation(_FileOrDirLocation):
 
 class _PqTemporaryLocation(_ZarrTemporaryLocation):
     def __init__(self) -> None:
-        self._tmp_location = tempfile.TemporaryDirectory(suffix='.pq')
+        self._tmp_location = tempfile.TemporaryDirectory(suffix='.pqdir')
 
 
-class _PqStore(_Store):
+class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
     def __init__(self, store_location: StrPath, use_cudf: bool = False):
         self.location = _PqLocation(store_location)
-        self._mode: Optional[str] = None
         self._store_obj = None
-        self._store_location = Path(store_location).resolve()
-        # This actually manages two files inside store_location, a .pq file and
-        # a .json metadata file
-        self._pq_location, self._meta_location = self._parse_store(self._store_location)
-        self._use_cudf = use_cudf
         if use_cudf:
             self._engine = cudf
             self._to_dict = _to_dict_cudf
         else:
             self._engine = pandas
             self._to_dict = _to_dict_pandas
-
-    @property
-    def _store(self) -> Union["pandas.DataFrame", "cudf.DataFrame"]:
-        if self._store_obj is None:
-            raise RuntimeError("Can't access store")
-        return self._store_obj
 
     def update_cache(self,
                      check_properties: bool = False,
@@ -96,63 +97,58 @@ class _PqStore(_Store):
         cache.properties = set(self._df.columns.tolist()).difference({'group'})
         return cache.group_sizes, cache.properties
 
-    def make_empty(self, grouping: str) -> None:
-        self._store_location.mkdir(exist_ok=False)
-        self._engine.DataFrame().to_parquet(self._pq_location)
-        with open(self._meta_location, 'x') as f:
+    @classmethod
+    def make_empty(cls, store_location: StrPath, grouping: str, **kwargs) -> '_Store':
+        root = Path(store_location).resolve()
+        store_location.mkdir(exist_ok=False)
+        meta_location = root / root.with_suffix('.json').name
+        pq_location = root / root.with_suffix('.pq').name
+        default_engine.DataFrame().to_parquet(pq_location)
+        with open(meta_location, 'x') as f:
             json.dump({'grouping': grouping}, f)
-
-    @property
-    def grouping(self) -> str:
-        with open(self._meta_location, 'r') as f:
-            grouping = json.loads(f)['grouping']
-        return grouping
-
-    def create_conformer_group(self, name: str) -> '_ConformerGroup':
-        self._store.create_group(name)
-        return self[name]
+        return cls(store_location, **kwargs)
 
     # File-like
-    def open(self, mode: str = 'r') -> '_Store':
-        self._mode = mode
-        self._store_obj = self._engine.read_parquet(self._pq_location)
+    def open(self, mode: str = 'r', only_meta: bool = False) -> '_Store':
+        if not only_meta:
+            self._store = self._engine.read_parquet(self._pq_location)
+        else:
+            class DummyStore:
+                pass
+            self._store = DummyStore()
+        with open(self.location.mota, mode) as f:
+            meta = json.loads(f)
+        self._store.attrs = meta
+        # monkey patch
+        self._store.mode = mode
+        self._store._is_dirty = False
+        self._store._meta_is_dirty = False
         return self
 
     def close(self) -> '_Store':
-        if self._is_dirty:
-            self._store.to_parquet(self._pq_store)
-        self._mode = None
+        if self._store._is_dirty:
+            self._store.to_parquet(self.location.pq)
+        if self._store._meta_is_dirty:
+            with open(self.location.meta, 'w') as f:
+                json.dump(self._store.attrs, f)
         self._store_obj = None
         return self
 
-    @property
-    def is_open(self) -> bool:
-        try:
-            self._store
-        except RuntimeError:
-            return False
-        return True
-
-    @property
-    def mode(self) -> str:
-        if self._mode is None:
-            raise RuntimeError("Can't access closed store")
-        return self._mode
-
     # ContextManager
-    def __enter__(self) -> '_Store':
-        return self
-
     def __exit__(self, *args, **kwargs) -> None:
         self.close()
 
     # Mapping
     def __getitem__(self, name: str) -> '_ConformerGroup':
         df_group = self._store[self._store['group'] == name]
-        return _PqConformerGroup(df_group, self._meta_location)
+        return _PqConformerGroup(df_group, self._meta_location, self._dummy_properties)
 
-    def __delitem__(self, k: str) -> None:
-        del self._store[k]
+    def __delitem__(self, name: str) -> None:
+        # Instead of deleting we just reassign the store to everything that is
+        # not the requested name here, since this dirties the dataset,
+        # only this part will be written to disk on closing
+        self._store = self._store[self._store['group'] != name]
+        self._store._is_dirty = True
 
     def __len__(self) -> int:
         return len(self._store['group'].unique())
@@ -164,39 +160,29 @@ class _PqStore(_Store):
 
 
 class _PqConformerGroup(_ConformerGroup):
-    def __init__(self, group_obj):
+    def __init__(self, group_obj, dummy_properties):
         self._group_obj = group_obj
 
-    def _append_property_with_data(self, p: str, data: np.ndarray) -> None:
-        h5_dataset = self._group_obj[p]
-        h5_dataset.resize(h5_dataset.shape[0] + data.shape[0], axis=0)
-        try:
-            h5_dataset[-data.shape[0]:] = data
-        except TypeError:
-            h5_dataset[-data.shape[0]:] = data.astype(bytes)
+    # parquet groups are immutable, mutable operations are done directly in the
+    # store
+    def _is_resizable(self) -> bool:
+        return False
 
-    def _create_property_with_data(self, p: str, data: np.ndarray) -> None:
-        # This correctly handles strings and make the first axis resizable
-        maxshape = (None,) + data.shape[1:]
-        try:
-            self._group_obj.create_dataset(name=p, data=data, maxshape=maxshape)
-        except TypeError:
-            self._group_obj.create_dataset(name=p, data=data.astype(bytes), maxshape=maxshape)
+    def _append_to_property(self, p: str, data: np.ndarray) -> None:
+        raise ValueError("Not implemented for pq groups")
 
     def move(self, src: str, dest: str) -> None:
-        self._group_obj.move(src, dest)
+        raise ValueError("Not implemented for pq groups")
 
-    # Mapping
     def __delitem__(self, k: str) -> None:
-        del self._group_obj[k]
+        raise ValueError("Not implemented for pq groups")
 
-    def __getitem__(self, p: str) -> np.ndarray:
-        array = self._group_obj[p][()]
-        assert isinstance(array, np.ndarray)
-        return array
+    # TODO: implement these
+    def _getitem_impl(self, p: str) -> np.ndarray:
+        pass
 
-    def __len__(self) -> int:
-        return len(self._group_obj)
+    def _len_impl(self) -> int:
+        pass
 
-    def __iter__(self) -> Iterator[str]:
-        yield from self._group_obj.keys()
+    def _iter_impl(self):
+        pass

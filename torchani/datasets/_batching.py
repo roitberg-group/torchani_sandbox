@@ -104,7 +104,7 @@ def create_batched_dataset(locations: Union[Collection[StrPath], StrPath, ANIDat
                         'padding': PADDING if padding is None else padding,
                         'shuffle': shuffle,
                         'shuffle_seed': shuffle_seed,
-                        'include_properties': include_properties if include_properties is not None else 'all',
+                        'include_properties': sorted(include_properties) if include_properties is not None else 'all',
                         'batch_size': batch_size,
                         'total_num_conformers': dataset.num_conformers,
                         'total_conformer_groups': dataset.num_conformer_groups}
@@ -262,6 +262,8 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
             num_batch_indices_packets = len(all_batch_indices_packets)
 
             overall_batch_idx = 0
+            if direct_cache:
+                in_memory_batches: List[Conformers] = []
             for j, batch_indices_packet in enumerate(all_batch_indices_packets):
                 num_batches_in_packet = len(batch_indices_packet)
                 # Now first we cat and sort according to the first index in order to
@@ -310,9 +312,6 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                 # The format of this is {'species': (batch1, batch2, ...), 'coordinates': (batch1, batch2, ...)}
                 batch_packet_dict = {k: torch.split(t[indices_to_unsort_batch_cat], batch_sizes)
                                      for k, t in batches_cat.items()}
-                if direct_cache:
-                    in_memory_batches: List[Conformers] = []
-
                 for packet_batch_idx in range(num_batches_in_packet):
                     batch = {k: v[packet_batch_idx] for k, v in batch_packet_dict.items()}
                     batch = inplace_transform(batch)

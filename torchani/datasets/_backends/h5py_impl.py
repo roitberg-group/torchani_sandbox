@@ -3,8 +3,8 @@ from uuid import uuid4
 import tempfile
 from pathlib import Path
 from functools import partial
-from typing import ContextManager, Any, Set, Union, Tuple
-from collections import OrderedDict
+from typing import ContextManager, Any, Set, Union, Tuple, Mapping
+from collections import OrderedDict  # noqa F401
 
 import numpy as np
 
@@ -38,16 +38,16 @@ class _H5TemporaryLocation(ContextManager[StrPath]):
 
 
 class _H5Store(_HierarchicalStoreWrapper["h5py.File"]):
-    def __init__(self, store_location: StrPath):
-        super().__init__(store_location, '.h5', 'file')
+    def __init__(self, store_location: StrPath, dummy_properties: Mapping[str, Any]):
+        super().__init__(store_location, '.h5', 'file', dummy_properties=dummy_properties)
         self._has_standard_format = False
         self._made_quick_check = False
 
     @classmethod
-    def make_empty(cls, store_location: StrPath, grouping: str) -> '_Store':
+    def make_empty(cls, store_location: StrPath, grouping: str, **kwargs) -> '_Store':
         with h5py.File(store_location, 'x') as f:
             f.attrs['grouping'] = grouping
-        obj = cls(store_location)
+        obj = cls(store_location, **kwargs)
         obj._has_standard_format = True
         return obj
 
@@ -82,7 +82,9 @@ class _H5Store(_HierarchicalStoreWrapper["h5py.File"]):
         # function worked properly.
         if list(cache.group_sizes) != sorted(cache.group_sizes):
             raise RuntimeError("Groups were not iterated upon alphanumerically")
-        return cache.group_sizes, cache.properties
+        # we get rid of dummy properties if they are already in the dataset
+        self._dummy_properties = {k: v for k, v in self._dummy_properties.items() if k not in cache.properties}
+        return cache.group_sizes, cache.properties.union(self._dummy_properties)
 
     def _update_cache_nonstandard(self, cache: CacheHolder, check_properties: bool, verbose: bool) -> bool:
         def visitor_fn(name: str,
@@ -140,27 +142,14 @@ class _H5Store(_HierarchicalStoreWrapper["h5py.File"]):
         except KeyError:
             return False
 
-    @property
-    def grouping(self) -> str:
-        # This detects Roman's formatting style which doesn't have a
-        # 'grouping' key but is still grouped by num atoms.
-        try:
-            self._store.attrs['readme']
-            return 'by_num_atoms'
-        except (KeyError, OSError):
-            pass
-        try:
-            g = self._store.attrs['grouping']
-            assert isinstance(g, str)
-            return g
-        except (KeyError, OSError):
-            return 'legacy'
-
     def __getitem__(self, name: str) -> '_ConformerGroup':
-        return _H5ConformerGroup(self._store[name])
+        return _H5ConformerGroup(self._store[name], dummy_properties=self._dummy_properties)
 
 
 class _H5ConformerGroup(_ConformerWrapper["h5py.Group"]):
+    def __init__(self, data: h5py.Group, **kwargs):
+        super().__init__(data=data, **kwargs)
+
     def _is_resizable(self) -> bool:
         return all(ds.maxshape[0] is None for ds in self._data.values())
 
@@ -171,14 +160,3 @@ class _H5ConformerGroup(_ConformerWrapper["h5py.Group"]):
             h5_dataset[-v.shape[0]:] = v
         except TypeError:
             h5_dataset[-v.shape[0]:] = v.astype(bytes)
-
-    def move(self, src_p: str, dest_p: str) -> None:
-        self._data.move(src_p, dest_p)
-
-    def __setitem__(self, p: str, v: np.ndarray) -> None:
-        # This correctly handles strings and make the first axis resizable
-        maxshape = (None,) + v.shape[1:]
-        try:
-            self._data.create_dataset(name=p, data=v, maxshape=maxshape)
-        except TypeError:
-            self._data.create_dataset(name=p, data=v.astype(bytes), maxshape=maxshape)
