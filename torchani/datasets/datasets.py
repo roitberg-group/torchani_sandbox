@@ -18,7 +18,6 @@ import numpy as np
 from ._backends import _H5PY_AVAILABLE, _Store, StoreFactory, TemporaryLocation, _ConformerWrapper
 from ._annotations import Transform, Conformers, NumpyConformers, MixedConformers, StrPath, DTypeLike, IdxLike
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
-from .exceptions import IncompatibleDummyProperty
 
 if _H5PY_AVAILABLE:
     import h5py
@@ -616,18 +615,18 @@ class _ANISubdataset(_ANIDatasetBase):
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             wrapper = _ConformerWrapper(numpy_conformers)
+            dummies = f._dummy_properties.copy()
+            if dummies:
+                # Trying to append to a dataset that has dummy properties
+                # triggers the materialization of all dummy properties
+                f._dummy_properties = dict()
+                self._update_cache(verbose=False)
+                for k, v in dummies.items():
+                    self.create_full_property(k, **v)
             try:
                 f[group_name] = wrapper
             except ValueError:
-                try:
-                    f[group_name].append_conformers(wrapper)
-                except IncompatibleDummyProperty as e:
-                    for k in e.incompatibles.keys():
-                        f._dummy_properties.pop(k)
-                    self._update_cache(verbose=False)
-                    for k, v in e.incompatibles.items():
-                        self.create_full_property(k, **v)
-                    f[group_name].append_conformers(wrapper)
+                f[group_name].append_conformers(wrapper)
         return self
 
     @_delegate

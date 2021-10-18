@@ -10,7 +10,6 @@ from collections import OrderedDict
 import numpy as np
 
 from .._annotations import NumpyConformers, StrPath
-from ..exceptions import IncompatibleDummyProperty
 
 
 # Keeps track of variables that must be updated each time the datasets get
@@ -52,19 +51,10 @@ class _ConformerGroup(MutableMapping[str, np.ndarray], ABC):
             # to the ones already present, but if they are not equal we raise an error.
             # The responsibility of materializing the dummy properties before doing the
             # append is the caller's
-            incompatibles = dict()
-            for p in set(conformers.keys()).intersection(self._dummy_properties.keys()):
-                if (conformers[p] == self._dummy_properties[p].get('fill_value', 0)).all():
-                    conformers.pop(p)
-                else:
-                    incompatibles.update({p: self._dummy_properties[p]})
-            if incompatibles:
-                raise IncompatibleDummyProperty(incompatibles)
-
             for p, v in conformers.items():
                 self._append_to_property(p, v)
-            return
-        raise ValueError("Can't append conformers, conformer group is not resizable")
+        else:
+            raise ValueError("Can't append conformers, conformer group is not resizable")
 
     def __getitem__(self, p: str) -> np.ndarray:
         try:
