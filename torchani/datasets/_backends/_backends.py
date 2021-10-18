@@ -30,7 +30,7 @@ def StoreFactory(store_location: StrPath, backend: str = None, grouping: str = N
     if not _BACKEND_AVAILABLE.get(backend, False):
         raise ValueError(f'{backend} could not be found, please install it if supported.'
                          f' Supported backends are {set(_BACKEND_AVAILABLE.keys())}')
-        cls: Type[_Store] = _CONCRETE_STORES[backend]
+    cls: Type[_Store] = _CONCRETE_STORES[backend]
     if create:
         grouping = grouping if grouping is not None else "by_formula"
         store = cls.make_empty(store_location, grouping, dummy_properties=dummy_properties)
