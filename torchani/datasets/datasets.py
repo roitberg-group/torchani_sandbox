@@ -712,9 +712,14 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @_broadcast
     @_needs_cache_update
-    def to_backend(self, backend: str, verbose: bool = True) -> '_ANISubdataset':
+    def to_backend(self, backend: str = None, dest_root: StrPath = None, verbose: bool = True, inplace: bool = False) -> '_ANISubdataset':
         r"""Transforms underlying store into a different format
         """
+        if backend is None:
+            backend = self._backend
+        if inplace:
+            assert dest_root is None
+
         self._check_correct_grouping()
         if self._backend == backend and backend != 'h5py':
             return self
@@ -730,9 +735,15 @@ class _ANISubdataset(_ANIDatasetBase):
                     rwds.append_conformers.__wrapped__(rwds, group_name, conformers)  # type: ignore
             meta = self.metadata
             new_ds._attach_dummy_properties(self._dummy_properties)
-            self._store.location.transfer_to(new_ds._store)
-            new_ds._set_metadata(meta)
-        return new_ds
+            if inplace:
+                self._store.location.transfer_to(new_ds._store)
+                new_ds._set_metadata(meta)
+                return new_ds
+            else:
+                new_parent = Path(self._store.location.root).parent.parent / dest_root
+                new_ds._store.location.root = new_parent / self._store.location.root.with_suffix('').name
+                new_ds._set_metadata(meta)
+                return self
 
     @_broadcast
     @_needs_cache_update
@@ -744,7 +755,7 @@ class _ANISubdataset(_ANIDatasetBase):
         needed in order to reduce the size of the file. Note that this is only
         useful for the h5py backend, otherwise it is a no-op.
         """
-        return self.to_backend.__wrapped__(self, self._backend, verbose=verbose)  # type: ignore
+        return self.to_backend.__wrapped__(self, verbose=verbose, inplace=True)  # type: ignore
 
     @_broadcast
     @_needs_cache_update

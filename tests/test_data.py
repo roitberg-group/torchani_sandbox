@@ -939,13 +939,13 @@ class TestANIDatasetZarr(TestANIDataset):
 
     def _testConvert(self, backend):
         ds = ANIDataset(self.tmp_store_three_groups.name)
-        ds.to_backend('h5py')
+        ds.to_backend('h5py', inplace=True)
         for d in ds.values():
             self.assertEqual(set(d.keys()), {'species', 'coordinates', 'energies'})
             self.assertEqual(d['coordinates'].shape[-1], 3)
             self.assertEqual(d['coordinates'].shape[0], d['energies'].shape[0])
         self.assertEqual(len(ds.values()), 3)
-        ds.to_backend(backend)
+        ds.to_backend(backend, inplace=True)
         for d in ds.values():
             self.assertEqual(set(d.keys()), {'species', 'coordinates', 'energies'})
             self.assertEqual(d['coordinates'].shape[-1], 3)
