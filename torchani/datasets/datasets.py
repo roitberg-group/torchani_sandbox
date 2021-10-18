@@ -450,6 +450,11 @@ class _ANISubdataset(_ANIDatasetBase):
             for c in ro_ds.iter_conformers():
                 print(c)
                 ... etc
+
+
+        Note: for parquet datasets append operations are queued while the dataset
+        is open and are only executed once it is closed, so calling append_conformers
+        inside a "keep_open" should be done with care.
         """
         self._store.open(mode)
         try:
@@ -716,13 +721,14 @@ class _ANISubdataset(_ANIDatasetBase):
             return self
         with TemporaryLocation(backend) as location:
             new_ds = self._make_empty_copy(location, backend=backend)
-            for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
-                                               total=self.num_conformer_groups,
-                                               desc=f'Converting to {backend}',
-                                               disable=not verbose):
-                # mypy doesn't know that @wrap'ed functions have __wrapped__
-                # attribute, and fixing this is ugly
-                new_ds.append_conformers.__wrapped__(new_ds, group_name, conformers)  # type: ignore
+            with new_ds.keep_open('r+') as rwds:
+                for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
+                                                   total=self.num_conformer_groups,
+                                                   desc=f'Converting to {backend}',
+                                                   disable=not verbose):
+                    # mypy doesn't know that @wrap'ed functions have __wrapped__
+                    # attribute, and fixing this is ugly
+                    rwds.append_conformers.__wrapped__(rwds, group_name, conformers)  # type: ignore
             meta = self.metadata
             new_ds._attach_dummy_properties(self._dummy_properties)
             self._store.location.transfer_to(new_ds._store)
@@ -754,20 +760,21 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_unique_element_key()
         with TemporaryLocation(self._backend) as location:
             new_ds = self._make_empty_copy(location, grouping='by_formula')
-            for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
-                                               total=self.num_conformer_groups,
-                                               desc='Regrouping by formulas',
-                                               disable=not verbose):
-                # Get all formulas in the group to discriminate conformers by
-                # formula and then attach conformers with the same formula to the
-                # same groups
-                formulas = np.asarray(_get_formulas(conformers))
-                unique_formulas = np.unique(formulas)
-                formula_idxs = ((formulas == el).nonzero()[0] for el in unique_formulas)
+            with new_ds.keep_open('r+') as rwds:
+                for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
+                                                   total=self.num_conformer_groups,
+                                                   desc='Regrouping by formulas',
+                                                   disable=not verbose):
+                    # Get all formulas in the group to discriminate conformers by
+                    # formula and then attach conformers with the same formula to the
+                    # same groups
+                    formulas = np.asarray(_get_formulas(conformers))
+                    unique_formulas = np.unique(formulas)
+                    formula_idxs = ((formulas == el).nonzero()[0] for el in unique_formulas)
 
-                for formula, idx in zip(unique_formulas, formula_idxs):
-                    selected_conformers = {k: v[idx] for k, v in conformers.items()}
-                    new_ds.append_conformers.__wrapped__(new_ds, formula, selected_conformers)  # type: ignore
+                    for formula, idx in zip(unique_formulas, formula_idxs):
+                        selected_conformers = {k: v[idx] for k, v in conformers.items()}
+                        rwds.append_conformers.__wrapped__(rwds, formula, selected_conformers)  # type: ignore
             meta = self.metadata
             new_ds._attach_dummy_properties(self._dummy_properties)
             self._store.location.transfer_to(new_ds._store)
@@ -790,13 +797,14 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_unique_element_key()
         with TemporaryLocation(self._backend) as location:
             new_ds = self._make_empty_copy(location, grouping='by_num_atoms')
-            for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
-                                               total=self.num_conformer_groups,
-                                               desc='Regrouping by number of atoms',
-                                               disable=not verbose):
-                # This is done to accomodate the current group convention
-                new_name = str(_get_num_atoms(conformers)).zfill(3)
-                new_ds.append_conformers.__wrapped__(new_ds, new_name, conformers)  # type: ignore
+            with new_ds.keep_open('r+') as rwds:
+                for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
+                                                   total=self.num_conformer_groups,
+                                                   desc='Regrouping by number of atoms',
+                                                   disable=not verbose):
+                    # This is done to accomodate the current group convention
+                    new_name = str(_get_num_atoms(conformers)).zfill(3)
+                    rwds.append_conformers.__wrapped__(rwds, new_name, conformers)  # type: ignore
             meta = self.metadata
             new_ds._attach_dummy_properties(self._dummy_properties)
             self._store.location.transfer_to(new_ds._store)

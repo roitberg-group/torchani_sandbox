@@ -3,7 +3,7 @@ import shutil
 from os import fspath
 import tempfile
 from pathlib import Path
-from typing import Iterator, Set, Union, Tuple, Dict, Iterable, Any, Optional
+from typing import Iterator, Set, Union, Tuple, Dict, Iterable, Any, Optional, List
 from collections import OrderedDict
 
 import numpy as np
@@ -97,6 +97,24 @@ class _PqLocation(_FileOrDirLocation):
         self._pq_location = None
 
 
+class DataFrameAdaptor:
+    def __init__(self, df=None):
+        self._df = df
+        self.attrs = dict()
+        self.mode: str = None
+        self._is_dirty = False
+        self._meta_is_dirty = False
+
+    def __getattr__(self, k):
+        return getattr(self._df, k)
+
+    def __getitem__(self, k):
+        return self._df[k]
+
+    def __setitem__(self, k, v):
+        self._df[k] = v
+
+
 class _PqTemporaryLocation(_ZarrTemporaryLocation):
     def __init__(self) -> None:
         self._tmp_location = tempfile.TemporaryDirectory(suffix='.pqdir')
@@ -106,6 +124,7 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
     def __init__(self, store_location: StrPath, use_cudf: bool = False, dummy_properties: Dict[str, Any] = None):
         super().__init__(dummy_properties=dummy_properties)
         self.location = _PqLocation(store_location)
+        self._queued_appends: List[Union["pandas.DataFrame", "cudf.DataFrame"]] = []
         if use_cudf:
             self._engine = cudf
             self._to_dict = _to_dict_cudf
@@ -158,23 +177,6 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
 
     # File-like
     def open(self, mode: str = 'r', only_meta: bool = False) -> '_Store':
-        class DataFrameAdaptor:
-            def __init__(self, df=None):
-                self._df = df
-                self.attrs = dict()
-                self.mode: str = None
-                self._is_dirty = False
-                self._meta_is_dirty = False
-
-            def __getattr__(self, k):
-                return getattr(self._df, k)
-
-            def __getitem__(self, k):
-                return self._df[k]
-
-            def __setitem__(self, k, v):
-                self._df[k] = v
-
         if not only_meta:
             self._store_obj = DataFrameAdaptor(self._engine.read_parquet(self.location.pq))
         else:
@@ -191,6 +193,8 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
         return self
 
     def close(self) -> '_Store':
+        if self._queued_appends:
+            self.execute_queued_appends()
         if self._store._is_dirty:
             self._store.to_parquet(self.location.pq)
         if self._store._meta_is_dirty:
@@ -210,7 +214,6 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
 
     def __setitem__(self, name: str, conformers: '_ConformerGroup') -> None:
         num_conformers = conformers[next(iter(conformers.keys()))].shape[0]
-        frames = [self._store]
         tmp_df = self._engine.DataFrame()
         tmp_df['group'] = self._engine.Series([name] * num_conformers)
         for k, v in conformers.items():
@@ -230,14 +233,17 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
                 assert np.dtype(v.dtype).name == dtype, "Bad dtype in appended property"
             else:
                 self._store.attrs['dtypes'][k] = np.dtype(v.dtype).name
-        frames.append(tmp_df)
+        self._queued_appends.append(tmp_df)
+
+    def execute_queued_appends(self):
         meta = self._store_obj.attrs
         mode = self._store_obj.mode
-        self._store_obj = self._engine.concat(frames)
+        self._store_obj = DataFrameAdaptor(self._engine.concat([self._store._df] + self._queued_appends))
         self._store.attrs = meta
         self._store.mode = mode
         self._store._is_dirty = True
         self._store._meta_is_dirty = True
+        self._queued_appends = []
 
     def __delitem__(self, name: str) -> None:
         # Instead of deleting we just reassign the store to everything that is
