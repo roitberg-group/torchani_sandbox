@@ -617,6 +617,9 @@ class _ANISubdataset(_ANIDatasetBase):
                 try:
                     f[group_name].append_conformers(wrapper)
                 except IncompatibleDummyProperty as e:
+                    for k in e.incompatibles.keys():
+                        f._dummy_properties.pop(k)
+                    self._update_cache(verbose=False)
                     for k, v in e.incompatibles.items():
                         self.create_full_property(k, **v)
                     f[group_name].append_conformers(wrapper)

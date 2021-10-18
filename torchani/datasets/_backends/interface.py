@@ -54,7 +54,7 @@ class _ConformerGroup(MutableMapping[str, np.ndarray], ABC):
             # append is the caller's
             incompatibles = dict()
             for p in set(conformers.keys()).intersection(self._dummy_properties.keys()):
-                if (conformers[p] == self._dummy_properties[p]['fill_value']).all():
+                if (conformers[p] == self._dummy_properties[p].get('fill_value', 0)).all():
                     conformers.pop(p)
                 else:
                     incompatibles.update({p: self._dummy_properties[p]})

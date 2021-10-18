@@ -853,6 +853,17 @@ class TestANIDataset(TestCase):
         ds = ANIDataset(self.tmp_store_three_groups.name)
         self.assertEqual(ds.properties, {'species', 'coordinates', 'energies'})
 
+    def testDummyPropertiesAppend(self):
+        # creating dummy properties in a dataset that already has them does nothing
+        ANIDataset(self.tmp_store_three_groups.name).regroup_by_num_atoms()
+        ds = ANIDataset(self.tmp_store_three_groups.name, dummy_properties={'charges': dict()})
+        ds.append_conformers("003", {'species': np.asarray([[1, 1, 1]], dtype=np.int64),
+                                     'energies': np.asarray([10.0], dtype=np.float64),
+                                     'coordinates': np.random.standard_normal((1, 3, 3)).astype(np.float32),
+                                     'charges': np.asarray([1], dtype=np.int64)})
+        ds = ANIDataset(self.tmp_store_three_groups.name)
+        self.assertEqual(ds.properties, {'species', 'coordinates', 'energies', 'charges'})
+
     def testDummyPropertiesNotPresent(self):
         charges_params = {'fill_value': 0, 'dtype': np.int64, 'extra_dims': tuple(), 'is_atomic': False}
         dipoles_params = {'fill_value': 1, 'dtype': np.float64, 'extra_dims': (3,), 'is_atomic': True}
