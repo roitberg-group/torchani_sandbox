@@ -670,7 +670,8 @@ class _ANISubdataset(_ANIDatasetBase):
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             if hasattr(f, "create_full_direct"):
-                f.create_full_direct(dest_key, is_atomic=is_atomic, extra_dims=extra_dims,
+                # mypy does not understand monkey patching
+                f.create_full_direct(dest_key, is_atomic=is_atomic, extra_dims=extra_dims,  # type: ignore
                                      fill_value=fill_value, dtype=dtype, num_conformers=self.num_conformers)
             else:
                 for group_name in self.keys():
@@ -690,13 +691,13 @@ class _ANISubdataset(_ANIDatasetBase):
                               grouping=grouping if grouping is not None else self.grouping,
                               verbose=False)
 
-    def _attach_dummy_properties(self, dummy_properties: Mapping[str, Any]) -> None:
+    def _attach_dummy_properties(self, dummy_properties: Dict[str, Any]) -> None:
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
             f._dummy_properties = dummy_properties
 
     @property
-    def _dummy_properties(self) -> Mapping[str, Any]:
+    def _dummy_properties(self) -> Dict[str, Any]:
         with ExitStack() as stack:
             dummy = self._get_open_store(stack, 'r+')._dummy_properties
         return dummy
@@ -815,7 +816,8 @@ class _ANISubdataset(_ANIDatasetBase):
                     f._dummy_properties.pop(property_)
                     properties.remove(property_)
             if hasattr(f, "delete_direct"):
-                f.delete_direct(properties)
+                # mypy does not understand monkey patching
+                f.delete_direct(properties)  # type: ignore
             else:
                 for group_key in tqdm(self.keys(),
                                       total=self.num_conformer_groups,
@@ -845,7 +847,8 @@ class _ANISubdataset(_ANIDatasetBase):
                     old_new_dict.pop(old_name)
 
             if hasattr(f, "rename_direct"):
-                f.rename_direct(old_new_dict)
+                # mypy does not understand monkey patching
+                f.rename_direct(old_new_dict)  # type: ignore
             else:
                 for k in self.keys():
                     for old_name, new_name in old_new_dict.items():

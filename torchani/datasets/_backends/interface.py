@@ -4,7 +4,7 @@ from os import fspath
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import (ContextManager, MutableMapping, Set, Tuple, Optional,
-                    Generic, TypeVar, Iterator, cast, Mapping, Any)
+                    Generic, TypeVar, Iterator, cast, Mapping, Any, Dict)
 from collections import OrderedDict
 
 import numpy as np
@@ -40,7 +40,7 @@ _MutMapSubtype = TypeVar('_MutMapSubtype', bound=MutableMapping[str, np.ndarray]
 # directly "append" to it, and rename its keys, it can also create dummy
 # properties on the fly.
 class _ConformerGroup(MutableMapping[str, np.ndarray], ABC):
-    def __init__(self, *args, dummy_properties: Mapping[str, Any] = None, **kwargs) -> None:
+    def __init__(self, *args, dummy_properties: Dict[str, Any] = None, **kwargs) -> None:
         self._dummy_properties = dict() if dummy_properties is None else dummy_properties
 
     def _is_resizable(self) -> bool:
@@ -111,7 +111,7 @@ class _ConformerGroup(MutableMapping[str, np.ndarray], ABC):
         pass
 
     @abstractmethod
-    def _len_impl(self, p: str) -> int:
+    def _len_impl(self) -> int:
         pass
 
     @abstractmethod
@@ -226,14 +226,14 @@ _T = TypeVar('_T', bound=Any)
 # Wrapped store must have a "mode" and "attr" attributes, it may implement close()
 # __exit__, __enter__, , __delitem__
 class _StoreWrapper(ContextManager['_Store'], MutableMapping[str, '_ConformerGroup'], ABC, Generic[_T]):
-    location: _LocationManager
+    location: Any
 
-    def __init__(self, *args, dummy_properties: Mapping[str, Any] = None, **kwargs):
+    def __init__(self, *args, dummy_properties: Dict[str, Any] = None, **kwargs):
         self._dummy_properties = dict() if dummy_properties is None else dummy_properties
-        self._store_obj = None
+        self._store_obj: Any = None
 
     @property
-    def dummy_properties(self) -> Mapping[str, Any]:
+    def dummy_properties(self) -> Dict[str, Any]:
         return self._dummy_properties.copy()
 
     @classmethod
@@ -332,7 +332,7 @@ _Store = _StoreWrapper
 # __exit__, __enter__, create_group, __len__, __iter__ -> Iterator[str], __delitem__
 # and have a "mode" and "attr" attributes
 class _HierarchicalStoreWrapper(_StoreWrapper[_T]):
-    def __init__(self, store_location: StrPath, suffix='', kind='', dummy_properties: Mapping[str, Any] = None):
+    def __init__(self, store_location: StrPath, suffix='', kind='', dummy_properties: Dict[str, Any] = None):
         super().__init__(dummy_properties=dummy_properties)
         self.location = _FileOrDirLocation(store_location, suffix, kind)
 

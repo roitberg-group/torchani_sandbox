@@ -3,7 +3,7 @@ import shutil
 from os import fspath
 import tempfile
 from pathlib import Path
-from typing import Iterator, Set, Union, Tuple, Dict, Iterable, Mapping, Any
+from typing import Iterator, Set, Union, Tuple, Dict, Iterable, Any, Optional
 from collections import OrderedDict
 
 import numpy as np
@@ -41,21 +41,28 @@ def _to_dict_cudf(df, **kwargs):
 
 class _PqLocation(_FileOrDirLocation):
     def __init__(self, root: StrPath):
-        self._meta_location: Path = None
-        self._pq_location: Path = None
+        self._meta_location: Optional[Path] = None
+        self._pq_location: Optional[Path] = None
         super().__init__(root, '.pqdir', 'dir')
 
     @property
     def meta(self) -> StrPath:
-        return self._meta_location
+        if self._meta_location is not None:
+            return self._meta_location
+        else:
+            raise RuntimeError("Location is not set")
 
     @property
     def pq(self) -> StrPath:
-        return self._pq_location
+        if self._pq_location is not None:
+            return self._pq_location
+        else:
+            raise RuntimeError("Location is not set")
 
     @property
     def root(self) -> StrPath:
-        return super(__class__, __class__).root.fget(self)
+        # mypy can not understand this, we are calling the getter from the superclass
+        return super(__class__, __class__).root.fget(self)  # type: ignore
 
     @root.setter
     def root(self, value: StrPath) -> None:
@@ -84,7 +91,8 @@ class _PqLocation(_FileOrDirLocation):
 
     @root.deleter
     def root(self) -> None:
-        super(__class__, __class__).root.fdel(self)
+        # mypy can not understand this, we are calling the deleter from the superclass
+        super(__class__, __class__).root.fdel(self)  # type: ignore
         self._meta_location = None
         self._pq_location = None
 
@@ -95,7 +103,7 @@ class _PqTemporaryLocation(_ZarrTemporaryLocation):
 
 
 class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
-    def __init__(self, store_location: StrPath, use_cudf: bool = False, dummy_properties: Mapping[str, Any] = None):
+    def __init__(self, store_location: StrPath, use_cudf: bool = False, dummy_properties: Dict[str, Any] = None):
         super().__init__(dummy_properties=dummy_properties)
         self.location = _PqLocation(store_location)
         if use_cudf:
@@ -150,12 +158,27 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
 
     # File-like
     def open(self, mode: str = 'r', only_meta: bool = False) -> '_Store':
+        class DataFrameAdaptor:
+            def __init__(self, df=None):
+                self._df = df
+                self.attrs = dict()
+                self.mode: str = None
+                self._is_dirty = False
+                self._meta_is_dirty = False
+
+            def __getattr__(self, k):
+                return getattr(self._df, k)
+
+            def __getitem__(self, k):
+                return self._df[k]
+
+            def __setitem__(self, k, v):
+                self._df[k] = v
+
         if not only_meta:
-            self._store_obj = self._engine.read_parquet(self.location.pq)
+            self._store_obj = DataFrameAdaptor(self._engine.read_parquet(self.location.pq))
         else:
-            class DummyStore:
-                pass
-            self._store_obj = DummyStore()
+            self._store_obj = DataFrameAdaptor()
         with open(self.location.meta, mode) as f:
             meta = json.load(f)
         if 'extra_dims' not in meta.keys():
@@ -165,8 +188,6 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
         self._store_obj.attrs = meta
         # monkey patch
         self._store_obj.mode = mode
-        self._store_obj._is_dirty = False
-        self._store_obj._meta_is_dirty = False
         return self
 
     def close(self) -> '_Store':
