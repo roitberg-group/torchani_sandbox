@@ -40,7 +40,7 @@ class _H5TemporaryLocation(ContextManager[StrPath]):
 class _H5Store(_HierarchicalStoreWrapper["h5py.File"]):
     def __init__(self, store_location: StrPath, dummy_properties: Dict[str, Any]):
         super().__init__(store_location, '.h5', 'file', dummy_properties=dummy_properties)
-        self._has_standard_format = False
+        self._has_standard_format = True
         self._made_quick_check = False
 
     @classmethod
