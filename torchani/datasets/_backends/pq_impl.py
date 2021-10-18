@@ -31,8 +31,16 @@ except ImportError:
 _PQ_AVAILABLE = _PANDAS_AVAILABLE or _CUDF_AVAILABLE
 
 
+def _to_numpy_pandas(series):
+    return series.to_numpy()
+
+
 def _to_dict_pandas(df, **kwargs):
     return df.to_dict(**kwargs)
+
+
+def _to_numpy_cudf(series):
+    return series.to_pandas().to_numpy()
 
 
 def _to_dict_cudf(df, **kwargs):
@@ -128,9 +136,11 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
         if use_cudf:
             self._engine = cudf
             self._to_dict = _to_dict_cudf
+            self._to_numpy = _to_numpy_cudf
         else:
             self._engine = pandas
             self._to_dict = _to_dict_pandas
+            self._to_numpy = _to_numpy_pandas
 
     # Avoid pickling modules
     def __getstate__(self):
@@ -210,7 +220,10 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
     # Mapping
     def __getitem__(self, name: str) -> '_ConformerGroup':
         df_group = self._store[self._store['group'] == name]
-        return _PqConformerGroup(df_group, self._dummy_properties, self._store)
+        group = _PqConformerGroup(df_group, self._dummy_properties, self._store)
+        # mypy does not understand monkey patching
+        group._to_numpy = self._to_numpy  # type: ignore
+        return group
 
     def __setitem__(self, name: str, conformers: '_ConformerGroup') -> None:
         num_conformers = conformers[next(iter(conformers.keys()))].shape[0]
@@ -314,7 +327,8 @@ class _PqConformerGroup(_ConformerGroup):
         raise ValueError("Not implemented for pq groups")
 
     def _getitem_impl(self, p: str) -> np.ndarray:
-        property_ = np.stack(self._group_obj[p].to_numpy())
+        # mypy doesn't understand monkey patching
+        property_ = np.stack(self._to_numpy(self._group_obj[p]))  # type: ignore
         extra_dims = self._store_pointer.attrs['extra_dims'].get(p, None)
         dtype = self._store_pointer.attrs['dtypes'].get(p, None)
         if extra_dims is not None:
