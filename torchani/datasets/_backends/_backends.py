@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import ContextManager, Dict, Any, Type
+from typing import ContextManager, Dict, Any, Type, cast
 
 from .._annotations import StrPath
 from .interface import _Store
@@ -30,14 +30,14 @@ def StoreFactory(store_location: StrPath, backend: str = None, grouping: str = N
     if not _BACKEND_AVAILABLE.get(backend, False):
         raise ValueError(f'{backend} could not be found, please install it if supported.'
                          f' Supported backends are {set(_BACKEND_AVAILABLE.keys())}')
-    cls: Type[_Store] = _CONCRETE_STORES[backend]
+    cls: Type[_Store] = cast(Type[_Store], _CONCRETE_STORES[backend])
     if create:
         grouping = grouping if grouping is not None else "by_formula"
         store = cls.make_empty(store_location, grouping, dummy_properties=dummy_properties)
     else:
         if grouping is not None:
             raise ValueError("Can't specify a grouping for an already existing dataset")
-        kwargs = {'dummy_properties': dummy_properties}
+        kwargs: Dict[str, Any] = {'dummy_properties': dummy_properties}
         if backend == 'pq':
             kwargs.update({'use_cudf': use_cudf})
         store = cls(store_location, **kwargs)
