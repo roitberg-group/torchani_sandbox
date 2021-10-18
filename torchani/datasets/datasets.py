@@ -391,13 +391,14 @@ class _ANISubdataset(_ANIDatasetBase):
                  grouping: str = None,
                  backend: Optional[str] = None,
                  verbose: bool = True,
-                 dummy_properties: Dict[str, Any] = None):
+                 dummy_properties: Dict[str, Any] = None,
+                 use_cudf: bool = False):
         # dummy_properties must be a dict of the form
         # {'name': {'dtype': dtype, 'is_atomic': is_atomic, 'extra_dims': extra_dims, 'fill_value': fill_value}, ...}
         # with one or more dummy properties. These will be created on the fly only if they are not
         # present in the dataset already.
         super().__init__()
-        self._store = StoreFactory(store_location, backend, grouping, create, dummy_properties)
+        self._store = StoreFactory(store_location, backend, grouping, create, dummy_properties, use_cudf=use_cudf)
         # we StoreFactory monkey patches all stores with "backend" attribute
         self._backend = self._store.backend  # type: ignore
         self._possible_nonbatch_properties: Set[str]
