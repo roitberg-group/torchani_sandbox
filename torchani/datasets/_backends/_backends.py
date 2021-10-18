@@ -23,7 +23,7 @@ def _infer_backend(store_location: StrPath) -> str:
 
 
 def StoreFactory(store_location: StrPath, backend: str = None, grouping: str = None,
-                 create: bool = False, dummy_properties: Dict[str, Any] = None, **kwargs) -> '_Store':
+                 create: bool = False, dummy_properties: Dict[str, Any] = None, use_cudf: bool = False) -> '_Store':
     backend = _infer_backend(store_location) if backend is None else backend
     dummy_properties = dict() if dummy_properties is None else dummy_properties
 
@@ -37,7 +37,10 @@ def StoreFactory(store_location: StrPath, backend: str = None, grouping: str = N
     else:
         if grouping is not None:
             raise ValueError("Can't specify a grouping for an already existing dataset")
-        store = cls(store_location, dummy_properties=dummy_properties, **kwargs)
+        kwargs = {'dummy_properties': dummy_properties}
+        if backend == 'pq':
+            kwargs.update({'use_cudf': use_cudf})
+        store = cls(store_location, **kwargs)
     setattr(store, 'backend', backend)  # Monkey patch
     return store
 
