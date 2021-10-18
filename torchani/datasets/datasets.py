@@ -740,7 +740,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 new_ds._set_metadata(meta)
                 return new_ds
             else:
-                new_parent = Path(self._store.location.root).parent.parent / dest_root
+                new_parent = Path(self._store.location.root).parent.parent / cast(StrPath, dest_root)
                 new_ds._store.location.root = new_parent / self._store.location.root.with_suffix('').name
                 new_ds._set_metadata(meta)
                 return self
