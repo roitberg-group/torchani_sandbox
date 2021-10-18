@@ -254,7 +254,7 @@ class _StoreWrapper(ContextManager['_Store'], MutableMapping[str, '_ConformerGro
         return self._store_obj
 
     @abstractmethod
-    def open(self, mode: str = 'r') -> '_Store':
+    def open(self, mode: str = 'r', only_meta: bool = False) -> '_Store':
         pass
 
     def close(self) -> '_Store':

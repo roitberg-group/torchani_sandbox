@@ -51,7 +51,7 @@ class _H5Store(_HierarchicalStoreWrapper["h5py.File"]):
         obj._has_standard_format = True
         return obj
 
-    def open(self, mode: str = 'r') -> '_Store':
+    def open(self, mode: str = 'r', only_meta: bool = False) -> '_Store':
         self._store_obj = h5py.File(self.location.root, mode)
         return self
 

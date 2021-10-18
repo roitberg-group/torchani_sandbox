@@ -430,12 +430,12 @@ class _ANISubdataset(_ANIDatasetBase):
         r"""Get the dataset metadata
         """
         with ExitStack() as stack:
-            metadata = self._get_open_store(stack, 'r').metadata
+            metadata = self._get_open_store(stack, 'r', only_meta=True).metadata
         return metadata
 
     def _set_metadata(self, meta: Mapping[str, str]) -> None:
         with ExitStack() as stack:
-            self._get_open_store(stack, 'r+').set_metadata(meta)
+            self._get_open_store(stack, 'r+', only_meta=True).set_metadata(meta)
 
     @contextmanager
     def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
@@ -459,7 +459,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
     # This trick makes methods fetch the open file directly
     # if they are being called from inside a "keep_open" context
-    def _get_open_store(self, stack: ExitStack, mode: str = 'r') -> '_Store':
+    def _get_open_store(self, stack: ExitStack, mode: str = 'r', only_meta: bool = False) -> '_Store':
         if mode not in ['r+', 'r']:
             raise ValueError(f"Unsupported mode {mode}")
 
@@ -468,7 +468,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 raise RuntimeError('Tried to open a store with mode "r+" but'
                                    ' the store open with mode "r"')
             return self._store
-        return stack.enter_context(self._store.open(mode))
+        return stack.enter_context(self._store.open(mode, only_meta))
 
     def _update_cache(self, check_properties: bool = False, verbose: bool = True) -> None:
         with ExitStack() as stack:
@@ -697,13 +697,13 @@ class _ANISubdataset(_ANIDatasetBase):
 
     def _attach_dummy_properties(self, dummy_properties: Dict[str, Any]) -> None:
         with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r+')
+            f = self._get_open_store(stack, 'r+', only_meta=True)
             f._dummy_properties = dummy_properties
 
     @property
     def _dummy_properties(self) -> Dict[str, Any]:
         with ExitStack() as stack:
-            dummy = self._get_open_store(stack, 'r+')._dummy_properties
+            dummy = self._get_open_store(stack, 'r+', only_meta=True)._dummy_properties
         return dummy
 
     @_broadcast
@@ -867,7 +867,7 @@ class _ANISubdataset(_ANIDatasetBase):
         hierarchical datasets. Can be one of 'by_formula', 'by_num_atoms', 'legacy'.
         """
         with ExitStack() as stack:
-            grouping = self._get_open_store(stack, 'r').grouping
+            grouping = self._get_open_store(stack, 'r', only_meta=True).grouping
         return grouping
 
     def _check_unique_element_key(self, properties: Optional[Iterable[str]] = None) -> None:
