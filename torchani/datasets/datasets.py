@@ -669,11 +669,15 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_properties_are_not_present(dest_key)
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+')
-            for group_name in self.keys():
-                shape: Tuple[int, ...] = (_get_num_conformers(f[group_name]),)
-                if is_atomic:
-                    shape += (_get_num_atoms(f[group_name]),)
-                f[group_name][dest_key] = np.full(shape + extra_dims_, fill_value, dtype)
+            if hasattr(f, "create_full_direct"):
+                f.create_full_direct(dest_key, is_atomic=is_atomic, extra_dims=extra_dims,
+                                     fill_value=fill_value, dtype=dtype, num_conformers=self.num_conformers)
+            else:
+                for group_name in self.keys():
+                    shape: Tuple[int, ...] = (_get_num_conformers(f[group_name]),)
+                    if is_atomic:
+                        shape += (_get_num_atoms(f[group_name]),)
+                    f[group_name][dest_key] = np.full(shape + extra_dims_, fill_value, dtype)
         return self
 
     def _make_empty_copy(self,

@@ -239,6 +239,19 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
         keys.sort()
         return iter(keys)
 
+    def create_full_direct(self, dest_key, is_atomic, extra_dims, fill_value, dtype, num_conformers):
+        if is_atomic:
+            raise ValueError("creation of atomic properties not supported in parquet datasets")
+        if extra_dims:
+            extra_dims = (np.asarray(extra_dims).prod()[0],)
+        new_property = np.full(shape=(num_conformers,) + extra_dims, fill_value=fill_value, dtype=dtype)
+        self._store.attrs['dtypes'][dest_key] = np.dtype(dtype).name
+        if len(extra_dims) > 1:
+            self._store.attrs['extra_dims'][dest_key] = extra_dims[1:]
+        self._store[dest_key] = self._engine.Series(new_property)
+        self._store._meta_is_dirty = True
+        self._store._is_dirty = True
+
     def rename_direct(self, old_new_dict: Dict[str, str]) -> None:
         self._store.rename(columns=old_new_dict, inplace=True)
         self._store._is_dirty = True
