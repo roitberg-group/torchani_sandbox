@@ -86,8 +86,7 @@ class TestRepulsion(TestCase):
                                        requires_grad=True, device=device, dtype=torch.double)
             energies.append(model((species, coordinates)).energies.item())
         energies = torch.tensor(energies)
-        with open(path, 'rb') as f:
-            energies_expect = torch.tensor(torch.load(f))
+        energies_expect = torch.tensor(torch.load(path))
         self.assertEqual(energies_expect, energies)
 
 
