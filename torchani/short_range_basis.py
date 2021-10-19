@@ -19,16 +19,15 @@ class EnergySRB(torch.nn.Module):
 
     def __init__(self,
                  elements: Sequence[str] = ('H', 'C', 'N', 'O'),
-                 scaling_charge: float = 0.016,
+                 scaling_charge: float = 0.08,
                  scaling_radius: float = 10.0,
                  cutoff: float = 5.2,
                  cutoff_fn: Union[str, torch.nn.Module] = 'smooth'):
         super().__init__()
         # Important note: The actual SRB parameters for the B97-3c functional are
-        # scaling_radius = 10.0 and scaling_charge = 0.016, this is different
+        # scaling_radius = 10.0 and scaling_charge = 0.08, this is different
         # from what the Grimme et. al. paper says, but it has been confirmed by
-        # checking against ORCA 4.2.3 calculations. Furthermore, the paper's parameters
-        # produce energies that do not make physical sense.
+        # checking against ORCA 4.2.3 calculations and verbally by JG Brandenburg.
         supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
         # note that SRB uses the same cutoff radii as Zero-D3, *NOT* the D3BJ
         # cutoff radii, and these radii are given in angstroms directly
@@ -40,7 +39,7 @@ class EnergySRB(torch.nn.Module):
         # The exponential prefactor is - q/2 * sqrt(Za * Zb), which we also
         # precalculate here for efficiency
         _exp_prefactor = torch.outer(supported_znumbers, supported_znumbers)
-        _exp_prefactor = -scaling_charge * torch.sqrt(_exp_prefactor) / 2
+        _exp_prefactor = -scaling_charge * torch.sqrt(_exp_prefactor)
         self.register_buffer('exp_prefactor', _exp_prefactor)
 
         self.cutoff_function = _parse_cutoff_fn(cutoff_fn)
