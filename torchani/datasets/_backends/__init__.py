@@ -3,6 +3,7 @@ from ._backends import (
     TemporaryLocation,
     _H5PY_AVAILABLE,
     _Store,
+    _SUFFIXES,
 )
 from .interface import _ConformerWrapper
 
@@ -11,5 +12,6 @@ __all__ = [
     "TemporaryLocation",
     "_H5PY_AVAILABLE",
     "_Store",
-    "_ConformerWrapper"
+    "_ConformerWrapper",
+    "_SUFFIXES",
 ]

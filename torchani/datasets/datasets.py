@@ -15,7 +15,7 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from ._backends import _H5PY_AVAILABLE, _Store, StoreFactory, TemporaryLocation, _ConformerWrapper
+from ._backends import _H5PY_AVAILABLE, _Store, StoreFactory, TemporaryLocation, _ConformerWrapper, _SUFFIXES
 from ._annotations import Transform, Conformers, NumpyConformers, MixedConformers, StrPath, DTypeLike, IdxLike
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
@@ -743,7 +743,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 new_ds._set_metadata(meta)
                 return new_ds
             else:
-                new_parent = Path(self._store.location.root).parent.parent / cast(StrPath, dest_root)
+                new_parent = cast(StrPath, Path(dest_root).resolve())
                 new_ds._store.location.root = new_parent / self._store.location.root.with_suffix('').name
                 new_ds._set_metadata(meta)
                 return self
@@ -1034,12 +1034,16 @@ class ANIDataset(_ANIDatasetBase):
         self._update_cache()
 
     @classmethod
-    def from_dir(cls, dir_: StrPath, **kwargs):
-        r"""Reads all files in a given directory"""
+    def from_dir(cls, dir_: StrPath, only_backend: Optional[str] = 'h5py', **kwargs):
+        r"""Reads all files in a given directory, if there are multiple files
+        with the same name only one of them will be considered"""
         dir_ = Path(dir_).resolve()
         if not dir_.is_dir():
             raise ValueError("Input should be a directory")
         locations = sorted([p for p in dir_.iterdir() if p.suffix != '.tar.gz'])
+        if only_backend is not None:
+            suffix = _SUFFIXES[only_backend]
+            locations = [loc for loc in locations if loc.suffix == suffix]
         names = [p.stem for p in locations]
         return cls(locations=locations, names=names, **kwargs)
 
