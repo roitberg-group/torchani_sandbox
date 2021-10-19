@@ -717,8 +717,11 @@ class _ANISubdataset(_ANIDatasetBase):
         """
         if backend is None:
             backend = self._backend
+
         if inplace:
             assert dest_root is None
+        elif dest_root is None:
+            dest_root = Path(self._store.location.root).parent
 
         self._check_correct_grouping()
         if self._backend == backend and backend != 'h5py':
