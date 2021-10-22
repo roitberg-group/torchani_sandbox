@@ -24,7 +24,6 @@ class TestRepulsion(TestCase):
                                     [3.5, 0.0, 0.0]]).unsqueeze(0)
         species = torch.tensor([[0, 0]])
         energies = rep((species, coordinates)).energies
-        print(energies)
         self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
     def testRepulsionBatches(self):
