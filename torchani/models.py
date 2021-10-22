@@ -316,7 +316,6 @@ class BuiltinModelPairInteractions(BuiltinModel):
         assert isinstance(potentials, (tuple, list))
         potentials = list(potentials)
         potentials.append(AEVPotential(self.aev_computer, self.neural_networks))
-
         # We want to check the cutoffs of the potentials, and the cutoff os the
         # aev computer, and sort the "aev energy" and the "pairwise energies"
         # in order of decreasing cutoffs. this way the energy with the LARGEST
@@ -627,7 +626,7 @@ def ANID(**kwargs):
                   repulsion_kwargs={'elements': elements,
                                     'cutoff': 5.3,
                                     'cutoff_fn': CutoffSmooth(order=2)}, **kwargs)
-    model.load_state_dict(_fetch_state_dict('anid_state_dict.pt', private=True))
+    model.load_state_dict(_fetch_state_dict('anid_state_dict_mod.pt', private=True))
     return model
 
 
@@ -656,5 +655,5 @@ def ANIReact(**kwargs):
                   repulsion_kwargs={'elements': elements,
                                     'cutoff': 5.1,
                                     'cutoff_fn': CutoffSmooth(order=2)}, **kwargs)
-    model.load_state_dict(_fetch_state_dict('anid_reacting_state_dict.pt', private=True))
+    model.load_state_dict(_fetch_state_dict('anid_reacting_state_dict_mod.pt', private=True))
     return model
