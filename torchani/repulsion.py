@@ -1,4 +1,4 @@
-from typing import Tuple, Sequence, Union
+from typing import Tuple, Sequence, Union, Optional
 
 import torch
 from torch import Tensor
@@ -12,7 +12,7 @@ from .aev.cutoffs import _parse_cutoff_fn
 from .compat import Final
 
 
-class RepulsionCalculator(torch.nn.Module):
+class RepulsionXTB(torch.nn.Module):
     r"""Calculates the xTB repulsion energy terms for a given molecule as seen
     in work by Grimme: https://pubs.acs.org/doi/10.1021/acs.jctc.8b01176"""
 
@@ -53,7 +53,7 @@ class RepulsionCalculator(torch.nn.Module):
         self.register_buffer('k_rep_ab', k_rep_ab)
 
     def _calculate_repulsion(self,
-                             species_energies: Tuple[Tensor, Tensor],
+                             species: Tensor,
                              atom_index12: Tensor,
                              distances: Tensor) -> Tuple[Tensor, Tensor]:
 
@@ -61,7 +61,6 @@ class RepulsionCalculator(torch.nn.Module):
         # so distances are first converted to bohr
         distances = units.angstrom2bohr(distances)
 
-        species, energies = species_energies
         assert distances.ndim == 1, "distances should be 1 dimensional"
         assert species.ndim == 2, "species should be 2 dimensional"
         assert atom_index12.ndim == 2, "atom_index12 should be 2 dimensional"
@@ -80,22 +79,34 @@ class RepulsionCalculator(torch.nn.Module):
 
         # calculates repulsion energies using distances and constants
         prefactor = (y_ab / distances)
-        repulsion_energy = prefactor * torch.exp(-sqrt_alpha_ab * (distances ** k_rep_ab))
+        rep_energies = prefactor * torch.exp(-sqrt_alpha_ab * (distances ** k_rep_ab))
 
         if self.cutoff_function is not None:
-            cutoff = units.angstrom2bohr(self.cutoff)
-            repulsion_energy *= self.cutoff_function(distances, cutoff)
+            rep_energies *= self.cutoff_function(distances, units.angstrom2bohr(self.cutoff))
 
+        energies = torch.zeros(species.shape[0], dtype=rep_energies.dtype, device=rep_energies.device)
         molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
-        energies.index_add_(0, molecule_indices, repulsion_energy)
+        energies.index_add_(0, molecule_indices, rep_energies)
+        return energies
 
-        return SpeciesEnergies(species, energies)
+    def forward(self,
+                species: Tensor,
+                atom_index12: Tensor,
+                distances: Tensor,
+                diff_vector: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
+        # diff_vector is unused in 2-body potentials
+        return self._calculate_repulsion(species, atom_index12, distances)
 
+
+# Wrapper to keep compatibility with old ANI code
+class RepulsionCalculator(RepulsionXTB):
     def forward(self,
                 species_energies: Tuple[Tensor, Tensor],
                 atom_index12: Tensor,
                 distances: Tensor) -> Tuple[Tensor, Tensor]:
-        return self._calculate_repulsion(species_energies, atom_index12, distances)
+        species, energies = species_energies
+        rep_energies = self._calculate_repulsion(species, atom_index12, distances)
+        return SpeciesEnergies(species, energies + rep_energies)
 
 
 class StandaloneRepulsionCalculator(StandalonePairwiseWrapper, RepulsionCalculator):
@@ -105,5 +116,5 @@ class StandaloneRepulsionCalculator(StandalonePairwiseWrapper, RepulsionCalculat
                                 distances: Tensor) -> Tuple[Tensor, Tensor]:
         species, _ = species_coordinates
         energies = torch.zeros(species.shape[0], dtype=distances.dtype, device=distances.device)
-        species_energies = (species, energies)
-        return self._calculate_repulsion(species_energies, atom_index12, distances)
+        repulsion_energies = self._calculate_repulsion(species, atom_index12, distances)
+        return SpeciesEnergies(species, energies + repulsion_energies)
