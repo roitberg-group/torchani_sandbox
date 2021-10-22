@@ -396,7 +396,7 @@ def _get_component_modules(state_dict_file: str,
     aev_maker = _aev_maker if aev_maker is None else aev_maker
     atomic_maker = _atomic_maker if atomic_maker is None else atomic_maker
     elements = _elements if elements is None else elements
-    self_energies = [0.0 for _ in elements] if self_energies is None else self_energies
+    self_energies = [0.0 for _ in elements] if self_energies is None else list(self_energies)
 
     aev_computer = aev_maker(**aev_computer_kwargs)
     atomic_networks = OrderedDict([(e, atomic_maker(e)) for e in elements])

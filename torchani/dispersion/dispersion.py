@@ -287,7 +287,7 @@ class DispersionD3(torch.nn.Module):
         return self._calculate_dispersion_correction(species, atom_index12, distances)
 
 
-class StandaloneDispersionD3(StandalonePairwiseWrapper, DispersionD3):
+class StandaloneDispersionD3(StandalonePairwiseWrapper, DispersionD3):  # type: ignore
     r"""Calculates the DFT-D3 dispersion corrections
 
     Input to this model is species_coordinates directly, it uses a neighborlist
