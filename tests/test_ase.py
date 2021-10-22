@@ -20,8 +20,8 @@ class DummyPotential(torch.nn.Module):
         super().__init__()
         self.register_buffer('cutoff', torch.tensor(cutoff))
 
-    def forward(self, species_energies, *args):
-        return species_energies
+    def forward(self, species, atom_index12, distances, diff_vectors):
+        return torch.zeros(species.shape[0], device=distances.device, dtype=distances.dtype)
 
 
 class TestASE(TestCase):

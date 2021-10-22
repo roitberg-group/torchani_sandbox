@@ -55,7 +55,7 @@ class RepulsionXTB(torch.nn.Module):
     def _calculate_repulsion(self,
                              species: Tensor,
                              atom_index12: Tensor,
-                             distances: Tensor) -> Tuple[Tensor, Tensor]:
+                             distances: Tensor) -> Tensor:
 
         # all internal calculations of this module are made with atomic units,
         # so distances are first converted to bohr
@@ -93,14 +93,14 @@ class RepulsionXTB(torch.nn.Module):
                 species: Tensor,
                 atom_index12: Tensor,
                 distances: Tensor,
-                diff_vector: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
+                diff_vector: Optional[Tensor] = None) -> Tensor:
         # diff_vector is unused in 2-body potentials
         return self._calculate_repulsion(species, atom_index12, distances)
 
 
 # Wrapper to keep compatibility with old ANI code
 class RepulsionCalculator(RepulsionXTB):
-    def forward(self,
+    def forward(self,  # type: ignore
                 species_energies: Tuple[Tensor, Tensor],
                 atom_index12: Tensor,
                 distances: Tensor) -> Tuple[Tensor, Tensor]:
@@ -109,7 +109,7 @@ class RepulsionCalculator(RepulsionXTB):
         return SpeciesEnergies(species, energies + rep_energies)
 
 
-class StandaloneRepulsionCalculator(StandalonePairwiseWrapper, RepulsionCalculator):
+class StandaloneRepulsionCalculator(StandalonePairwiseWrapper, RepulsionCalculator):  # type: ignore
     def _perform_module_actions(self,
                                 species_coordinates: Tuple[Tensor, Tensor],
                                 atom_index12: Tensor,
