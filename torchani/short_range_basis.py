@@ -16,6 +16,8 @@ class EnergySRB(torch.nn.Module):
     y_ab: Tensor
     sqrt_alpha_ab: Tensor
     k_rep_ab: Tensor
+    exp_prefactor: Tensor
+    distances_factor: Tensor
 
     def __init__(self,
                  elements: Sequence[str] = ('H', 'C', 'N', 'O'),
@@ -46,12 +48,11 @@ class EnergySRB(torch.nn.Module):
         self.cutoff = cutoff
 
     def _calculate_srb(self,
-                       species_energies: Tuple[Tensor, Tensor],
+                       species: Tensor,
                        atom_index12: Tensor,
-                       distances: Tensor) -> Tuple[Tensor, Tensor]:
+                       distances: Tensor) -> Tensor:
         # This module uses cutoff radii in angstroms, so there is no need to
         # convert anything to Bohr
-        species, energies = species_energies
         assert distances.ndim == 1, "distances should be 1 dimensional"
         assert species.ndim == 2, "species should be 2 dimensional"
         assert atom_index12.ndim == 2, "atom_index12 should be 2 dimensional"
@@ -73,22 +74,22 @@ class EnergySRB(torch.nn.Module):
             srb_energies *= self.cutoff_function(distances, self.cutoff)
 
         molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
+        energies = torch.zeros(species.shape[0], dtype=distances.dtype, device=distances.device)
         energies.index_add_(0, molecule_indices, srb_energies)
-        return SpeciesEnergies(species, energies)
+        return energies
 
     def forward(self,
-                species_energies: Tuple[Tensor, Tensor],
+                species: Tensor,
                 atom_index12: Tensor,
-                distances: Tensor) -> Tuple[Tensor, Tensor]:
-        return self._calculate_srb(species_energies, atom_index12, distances)
+                distances: Tensor, diff_vectors: Tensor = None) -> Tensor:
+        return self._calculate_srb(species, atom_index12, distances)
 
 
-class StandaloneEnergySRB(StandalonePairwiseWrapper, EnergySRB):
+class StandaloneEnergySRB(StandalonePairwiseWrapper, EnergySRB):  # type: ignore
     def _perform_module_actions(self,
                                 species_coordinates: Tuple[Tensor, Tensor],
                                 atom_index12: Tensor,
                                 distances: Tensor) -> Tuple[Tensor, Tensor]:
         species, _ = species_coordinates
-        energies = torch.zeros(species.shape[0], dtype=distances.dtype, device=distances.device)
-        species_energies = (species, energies)
-        return self._calculate_srb(species_energies, atom_index12, distances)
+        energies = self._calculate_srb(species, atom_index12, distances)
+        return SpeciesEnergies(species, energies)
