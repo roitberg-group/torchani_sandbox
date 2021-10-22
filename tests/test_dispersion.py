@@ -110,11 +110,8 @@ class TestDispersion(TestCase):
 
     def testMethaneEnergy(self):
         atom_index12, _, _, distances = self.aev_computer.neighborlist(self.species, self.coordinates)
-        energy = torch.tensor([0.0],
-                              dtype=self.coordinates.dtype,
-                              device=self.device)
         disp = DispersionD3().to(self.device)
-        energy = disp((self.species, energy), atom_index12, distances).energies
+        energy = disp(self.species, atom_index12, distances)
         energy = units.hartree2kcalmol(energy)
         self.assertEqual(energy.cpu(), torch.tensor([-1.251336]).double(), rtol=1e-6, atol=1e-6)
 
@@ -161,11 +158,8 @@ class TestDispersion(TestCase):
     def testForce(self):
         self.coordinates.requires_grad_(True)
         atom_index12, _, _, distances = self.aev_computer.neighborlist(self.species, self.coordinates)
-        energy = torch.tensor([0.0],
-                              dtype=self.coordinates.dtype,
-                              device=self.device)
         disp = DispersionD3().to(self.device)
-        energy = disp((self.species, energy), atom_index12, distances).energies
+        energy = disp(self.species, atom_index12, distances)
         gradient = torch.autograd.grad(energy, self.coordinates)[0]
         gradient /= units.ANGSTROM_TO_BOHR
         # compare with analytical gradient from Grimme's DFTD3 (DFTD3 gives

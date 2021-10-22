@@ -66,9 +66,9 @@ from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
 from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from .aev import AEVComputer
 from .aev.cutoffs import CutoffSmooth
-from .repulsion import RepulsionCalculator
 from .dispersion import DispersionD3
 from .short_range_basis import EnergySRB
+from .repulsion import RepulsionXTB
 from .compat import Final
 from . import atomics
 
@@ -290,89 +290,66 @@ class BuiltinModel(Module):
         return self.neural_networks.size
 
 
+# Adaptor to use the aev computer as a three body potential
+class AEVPotential(torch.nn.Module):
+    def __init__(self, aev_computer, neural_networks):
+        super().__init__()
+        self.aev_computer = aev_computer
+        self.neural_networks = neural_networks
+        self.cutoff = aev_computer.radial_terms.cutoff
+
+    def forward(self,
+                species: Tensor,
+                atom_index12: Tensor,
+                distances: Tensor,
+                diff_vector: Tensor) -> Tensor:
+        aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vector, distances)
+        energies = self.neural_networks((species, aevs)).energies
+        return energies
+
+
 class BuiltinModelPairInteractions(BuiltinModel):
     # NOTE: contribution of pairwise interactions to atomic energies is not implemented yet
     def __init__(self, *args, **kwargs):
-        pairwise_potentials = kwargs.pop('pairwise_potentials', list())
+        potentials = kwargs.pop('pairwise_potentials', list())
         super().__init__(*args, **kwargs)
-        assert isinstance(pairwise_potentials, (tuple, list))
+        assert isinstance(potentials, (tuple, list))
+        potentials = list(potentials)
+        potentials.append(AEVPotential(self.aev_computer, self.neural_networks))
 
-        # We want to check the cutoffs of the pairwise potentials, and
-        # the cutoff os the aev computer, and sort the "aev energy" and the
-        # "pairwise energies" in order of decreasing cutoffs.
-        # this way the energy with the LARGEST cutoff is computed first, then sequentially
-        # things that need smaller cutoffs are computed.
+        # We want to check the cutoffs of the potentials, and the cutoff os the
+        # aev computer, and sort the "aev energy" and the "pairwise energies"
+        # in order of decreasing cutoffs. this way the energy with the LARGEST
+        # cutoff is computed first, then sequentially things that need smaller
+        # cutoffs are computed.
         #
         # e.g. if the aev-potential has cutoff 10, and we have SRB with cutoff
         # 5 and repulsion with cutoff 3, we want to calculate:
         #
         # coords -> screen r<10 -> aev-energy -> screen r<5 -> SRB -> screen r<3 -> rep
-        # to do this we first divide potentials into a set with larger cutoff than the
-        # aev-potential and a set with a smaller cutoff
-        #
-        pre_aev_potentials = []
-        post_aev_potentials = []
-        for p in pairwise_potentials:
-            if p.cutoff > self.aev_computer.radial_terms.cutoff:
-                pre_aev_potentials.append(p)
-            else:
-                post_aev_potentials.append(p)
-        if pre_aev_potentials:
-            pre_aev_potentials = sorted(pre_aev_potentials, key=lambda x: x.cutoff, reverse=True)
-        if post_aev_potentials:
-            post_aev_potentials = sorted(post_aev_potentials, key=lambda x: x.cutoff, reverse=True)
-        self.pre_aev_potentials = torch.nn.ModuleList(pre_aev_potentials)
-        self.post_aev_potentials = torch.nn.ModuleList(post_aev_potentials)
+        potentials = sorted(potentials, key=lambda x: x.cutoff, reverse=True)
+        self.potentials = torch.nn.ModuleList(potentials)
 
         # Set the neighborlist cutoff to the largest cutoff in existence
-        if self.pre_aev_potentials:
-            self.aev_computer.neighborlist.cutoff = self.pre_aev_potentials[0].cutoff
+        self.aev_computer.neighborlist.cutoff = self.potentials[0].cutoff
 
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-
-        species_coordinates = self._maybe_convert_species(species_coordinates)
-        species, coordinates = species_coordinates
-        atom_index12, shift_values, diff_vectors, distances = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
-
-        # energy calculation for potentials with larger cutoff than the aev
-        pre_species_energies = (species, torch.zeros(size=(species.shape[0],), device=species.device, dtype=coordinates.dtype))
-        previous_cutoff = self.aev_computer.neighborlist.cutoff
+        species, coordinates = self._maybe_convert_species(species_coordinates)
+        atom_index12, _, diff_vectors, distances = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
+        energies = torch.zeros(species.shape[0], device=species.device, dtype=coordinates.dtype)
         rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
-        for pot in self.pre_aev_potentials:
+        previous_cutoff = self.aev_computer.neighborlist.cutoff
+        for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                atom_index12, shift_values, diff_vectors, distances = rescreen(pot.cutoff,
-                                                                               atom_index12,
-                                                                               shift_values,
-                                                                               diff_vectors,
-                                                                               distances)
+                atom_index12, _, diff_vectors, distances = rescreen(pot.cutoff,
+                                                                    atom_index12,
+                                                                    diff_vectors,
+                                                                    distances)
                 previous_cutoff = pot.cutoff
-            pre_species_energies = pot(pre_species_energies, atom_index12, distances)
-
-        # aev-energy calculation
-        aev_cutoff = self.aev_computer.radial_terms.cutoff
-        if aev_cutoff < previous_cutoff:
-            atom_index12, shift_values, diff_vectors, distances = rescreen(pot.cutoff,
-                                                                           atom_index12,
-                                                                           shift_values,
-                                                                           diff_vectors,
-                                                                           distances)
-            previous_cutoff = self.aev_computer.radial_terms.cutoff
-        aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vectors, distances)
-        species_energies = self.neural_networks((species, aevs))
-
-        # calculation for potentials with smaller cutoff than the aev
-        for pot in self.post_aev_potentials:
-            if pot.cutoff < previous_cutoff:
-                atom_index12, shift_values, diff_vectors, distances = rescreen(pot.cutoff,
-                                                                               atom_index12,
-                                                                               shift_values,
-                                                                               diff_vectors,
-                                                                               distances)
-                previous_cutoff = pot.cutoff
-            species_energies = pot(species_energies, atom_index12, distances)
-        species_energies = (species, pre_species_energies[1] + species_energies[1])
+            energies += pot(species, atom_index12, distances, diff_vectors)
+        species_energies = SpeciesEnergies(species, energies)
         if self._shift_energies:
             species_energies = self.energy_shifter(species_energies)
         return species_energies
@@ -384,37 +361,13 @@ class BuiltinModelPairInteractions(BuiltinModel):
                                             self.energy_shifter,
                                             self.get_chemical_symbols(),
                                             self.periodic_table_index,
-                                            pairwise_potentials=[p for p in self.pre_aev_potentials] + [p for p in self.post_aev_potentials])
+                                            pairwise_potentials=[p for p in self.potentials])
 
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                          cell: Optional[Tensor] = None,
                          pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        # TODO: This doesn't support arbitrary potentials, it assumes post_aev_potentials with the
-        # same cutoff as the aev
-        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        if self.periodic_table_index:
-            atomic_numbers, _ = species_coordinates
-            species_coordinates = self.species_converter(species_coordinates)
-
-        species, coordinates = species_coordinates
-        atom_index12, _, diff_vectors, distances = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
-        aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vectors, distances)
-
-        member_outputs = []
-        for nnp in self.neural_networks:
-            # hint for JIT, this function can only be called if neural_networks
-            # is an ensemble and not an ANIModel
-            assert not isinstance(nnp, str)
-            energies = nnp((species, aevs)).energies
-            if self._shift_energies:
-                energies = self.energy_shifter((species, energies)).energies
-
-            for potential in self.post_aev_potentials:
-                energies = potential((species, energies), atom_index12, distances).energies
-
-            member_outputs.append(energies.unsqueeze(0))
-        return SpeciesEnergies(species, torch.cat(member_outputs, dim=0))
+        raise NotImplementedError("Not implemented for PairInteractions models")
 
 
 def _get_component_modules(state_dict_file: str,
@@ -451,7 +404,7 @@ def _get_component_modules(state_dict_file: str,
     aev_maker = _aev_maker if aev_maker is None else aev_maker
     atomic_maker = _atomic_maker if atomic_maker is None else atomic_maker
     elements = _elements if elements is None else elements
-    self_energies = [0.0 for _ in elements] if self_energies is None else self_energies
+    self_energies = [0.0 for _ in elements] if self_energies is None else list(self_energies)
 
     aev_computer = aev_maker(**aev_computer_kwargs)
     atomic_networks = OrderedDict([(e, atomic_maker(e)) for e in elements])
@@ -552,7 +505,10 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         components = neurochem.parse_resources._get_component_modules(info_file, model_index, aev_computer_kwargs)
     else:
         assert state_dict_file is not None
-        components = _get_component_modules(state_dict_file, model_index, aev_computer_kwargs, atomic_maker=atomic_maker, aev_maker=aev_maker, elements=elements, ensemble_size=ensemble_size)
+        components = _get_component_modules(state_dict_file, model_index,
+                                            aev_computer_kwargs, atomic_maker=atomic_maker,
+                                            aev_maker=aev_maker, elements=elements,
+                                            ensemble_size=ensemble_size)
 
     aev_computer, neural_networks, energy_shifter, elements = components
 
@@ -566,7 +522,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         if repulsion:
             if repulsion_kwargs is not None:
                 base_repulsion_kwargs.update(repulsion_kwargs)
-            pairwise_potentials.append(RepulsionCalculator(**base_repulsion_kwargs))
+            pairwise_potentials.append(RepulsionXTB(**base_repulsion_kwargs))
         if dispersion:
             if dispersion_kwargs is not None:
                 base_dispersion_kwargs.update(dispersion_kwargs)

@@ -7,8 +7,8 @@ from torch import Tensor
 
 from torchani.standalone import StandalonePairwiseWrapper
 from .. import units
-from ..nn import SpeciesEnergies
 from . import constants
+from ..nn import SpeciesEnergies
 from ..aev.cutoffs import _parse_cutoff_fn
 from ..compat import Final
 from ..utils import ATOMIC_NUMBERS
@@ -239,11 +239,10 @@ class DispersionD3(torch.nn.Module):
         order6_coeffs = z_factor / w_factor
         return order6_coeffs
 
-    def _calculate_dispersion_correction(self, species_energies: Tuple[Tensor, Tensor], atom_index12: Tensor,
-                distances: Tensor) -> Tuple[Tensor, Tensor]:
+    def _calculate_dispersion_correction(self, species: Tensor, atom_index12: Tensor,
+                distances: Tensor) -> Tensor:
         # internally this module works in AU, so first we convert distances
         distances = units.angstrom2bohr(distances)
-        species, energies = species_energies
         assert distances.ndim == 1, "distances should be 1 dim"
         assert species.ndim == 2, "species_energies should be 2 dim"
         assert atom_index12.ndim == 2, "atom_index12 should be 2 dim"
@@ -280,21 +279,20 @@ class DispersionD3(torch.nn.Module):
         cutoff = units.angstrom2bohr(self.cutoff)
         two_body_dispersion *= self.cutoff_function(distances, cutoff)
         molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
+        energies = torch.zeros(species.shape[0], dtype=distances.dtype, device=distances.device)
         energies.index_add_(0, molecule_indices, two_body_dispersion)
-        return SpeciesEnergies(species, energies)
+        return energies
 
-    def forward(self, species_energies: Tuple[Tensor, Tensor], atom_index12: Tensor,
-                distances: Tensor) -> Tuple[Tensor, Tensor]:
-        return self._calculate_dispersion_correction(species_energies, atom_index12, distances)
+    def forward(self, species: Tensor, atom_index12: Tensor, distances: Tensor, diff_vectors: Tensor = None) -> Tensor:
+        return self._calculate_dispersion_correction(species, atom_index12, distances)
 
 
-class StandaloneDispersionD3(StandalonePairwiseWrapper, DispersionD3):
+class StandaloneDispersionD3(StandalonePairwiseWrapper, DispersionD3):  # type: ignore
     r"""Calculates the DFT-D3 dispersion corrections
 
     Input to this model is species_coordinates directly, it uses a neighborlist
     """
-    def _perform_module_actions(self, species_coordinates: Tuple[Tensor, Tensor], atom_index12: Tensor,
-            distances: Tensor) -> Tuple[Tensor, Tensor]:
+    def _perform_module_actions(self, species_coordinates: Tuple[Tensor, Tensor], atom_index12: Tensor, distances: Tensor) -> Tuple[Tensor, Tensor]:
         species, _ = species_coordinates
-        energies = torch.zeros(species.shape[0], dtype=distances.dtype, device=distances.device)
-        return self._calculate_dispersion_correction((species, energies), atom_index12, distances)
+        energies = self._calculate_dispersion_correction(species, atom_index12, distances)
+        return SpeciesEnergies(species, energies)

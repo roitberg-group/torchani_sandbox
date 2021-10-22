@@ -4,13 +4,13 @@ import torchani
 from pathlib import Path
 from torchani.models import _fetch_state_dict
 from torchani.testing import TestCase
-from torchani.repulsion import RepulsionCalculator, StandaloneRepulsionCalculator
+from torchani.repulsion import RepulsionXTB, StandaloneRepulsionCalculator
 from torchani.short_range_basis import EnergySRB, StandaloneEnergySRB
 
 
 class TestRepulsion(TestCase):
     def setUp(self):
-        self.rep = RepulsionCalculator(5.2)
+        self.rep = RepulsionXTB(5.2)
         self.stand_rep = StandaloneRepulsionCalculator(cutoff=5.2, neighborlist_cutoff=5.2)
 
     def testCalculator(self):
@@ -27,8 +27,7 @@ class TestRepulsion(TestCase):
         atom_index12 = torch.tensor([[0], [1]])
         distances = torch.tensor([3.5])
         species = torch.tensor([[0, 0]])
-        energies = torch.tensor([0.0])
-        energies = self.rep((species, energies), atom_index12, distances).energies
+        energies = self.rep(species, atom_index12, distances)
         self.assertEqual(torch.tensor([expected_energy]), energies)
 
     def _testStandalone(self, expected_energy):
@@ -66,8 +65,7 @@ class TestRepulsion(TestCase):
         atom_index12 = torch.tensor([[0], [1]])
         distances = torch.tensor([6.0])
         species = torch.tensor([[0, 0]])
-        energies = torch.tensor([0.0])
-        energies = self.rep((species, energies), atom_index12, distances).energies
+        energies = self.rep(species, atom_index12, distances)
         self.assertEqual(torch.tensor([0.0]), energies)
 
     def _testModelEnergy(self, path, repulsion=False, srb=False):
