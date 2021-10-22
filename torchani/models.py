@@ -71,7 +71,6 @@ from .dispersion import DispersionD3
 from .short_range_basis import EnergySRB
 from .compat import Final
 from . import atomics
-from torchani.utils import map_to_central
 
 
 NN = Union[ANIModel, Ensemble]
@@ -336,33 +335,29 @@ class BuiltinModelPairInteractions(BuiltinModel):
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species, coordinates = species_coordinates
         atom_index12, shift_values, diff_vectors, distances = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
-        if pbc is not None and pbc.any():
-            assert cell is not None
-            coordinates = map_to_central(coordinates, cell, pbc)
 
         # energy calculation for potentials with larger cutoff than the aev
         pre_species_energies = (species, torch.zeros(size=(species.shape[0],), device=species.device, dtype=coordinates.dtype))
         previous_cutoff = self.aev_computer.neighborlist.cutoff
+        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
         for pot in self.pre_aev_potentials:
             if pot.cutoff < previous_cutoff:
-                nl_out = self.aev_computer.neighborlist._screen_with_cutoff(pot.cutoff,
-                                                                            coordinates,
-                                                                            atom_index12,
-                                                                            shift_values,
-                                                                            (species == -1))
-                atom_index12, shift_values, diff_vectors, distances = nl_out
+                atom_index12, shift_values, diff_vectors, distances = rescreen(pot.cutoff,
+                                                                               atom_index12,
+                                                                               shift_values,
+                                                                               diff_vectors,
+                                                                               distances)
                 previous_cutoff = pot.cutoff
             pre_species_energies = pot(pre_species_energies, atom_index12, distances)
 
         # aev-energy calculation
         aev_cutoff = self.aev_computer.radial_terms.cutoff
         if aev_cutoff < previous_cutoff:
-            nl_out = self.aev_computer.neighborlist._screen_with_cutoff(aev_cutoff,
-                                                                        coordinates,
-                                                                        atom_index12,
-                                                                        shift_values,
-                                                                        (species == -1))
-            atom_index12, shift_values, diff_vectors, distances = nl_out
+            atom_index12, shift_values, diff_vectors, distances = rescreen(pot.cutoff,
+                                                                           atom_index12,
+                                                                           shift_values,
+                                                                           diff_vectors,
+                                                                           distances)
             previous_cutoff = self.aev_computer.radial_terms.cutoff
         aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vectors, distances)
         species_energies = self.neural_networks((species, aevs))
@@ -370,12 +365,11 @@ class BuiltinModelPairInteractions(BuiltinModel):
         # calculation for potentials with smaller cutoff than the aev
         for pot in self.post_aev_potentials:
             if pot.cutoff < previous_cutoff:
-                nl_out = self.aev_computer.neighborlist._screen_with_cutoff(pot.cutoff,
-                                                                            coordinates,
-                                                                            atom_index12,
-                                                                            shift_values,
-                                                                            (species == -1))
-                atom_index12, shift_values, diff_vectors, distances = nl_out
+                atom_index12, shift_values, diff_vectors, distances = rescreen(pot.cutoff,
+                                                                               atom_index12,
+                                                                               shift_values,
+                                                                               diff_vectors,
+                                                                               distances)
                 previous_cutoff = pot.cutoff
             species_energies = pot(species_energies, atom_index12, distances)
         species_energies = (species, pre_species_energies[1] + species_energies[1])
