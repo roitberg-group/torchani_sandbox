@@ -537,7 +537,10 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         components = neurochem.parse_resources._get_component_modules(info_file, model_index, aev_computer_kwargs)
     else:
         assert state_dict_file is not None
-        components = _get_component_modules(state_dict_file, model_index, aev_computer_kwargs, atomic_maker=atomic_maker, aev_maker=aev_maker, elements=elements, ensemble_size=ensemble_size)
+        components = _get_component_modules(state_dict_file, model_index,
+                                            aev_computer_kwargs, atomic_maker=atomic_maker,
+                                            aev_maker=aev_maker, elements=elements,
+                                            ensemble_size=ensemble_size)
 
     aev_computer, neural_networks, energy_shifter, elements = components
 
