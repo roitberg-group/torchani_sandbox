@@ -124,10 +124,11 @@ class BaseNeighborlist(Module):
         return screened_neighborlist, shift_values, screened_diff_vectors, screened_distances
 
     @staticmethod
-    def _rescreen_with_cutoff(cutoff: float, input_neighborlist: Tensor, shift_values: Tensor, diff_vector: Tensor, distances: Tensor):
+    def _rescreen_with_cutoff(cutoff: float, input_neighborlist: Tensor, diff_vector: Tensor, distances: Tensor, shift_values: Tensor = None):
         closer_indices = (distances <= cutoff).nonzero().flatten()
         input_neighborlist = input_neighborlist.index_select(1, closer_indices)
-        shift_values = shift_values.index_select(0, closer_indices)
+        if shift_values is not None:
+            shift_values = shift_values.index_select(0, closer_indices)
         diff_vector = diff_vector.index_select(0, closer_indices)
         distances = distances.index_select(0, closer_indices)
         return input_neighborlist, shift_values, diff_vector, distances
