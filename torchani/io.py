@@ -111,6 +111,7 @@ def tensor_from_lammpstrj(path, start_frame=0, end_frame=None, step=1,
         species = []
         velocities = []
         forces = []
+        _advance(f, next(iter(iterable)))
         for line_num in iterable:
             if end_frame is not None and line_num == end_frame * frame_size:
                 break
