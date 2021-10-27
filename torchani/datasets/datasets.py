@@ -1091,7 +1091,7 @@ class ANIDataset(_ANIDatasetBase):
 
     @property
     def store_md5s(self) -> List[str]:
-        return [calculate_md5(fspath(ds._store.location)) for ds in self._datasets.values()]
+        return [calculate_md5(fspath(ds._store.location.root)) for ds in self._datasets.values()]
 
     @property
     def num_stores(self) -> int:

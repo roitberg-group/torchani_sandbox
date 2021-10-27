@@ -4,7 +4,6 @@ from torch import Tensor
 import itertools
 from typing import Sequence
 
-import warnings
 from typing import Optional
 from pathlib import Path
 from torchani.utils import tqdm
@@ -99,6 +98,7 @@ def tensor_from_lammpstrj(path, start_frame=0, end_frame=None, step=1,
     r"""Reads a batch of conformations from an lammpstrj file
 
     extract_atoms is a sequence of atom indices to extract
+    timesteps in the lammpstrj are  assumed to be equally spaced in time
     """
     with open(path, 'r') as f:
         _advance(f, 3)
@@ -111,7 +111,10 @@ def tensor_from_lammpstrj(path, start_frame=0, end_frame=None, step=1,
         species = []
         velocities = []
         forces = []
+        import time
+        _start = time.time()
         _advance(f, next(iter(iterable)))
+        print("Time taken: ", time.time() - _start)
         for line_num in iterable:
             if end_frame is not None and line_num == end_frame * frame_size:
                 break
@@ -173,8 +176,11 @@ def tensor_from_lammpstrj(path, start_frame=0, end_frame=None, step=1,
         forces = torch.tensor(forces, dtype=torch.float)
         velocities = torch.tensor(velocities, dtype=torch.float)
         if extract_atoms is None:
-            assert coordinates.shape[1] == num_atoms
-            assert species.shape[1] == num_atoms
+            try:
+                assert coordinates.shape[1] == num_atoms
+                assert species.shape[1] == num_atoms
+            except Exception:
+                breakpoint()
         else:
             assert coordinates.shape[1] == len(extract_atoms)
             assert species.shape[1] == len(extract_atoms)
@@ -211,7 +217,7 @@ def tensor_from_xyz(path, start_frame=0, end_frame=None, step=1, get_cell=True, 
             except ValueError:
                 break
             if get_cell:
-                cell_diag = [float(v) for v in f.readline().split()[-3:]]
+                cell_diag = [float(v) for v in f.readline().split()[1:]]
                 cell.append(torch.diag(torch.tensor(cell_diag)))
             else:
                 f.readline()
@@ -250,7 +256,6 @@ def _dump_xyz(path,
               species: Tensor, coordinates: Tensor,
               cell: Optional[Tensor] = None,
               no_exponent: bool = True,
-              comment: str = '',
               append=False, truncate_output_file=False, frame=0):
     r"""Dump a tensor as an xyz file"""
     path = Path(path).resolve()
@@ -263,11 +268,11 @@ def _dump_xyz(path,
             mode = 'w'
         else:
             mode = 'x'
+    cell = torch.zeros(3) if cell is None else cell
+    cell_diag = torch.diag(cell)
     with open(path, mode) as f:
         f.write(f'{num_atoms}\n')
-        if cell is not None:
-            warnings.warn("Cell printing is not yet implemented, ignoring cell")
-        f.write(f'{comment}\n')
+        f.write(f'cell {cell_diag[0]} {cell_diag[1]} {cell_diag[2]}\n')
         for s, c in zip(species, coordinates):
             if no_exponent:
                 line = f"{c[0]:.15f} {c[1]:.15f} {c[2]:.15f}\n"
@@ -278,13 +283,13 @@ def _dump_xyz(path,
 
 
 def _dump_lammpstrj(path, species: Tensor, coordinates: Tensor,
-                        cell: Tensor,
-                        forces: Optional[Tensor] = None,
-                        velocities: Optional[Tensor] = None,
-                        charges: Optional[Tensor] = None,
-                        no_exponent: bool = True,
-                        append=False,
-                        truncate_output_file=False, frame=0, scale=False):
+                          cell: Tensor = None,
+                          forces: Optional[Tensor] = None,
+                          velocities: Optional[Tensor] = None,
+                          charges: Optional[Tensor] = None,
+                          no_exponent: bool = True,
+                          append=False,
+                          truncate_output_file=False, frame=0, scale=False):
     r"""Dump a tensor as a lammpstrj file
 
     Dumps a species_coordinates tuple into a lammpstrj format file, optionally also
@@ -295,6 +300,7 @@ def _dump_lammpstrj(path, species: Tensor, coordinates: Tensor,
     path = Path(path).resolve()
     # input species must be atomic numbers
     num_atoms = len(species)
+    cell = torch.zeros(3) if cell is None else cell
     cell_diag = torch.diag(cell)
     if append:
         mode = 'a'
