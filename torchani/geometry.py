@@ -13,7 +13,8 @@ def displace_to_com_frame(species_coordinates: Tuple[Tensor, Tensor]) -> Tuple[T
     mask = (species == -1)
     masses = get_atomic_masses(species, dtype=coordinates.dtype)
     masses.masked_fill_(mask, 0.0)
-    com_coordinates = coordinates * masses.unsqueeze(-1) / masses.sum(dim=1).unsqueeze(-1).unsqueeze(-1)
+    mass_sum = masses.unsqueeze(-1).sum(dim=1, keepdim=True)
+    com_coordinates = coordinates * masses.unsqueeze(-1) / mass_sum
     com_coordinates = com_coordinates.sum(dim=1, keepdim=True)
     centered_coordinates = coordinates - com_coordinates
     centered_coordinates[mask, :] = 0.0
