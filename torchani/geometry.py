@@ -18,7 +18,7 @@ def displace_to_com_frame(species_coordinates: Tuple[Tensor, Tensor], com_coordi
     com_coordinates = coordinates * masses.unsqueeze(-1) / masses.sum(dim=1).unsqueeze(-1).unsqueeze(-1)
     com_coordinates = com_coordinates.sum(dim=1, keepdim=True)
     centered_coordinates = coordinates - com_coordinates
-    centered_coordinates[:, mask.nonzero(), :] = 0.0
+    centered_coordinates[mask, :] = 0.0
     return species, centered_coordinates, com_coordinates
 
 
