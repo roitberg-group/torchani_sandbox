@@ -5,7 +5,7 @@ from typing import Tuple, Optional
 from .utils import get_atomic_masses
 
 
-def displace_to_com_frame(species_coordinates: Tuple[Tensor, Tensor], com_coordinates: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
+def displace_to_com_frame(species_coordinates: Tuple[Tensor, Tensor], com_coordinates: Optional[Tensor] = None) -> Tuple[Tensor, Tensor, Tensor]:
     r"""Displace coordinates to the center-of-mass frame, input species must be
     atomic numbers, padding atoms can be included with -1 as padding,
     returns the displaced coordinates and the center-of-mass coordinates"""
