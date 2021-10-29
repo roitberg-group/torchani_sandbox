@@ -38,9 +38,8 @@ class TestGeometry(TestCase):
         species, displaced_coordinates = torchani.geometry.displace_to_com_frame((species, coordinates))
         # com = coordinates + displaced_coordinates
         expect_com = torch.tensor([[0.038116, 0.098033, 0.000000]])
-        print(coordinates - expect_com)
-        print(displaced_coordinates)
-        # self.assertEqual(com, expect_com)
+        expect_com = torchani.units.bohr2angstrom(expect_com)
+        self.assertEqual(displaced_coordinates, coordinates - expect_com)
 
 
 if __name__ == '__main__':
