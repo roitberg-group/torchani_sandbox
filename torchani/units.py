@@ -72,6 +72,16 @@ SQRT_MHESSIAN_TO_MILLIEV = SQRT_MHESSIAN_TO_INVCM * INVCM_TO_EV * 1000
 MHESSIAN_TO_FCONST = HARTREE_TO_JOULE * NEWTON_TO_MILLIDYNE / ANGSTROM_TO_METER
 
 
+def angstrom2bohr(x):
+    r"""Angstrom to Bohr conversion factor from 2014 CODATA"""
+    return x * ANGSTROM_TO_BOHR
+
+
+def bohr2angstrom(x):
+    r"""Bohr to Angstrom conversion factor from 2014 CODATA"""
+    return x / ANGSTROM_TO_BOHR
+
+
 def sqrt_mhessian2invcm(x):
     r"""Converts sqrt(mass-scaled hessian units) into cm^-1
 
@@ -106,11 +116,6 @@ def mhessian2fconst(x):
     return x * MHESSIAN_TO_FCONST
 
 
-def angstrom2bohr(x):
-    r"""Angstrom to Bohr conversion factor from 2014 CODATA"""
-    return x * ANGSTROM_TO_BOHR
-
-
 def hartree2ev(x):
     r"""Hartree to eV conversion factor from 2014 CODATA"""
     return x * HARTREE_TO_EV
@@ -143,6 +148,7 @@ def ea2debye(x):
 
 # Add actual values to docstrings on import
 angstrom2bohr.__doc__ = str(angstrom2bohr.__doc__) + f'\n\n1 Angstrom = {angstrom2bohr(1)} Bohr'
+bohr2angstrom.__doc__ = str(bohr2angstrom.__doc__) + f'\n\n1 Bohr = {bohr2angstrom(1)} Angstrom'
 hartree2ev.__doc__ = str(hartree2ev.__doc__) + f'\n\n1 Hartree = {hartree2ev(1)} eV'
 hartree2kcalmol.__doc__ = str(hartree2kcalmol.__doc__) + f'\n\n1 Hartree = {hartree2kcalmol(1)} kcal/mol'
 hartree2kjoulemol.__doc__ = str(hartree2kjoulemol) + f'\n\n1 Hartree = {hartree2kjoulemol(1)} kJ/mol'
