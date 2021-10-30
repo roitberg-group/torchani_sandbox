@@ -1,6 +1,7 @@
 import torch
 import warnings
 import math
+from typing import List, Union
 from pathlib import Path
 from torch import Tensor
 from .cutoffs import _parse_cutoff_fn
@@ -11,6 +12,36 @@ state_dicts_path = Path(__file__).parent.parent.joinpath('resources/state_dicts/
 
 def _warn_parameters():
     warnings.warn('Generated parameters may differ from published model to 1e-7')
+
+
+class LongRangeRadial(torch.nn.Module):
+    cutoff: Final[float]
+    sublength: Final[int]
+    damp_factor: Tensor
+    exponent: Tensor
+
+    def __init__(self,
+                 damp_factor: Union[Tensor, List[float]] = (0.025, 0.05, 0.1, 0.2, 0.4),
+                 exponent: Union[Tensor, List[float]] = (1,),
+                 cutoff: float = 8.0,
+                 cutoff_fn='smoothstep'):
+        super().__init__()
+        if isinstance(damp_factor, list):
+            damp_factor = torch.tensor(damp_factor)
+        if isinstance(exponent, list):
+            exponent = torch.tensor(exponent)
+        # initialize the cutoff function
+        self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
+        self.register_buffer('damp_factor', damp_factor.view(-1, 1))
+        self.register_buffer('exponent', exponent.view(1, -1))
+        self.sublength = self.exponent.numel() * self.damp_factor.numel()
+        self.cutoff = cutoff
+
+    def forward(self, distances: Tensor) -> Tensor:
+        distances = distances.view(-1, 1, 1)
+        features = torch.erf(self.damp_factor * distances) / distances ** self.exponent
+        features *= self.cutoff_fn(distances, self.cutoff)
+        return features.flatten(start_dim=1)
 
 
 class StandardRadial(torch.nn.Module):
