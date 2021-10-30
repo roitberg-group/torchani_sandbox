@@ -11,6 +11,8 @@ def _parse_cutoff_fn(cutoff_fn: Union[str, torch.nn.Module]) -> torch.nn.Module:
         cutoff_fn = CutoffCosine()
     elif cutoff_fn == 'smooth':
         cutoff_fn = CutoffSmooth()
+    elif cutoff_fn == 'smoothstep':
+        cutoff_fn = CutoffSmoothstep()
     elif cutoff_fn is None:
         cutoff_fn = CutoffDummy()
     else:
@@ -19,12 +21,20 @@ def _parse_cutoff_fn(cutoff_fn: Union[str, torch.nn.Module]) -> torch.nn.Module:
 
 
 class CutoffCosine(torch.nn.Module):
-
     def __init__(self):
         super().__init__()
 
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
         return 0.5 * torch.cos(distances * (math.pi / cutoff)) + 0.5
+
+
+class CutoffSmoothstep(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: Tensor, cutoff: float) -> Tensor:
+        x = torch.clamp(x / cutoff, 0, 1)
+        return 1 - x.pow(3) * (x * (6 * x - 15) + 10)
 
 
 class CutoffDummy(torch.nn.Module):
