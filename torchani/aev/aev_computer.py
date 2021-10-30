@@ -10,7 +10,7 @@ from ..utils import cumsum_from_zero
 from ..compat import Final
 # modular parts of AEVComputer
 from .cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
-from .aev_terms import _parse_angular_terms, _parse_radial_terms, StandardAngular, StandardRadial
+from .aev_terms import _parse_angular_terms, _parse_radial_terms, StandardAngular, StandardRadial, LongRangeRadial
 from .neighbors import _parse_neighborlist
 
 
@@ -71,6 +71,8 @@ class AEVComputer(torch.nn.Module):
     angular_sublength: Final[int]
     radial_length: Final[int]
     radial_sublength: Final[int]
+    long_range_length: Final[int]
+    long_range_sublength: Final[int]
     aev_length: Final[int]
 
     use_cuda_extension: Final[bool]
@@ -90,6 +92,7 @@ class AEVComputer(torch.nn.Module):
                 cutoff_fn='cosine',
                 neighborlist='full_pairwise',
                 radial_terms='standard',
+                long_range_terms=False,
                 angular_terms='standard'):
 
         # due to legacy reasons num_species is a kwarg, but it should always be
@@ -109,8 +112,16 @@ class AEVComputer(torch.nn.Module):
         cutoff_fn = _parse_cutoff_fn(cutoff_fn)
         self.angular_terms = _parse_angular_terms(angular_terms, cutoff_fn, EtaA, Zeta, ShfA, ShfZ, Rca)
         self.radial_terms = _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr)
-        self.neighborlist = _parse_neighborlist(neighborlist, self.radial_terms.cutoff)
-        self._validate_cutoffs_init()
+        if long_range_terms:
+            self.use_long_range = True
+            self.long_range_terms = LongRangeRadial()
+            self.neighborlist = _parse_neighborlist(neighborlist, self.long_range_terms.cutoff)
+            assert not use_cuda_extension
+        else:
+            self.use_long_range = False
+            self.long_range_terms = None
+            self.neighborlist = _parse_neighborlist(neighborlist, self.radial_terms.cutoff)
+            self._validate_cutoffs_init()
         if isinstance(cutoff_fn, CutoffCosine):
             self.cutoff_fn_type = 'cosine'
         elif isinstance(cutoff_fn, CutoffSmooth):
@@ -129,9 +140,11 @@ class AEVComputer(torch.nn.Module):
         # cache all lengths in the model itself
         self.radial_sublength = self.radial_terms.sublength
         self.angular_sublength = self.angular_terms.sublength
+        self.long_range_sublength = self.long_range_terms.sublength if long_range_terms else 0
         self.radial_length = self.radial_sublength * self.num_species
+        self.long_range_length = self.long_range_sublength * self.num_species
         self.angular_length = self.angular_sublength * self.num_species_pairs
-        self.aev_length = self.radial_length + self.angular_length
+        self.aev_length = self.radial_length + self.angular_length + self.long_range_length
 
         # cuda aev
         if self.use_cuda_extension:
@@ -318,6 +331,17 @@ class AEVComputer(torch.nn.Module):
             atom_index12: Tensor, diff_vector: Tensor, distances: Tensor) -> Tensor:
 
         species12 = species.flatten()[atom_index12]
+        if self.use_long_range:
+            assert self.long_range_terms is not None
+            long_range_aev = self._compute_long_range_aev(species.shape[0], species.shape[1], species12,
+                                                  distances, atom_index12)
+            even_closer_indices = (distances <= self.radial_terms.cutoff).nonzero().flatten()
+            atom_index12 = atom_index12.index_select(1, even_closer_indices)
+            species12 = species12.index_select(1, even_closer_indices)
+            diff_vector = diff_vector.index_select(0, even_closer_indices)
+        else:
+            long_range_aev = torch.tensor(0, dtype=torch.float)
+
         radial_aev = self._compute_radial_aev(species.shape[0], species.shape[1], species12,
                                               distances, atom_index12)
 
@@ -331,7 +355,8 @@ class AEVComputer(torch.nn.Module):
 
         angular_aev = self._compute_angular_aev(species.shape[0], species.shape[1], species12,
                                                 diff_vector, atom_index12)
-
+        if self.use_long_range:
+            return torch.cat([radial_aev, angular_aev, long_range_aev], dim=-1)
         return torch.cat([radial_aev, angular_aev], dim=-1)
 
     def _compute_angular_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, vec: Tensor,
@@ -366,9 +391,22 @@ class AEVComputer(torch.nn.Module):
         index12 = atom_index12 * self.num_species + species12.flip(0)
         radial_aev.index_add_(0, index12[0], radial_terms_)
         radial_aev.index_add_(0, index12[1], radial_terms_)
-        radial_aev = radial_aev.reshape(num_molecules, num_atoms,
-                                        self.radial_length)
+        radial_aev = radial_aev.reshape(num_molecules, num_atoms, self.radial_length)
         return radial_aev
+
+    def _compute_long_range_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, distances: Tensor,
+                                atom_index12: Tensor) -> Tensor:
+
+        long_range_terms_ = self.long_range_terms(distances)
+        long_range_aev = long_range_terms_.new_zeros(
+            (num_molecules * num_atoms * self.num_species,
+             self.long_range_sublength))
+        index12 = atom_index12 * self.num_species + species12.flip(0)
+        long_range_aev.index_add_(0, index12[0], long_range_terms_)
+        long_range_aev.index_add_(0, index12[1], long_range_terms_)
+        long_range_aev = long_range_aev.reshape(num_molecules, num_atoms,
+                                        self.long_range_length)
+        return long_range_aev
 
     def _triple_by_molecule(
             self, atom_index12: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
