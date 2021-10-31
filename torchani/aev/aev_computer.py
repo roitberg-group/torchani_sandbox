@@ -339,6 +339,7 @@ class AEVComputer(torch.nn.Module):
             atom_index12 = atom_index12.index_select(1, even_closer_indices)
             species12 = species12.index_select(1, even_closer_indices)
             diff_vector = diff_vector.index_select(0, even_closer_indices)
+            distances = distances.index_select(0, even_closer_indices)
         else:
             long_range_aev = torch.tensor(0, dtype=torch.float)
 

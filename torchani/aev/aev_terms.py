@@ -26,9 +26,9 @@ class LongRangeRadial(torch.nn.Module):
                  cutoff: float = 8.0,
                  cutoff_fn='smoothstep'):
         super().__init__()
-        if isinstance(damp_factor, list):
+        if isinstance(damp_factor, (list, tuple)):
             damp_factor = torch.tensor(damp_factor)
-        if isinstance(exponent, list):
+        if isinstance(exponent, (list, tuple)):
             exponent = torch.tensor(exponent)
         # initialize the cutoff function
         self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
