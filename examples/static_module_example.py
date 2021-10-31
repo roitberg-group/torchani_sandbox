@@ -38,9 +38,19 @@ energy = m(aev).sum()
 energy.backward()
 print(aev.grad)
 
+# repeat to confirm we get the same gradient
+aev = aev.detach().clone()
+aev.requires_grad_(True)
+energy = m(aev).sum()
+energy.backward()
+print(aev.grad)
+
 m = torch.cuda.make_graphed_callables(m, (aev,))
 aev = aev.detach().clone()
 aev.requires_grad_(True)
 energy = m(aev).sum()
 energy.backward()
 print(aev.grad)
+# ^ this gradient is all zeros or very close to zero
+# calling torch.autograd.grad gives None with allow_unused = True, otherwise
+# raises error
