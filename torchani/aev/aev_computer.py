@@ -116,7 +116,6 @@ class AEVComputer(torch.nn.Module):
             self.use_long_range = True
             self.long_range_terms = LongRangeRadial()
             self.neighborlist = _parse_neighborlist(neighborlist, self.long_range_terms.cutoff)
-            assert not use_cuda_extension
         else:
             self.use_long_range = False
             self.long_range_terms = None
@@ -311,6 +310,12 @@ class AEVComputer(torch.nn.Module):
                 self.cuaev_is_initialized = True
             assert pbc is None or (not pbc.any()), "cuaev currently does not support PBC"
             aev = self._compute_cuaev(species, coordinates)
+            if self.use_long_range:
+                atom_index12, _, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
+                assert self.long_range_terms is not None
+                long_range_aev = self._compute_long_range_aev(species.shape[0], species.shape[1], species.flatten()[atom_index12],
+                                                      distances, atom_index12)
+                aev = torch.cat((aev, long_range_aev), dim=-1)
             return SpeciesAEV(species, aev)
 
         # WARNING: The coordinates that are input into the neighborlist are **not** assumed to be
@@ -357,8 +362,10 @@ class AEVComputer(torch.nn.Module):
         angular_aev = self._compute_angular_aev(species.shape[0], species.shape[1], species12,
                                                 diff_vector, atom_index12)
         if self.use_long_range:
-            return torch.cat([radial_aev, angular_aev, long_range_aev], dim=-1)
-        return torch.cat([radial_aev, angular_aev], dim=-1)
+            aev = torch.cat([radial_aev, angular_aev, long_range_aev], dim=-1)
+        else:
+            aev = torch.cat([radial_aev, angular_aev], dim=-1)
+        return aev
 
     def _compute_angular_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, vec: Tensor,
                              atom_index12: Tensor) -> Tensor:
