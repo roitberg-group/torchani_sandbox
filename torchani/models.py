@@ -296,7 +296,10 @@ class AEVPotential(torch.nn.Module):
         super().__init__()
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
-        self.cutoff = aev_computer.radial_terms.cutoff
+        try:
+            self.cutoff = aev_computer.long_range_terms.cutoff
+        except AttributeError:
+            self.cutoff = aev_computer.radial_terms.cutoff
 
     def forward(self,
                 species: Tensor,
@@ -360,7 +363,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
                                             self.energy_shifter,
                                             self.get_chemical_symbols(),
                                             self.periodic_table_index,
-                                            pairwise_potentials=[p for p in self.potentials])
+                                            pairwise_potentials=[p for p in self.potentials if not isinstance(p, AEVPotential)])
 
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -657,4 +660,48 @@ def ANIReact(**kwargs):
                                     'cutoff': 5.1,
                                     'cutoff_fn': CutoffSmooth(order=2)}, **kwargs)
     model.load_state_dict(_fetch_state_dict('anid_reacting_state_dict_mod.pt', private=True))
+    return model
+
+
+def ANILongRange(**kwargs):
+    # An ani model with dispersion, trained on the bond-breaking data
+    def long_range_atomics(atom: str = 'H'):
+        dims_for_atoms = {'H': (1043, 256, 192, 160),
+                          'C': (1043, 256, 192, 160),
+                          'N': (1043, 192, 160, 128),
+                          'O': (1043, 192, 160, 128),
+                          'S': (1043, 160, 128, 96),
+                          'F': (1043, 160, 128, 96),
+                          'Cl': (1043, 160, 128, 96)}
+        return atomics.standard(dims_for_atoms[atom], activation=torch.nn.GELU(), bias=False)
+    elements = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
+
+    dummy_model = ANI2x(pretrained=False,
+                        cutoff_fn='smooth',
+                        atomic_maker=long_range_atomics,
+                        model_index=0,
+                        dispersion=False,
+                        repulsion=False,
+                        extra_aev_kwargs={'long_range_terms': True},
+                        **kwargs)
+    dummy_model.load_state_dict(_fetch_state_dict('ani_lr2_state_dict.pt', private=True))
+
+    model = ANI2x(pretrained=False,
+                  cutoff_fn='smooth',
+                  atomic_maker=long_range_atomics,
+                  model_index=0,
+                  dispersion=True,
+                  dispersion_kwargs={'elements': elements,
+                                     'cutoff': 8.5,
+                                     'cutoff_fn': CutoffSmooth(order=4),
+                                     'functional': 'B97-3c'},
+                  repulsion=True,
+                  repulsion_kwargs={'elements': elements,
+                                    'cutoff': 5.3,
+                                    'cutoff_fn': CutoffSmooth(order=2)},
+                  extra_aev_kwargs={'long_range_terms': True},
+                  **kwargs)
+    model._modules['potentials'][1].neural_networks.load_state_dict(dummy_model.neural_networks.state_dict())
+    model.energy_shifter = dummy_model.energy_shifter
+
     return model
