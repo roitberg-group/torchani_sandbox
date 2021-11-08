@@ -54,11 +54,50 @@ def align_geometry_to_bond(coordinates, atom1, atom2):
     return rotated_coordinates
 
 
-def displace_along_bond(species_coordinates, atom1, atom2, displacement):
-    # displaces a set of molecules along a specific bond
+def displace_along_bond(species_coordinates, atom1, atom2, displacement, set_bond_to_displacement=False, displacement_kind='by_indices', displace_indices=None):
+    r"""displaces a set of molecules along a specific bond, in the direction atom1 -> atom2
+
+    for displacement_kind == by_indices, if specific indices are provided then
+    the displacement is done over those indices, otherwise the displacement is
+    done using atom2.
+
+    for displacement_kind == by_plane, the affine hyperplane perpendicular to
+    the bond direction that cuts the bond in half is calculated, and the coordinates
+    on each side of the plane are separated into two groups. The coordinates
+    on the side of atom2 are displaced.
+
+    If set_bond_to_displacement is true then the bond distance is fixed to the
+    displacement distance, and the other distances are scaled accordingly,
+    otherwise the displacement is added to the distance (the displacement can
+    be positive or negative in both cases)
+    """
     species, coordinates = species_coordinates
-    diff_vector = coordinates[:, atom2, :] - coordinates[:, atom1, :]
-    coordinates[:, atom2, :] += (diff_vector / diff_vector.norm(dim=-1)) * displacement
+    atom2_coords = coordinates[:, atom2, :]
+    atom1_coords = coordinates[:, atom1, :]
+    diff_vector = atom2_coords - atom1_coords
+    bond_length = diff_vector.norm(dim=-1)
+    bond_direction = diff_vector / bond_length
+    if displacement_kind == 'by_indices':
+        displace_indices = [atom2] if displace_indices is None else displace_indices
+        displace_indices = torch.tensor(displace_indices, dtype=torch.long)
+    elif displacement_kind == 'by_plane':
+        raise NotImplementedError
+        # if we want to separate all the coordinates then the best thing to do is to first
+        # calculate the plane that cuts the bond (the orthogonal complement to the subspace
+        # containing the bond) and then displace all atoms on one side of the plane
+        # parallel to the bond
+        #
+        # the easiest way to do this is to calculate the projection of all vectors in the direction
+        # of the bond, and see if the values of the projection are larger or smaller than 1/2 of the bond distance
+        # TODO this code is untested and probably broken
+        mean_vector = (atom2_coords + atom1_coords) / 2
+        # This is the projection of the mean vector
+        bond_threshold = torch.dot(mean_vector, bond_direction)
+        coordinate_projections = torch.dot(coordinates, diff_vector)
+        displace_indices = (coordinate_projections > bond_threshold).nonzero()
+    if set_bond_to_displacement:
+        displacement = displacement - bond_length
+    coordinates[:, displace_indices, :] += bond_direction * displacement
     return species, coordinates
 
 
