@@ -40,6 +40,8 @@ from . import repulsion
 from . import datasets
 from . import transforms
 from . import cli
+from . import geometry
+from . import calc
 from pkg_resources import get_distribution, DistributionNotFound
 import warnings
 
@@ -50,8 +52,7 @@ except DistributionNotFound:
     pass
 
 __all__ = ['AEVComputer', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
-           'utils', 'neurochem', 'models', 'units', 'repulsion', 'datasets', 'transforms', 'cli']
-
+           'utils', 'neurochem', 'models', 'units', 'repulsion', 'datasets', 'transforms', 'cli', 'geometry', 'calc']
 
 try:
     from . import ase  # noqa: F401
