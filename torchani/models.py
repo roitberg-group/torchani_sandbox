@@ -300,6 +300,20 @@ class AEVPotential(torch.nn.Module):
         energies = self.neural_networks((species, aevs)).energies
         return energies
 
+    def members_energies(self,
+                         species: Tensor,
+                         atom_index12: Tensor,
+                         distances: Tensor,
+                         diff_vector: Tensor) -> Tensor:
+        """
+        Returns: members energies for the given configurations with shape of energies is (M, C),
+            where M is the number of modules in the ensemble.
+        """
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+        aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vector, distances)
+        atomic_energies = self.neural_networks._atomic_energies((species, aevs))
+        return atomic_energies.sum(-1)
+
 
 class BuiltinModelPairInteractions(BuiltinModel):
     # NOTE: contribution of pairwise interactions to atomic energies is not implemented yet
@@ -357,7 +371,27 @@ class BuiltinModelPairInteractions(BuiltinModel):
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                          cell: Optional[Tensor] = None,
                          pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        raise NotImplementedError("Not implemented for PairInteractions models")
+        species, coordinates = self._maybe_convert_species(species_coordinates)
+        atom_index12, _, diff_vectors, distances = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
+        energies = torch.zeros(species.shape[0], device=species.device, dtype=coordinates.dtype)
+        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
+        previous_cutoff = self.aev_computer.neighborlist.cutoff
+        members_energies = None
+        for pot in self.potentials:
+            if pot.cutoff < previous_cutoff:
+                atom_index12, _, diff_vectors, distances = rescreen(pot.cutoff,
+                                                                    atom_index12,
+                                                                    diff_vectors,
+                                                                    distances)
+                previous_cutoff = pot.cutoff
+            if isinstance(pot, AEVPotential):
+                members_energies = pot.members_energies(species, atom_index12, distances, diff_vectors)
+            else:
+                energies += pot(species, atom_index12, distances, diff_vectors)
+        assert members_energies is not None
+        energies += self.energy_shifter((species, energies)).energies
+        members_energies += energies.unsqueeze(0)
+        return SpeciesEnergies(species, members_energies)
 
 
 def _get_component_modules(state_dict_file: str,
