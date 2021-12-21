@@ -389,7 +389,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
             else:
                 energies += pot(species, atom_index12, distances, diff_vectors)
         assert members_energies is not None
-        energies += self.energy_shifter((species, energies)).energies
+        energies = self.energy_shifter((species, energies)).energies
         members_energies += energies.unsqueeze(0)
         return SpeciesEnergies(species, members_energies)
 
