@@ -63,8 +63,7 @@ if torch.cuda.is_available():
     max_sm_major = max([torch.cuda.get_device_capability(i)[0] for i in range(num_devices)])
     if (max_sm_major >= 8):
         warnings.warn(
-            "TF32 (TensorFloat 32) is disabled for accuracy reason, "
-            "please refer to https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices for more detail about TF32.")
+            "TF32 (TensorFloat 32) is disabled for accuracy reason")
 
 try:
     from . import ase  # noqa: F401
