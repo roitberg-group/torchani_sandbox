@@ -36,7 +36,6 @@ from . import utils
 from . import neurochem
 from . import models
 from . import units
-from . import repulsion
 from . import datasets
 from . import transforms
 from . import cli
