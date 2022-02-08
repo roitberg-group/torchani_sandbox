@@ -2,9 +2,13 @@ tb-nightly
 tqdm
 ase
 h5py
+zarr
+pandas
+pyarrow
 pillow
 pkbar
 pyyaml
 pytest
 pynvml
 parameterized
+expecttest

@@ -378,7 +378,7 @@ class TestAEVOnBoundary(TestCase):
                 continue
             coordinates = self.coordinates + i * self.v1 + j * self.v2 + k * self.v3
             self.assertNotInCell(coordinates)
-            coordinates = torchani.utils.map2central(self.cell, coordinates, self.pbc)
+            coordinates = torchani.utils.map_to_central(coordinates, self.cell, self.pbc)
             self.assertInCell(coordinates)
             _, aev = self.aev_computer((self.species, coordinates), cell=self.cell, pbc=self.pbc)
             self.assertGreater(aev.abs().max().item(), 0)
@@ -391,7 +391,7 @@ class TestAEVOnBenzenePBC(TestCase):
         self.aev_computer = torchani.AEVComputer.like_1x()
         filename = os.path.join(path, '../tools/generate-unit-test-expect/others/Benzene.json')
         benzene = ase.io.read(filename)
-        self.cell = torch.tensor(benzene.get_cell(complete=True)).float()
+        self.cell = torch.tensor(benzene.get_cell(complete=True)[:], dtype=torch.float)
         self.pbc = torch.tensor(benzene.get_pbc(), dtype=torch.bool)
         species_to_tensor = torchani.utils.ChemicalSymbolsToInts(['H', 'C', 'N', 'O'])
         self.species = species_to_tensor(benzene.get_chemical_symbols()).unsqueeze(0)

@@ -2,6 +2,8 @@
 
 Metrics:
 
+[![conda-release](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/conda-release.yml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/conda-release.yml)
+[![conda-page](https://img.shields.io/badge/conda--package-page-blue)](https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
 ![PyPI](https://img.shields.io/pypi/v/torchani.svg)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/torchani.svg)
 
@@ -34,37 +36,56 @@ TorchANI is a pytorch implementation of ANI. It is currently under alpha release
 
 
 # Install
+Supported version information when install from anaconda:
+- pytorch 1.9
+- cuda 11.1
+- python 3.6 or python 3.8
 
-TorchANI requires the latest preview version of PyTorch. Please install PyTorch before installing TorchANI.
+Install from anaconda by the following (Note that we are hosting the packages only for internal usage at: https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
 
-Please see [PyTorch's official site](https://pytorch.org/get-started/locally/) for instructions of installing latest preview version of PyTorch.
+```bash
+conda create -n ani -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c pytorch -c nvidia -c defaults -c conda-forge sandbox python=3.8
+```
+Which is equivalent to the following:
+```bash
+conda create -n ani python=3.8
+conda activate ani
+conda install -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c pytorch -c nvidia -c defaults -c conda-forge sandbox
+```
+- The `conda install` command could also be used for your own conda environment or could be used to update to the latest nightly version.  
+- In the case where multiple updates has been released within a day, you may need to add a `--force-reinstall` flag instead of waiting for the next nightly update.
+
+To install a version that is compatible with cudf, because of [cudatoolkit confilcts](https://github.com/rapidsai/cudf/issues/8510), you will need to install it by the following (currently only support python 3.8):
+```bash
+# important: update conda and conda-package-handling
+conda update -n base -c defaults conda
+# install torchani, torch and cudf together
+conda create -n cudf -c https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville -c rapidsai -c nvidia -c defaults -c conda-forge sandbox_cudf python=3.8
+```
+
+You could also build torchani from source, check at [TorchANI CSRC](torchani/csrc).
 
 Note that if you updated TorchANI, you may also need to update PyTorch.
-
-After installing the correct PyTorch, you can install TorchANI by `pip` or `conda`:
-
-```bash
-pip install torchani
-```
-
-or
-
-```bash
-conda install -c conda-forge torchani
-```
-
-See https://github.com/conda-forge/torchani-feedstock for more information about the conda package.
 
 To run the tests and examples, you must manually download a data package
 
 ```bash
 ./download.sh
+pip install -r test_requirements.txt
+cd tests
+python -m pytest -v -s *.py
 ```
 
-# Extensions (Optional)
-[Torchani extensions csrc](torchani/csrc)
+# Command Line Interface
+After installation, there will be an executable script (torchani) available on you path, which contain some builtin utilities.
 
-To install AEV CUDA Extension (speedup for AEV calculation) and MNP (Multi Net Parallel for inference), please follow the instruction at [torchani/csrc](torchani/csrc).
+Check usage with: 
+```
+$ torchani --help
+```
+
+# TorchANI Extensions
+[TorchANI CSRC](torchani/csrc) provides AEV CUDA Extension (speedup for AEV calculation) and MNP extension (Multi Net Parallel for inference) for speedup training and inference.
 
 # Citation
 
