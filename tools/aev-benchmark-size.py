@@ -362,8 +362,11 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--N',
                         help='Number of Repeat',
                         default=200, type=int)
-    parser.add_argument('--no-cell-list',
-                        help='No use of cell list for pyaev',
+    parser.add_argument('--use-cell-list',
+                        help='Use cell list for pyaev',
+                        action='store_true', default=False)
+    parser.add_argument('--use-cuaev-interface',
+                        help='Use cuaev interface with externel neighbor list',
                         action='store_true', default=False)
     parser.set_defaults(backward=0)
     parser.set_defaults(run_energy=0)
@@ -374,14 +377,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     path = os.path.dirname(os.path.realpath(__file__))
     N = args.N
+    print(f"Check args: {args}")
 
     device = torch.device('cuda')
     files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
-    if args.no_cell_list:
-        use_cell_list = False
-    else:
-        use_cell_list = True
-    nnp_ref = torchani.models.ANI2x(periodic_table_index=True, model_index=None, cell_list=use_cell_list).to(device)
+    nnp_ref = torchani.models.ANI2x(periodic_table_index=True, model_index=None, cell_list=args.use_cell_list,
+                                    use_cuaev_interface=args.use_cuaev_interface, use_cuda_extension=args.use_cuaev_interface).to(device)
     nnp_cuaev = torchani.models.ANI2x(periodic_table_index=True, model_index=None).to(device)
     nnp_cuaev.aev_computer.use_cuda_extension = True
     maxatoms = [6000, 10000]

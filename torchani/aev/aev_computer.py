@@ -86,6 +86,7 @@ class AEVComputer(torch.nn.Module):
                 ShfZ: Optional[Tensor] = None,
                 num_species: Optional[int] = None,
                 use_cuda_extension=False,
+                use_cuaev_interface=False,
                 cutoff_fn='cosine',
                 neighborlist='full_pairwise',
                 radial_terms='standard',
@@ -97,6 +98,7 @@ class AEVComputer(torch.nn.Module):
 
         super().__init__()
         self.use_cuda_extension = use_cuda_extension
+        self.use_cuaev_interface = use_cuaev_interface
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
 
@@ -242,8 +244,7 @@ class AEVComputer(torch.nn.Module):
     def forward(self,
                 input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None,
-                use_cuaev_interface: Optional[bool] = None) -> SpeciesAEV:
+                pbc: Optional[Tensor] = None) -> SpeciesAEV:
         """Compute AEVs
 
         Arguments:
@@ -296,7 +297,7 @@ class AEVComputer(torch.nn.Module):
             if not self.cuaev_is_initialized:
                 self._init_cuaev_computer()
                 self.cuaev_is_initialized = True
-            if use_cuaev_interface is not None and use_cuaev_interface:
+            if self.use_cuaev_interface:
                 # TODO, no_grad for self.neighborlist?
                 atom_index12, _, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
                 aev = self._compute_cuaev_with_nbrlist(species, coordinates, atom_index12, diff_vector, distances)
