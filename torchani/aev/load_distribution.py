@@ -35,4 +35,5 @@ class LoadPartitioner(BaseNeighborlist):
         print(coordinates_displaced)
 
         group_partition_list = torch.tensor([])
+        # group partition list will have some format of distribution of atoms over different GPU's
         return group_partition_list, cell, pbc
