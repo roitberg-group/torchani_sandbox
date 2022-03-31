@@ -36,3 +36,6 @@ class LoadPartitioner(BaseNeighborlist):
 
         group_partition_list = torch.tensor([])
         return group_partition_list, cell, pbc
+
+def test_function():
+    return None
