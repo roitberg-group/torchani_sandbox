@@ -10,9 +10,17 @@ class LoadPartitioner(BaseNeighborlist):
        different parts of the system to different groups, which will then be split into
        GPU's, to distribute the calculation load"""
 
-    def __init__(self, cutoff: float, constant_volume: bool = True):
+    def __init__(self, cutoff: float, constant_volume: bool = True, spatial_divisions: Tuple[int, int, int] = (2, 0, 0)):
         super().__init__(cutoff)
+        # divisions holds the number of divisions the load partitioner will create in the
+        # X, Y, and Z dimensions
         self.constant_volume = constant_volume
+        self.register_buffer('_spatial_divisions', torch.tensor(spatial_divisions, dtype=torch.long))
+        assert self._spatial_divisions == torch.tensor([2, 0, 0]), "only partitioning the X dimension is currently supported"
+
+    @classmethod
+    def from_gpu_number(cls, cutoff, constant_volume: bool = True, gpu_num: int = 2):
+        return cls(cutoff, constant_volume, (2, 0, 0))
 
     def forward(self, coordinates: Tensor,
                       cell: Optional[Tensor] = None,
@@ -32,6 +40,8 @@ class LoadPartitioner(BaseNeighborlist):
             coordinates_displaced, cell = self._compute_bounding_cell(coordinates.detach(), eps=1e-3)
         else:
             coordinates_displaced = coordinates.detach()
+        # displaced coordinates will be used for all calculation purposes
+
         print(coordinates_displaced)
 
         group_partition_list = torch.tensor([])
