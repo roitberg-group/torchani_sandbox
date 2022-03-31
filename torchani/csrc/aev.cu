@@ -1425,8 +1425,12 @@ void cuaev_forward_with_nbrlist(
     };
 
     int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
-    constexpr dim3 block(C10_WARP_SIZE, 4, 1);
-    cuAngularAEVs<block.x, block.y, use_cos_cutoff><<<result.nI, block, smem_size, stream>>>(
+    // temporary fix because of nvcc constexpr BUG
+    // constexpr dim3 block(C10_WARP_SIZE, 4, 1);
+    constexpr int block_x = C10_WARP_SIZE;
+    constexpr int block_y = 4;
+    constexpr dim3 block(block_x, block_y, 1);
+    cuAngularAEVs<block_x, block_y, use_cos_cutoff><<<result.nI, block, smem_size, stream>>>(
         species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
         angularNbr_deltaJ_p,
         aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
