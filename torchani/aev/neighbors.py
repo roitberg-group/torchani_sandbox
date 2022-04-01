@@ -440,7 +440,7 @@ class CellList(BaseNeighborlist):
 
     def _calculate_cell_list(self, coordinates: Tensor, pbc: Tensor) -> Tuple[Tensor, Union[Tensor, None]]:
         # 1) Fractionalize coordinates
-        fractional_coordinates = self._fractionalize_coordinates(coordinates)
+        fractional_coordinates = self._fractionalize_coordinates(coordinates, self.cell_inverse)
 
         # 2) Get vector indices and flattened indices for atoms in unit cell
         # shape C x A x 3 this gives \vb{g}(a), the vector bucket idx
@@ -640,14 +640,15 @@ class CellList(BaseNeighborlist):
         assert x.shape[-2] == self.vector_index_displacement.shape[0]
         return x
 
-    def _fractionalize_coordinates(self, coordinates: Tensor) -> Tensor:
+    @staticmethod
+    def _fractionalize_coordinates(coordinates: Tensor, cell_inverse: Tensor) -> Tensor:
         # Scale coordinates to box size
         #
         # Make all coordinates relative to the box size. This means for
         # instance that if the coordinate is 3.15 times the cell length, it is
         # turned into 3.15; if it is 0.15 times the cell length, it is turned
         # into 0.15, etc
-        fractional_coordinates = torch.matmul(coordinates, self.cell_inverse)
+        fractional_coordinates = torch.matmul(coordinates, cell_inverse)
         # this is done to account for possible coordinates outside the box,
         # which amber does, in order to calculate diffusion coefficients, etc
         fractional_coordinates -= fractional_coordinates.floor()

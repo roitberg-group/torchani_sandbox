@@ -2,7 +2,7 @@ from typing import Tuple, Optional
 
 import torch
 from torch import Tensor
-from .neighbors import BaseNeighborlist
+from .neighbors import BaseNeighborlist, CellList
 
 
 class LoadPartitioner(BaseNeighborlist):
@@ -10,17 +10,17 @@ class LoadPartitioner(BaseNeighborlist):
        different parts of the system to different groups, which will then be split into
        GPU's, to distribute the calculation load"""
 
-    def __init__(self, cutoff: float, constant_volume: bool = True, spatial_divisions: Tuple[int, int, int] = (2, 0, 0)):
+    def __init__(self, cutoff: float, constant_volume: bool = True, spatial_divisions: Tuple[int, int, int] = (2, 1, 1)):
         super().__init__(cutoff)
-        # divisions holds the number of divisions the load partitioner will create in the
-        # X, Y, and Z dimensions
+        # spatial_divisions holds the number of divisions the load partitioner will create in the
+        # X, Y, and Z dimensions, it should be 1 if that dimension is not split
         self.constant_volume = constant_volume
         self.register_buffer('_spatial_divisions', torch.tensor(spatial_divisions, dtype=torch.long))
-        assert self._spatial_divisions == torch.tensor([2, 0, 0]), "only partitioning the X dimension is currently supported"
+        assert (self._spatial_divisions == torch.tensor([2, 1, 1])).all(), "only partitioning the X dimension is currently supported"
 
     @classmethod
     def from_gpu_number(cls, cutoff, constant_volume: bool = True, gpu_num: int = 2):
-        return cls(cutoff, constant_volume, (2, 0, 0))
+        return cls(cutoff, constant_volume, (2, 1, 1))
 
     def forward(self, coordinates: Tensor,
                       cell: Optional[Tensor] = None,
@@ -39,11 +39,15 @@ class LoadPartitioner(BaseNeighborlist):
             # Displaced coordinates are only used for computation if PBC is not required
             coordinates_displaced, cell = self._compute_bounding_cell(coordinates.detach(), eps=1e-3)
         else:
+            # displaced coordinates will be used for all calculation purposes
             coordinates_displaced = coordinates.detach()
-        # displaced coordinates will be used for all calculation purposes
 
-        print(coordinates_displaced)
-
-        group_partition_list = torch.tensor([])
+        # coordinates must first be fractionalized, (0-1) and then sent into different domains
+        # depending on the place in the cell they are located in
+        fractional_coordinates = CellList._fractionalize_coordinates(coordinates_displaced, torch.inverse(cell))
+        # load balancing is currently done homogeneously, with every dimension
+        # split evenly, so floor can be used to assign to different groups
+        group_assignment = torch.floor(fractional_coordinates * self._spatial_divisions.view(1, 1, -1)).long()
+        print(group_assignment)
         # group partition list will have some format of distribution of atoms over different GPU's
-        return group_partition_list, cell, pbc
+        return group_assignment, cell, pbc
