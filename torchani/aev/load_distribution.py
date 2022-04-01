@@ -44,10 +44,15 @@ class LoadPartitioner(BaseNeighborlist):
 
         # coordinates must first be fractionalized, (0-1) and then sent into different domains
         # depending on the place in the cell they are located in
+        displace_down = coordinates_displaced - self.cutoff
         fractional_coordinates = CellList._fractionalize_coordinates(coordinates_displaced, torch.inverse(cell))
+        fractional_coordinates = CellList._fractionalize_coordinates(displace_up, torch.inverse(cell))
+        fractional_coordinates = CellList._fractionalize_coordinates(displace_down, torch.inverse(cell))
         # load balancing is currently done homogeneously, with every dimension
         # split evenly, so floor can be used to assign to different groups
         group_assignment = torch.floor(fractional_coordinates * self._spatial_divisions.view(1, 1, -1)).long()
-        print(group_assignment)
+        group_assignment_up = torch.floor(displace_up * self._spatial_divisions.view(1, 1, -1)).long()
+        group_assignment_down = torch.floor(displace_down * self._spatial_divisions.view(1, 1, -1)).long()
+        breakpoint()
         # group partition list will have some format of distribution of atoms over different GPU's
         return group_assignment, cell, pbc
