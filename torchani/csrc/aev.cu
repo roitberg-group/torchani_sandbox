@@ -1285,7 +1285,8 @@ void cuaev_forward_with_nbrlist(
     return;
   }
 
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  at::cuda::CUDAGuard device_guard(coordinates_t.device().index());
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
   at::globalContext().lazyInitCUDA();
 
   auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
