@@ -246,7 +246,6 @@ Tensor run_autograd(
     std::vector<at::Stream> stream_list,
     bool is_bmm,
     double celu_alpha = 0.1,
-    bool use_stream = false
     ) {
   // TODO use_stream is disabled forever
   bool use_stream = false;
