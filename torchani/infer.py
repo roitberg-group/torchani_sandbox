@@ -212,7 +212,10 @@ class InferModelBase(torch.nn.Module):
         # flatten weight and bias list
         self.weight_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.weight_list for item in sublist])
         self.bias_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.bias_list for item in sublist])
+        self.dummy_parameter = torch.nn.Parameter(torch.tensor(1.0))
 
+        self.num_weight_list = len(self.weight_list)
+        self.num_bias_list = len(self.bias_list)
         # self.weight_list is ParameterList, which could not be interpreted as List<Tensor>
         self.weight_list_ = [w for w in self.weight_list]
         self.bias_list_ = [b for b in self.bias_list]
@@ -221,6 +224,14 @@ class InferModelBase(torch.nn.Module):
         utils.check_openmp_threads()
 
         self.use_mnp = True
+
+    # used when self.weight_list migrate to another device
+    @torch.jit.export
+    def mnp_migrate_device(self):
+        for i in range(self.num_weight_list):
+            self.weight_list_[i] = self.weight_list_[i].to(self.dummy_parameter.device)
+        for i in range(self.num_bias_list):
+            self.bias_list_[i] = self.bias_list_[i].to(self.dummy_parameter.device)
 
     @torch.jit.unused
     def copy_weight_bias(self):

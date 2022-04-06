@@ -245,8 +245,12 @@ Tensor run_autograd(
     std::vector<Tensor> bias_list,
     std::vector<at::Stream> stream_list,
     bool is_bmm,
-    double celu_alpha = 0.1) {
-  bool use_stream = aev.device().type() == torch::kCUDA;
+    double celu_alpha = 0.1,
+    bool use_stream = false
+    ) {
+  // TODO use_stream is disabled forever
+  // maybe create stream inside mnp?
+  // bool use_stream = aev.device().type() == torch::kCUDA;
 
   if (use_stream) {
     if (is_bmm)
