@@ -249,6 +249,7 @@ Tensor run_autograd(
     bool use_stream = false
     ) {
   // TODO use_stream is disabled forever
+  bool use_stream = false;
   // maybe create stream inside mnp?
   // bool use_stream = aev.device().type() == torch::kCUDA;
 
