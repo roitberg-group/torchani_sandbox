@@ -52,7 +52,7 @@ class TestCUAEV(TestCase):
         cls.ani2x = torchani.models.ANI2x(periodic_table_index=True, model_index=None)
 
     def setUp(self, device='cuda:0'):
-        self.tolerance = 5e-5
+        self.tolerance = 7e-5
         self.device = device
         self.aev_computer_1x = torchani.AEVComputer.like_1x(cutoff_fn=self.cutoff_fn).to(self.device)
         self.cuaev_computer_1x = torchani.AEVComputer.like_1x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
@@ -60,6 +60,7 @@ class TestCUAEV(TestCase):
 
         self.aev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn).to(self.device)
         self.cuaev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
+        self.cuaev_computer_2x_withnbr = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True).to(self.device)
         self.ani2x = self.__class__.ani2x
 
     def _skip_if_not_cosine(self):
@@ -418,7 +419,7 @@ class TestCUAEV(TestCase):
 
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
-            _, cu_aev = self.cuaev_computer_2x((species, coordinates), use_cuaev_interface=True)
+            _, cu_aev = self.cuaev_computer_2x_withnbr((species, coordinates))
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev)
@@ -443,7 +444,7 @@ class TestCUAEV(TestCase):
 
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
-            _, cu_aev = self.cuaev_computer_2x((species, coordinates), cell, pbc, use_cuaev_interface=True)
+            _, cu_aev = self.cuaev_computer_2x_withnbr((species, coordinates), cell, pbc)
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev)
