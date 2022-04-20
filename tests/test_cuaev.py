@@ -10,7 +10,7 @@ from parameterized import parameterized_class
 path = os.path.dirname(os.path.realpath(__file__))
 
 skipIfNoGPU = unittest.skipIf(not torch.cuda.is_available(), 'There is no device to run this test')
-skipIfNoMultiGPU = unittest.skipIf(not torch.cuda.device_count() >= 2, 'There is not enough GPU devices to run this test')
+skipIfNoMultiGPU = unittest.skipIf(not torch.cuda.device_count() >= 2, 'There are not enough GPU devices to run this test')
 skipIfNoCUAEV = unittest.skipIf(not torchani.aev.cuaev_is_installed, "only valid when cuaev is installed")
 
 
@@ -60,7 +60,7 @@ class TestCUAEV(TestCase):
 
         self.aev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn).to(self.device)
         self.cuaev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
-        self.cuaev_computer_2x_withnbr = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True).to(self.device)
+        self.cuaev_computer_2x_with_half_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True, use_full_nbrlist=False).to(self.device)
         self.ani2x = self.__class__.ani2x
 
     def _skip_if_not_cosine(self):
@@ -402,8 +402,8 @@ class TestCUAEV(TestCase):
             self.assertEqual(cu_aev, aev, atol=5e-5, rtol=5e-5)
             self.assertEqual(cuaev_grad, aev_grad, atol=5e-4, rtol=5e-4)
 
-    def testWithNbrList_nopbc(self):
-        files = ['3NIR.pdb', 'small.pdb', '1hz5.pdb', '6W8H.pdb']
+    def testWithHalfNbrList_nopbc(self):
+        files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
         for file in files:
             filepath = os.path.join(path, f'../dataset/pdb/{file}')
             mol = read(filepath)
@@ -419,14 +419,14 @@ class TestCUAEV(TestCase):
 
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
-            _, cu_aev = self.cuaev_computer_2x_withnbr((species, coordinates))
+            _, cu_aev = self.cuaev_computer_2x_with_half_nbrlist((species, coordinates))
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev)
             self.assertEqual(cuaev_grad, aev_grad, atol=7e-5, rtol=7e-5)
 
-    def testWithNbrList_pbc(self):
-        files = ['3NIR.pdb']
+    def testWithHalfNbrList_pbc(self):
+        files = ['small.pdb']
         for file in files:
             filepath = os.path.join(path, f'../dataset/pdb/{file}')
             mol = read(filepath)
@@ -444,7 +444,7 @@ class TestCUAEV(TestCase):
 
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
-            _, cu_aev = self.cuaev_computer_2x_withnbr((species, coordinates), cell, pbc)
+            _, cu_aev = self.cuaev_computer_2x_with_half_nbrlist((species, coordinates), cell, pbc)
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev)

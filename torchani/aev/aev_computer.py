@@ -73,6 +73,8 @@ class AEVComputer(torch.nn.Module):
     aev_length: Final[int]
 
     use_cuda_extension: Final[bool]
+    use_cuaev_interface: Final[bool]
+    use_full_nbrlist: Final[bool]
     triu_index: Tensor
 
     def __init__(self,
@@ -87,6 +89,7 @@ class AEVComputer(torch.nn.Module):
                 num_species: Optional[int] = None,
                 use_cuda_extension=False,
                 use_cuaev_interface=False,
+                use_full_nbrlist=False,
                 cutoff_fn='cosine',
                 neighborlist='full_pairwise',
                 radial_terms='standard',
@@ -99,6 +102,7 @@ class AEVComputer(torch.nn.Module):
         super().__init__()
         self.use_cuda_extension = use_cuda_extension
         self.use_cuaev_interface = use_cuaev_interface
+        self.use_full_nbrlist = use_full_nbrlist
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
 
@@ -300,6 +304,9 @@ class AEVComputer(torch.nn.Module):
             if self.use_cuaev_interface:
                 # TODO, no_grad for self.neighborlist?
                 atom_index12, _, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
+                if self.use_full_nbrlist:
+                    # TODO build full neighbor list
+                    pass
                 aev = self._compute_cuaev_with_nbrlist(species, coordinates, atom_index12, diff_vector, distances)
             else:
                 assert pbc is None or (not pbc.any()), "cuaev currently does not support PBC"
@@ -326,7 +333,10 @@ class AEVComputer(torch.nn.Module):
         species_int = species.to(torch.int32)
         atom_index12_int = atom_index12.to(torch.int32)
         # coordinates will not be used in forward calculation, but it's gradient (force) will still be calculated in cuaev kernel
-        aev = torch.ops.cuaev.run_with_nbrlist(coordinates, species_int, atom_index12_int, diff_vector, distances, self.cuaev_computer)
+        if self.use_full_nbrlist:
+            aev = torch.ops.cuaev.run_with_full_nbrlist(coordinates, species_int, atom_index12_int, diff_vector, distances, self.cuaev_computer)
+        else:
+            aev = torch.ops.cuaev.run_with_half_nbrlist(coordinates, species_int, atom_index12_int, diff_vector, distances, self.cuaev_computer)
         return aev
 
     def _compute_aev(self, species: Tensor,
