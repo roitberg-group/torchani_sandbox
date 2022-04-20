@@ -1255,7 +1255,7 @@ void cuaev_forward(
 }
 
 template <bool use_cos_cutoff>
-void cuaev_forward_with_nbrlist(
+void cuaev_forward_with_half_nbrlist(
     const Tensor& coordinates_t,
     const Tensor& species_t,
     const Tensor& atomIJ_t,
@@ -1648,7 +1648,7 @@ Result CuaevComputer::forward(const Tensor& coordinates_t, const Tensor& species
   return result;
 }
 
-Result CuaevComputer::forward_with_nbrlist(
+Result CuaevComputer::forward_with_half_nbrlist(
     const Tensor& coordinates_t,
     const Tensor& species_t,
     const Tensor& atomIJ_t,
@@ -1656,9 +1656,9 @@ Result CuaevComputer::forward_with_nbrlist(
     const Tensor& distJ_t) {
   Result result(coordinates_t, species_t);
   if (aev_params.use_cos_cutoff)
-    cuaev_forward_with_nbrlist<true>(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, aev_params, result);
+    cuaev_forward_with_half_nbrlist<true>(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, aev_params, result);
   else
-    cuaev_forward_with_nbrlist<false>(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, aev_params, result);
+    cuaev_forward_with_half_nbrlist<false>(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, aev_params, result);
   return result;
 }
 

@@ -136,7 +136,7 @@ tensor_list CuaevAutograd::backward(AutogradContext* ctx, tensor_list grad_outpu
   return {grad_coord, Tensor(), Tensor()};
 }
 
-Tensor CuaevWithNbrlistAutograd::forward(
+Tensor CuaevWithHalfNbrlistAutograd::forward(
     AutogradContext* ctx,
     const Tensor& coordinates_t,
     const Tensor& species_t,
@@ -145,7 +145,7 @@ Tensor CuaevWithNbrlistAutograd::forward(
     const Tensor& distJ_t,
     const torch::intrusive_ptr<CuaevComputer>& cuaev_computer) {
   at::AutoDispatchBelowADInplaceOrView guard;
-  Result result = cuaev_computer->forward_with_nbrlist(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t);
+  Result result = cuaev_computer->forward_with_half_nbrlist(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t);
   if (coordinates_t.requires_grad()) {
     ctx->saved_data["cuaev_computer"] = cuaev_computer;
     ctx->save_for_backward(result);
@@ -153,7 +153,7 @@ Tensor CuaevWithNbrlistAutograd::forward(
   return result.aev_t;
 }
 
-tensor_list CuaevWithNbrlistAutograd::backward(AutogradContext* ctx, tensor_list grad_outputs) {
+tensor_list CuaevWithHalfNbrlistAutograd::backward(AutogradContext* ctx, tensor_list grad_outputs) {
   torch::intrusive_ptr<CuaevComputer> cuaev_computer = ctx->saved_data["cuaev_computer"].toCustomClass<CuaevComputer>();
   tensor_list result_tensors = ctx->get_saved_variables();
   Tensor grad_coord = CuaevDoubleAutograd::apply(grad_outputs[0], cuaev_computer, result_tensors);
@@ -175,25 +175,25 @@ Tensor run_autograd(
   return CuaevAutograd::apply(coordinates_t, species_t, cuaev_computer);
 }
 
-Tensor run_with_nbrlist_only_forward(
+Tensor run_with_half_nbrlist_only_forward(
     const Tensor& coordinates_t,
     const Tensor& species_t,
     const Tensor& atomIJ_t,
     const Tensor& deltaJ_t,
     const Tensor& distJ_t,
     const torch::intrusive_ptr<CuaevComputer>& cuaev_computer) {
-  Result result = cuaev_computer->forward_with_nbrlist(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t);
+  Result result = cuaev_computer->forward_with_half_nbrlist(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t);
   return result.aev_t;
 }
 
-Tensor run_with_nbrlist_autograd(
+Tensor run_with_half_nbrlist_autograd(
     const Tensor& coordinates_t,
     const Tensor& species_t,
     const Tensor& atomIJ_t,
     const Tensor& deltaJ_t,
     const Tensor& distJ_t,
     const torch::intrusive_ptr<CuaevComputer>& cuaev_computer) {
-  return CuaevWithNbrlistAutograd::apply(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, cuaev_computer);
+  return CuaevWithHalfNbrlistAutograd::apply(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, cuaev_computer);
 }
 
 TORCH_LIBRARY(cuaev, m) {
@@ -230,17 +230,17 @@ TORCH_LIBRARY(cuaev, m) {
                 state[9].item<bool>());
           });
   m.def("run", run_only_forward);
-  m.def("run_with_nbrlist", run_with_nbrlist_only_forward);
+  m.def("run_with_half_nbrlist", run_with_half_nbrlist_only_forward);
 }
 
 TORCH_LIBRARY_IMPL(cuaev, CUDA, m) {
   m.impl("run", run_only_forward);
-  m.impl("run_with_nbrlist", run_with_nbrlist_only_forward);
+  m.impl("run_with_half_nbrlist", run_with_half_nbrlist_only_forward);
 }
 
 TORCH_LIBRARY_IMPL(cuaev, Autograd, m) {
   m.impl("run", run_autograd);
-  m.impl("run_with_nbrlist", run_with_nbrlist_autograd);
+  m.impl("run_with_half_nbrlist", run_with_half_nbrlist_autograd);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {}
