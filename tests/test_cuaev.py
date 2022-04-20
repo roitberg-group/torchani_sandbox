@@ -52,7 +52,7 @@ class TestCUAEV(TestCase):
         cls.ani2x = torchani.models.ANI2x(periodic_table_index=True, model_index=None)
 
     def setUp(self, device='cuda:0'):
-        self.tolerance = 7e-5
+        self.tolerance = 5e-5
         self.device = device
         self.aev_computer_1x = torchani.AEVComputer.like_1x(cutoff_fn=self.cutoff_fn).to(self.device)
         self.cuaev_computer_1x = torchani.AEVComputer.like_1x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
@@ -423,7 +423,7 @@ class TestCUAEV(TestCase):
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev)
-            self.assertEqual(cuaev_grad, aev_grad, atol=5e-5, rtol=5e-5)
+            self.assertEqual(cuaev_grad, aev_grad, atol=7e-5, rtol=7e-5)
 
     def testWithNbrList_pbc(self):
         files = ['3NIR.pdb']
@@ -448,7 +448,7 @@ class TestCUAEV(TestCase):
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev)
-            self.assertEqual(cuaev_grad, aev_grad, atol=5e-5, rtol=5e-5)
+            self.assertEqual(cuaev_grad, aev_grad, atol=7e-5, rtol=7e-5)
 
 
 if __name__ == '__main__':
