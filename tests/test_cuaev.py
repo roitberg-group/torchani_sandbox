@@ -61,6 +61,7 @@ class TestCUAEV(TestCase):
         self.aev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn).to(self.device)
         self.cuaev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
         self.cuaev_computer_2x_with_half_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True, use_full_nbrlist=False).to(self.device)
+        self.cuaev_computer_2x_with_full_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True, use_full_nbrlist=True).to(self.device)
         self.ani2x = self.__class__.ani2x
 
     def _skip_if_not_cosine(self):
@@ -445,6 +446,54 @@ class TestCUAEV(TestCase):
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
             _, cu_aev = self.cuaev_computer_2x_with_half_nbrlist((species, coordinates), cell, pbc)
+            cu_aev.backward(torch.ones_like(cu_aev))
+            cuaev_grad = coordinates.grad
+            self.assertEqual(cu_aev, aev)
+            self.assertEqual(cuaev_grad, aev_grad, atol=7e-5, rtol=7e-5)
+
+    def testWithFullNbrList_nopbc(self):
+        files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
+        for file in files:
+            filepath = os.path.join(path, f'../dataset/pdb/{file}')
+            mol = read(filepath)
+            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
+            positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
+            speciesPositions = self.ani2x.species_converter((species, positions))
+            species, coordinates = speciesPositions
+
+            coordinates.requires_grad_()
+            _, aev = self.aev_computer_2x((species, coordinates))
+            aev.backward(torch.ones_like(aev))
+            aev_grad = coordinates.grad
+
+            coordinates = coordinates.clone().detach()
+            coordinates.requires_grad_()
+            _, cu_aev = self.cuaev_computer_2x_with_full_nbrlist((species, coordinates))
+            cu_aev.backward(torch.ones_like(cu_aev))
+            cuaev_grad = coordinates.grad
+            self.assertEqual(cu_aev, aev)
+            self.assertEqual(cuaev_grad, aev_grad, atol=7e-5, rtol=7e-5)
+
+    def testWithFullNbrList_pbc(self):
+        files = ['small.pdb']
+        for file in files:
+            filepath = os.path.join(path, f'../dataset/pdb/{file}')
+            mol = read(filepath)
+            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
+            positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
+            cell = torch.tensor(mol.get_cell(complete=True), dtype=torch.float32, device=self.device)
+            pbc = torch.tensor(mol.get_pbc(), dtype=torch.bool, device=self.device)
+            speciesPositions = self.ani2x.species_converter((species, positions))
+            species, coordinates = speciesPositions
+
+            coordinates.requires_grad_()
+            _, aev = self.aev_computer_2x((species, coordinates), cell, pbc)
+            aev.backward(torch.ones_like(aev))
+            aev_grad = coordinates.grad
+
+            coordinates = coordinates.clone().detach()
+            coordinates.requires_grad_()
+            _, cu_aev = self.cuaev_computer_2x_with_full_nbrlist((species, coordinates), cell, pbc)
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev)
