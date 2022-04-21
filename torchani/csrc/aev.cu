@@ -1626,6 +1626,8 @@ void cuaev_forward_with_full_nbrlist(
   float3* angularNbr_deltaJ_p = reinterpret_cast<float3*>(result.angularNbr.deltaJ_t.data_ptr());
   // ===========================================================================
 
+  // TODO make startIdx as a parameter so that the scan result can be cached in the ANI model,
+  // and there is no need to scan in every timestep
   int* numJPerI_p = (int*)numJPerI_t.data_ptr();
   result.nI = atomI_t.size(0);
   cubScan(numJPerI_p, startIdxJ_p, total_atoms, stream);

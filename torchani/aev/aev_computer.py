@@ -325,6 +325,15 @@ class AEVComputer(torch.nn.Module):
         return aev
 
     @jit_unused_if_no_cuaev()
+    def _half_to_full_nbrlist(self, atom_index12):
+        ilist = atom_index12.view(-1)
+        jlist = atom_index12.flip(0).view(-1)
+        ilist_sorted, indices = ilist.sort(stable=True)
+        jlist = jlist[indices]
+        ilist_unique, numneigh = torch.unique_consecutive(ilist_sorted, return_counts=True)
+        return ilist_unique, jlist, numneigh
+
+    @jit_unused_if_no_cuaev()
     def _compute_cuaev_with_nbrlist(self, species, coordinates, atom_index12, diff_vector, distances):
         # TODO could these be int32 by default?
         species = species.to(torch.int32)
@@ -332,11 +341,7 @@ class AEVComputer(torch.nn.Module):
         # coordinates will not be used in forward calculation, but it's gradient (force) will still be calculated in cuaev kernel
         if self.use_full_nbrlist:
             assert(species.shape[0] == 1)
-            ilist = atom_index12.view(-1)
-            jlist = atom_index12.flip(0).view(-1)
-            ilist_sorted, indices = ilist.sort(stable=True)
-            jlist = jlist[indices]
-            ilist_unique, numneigh = torch.unique_consecutive(ilist_sorted, return_counts=True)
+            ilist_unique, jlist, numneigh = self._half_to_full_nbrlist(atom_index12)
             aev = self._compute_cuaev_with_full_nbrlist(species, coordinates, ilist_unique, jlist, numneigh)
         else:
             aev = torch.ops.cuaev.run_with_half_nbrlist(coordinates, species, atom_index12, diff_vector, distances, self.cuaev_computer)
