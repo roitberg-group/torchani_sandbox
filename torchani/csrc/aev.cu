@@ -1070,10 +1070,9 @@ __global__ void postProcessExternelNbrList(
       int pidx_r = atomicAdd(&s_radial_pcounter_i[ii], 1);
       int sign = sortidx_2P < (num_atomIJ / 2) ? -1 : 1;
       int j = atomJ_unsorted[sortidx_2P] % max_natoms_per_mol;
-      float3 delta = {
-          sign * deltaJ_unsorted[sortidx_1P].x,
-          sign * deltaJ_unsorted[sortidx_1P].y,
-          sign * deltaJ_unsorted[sortidx_1P].z};
+      float3 delta = {sign * deltaJ_unsorted[sortidx_1P].x,
+                      sign * deltaJ_unsorted[sortidx_1P].y,
+                      sign * deltaJ_unsorted[sortidx_1P].z};
       radial_atomJ[start_i + pidx_r] = j;
       radial_distJ[start_i + pidx_r] = dist;
       radial_deltaJ[start_i + pidx_r] = delta;
@@ -1105,7 +1104,8 @@ void cuaev_forward(
     const AEVScalarParams& aev_params,
     Result& result) {
   TORCH_CHECK(
-      (species_t.dtype() == torch::kInt32) && (coordinates_t.dtype() == torch::kFloat32), "Only support int and float now");
+      (species_t.dtype() == torch::kInt32) && (coordinates_t.dtype() == torch::kFloat32),
+      "Only support int and float now");
   TORCH_CHECK(
       aev_params.EtaR_t.size(0) == 1 && aev_params.EtaA_t.size(0) == 1 && aev_params.Zeta_t.size(0) == 1,
       "cuda extension is currently not supported for the specified "
@@ -1352,7 +1352,8 @@ void cuaev_forward_with_half_nbrlist(
     const AEVScalarParams& aev_params,
     Result& result) {
   TORCH_CHECK(
-      (species_t.dtype() == torch::kInt32) && (coordinates_t.dtype() == torch::kFloat32), "Only support int and float now");
+      (species_t.dtype() == torch::kInt32) && (coordinates_t.dtype() == torch::kFloat32),
+      "Only support int and float now");
   TORCH_CHECK(
       aev_params.EtaR_t.size(0) == 1 || aev_params.EtaA_t.size(0) == 1 || aev_params.Zeta_t.size(0) == 1,
       "cuda extension is currently not supported for the specified "
@@ -1560,9 +1561,11 @@ void cuaev_forward_with_full_nbrlist(
     const AEVScalarParams& aev_params,
     Result& result) {
   TORCH_CHECK(
-      (species_t.dtype() == torch::kInt32) && (coordinates_t.dtype() == torch::kFloat32), "Only support int and float now");
+      (species_t.dtype() == torch::kInt32) && (coordinates_t.dtype() == torch::kFloat32),
+      "Only support int and float now");
   TORCH_CHECK(
-      (atomI_t.dtype() == torch::kInt32) && (atomJ_t.dtype() == torch::kInt32) && (numJPerI_t.dtype() == torch::kInt32), "Index should be int");
+      (atomI_t.dtype() == torch::kInt32) && (atomJ_t.dtype() == torch::kInt32) && (numJPerI_t.dtype() == torch::kInt32),
+      "Index should be int");
   TORCH_CHECK(
       aev_params.EtaR_t.size(0) == 1 || aev_params.EtaA_t.size(0) == 1 || aev_params.Zeta_t.size(0) == 1,
       "cuda extension is currently not supported for the specified "
