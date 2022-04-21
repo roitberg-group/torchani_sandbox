@@ -337,10 +337,20 @@ class AEVComputer(torch.nn.Module):
             ilist_sorted, indices = ilist.sort(stable=True)
             jlist = jlist[indices]
             ilist_unique, numneigh = torch.unique_consecutive(ilist_sorted, return_counts=True)
-            aev = torch.ops.cuaev.run_with_full_nbrlist(coordinates, species, ilist_unique.to(torch.int32), jlist.to(torch.int32),
-                                                        numneigh.to(torch.int32), self.cuaev_computer)
+            aev = self._compute_cuaev_with_full_nbrlist(species, coordinates, ilist_unique, jlist, numneigh)
         else:
             aev = torch.ops.cuaev.run_with_half_nbrlist(coordinates, species, atom_index12, diff_vector, distances, self.cuaev_computer)
+        return aev
+
+    @jit_unused_if_no_cuaev()
+    def _compute_cuaev_with_full_nbrlist(self, species, coordinates, ilist_unique, jlist, numneigh):
+        assert(self.use_full_nbrlist)
+        aev = torch.ops.cuaev.run_with_full_nbrlist(coordinates,
+                                                    species.to(torch.int32),
+                                                    ilist_unique.to(torch.int32),
+                                                    jlist.to(torch.int32),
+                                                    numneigh.to(torch.int32),
+                                                    self.cuaev_computer)
         return aev
 
     def _compute_aev(self, species: Tensor,
