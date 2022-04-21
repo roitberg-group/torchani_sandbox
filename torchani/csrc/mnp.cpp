@@ -245,8 +245,7 @@ Tensor run_autograd(
     std::vector<Tensor> bias_list,
     std::vector<at::Stream> stream_list,
     bool is_bmm,
-    double celu_alpha = 0.1
-    ) {
+    double celu_alpha = 0.1) {
   // TODO use_stream is disabled forever
   bool use_stream = false;
   // maybe create stream inside mnp?
