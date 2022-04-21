@@ -1461,6 +1461,45 @@ void cuaev_forward_with_half_nbrlist(
 }
 
 template <bool use_cos_cutoff>
+void cuaev_forward_with_full_nbrlist(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const Tensor& atomI_t,
+    const Tensor& atomJ_t,
+    const Tensor& numJPerI_t,
+    const AEVScalarParams& aev_params,
+    Result& result) {
+  TORCH_CHECK(
+      (species_t.dtype() == torch::kInt32) && (coordinates_t.dtype() == torch::kFloat32), "Unsupported input type");
+  TORCH_CHECK(
+      aev_params.EtaR_t.size(0) == 1 || aev_params.EtaA_t.size(0) == 1 || aev_params.Zeta_t.size(0) == 1,
+      "cuda extension is currently not supported for the specified "
+      "configuration");
+  TORCH_CHECK(atomI_t.size(0) == numJPerI_t.size(0), "atomI_t and numJPerI_t should have the same shape");
+
+  float Rcr = aev_params.Rcr;
+  float Rca = aev_params.Rca;
+  const int n_molecules = species_t.size(0);
+  const int max_natoms_per_mol = species_t.size(1);
+  int aev_length = aev_params.radial_length + aev_params.angular_length;
+  int total_atoms = n_molecules * max_natoms_per_mol;
+  float* coordinates_p = (float*)coordinates_t.data_ptr();
+  TORCH_CHECK(coordinates_t.is_contiguous(), "Coordinate data is not contiguous");
+
+  result.aev_t = torch::zeros({n_molecules, max_natoms_per_mol, aev_length}, coordinates_t.options());
+  if (species_t.numel() == 0) {
+    return;
+  }
+
+  at::cuda::CUDAGuard device_guard(coordinates_t.device().index());
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+  at::globalContext().lazyInitCUDA();
+
+  auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
+
+}
+
+template <bool use_cos_cutoff>
 Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_params, const Result& result) {
   using namespace torch::indexing;
   Tensor coordinates_t = result.coordinates_t;
@@ -1659,6 +1698,20 @@ Result CuaevComputer::forward_with_half_nbrlist(
     cuaev_forward_with_half_nbrlist<true>(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, aev_params, result);
   else
     cuaev_forward_with_half_nbrlist<false>(coordinates_t, species_t, atomIJ_t, deltaJ_t, distJ_t, aev_params, result);
+  return result;
+}
+
+Result CuaevComputer::forward_with_full_nbrlist(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const Tensor& atomI_t,
+    const Tensor& atomJ_t,
+    const Tensor& numJPerI_t) {
+  Result result(coordinates_t, species_t);
+  if (aev_params.use_cos_cutoff)
+    cuaev_forward_with_full_nbrlist<true>(coordinates_t, species_t, atomI_t, atomJ_t, numJPerI_t, aev_params, result);
+  else
+    cuaev_forward_with_full_nbrlist<false>(coordinates_t, species_t, atomI_t, atomJ_t, numJPerI_t, aev_params, result);
   return result;
 }
 
