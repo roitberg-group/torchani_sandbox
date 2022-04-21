@@ -223,6 +223,16 @@ void cuaev_forward_with_half_nbrlist(
     Result& result);
 
 template <bool use_cos_cutoff>
+void cuaev_forward_with_full_nbrlist(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const Tensor& atomI_t,
+    const Tensor& atomJ_t,
+    const Tensor& numJPerI_t,
+    const AEVScalarParams& aev_params,
+    Result& result);
+
+template <bool use_cos_cutoff>
 Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_params, const Result& result);
 
 template <bool use_cos_cutoff>
@@ -251,6 +261,13 @@ struct CuaevComputer : torch::CustomClassHolder {
   Result forward(const Tensor& coordinates_t, const Tensor& species_t);
 
   Result forward_with_half_nbrlist(
+      const Tensor& coordinates_t,
+      const Tensor& species_t,
+      const Tensor& atomIJ_t,
+      const Tensor& deltaJ_t,
+      const Tensor& distJ_t);
+
+  Result forward_with_full_nbrlist(
       const Tensor& coordinates_t,
       const Tensor& species_t,
       const Tensor& atomIJ_t,
@@ -292,6 +309,19 @@ class CuaevWithHalfNbrlistAutograd : public torch::autograd::Function<CuaevWithH
       const Tensor& atomIJ_t,
       const Tensor& deltaJ_t,
       const Tensor& distJ_t,
+      const torch::intrusive_ptr<CuaevComputer>& cuaev_computer);
+  static tensor_list backward(AutogradContext* ctx, tensor_list grad_outputs);
+};
+
+class CuaevWithFullNbrlistAutograd : public torch::autograd::Function<CuaevWithFullNbrlistAutograd> {
+ public:
+  static Tensor forward(
+      AutogradContext* ctx,
+      const Tensor& coordinates_t,
+      const Tensor& species_t,
+      const Tensor& atomI_t,
+      const Tensor& atomJ_t,
+      const Tensor& numJPerI_t,
       const torch::intrusive_ptr<CuaevComputer>& cuaev_computer);
   static tensor_list backward(AutogradContext* ctx, tensor_list grad_outputs);
 };
