@@ -186,7 +186,9 @@ class BuiltinModel(Module):
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         atomic_energies = self.neural_networks._atomic_energies(species_aevs)
-        atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
+        # sae has dtype as double
+        # cannot use +=, which will save atomic_energies in float
+        atomic_energies = atomic_energies + self.energy_shifter._atomic_saes(species_coordinates[0])
 
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
