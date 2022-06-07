@@ -39,13 +39,13 @@ GSAES = {'b973c-def2mtzvp': {'C': -37.81441001258,
                              'N': -54.556538547322,
                              'O': -75.029181326588,
                              'S': -398.043159341582},
-         'wb97x-631gd': {'C': -37.8338334,
-                         'Cl': -460.116700600,
-                         'F': -99.6949007,
-                         'H': -0.4993212,
-                         'N': -54.5732825,
-                         'O': -75.0424519,
-                         'S': -398.0814169},
+        'wb97x-631gd': {'C': -37.8338334,
+                        'Cl': -460.116700600,
+                        'F': -99.6949007,
+                        'H': -0.4993212,
+                        'N': -54.5732825,
+                        'O': -75.0424519,
+                        'S': -398.0814169},
         'wB97md3bj-def2tzvpp': {'C': -37.870597534068,
                                 'Cl': -460.197921425433,
                                 'F': -99.784869113871,
@@ -110,7 +110,7 @@ def species_to_formula(species: np.ndarray) -> List[str]:
 
 
 def path_is_writable(path: Union[str, Path]) -> bool:
-    # check if a path is writeable, adapted from:
+    # Check if a path is writeable, adapted from:
     # https://stackoverflow.com/questions/2113427/determining-whether-a-directory-is-writeable
     try:
         testfile = tempfile.TemporaryFile(dir=path)
