@@ -74,7 +74,11 @@ class StandardRadial(torch.nn.Module):
     @classmethod
     def like_1x(cls, **kwargs):
         exact = kwargs.pop('exact', True)
-        m = cls.cover_linearly(cutoff=5.2, eta=16.0, num_shifts=16, **kwargs)
+        _kwargs = {'cutoff': 5.2, 'eta': 16.0, 'num_shifts': 16, 'start': 0.9}
+        if kwargs:
+            raise ValueError("If 'exact' is specified, no other argument can be passed")
+        _kwargs.update(kwargs)
+        m = cls.cover_linearly(**_kwargs)
         if exact:
             state_dict = torch.load(state_dicts_path.joinpath('radial_1x_state_dict.pth'))
             m.load_state_dict(state_dict)
@@ -85,11 +89,11 @@ class StandardRadial(torch.nn.Module):
     @classmethod
     def like_2x(cls, **kwargs):
         exact = kwargs.pop('exact', True)
-        m = cls.cover_linearly(cutoff=5.1, eta=19.7, num_shifts=16, start=0.8, **kwargs)
-        # note that this term is different in the last decimal in 2x,
-        # using this method the term is 2.6812 but in 2x it is 2.681250095,
-        # here we keep consistency with 2x
-        m.ShfR[0, 7] = 2.681250095
+        _kwargs = {'cutoff': 5.1, 'eta': 19.7, 'num_shifts': 16, 'start': 0.8}
+        if kwargs:
+            raise ValueError("If 'exact' is specified, no other argument can be passed")
+        _kwargs.update(kwargs)
+        m = cls.cover_linearly(**_kwargs)
         if exact:
             state_dict = torch.load(state_dicts_path.joinpath('radial_2x_state_dict.pth'))
             m.load_state_dict(state_dict)
@@ -180,7 +184,11 @@ class StandardAngular(torch.nn.Module):
     @classmethod
     def like_1x(cls, **kwargs):
         exact = kwargs.pop('exact', True)
-        m = cls.cover_linearly(cutoff=3.5, eta=8.0, zeta=32.0, num_shifts=4, num_angle_sections=8, **kwargs)
+        _kwargs = {'cutoff': 3.5, 'eta': 8.0, 'zeta': 32.0, 'num_shift': 4, 'num_angle_sections': 8}
+        if kwargs:
+            raise ValueError("If 'exact' is specified, no other argument can be passed")
+        _kwargs.update(kwargs)
+        m = cls.cover_linearly(**_kwargs)
         if exact:
             state_dict = torch.load(state_dicts_path.joinpath('angular_1x_state_dict.pth'))
             m.load_state_dict(state_dict)
@@ -191,7 +199,11 @@ class StandardAngular(torch.nn.Module):
     @classmethod
     def like_2x(cls, **kwargs):
         exact = kwargs.pop('exact', True)
-        m = cls.cover_linearly(cutoff=3.5, eta=12.5, num_shifts=8, start=0.8, zeta=14.1, num_angle_sections=4, **kwargs)
+        _kwargs = {'cutoff': 3.5, 'eta': 12.5, 'zeta': 14.1, 'num_shift': 8, 'num_angle_sections': 4, 'start': 0.8}
+        if kwargs:
+            raise ValueError("If 'exact' is specified, no other argument can be passed")
+        _kwargs.update(kwargs)
+        m = cls.cover_linearly(**_kwargs)
         if exact:
             state_dict = torch.load(state_dicts_path.joinpath('angular_2x_state_dict.pth'))
             m.load_state_dict(state_dict)
