@@ -75,7 +75,7 @@ class StandardRadial(torch.nn.Module):
     def like_1x(cls, **kwargs):
         exact = kwargs.pop('exact', True)
         _kwargs = {'cutoff': 5.2, 'eta': 16.0, 'num_shifts': 16, 'start': 0.9}
-        if kwargs:
+        if kwargs and exact:
             raise ValueError("If 'exact' is specified, no other argument can be passed")
         _kwargs.update(kwargs)
         m = cls.cover_linearly(**_kwargs)
@@ -90,7 +90,7 @@ class StandardRadial(torch.nn.Module):
     def like_2x(cls, **kwargs):
         exact = kwargs.pop('exact', True)
         _kwargs = {'cutoff': 5.1, 'eta': 19.7, 'num_shifts': 16, 'start': 0.8}
-        if kwargs:
+        if kwargs and exact:
             raise ValueError("If 'exact' is specified, no other argument can be passed")
         _kwargs.update(kwargs)
         m = cls.cover_linearly(**_kwargs)
@@ -184,8 +184,8 @@ class StandardAngular(torch.nn.Module):
     @classmethod
     def like_1x(cls, **kwargs):
         exact = kwargs.pop('exact', True)
-        _kwargs = {'cutoff': 3.5, 'eta': 8.0, 'zeta': 32.0, 'num_shift': 4, 'num_angle_sections': 8}
-        if kwargs:
+        _kwargs = {'cutoff': 3.5, 'eta': 8.0, 'zeta': 32.0, 'num_shifts': 4, 'num_angle_sections': 8}
+        if kwargs and exact:
             raise ValueError("If 'exact' is specified, no other argument can be passed")
         _kwargs.update(kwargs)
         m = cls.cover_linearly(**_kwargs)
@@ -199,8 +199,8 @@ class StandardAngular(torch.nn.Module):
     @classmethod
     def like_2x(cls, **kwargs):
         exact = kwargs.pop('exact', True)
-        _kwargs = {'cutoff': 3.5, 'eta': 12.5, 'zeta': 14.1, 'num_shift': 8, 'num_angle_sections': 4, 'start': 0.8}
-        if kwargs:
+        _kwargs = {'cutoff': 3.5, 'eta': 12.5, 'zeta': 14.1, 'num_shifts': 8, 'num_angle_sections': 4, 'start': 0.8}
+        if kwargs and exact:
             raise ValueError("If 'exact' is specified, no other argument can be passed")
         _kwargs.update(kwargs)
         m = cls.cover_linearly(**_kwargs)
