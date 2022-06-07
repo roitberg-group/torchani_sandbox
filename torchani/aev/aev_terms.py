@@ -9,8 +9,18 @@ from ..compat import Final
 state_dicts_path = Path(__file__).parent.parent.joinpath('resources/state_dicts/')
 
 
-def _warn_parameters():
-    warnings.warn('Generated parameters may differ from published model to 1e-7')
+def _build_terms_from_updated_defaults(cls, state_dict_name, default_kwargs, **kwargs):
+    exact = kwargs.pop('exact', True)
+    if kwargs and exact:
+        raise ValueError("If 'exact' is specified, no other argument can be passed")
+    default_kwargs.update(kwargs)
+    m = cls.cover_linearly(**default_kwargs)
+    if exact:
+        state_dict = torch.load(state_dicts_path.joinpath('radial_2x_state_dict.pth'))
+        m.load_state_dict(state_dict)
+    else:
+        warnings.warn('Generated parameters may differ from published model to 1e-7')
+    return m
 
 
 class StandardRadial(torch.nn.Module):
@@ -73,33 +83,15 @@ class StandardRadial(torch.nn.Module):
 
     @classmethod
     def like_1x(cls, **kwargs):
-        exact = kwargs.pop('exact', True)
-        _kwargs = {'cutoff': 5.2, 'eta': 16.0, 'num_shifts': 16, 'start': 0.9}
-        if kwargs and exact:
-            raise ValueError("If 'exact' is specified, no other argument can be passed")
-        _kwargs.update(kwargs)
-        m = cls.cover_linearly(**_kwargs)
-        if exact:
-            state_dict = torch.load(state_dicts_path.joinpath('radial_1x_state_dict.pth'))
-            m.load_state_dict(state_dict)
-        else:
-            _warn_parameters()
-        return m
+        default_kwargs = {'cutoff': 5.2, 'eta': 16.0, 'num_shifts': 16, 'start': 0.9, 'cutoff_fn': 'cosine'}
+        state_dict_name = 'radial_1x_state_dict.pth'
+        return _build_terms_from_updated_defaults(cls, state_dict_name, default_kwargs, **kwargs)
 
     @classmethod
     def like_2x(cls, **kwargs):
-        exact = kwargs.pop('exact', True)
-        _kwargs = {'cutoff': 5.1, 'eta': 19.7, 'num_shifts': 16, 'start': 0.8}
-        if kwargs and exact:
-            raise ValueError("If 'exact' is specified, no other argument can be passed")
-        _kwargs.update(kwargs)
-        m = cls.cover_linearly(**_kwargs)
-        if exact:
-            state_dict = torch.load(state_dicts_path.joinpath('radial_2x_state_dict.pth'))
-            m.load_state_dict(state_dict)
-        else:
-            _warn_parameters()
-        return m
+        default_kwargs = {'cutoff': 5.1, 'eta': 19.7, 'num_shifts': 16, 'start': 0.8, 'cutoff_fn': 'cosine'}
+        state_dict_name = 'radial_2x_state_dict.pth'
+        return _build_terms_from_updated_defaults(cls, state_dict_name, default_kwargs, **kwargs)
 
     @classmethod
     def like_1ccx(cls, **kwargs):
@@ -183,33 +175,19 @@ class StandardAngular(torch.nn.Module):
 
     @classmethod
     def like_1x(cls, **kwargs):
-        exact = kwargs.pop('exact', True)
-        _kwargs = {'cutoff': 3.5, 'eta': 8.0, 'zeta': 32.0, 'num_shifts': 4, 'num_angle_sections': 8}
-        if kwargs and exact:
-            raise ValueError("If 'exact' is specified, no other argument can be passed")
-        _kwargs.update(kwargs)
-        m = cls.cover_linearly(**_kwargs)
-        if exact:
-            state_dict = torch.load(state_dicts_path.joinpath('angular_1x_state_dict.pth'))
-            m.load_state_dict(state_dict)
-        else:
-            _warn_parameters()
-        return m
+        default_kwargs = {'cutoff': 3.5, 'eta': 8.0, 'zeta': 32.0,
+                          'num_shifts': 4, 'num_angle_sections': 8, 'start': 0.9,
+                          'cutoff_fn': 'cosine'}
+        state_dict_name = 'angular_1x_state_dict.pth'
+        return _build_terms_from_updated_defaults(cls, state_dict_name, default_kwargs, **kwargs)
 
     @classmethod
     def like_2x(cls, **kwargs):
-        exact = kwargs.pop('exact', True)
-        _kwargs = {'cutoff': 3.5, 'eta': 12.5, 'zeta': 14.1, 'num_shifts': 8, 'num_angle_sections': 4, 'start': 0.8}
-        if kwargs and exact:
-            raise ValueError("If 'exact' is specified, no other argument can be passed")
-        _kwargs.update(kwargs)
-        m = cls.cover_linearly(**_kwargs)
-        if exact:
-            state_dict = torch.load(state_dicts_path.joinpath('angular_2x_state_dict.pth'))
-            m.load_state_dict(state_dict)
-        else:
-            _warn_parameters()
-        return m
+        default_kwargs = {'cutoff': 3.5, 'eta': 12.5, 'zeta': 14.1,
+                          'num_shifts': 8, 'num_angle_sections': 4, 'start': 0.8,
+                          'cutoff_fn': 'cosine'}
+        state_dict_name = 'angular_2x_state_dict.pth'
+        return _build_terms_from_updated_defaults(cls, state_dict_name, default_kwargs, **kwargs)
 
     @classmethod
     def like_1ccx(cls, **kwargs):
