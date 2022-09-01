@@ -90,7 +90,8 @@ def cuda_extension(build_all=False):
             if sm not in SMs and sm >= 50:
                 SMs.append(sm)
 
-    nvcc_args = ['--expt-extended-lambda', '-use_fast_math']
+    nvcc_args = ['--expt-extended-lambda']
+    nvcc_args.append('-use_fast_math')
     # nvcc_args.append('-Xptxas=-v')
     # use cub in a safe manner, see:
     # https://github.com/pytorch/pytorch/pull/55292
