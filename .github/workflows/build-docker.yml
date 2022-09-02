@@ -60,9 +60,6 @@ jobs:
       - name: UnitTests
         run: docker run --gpus all ${{ steps.meta.outputs.tags }} bash -c "nvidia-smi && cd tests/ && pytest -s -v ."
 
-      - name: Type checking with mypy
-        run: docker run --gpus all ${{ steps.meta.outputs.tags }} bash -c "mypy --ignore-missing-imports ."
-
       - name: Remove image
         if: ${{ always() }}
         continue-on-error: true
