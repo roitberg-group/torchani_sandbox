@@ -20,6 +20,9 @@ on:
       - 'conda/**'
       - 'test/test_cuaev.py'
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build_conda:
@@ -43,7 +46,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: UnitTests
-        run: docker run --gpus all ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}_conda:latest bash -c "nvidia-smi && export PYTHON_VERSION=3.8 && export CONDA_TOKEN=${{ secrets.CONDA_TOKEN }} && ./conda/build_conda.sh"
+        run: docker run -v $PWD:/examples --gpus all ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}_conda:latest bash -c "nvidia-smi && cd /examples && export PYTHON_VERSION=3.8 && export CONDA_TOKEN=${{ secrets.CONDA_TOKEN }} && ./conda/build_conda.sh"
 
 concurrency:
   group: build_conda-${{ github.event.pull_request.number || github.sha }}
