@@ -10,7 +10,7 @@ from parameterized import parameterized_class
 path = os.path.dirname(os.path.realpath(__file__))
 
 skipIfNoGPU = unittest.skipIf(not torch.cuda.is_available(), 'There is no device to run this test')
-skipIfNoMultiGPU = unittest.skipIf(not torch.cuda.device_count() >= 2, 'There is not enough GPU devices to run this test')
+skipIfNoMultiGPU = unittest.skipIf(not torch.cuda.device_count() >= 2, 'There are not enough GPU devices to run this test')
 skipIfNoCUAEV = unittest.skipIf(not torchani.aev.cuaev_is_installed, "only valid when cuaev is installed")
 
 
@@ -28,8 +28,8 @@ class TestCUAEVNoGPU(TestCase):
         aev_computer = torchani.AEVComputer.like_1x(use_cuda_extension=True)
         s = torch.jit.script(aev_computer)
         # Computation of AEV using cuaev when there is no atoms does not require CUDA, and can be run without GPU
-        species = make_tensor((8, 0), 'cpu', torch.int64, low=-1, high=4)
-        coordinates = make_tensor((8, 0, 3), 'cpu', torch.float32, low=-5, high=5)
+        species = make_tensor((8, 0), device='cpu', dtype=torch.int64, low=-1, high=4)
+        coordinates = make_tensor((8, 0, 3), device='cpu', dtype=torch.float32, low=-5, high=5)
         self.assertIn("cuaev::run", str(s.graph_for((species, coordinates))))
 
     def testPickle(self):
@@ -371,7 +371,8 @@ class TestCUAEV(TestCase):
             mol = read(filepath)
             species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
             positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
-            speciesPositions = self.ani2x.species_converter((species, positions))
+            species_converter = self.ani2x.species_converter.to(self.device)
+            speciesPositions = species_converter((species, positions))
             species, coordinates = speciesPositions
 
             _, aev = self.aev_computer_2x((species, coordinates))
@@ -385,7 +386,8 @@ class TestCUAEV(TestCase):
             mol = read(filepath)
             species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
             positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
-            speciesPositions = self.ani2x.species_converter((species, positions))
+            species_converter = self.ani2x.species_converter.to(self.device)
+            speciesPositions = species_converter((species, positions))
             species, coordinates = speciesPositions
             coordinates.requires_grad_(True)
 
