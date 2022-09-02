@@ -51,7 +51,7 @@ test:
     - download.sh
     - dataset/*
   commands:
-    - pip install pytest pynvml pkbar ase parameterized
+    - pip install pytest pynvml pkbar ase parameterized expecttest
     - ./download.sh
     # cuaev test
     - python tests/test_cuaev.py

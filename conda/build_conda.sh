@@ -25,6 +25,7 @@ export USER=roitberg-group
 PYTHON_VERSION="${PYTHON_VERSION:-3.8}"
 # default package is torchani
 PACKAGE="${PACKAGE:-torchani}"
+export CONDA=$(conda info --base)
 
 # set package-name and channel for torchani
 if [[ $PACKAGE == torchani ]]; then

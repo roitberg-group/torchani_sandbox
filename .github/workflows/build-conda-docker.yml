@@ -1,4 +1,4 @@
-name: build_docker
+name: build_conda_docker
 
 on:
   pull_request:
@@ -23,7 +23,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build_docker:
+  build_conda_docker:
     runs-on: self-hosted
     permissions:
       contents: read
@@ -53,18 +53,16 @@ jobs:
         uses: docker/build-push-action@v3
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          file: Dockerfile.conda
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}_conda:latest
           labels: ${{ steps.meta.outputs.labels }}
-
-      - name: UnitTests
-        run: docker run --gpus all ${{ steps.meta.outputs.tags }} bash -c "nvidia-smi && cd tests/ && pytest -s -v ."
 
       - name: Remove image
         if: ${{ always() }}
         continue-on-error: true
-        run: docker image rm ${{ steps.meta.outputs.tags }}
+        run: docker image rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}_conda:latest
 
 concurrency:
-  group: build_docker-${{ github.event.pull_request.number || github.sha }}
+  group: build_conda_docker-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
