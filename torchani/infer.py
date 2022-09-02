@@ -316,6 +316,73 @@ class BmmEnsemble(InferModelBase):
             self.bias_list.append(biases)
 
 
+class BmmEnsemble2(torch.nn.Module):
+    """
+    Fuse all same networks of an ensemble into BmmNetworks, for example 8 same H networks will be fused into 1 BmmNetwork.
+    BmmNetwork is composed of BmmLinear layers, which will perform Batch Matmul (bmm) instead of normal matmul
+    to reduce the number of kernel calls.
+    """
+    def __init__(self, models):
+        super().__init__()
+        self.num_network = len(models[0])
+        self.last_species = torch.empty(1)
+        self.idx_list = [torch.empty(0) for i in range(self.num_network)]
+        # assert all models have the same networks as model[0]
+        # and each network should have same architecture
+
+        # networks
+        bmm_networks = []
+        for net_key, network in models[0].items():
+            bmm_networks.append(BmmNetwork([model[net_key] for model in models]))
+        self.net_list = torch.nn.ModuleList(bmm_networks)
+
+    def forward(self, species_aev: Tuple[Tensor, Tensor],  # type: ignore
+                cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        species, aev = species_aev
+        assert species.shape == aev.shape[:-1]
+        num_mol = species.shape[0]
+        assert num_mol == 1, "InferModel currently only support inference for single molecule"
+
+        self._check_if_idxlist_needs_updates_jittable(species)
+        idx_list = self.idx_list
+        aev = aev.flatten(0, 1)
+        energy_list = torch.zeros(self.num_network, dtype=aev.dtype, device=aev.device)
+        for i, net in enumerate(self.net_list):
+            if idx_list[i].shape[0] > 0:
+                # torch.cuda.nvtx.mark(f'species = {i}')
+                input_ = aev.index_select(0, idx_list[i])
+                output = net(input_).flatten()
+                energy_list[i] = torch.sum(output)
+
+        mol_energies = torch.sum(energy_list, 0, True)
+        return SpeciesEnergies(species, mol_energies)
+
+    @torch.jit.export
+    def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
+        pass
+        return torch.empty(0)
+
+    @torch.jit.export
+    def set_species(self, species):
+        species_ = species.flatten()
+        with torch.no_grad():
+            self.idx_list = [torch.empty(0) for i in range(self.num_network)]
+            for i in range(self.num_network):
+                mask = (species_ == i)
+                midx = mask.nonzero().flatten()
+                if midx.shape[0] > 0:
+                    self.idx_list[i] = midx
+
+    @torch.jit.export
+    def _check_if_idxlist_needs_updates_jittable(self, species):
+        # initialize each species index if it has not been initialized
+        # or the species has changed
+        if not torch.ops.mnp.is_same_tensor(self.last_species, species):
+            self.set_species(species)
+            self.last_species = species
+
+
 class BmmNetwork(torch.nn.Module):
     """
     Multiple BmmLinear layers with activation function

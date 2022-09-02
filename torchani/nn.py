@@ -113,7 +113,10 @@ class Ensemble(torch.nn.ModuleList):
         return members_atomic_energies
 
     def to_infer_model(self, use_mnp=True):
-        return infer.BmmEnsemble(self, use_mnp)
+        if use_mnp:
+            return infer.BmmEnsemble(self, use_mnp)
+        else:
+            return infer.BmmEnsemble2(self)
 
 
 class Sequential(torch.nn.ModuleList):
