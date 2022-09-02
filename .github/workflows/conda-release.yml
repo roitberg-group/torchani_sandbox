@@ -23,7 +23,7 @@ jobs:
             python-version: 3.6
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Use saved pkgs
       run: |
         if [ -d /root/conda_pkgs_dir_saved ]; then
