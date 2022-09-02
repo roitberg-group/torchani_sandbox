@@ -360,8 +360,24 @@ class BmmEnsemble2(torch.nn.Module):
 
     @torch.jit.export
     def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
-        pass
-        return torch.empty(0)
+        species, aev = species_aev
+        assert species.shape == aev.shape[:-1]
+        num_mol = species.shape[0]
+        assert num_mol == 1, "InferModel currently only support inference for single molecule"
+
+        self._check_if_idxlist_needs_updates_jittable(species)
+        idx_list = self.idx_list
+        aev = aev.flatten(0, 1)
+        energy_list = torch.zeros(aev.shape[0], dtype=aev.dtype, device=aev.device)
+        for i, net in enumerate(self.net_list):
+            if idx_list[i].shape[0] > 0:
+                # torch.cuda.nvtx.mark(f'species = {i}')
+                input_ = aev.index_select(0, idx_list[i])
+                output = net(input_).flatten()
+                energy_list[idx_list[i]] = output
+
+        atomic_energies = energy_list.unsqueeze(0)
+        return atomic_energies
 
     @torch.jit.export
     def set_species(self, species):
