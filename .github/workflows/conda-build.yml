@@ -36,9 +36,6 @@ jobs:
     #     if [ -d /root/conda_pkgs_dir_saved ]; then
     #       mv /root/conda_pkgs_dir_saved /root/conda_pkgs_dir
     #     fi
-    # - name: Set up conda path prefix
-    #   run: |
-    #     echo "CONDA=/root/miniconda" >> $GITHUB_ENV
     - name: Set up conda
       uses: conda-incubator/setup-miniconda@v2
       with:
@@ -46,6 +43,9 @@ jobs:
         activate-environment: foo${{ matrix.python-version }}
         auto-update-conda: false
         python-version: ${{ matrix.python-version }}
+    - name: Set up conda path prefix
+      run: |
+        echo "CONDA=$(conda info --base)" >> $GITHUB_ENV
     - name: Conda info
       shell: bash -l {0}
       run: conda info
