@@ -23,7 +23,7 @@ on:
 jobs:
   conda-build:
 
-    runs-on: [self-hosted, miniconda]
+    runs-on: self-hosted
     strategy:
       max-parallel: 4
       matrix:
