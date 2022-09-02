@@ -16,11 +16,7 @@ jobs:
       max-parallel: 4
       matrix:
         python-version: [3.8, 3.6]
-        package: [torchani, torchani_cudf]
-        exclude:
-          # excludes py3.6 for torchani_cudf
-          - package: torchani_cudf
-            python-version: 3.6
+        package: [torchani]
 
     steps:
     - uses: actions/checkout@v3
