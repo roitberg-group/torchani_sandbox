@@ -45,7 +45,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: UnitTests
+      - name: Build Conda
         run: docker run -v $PWD:/examples --gpus all ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}_conda:latest bash -c "nvidia-smi && cd /examples && export PYTHON_VERSION=3.8 && export CONDA_TOKEN=${{ secrets.CONDA_TOKEN }} && ./conda/build_conda.sh"
 
 concurrency:
