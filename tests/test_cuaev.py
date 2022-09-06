@@ -60,7 +60,7 @@ class TestCUAEV(TestCase):
 
         self.aev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn).to(self.device)
         self.cuaev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
-        self.ani2x = self.__class__.ani2x
+        self.ani2x = self.__class__.ani2x.to(self.device)
 
     def _skip_if_not_cosine(self):
         if self.cutoff_fn != "cosine":
@@ -371,8 +371,7 @@ class TestCUAEV(TestCase):
             mol = read(filepath)
             species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
             positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
-            species_converter = self.ani2x.species_converter.to(self.device)
-            speciesPositions = species_converter((species, positions))
+            speciesPositions = self.ani2x.species_converter((species, positions))
             species, coordinates = speciesPositions
 
             _, aev = self.aev_computer_2x((species, coordinates))
@@ -386,8 +385,7 @@ class TestCUAEV(TestCase):
             mol = read(filepath)
             species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
             positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device)
-            species_converter = self.ani2x.species_converter.to(self.device)
-            speciesPositions = species_converter((species, positions))
+            speciesPositions = self.ani2x.species_converter((species, positions))
             species, coordinates = speciesPositions
             coordinates.requires_grad_(True)
 
