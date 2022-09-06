@@ -340,7 +340,7 @@ class AEVComputer(torch.nn.Module):
         atom_index12 = atom_index12.to(torch.int32)
         # coordinates will not be used in forward calculation, but it's gradient (force) will still be calculated in cuaev kernel
         if self.use_full_nbrlist:
-            assert(species.shape[0] == 1)
+            assert (species.shape[0] == 1)
             ilist_unique, jlist, numneigh = self._half_to_full_nbrlist(atom_index12)
             aev = self._compute_cuaev_with_full_nbrlist(species, coordinates, ilist_unique, jlist, numneigh)
         else:
@@ -349,7 +349,7 @@ class AEVComputer(torch.nn.Module):
 
     @jit_unused_if_no_cuaev()
     def _compute_cuaev_with_full_nbrlist(self, species, coordinates, ilist_unique, jlist, numneigh):
-        assert(self.use_full_nbrlist)
+        assert (self.use_full_nbrlist)
         aev = torch.ops.cuaev.run_with_full_nbrlist(coordinates,
                                                     species.to(torch.int32),
                                                     ilist_unique.to(torch.int32),

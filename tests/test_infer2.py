@@ -92,7 +92,7 @@ class TestInfer(TestCase):
             coordinates.requires_grad_(True)
 
             _, energy1 = model((species, coordinates))
-            force1 = torch.autograd.grad(energy1.sum(), coordinates)[0]
+            _ = torch.autograd.grad(energy1.sum(), coordinates)[0]  # force
 
         use_cuaev = self.device == "cuda"
         ani2x_jit = torch.jit.script(torchani.models.ANI2x(use_cuda_extension=use_cuaev).to(self.device))
@@ -111,6 +111,7 @@ class TestInfer(TestCase):
         print()
         torchani.utils.timeit(run_ani2x, steps=steps)
         torchani.utils.timeit(run_ani2x_infer, steps=steps)
+
 
 if __name__ == '__main__':
     unittest.main()
