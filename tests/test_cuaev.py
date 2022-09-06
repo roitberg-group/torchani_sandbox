@@ -28,8 +28,8 @@ class TestCUAEVNoGPU(TestCase):
         aev_computer = torchani.AEVComputer.like_1x(use_cuda_extension=True)
         s = torch.jit.script(aev_computer)
         # Computation of AEV using cuaev when there is no atoms does not require CUDA, and can be run without GPU
-        species = make_tensor((8, 0), 'cpu', torch.int64, low=-1, high=4)
-        coordinates = make_tensor((8, 0, 3), 'cpu', torch.float32, low=-5, high=5)
+        species = make_tensor((8, 0), device='cpu', dtype=torch.int64, low=-1, high=4)
+        coordinates = make_tensor((8, 0, 3), device='cpu', dtype=torch.float32, low=-5, high=5)
         self.assertIn("cuaev::run", str(s.graph_for((species, coordinates))))
 
     def testPickle(self):
@@ -62,7 +62,7 @@ class TestCUAEV(TestCase):
         self.cuaev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
         self.cuaev_computer_2x_with_half_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True, use_full_nbrlist=False).to(self.device)
         self.cuaev_computer_2x_with_full_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True, use_full_nbrlist=True).to(self.device)
-        self.ani2x = self.__class__.ani2x
+        self.ani2x = self.__class__.ani2x.to(self.device)
 
     def _skip_if_not_cosine(self):
         if self.cutoff_fn != "cosine":
