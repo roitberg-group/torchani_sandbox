@@ -14,7 +14,7 @@ class TestALAtomic(TestCase):
         self.converter = torchani.nn.SpeciesConverter(['H', 'C', 'N', 'O'])
         self.aev_computer = self.model.aev_computer
         self.ani_model = self.model.neural_networks
-        self.first_model = self.model[0]
+        self.first_model = self.model[0].to(self.device)
         # fully symmetric methane
         self.coordinates = torch.tensor(
             [[0, 0, 0], [0, 1, 1], [1, 0, 1], [1, 1, 0], [0.5, 0.5, 0.5]],
