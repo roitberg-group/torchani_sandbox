@@ -18,7 +18,7 @@ jobs:
           submodules: recursive
 
       - name: Install and Run tests
-        run: docker run --rm -v $PWD:/examples nvcr.io/nvidia/pytorch:22.08 bash -c "cd /examples && pip install -r test_requirements.txt && ./download.sh && python setup.py develop && cd tests/ && pytest -s -v ."
+        run: docker run --rm -v $PWD:/examples nvcr.io/nvidia/pytorch:22.08-py3 bash -c "cd /examples && pip install -r test_requirements.txt && ./download.sh && python setup.py develop && cd tests/ && pytest -s -v ."
 
 concurrency:
   group: unittests_cpu-${{ github.event.pull_request.number || github.sha }}
