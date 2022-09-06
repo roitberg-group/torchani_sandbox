@@ -1070,9 +1070,10 @@ __global__ void postProcessExternelNbrList(
       int pidx_r = atomicAdd(&s_radial_pcounter_i[ii], 1);
       int sign = sortidx_2P < (num_atomIJ / 2) ? -1 : 1;
       int j = atomJ_unsorted[sortidx_2P] % max_natoms_per_mol;
-      float3 delta = {sign * deltaJ_unsorted[sortidx_1P].x,
-                      sign * deltaJ_unsorted[sortidx_1P].y,
-                      sign * deltaJ_unsorted[sortidx_1P].z};
+      float3 delta = {
+          sign * deltaJ_unsorted[sortidx_1P].x,
+          sign * deltaJ_unsorted[sortidx_1P].y,
+          sign * deltaJ_unsorted[sortidx_1P].z};
       radial_atomJ[start_i + pidx_r] = j;
       radial_distJ[start_i + pidx_r] = dist;
       radial_deltaJ[start_i + pidx_r] = delta;
