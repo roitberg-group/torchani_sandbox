@@ -58,7 +58,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: UnitTests
-        run: docker run --gpus all ${{ steps.meta.outputs.tags }} bash -c "nvidia-smi && cd tests/ && pytest -s -v ."
+        run: docker run --rm --gpus all ${{ steps.meta.outputs.tags }} bash -c "nvidia-smi && cd tests/ && pytest -s -v ."
 
       - name: Remove image
         if: ${{ always() }}

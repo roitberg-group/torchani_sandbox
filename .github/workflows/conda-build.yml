@@ -46,7 +46,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Conda
-        run: docker run -v $PWD:/examples --gpus all ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}_conda:latest bash -c "nvidia-smi && cd /examples && export PYTHON_VERSION=3.8 && export CONDA_TOKEN=${{ secrets.CONDA_TOKEN }} && ./conda/build_conda.sh"
+        run: docker run --rm -v $PWD:/examples --gpus all ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}_conda:latest bash -c "nvidia-smi && cd /examples && export PYTHON_VERSION=3.8 && export CONDA_TOKEN=${{ secrets.CONDA_TOKEN }} && ./conda/build_conda.sh"
 
 concurrency:
   group: build_conda-${{ github.event.pull_request.number || github.sha }}
