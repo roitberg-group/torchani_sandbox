@@ -1,4 +1,4 @@
-name: build_docker_and_unittest
+name: build_docker
 
 on:
   pull_request:
