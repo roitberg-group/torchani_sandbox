@@ -1,4 +1,4 @@
-name: build_docker
+name: build_docker_and_unittest
 
 on:
   pull_request:
@@ -23,7 +23,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build_docker:
+  build_docker_and_unittest:
     runs-on: self-hosted
     permissions:
       contents: read
