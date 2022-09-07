@@ -74,7 +74,7 @@ class AEVComputer(torch.nn.Module):
 
     use_cuda_extension: Final[bool]
     use_cuaev_interface: Final[bool]
-    use_full_nbrlist: Final[bool]
+    use_fullnbr: Final[bool]
     triu_index: Tensor
 
     def __init__(self,
@@ -89,7 +89,7 @@ class AEVComputer(torch.nn.Module):
                 num_species: Optional[int] = None,
                 use_cuda_extension=False,
                 use_cuaev_interface=False,
-                use_full_nbrlist=False,
+                use_fullnbr=False,
                 cutoff_fn='cosine',
                 neighborlist='full_pairwise',
                 radial_terms='standard',
@@ -102,7 +102,7 @@ class AEVComputer(torch.nn.Module):
         super().__init__()
         self.use_cuda_extension = use_cuda_extension
         self.use_cuaev_interface = use_cuaev_interface
-        self.use_full_nbrlist = use_full_nbrlist
+        self.use_fullnbr = use_fullnbr
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
 
@@ -339,7 +339,7 @@ class AEVComputer(torch.nn.Module):
         species = species.to(torch.int32)
         atom_index12 = atom_index12.to(torch.int32)
         # coordinates will not be used in forward calculation, but it's gradient (force) will still be calculated in cuaev kernel
-        if self.use_full_nbrlist:
+        if self.use_fullnbr:
             assert (species.shape[0] == 1)
             ilist_unique, jlist, numneigh = self._half_to_full_nbrlist(atom_index12)
             aev = self._compute_cuaev_with_full_nbrlist(species, coordinates, ilist_unique, jlist, numneigh)
@@ -349,7 +349,7 @@ class AEVComputer(torch.nn.Module):
 
     @jit_unused_if_no_cuaev()
     def _compute_cuaev_with_full_nbrlist(self, species, coordinates, ilist_unique, jlist, numneigh):
-        assert (self.use_full_nbrlist)
+        assert (self.use_fullnbr)
         aev = torch.ops.cuaev.run_with_full_nbrlist(coordinates,
                                                     species.to(torch.int32),
                                                     ilist_unique.to(torch.int32),

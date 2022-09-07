@@ -60,8 +60,8 @@ class TestCUAEV(TestCase):
 
         self.aev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn).to(self.device)
         self.cuaev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.device)
-        self.cuaev_computer_2x_with_half_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True, use_full_nbrlist=False).to(self.device)
-        self.cuaev_computer_2x_with_full_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True, use_full_nbrlist=True).to(self.device)
+        self.cuaev_computer_2x_with_half_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True, use_fullnbr=False).to(self.device)
+        self.cuaev_computer_2x_with_full_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True, use_fullnbr=True).to(self.device)
         self.ani2x = self.__class__.ani2x.to(self.device)
 
     def _skip_if_not_cosine(self):

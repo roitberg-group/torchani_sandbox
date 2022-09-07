@@ -376,7 +376,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     aev_computer_kwargs = {'neighborlist': neighborlist,
                            'use_cuda_extension': model_kwargs.pop('use_cuda_extension', False),
                            'use_cuaev_interface': model_kwargs.pop('use_cuaev_interface', False),
-                           'use_full_nbrlist': model_kwargs.pop('use_full_nbrlist', False)}
+                           'use_fullnbr': model_kwargs.pop('use_fullnbr', False)}
 
     if use_neurochem_source:
         assert info_file is not None, "Info file is needed to load from a neurochem source"
