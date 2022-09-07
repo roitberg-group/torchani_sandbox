@@ -37,9 +37,9 @@ TorchANI is a pytorch implementation of ANI. It is currently under alpha release
 
 # Install
 Supported version information when install from anaconda:
-- pytorch 1.9
-- cuda 11.1
-- python 3.6 or python 3.8
+- pytorch 1.12.1
+- cuda 11.3
+- python 3.8
 
 Install from anaconda by the following (Note that we are hosting the packages only for internal usage at: https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
 
