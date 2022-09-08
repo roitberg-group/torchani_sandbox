@@ -116,5 +116,6 @@ class TestInfer(TestCase):
         torch.ops.mnp.nvtx_range_push("hello")
         torch.ops.mnp.nvtx_range_pop()
 
+
 if __name__ == '__main__':
     unittest.main()
