@@ -351,9 +351,11 @@ class BmmEnsemble2(torch.nn.Module):
         for i, net in enumerate(self.net_list):
             if idx_list[i].shape[0] > 0:
                 # torch.cuda.nvtx.mark(f'species = {i}')
+                torch.ops.mnp.nvtx_range_push(f"network_{i}")
                 input_ = aev.index_select(0, idx_list[i])
                 output = net(input_).flatten()
                 energy_list[i] = torch.sum(output)
+                torch.ops.mnp.nvtx_range_pop()
 
         mol_energies = torch.sum(energy_list, 0, True)
         return SpeciesEnergies(species, mol_energies)
@@ -372,9 +374,11 @@ class BmmEnsemble2(torch.nn.Module):
         for i, net in enumerate(self.net_list):
             if idx_list[i].shape[0] > 0:
                 # torch.cuda.nvtx.mark(f'species = {i}')
+                torch.ops.mnp.nvtx_range_push(f"network_{i}")
                 input_ = aev.index_select(0, idx_list[i])
                 output = net(input_).flatten()
                 energy_list[idx_list[i]] = output
+                torch.ops.mnp.nvtx_range_pop()
 
         atomic_energies = energy_list.unsqueeze(0)
         return atomic_energies
