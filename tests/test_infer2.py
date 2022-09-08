@@ -113,5 +113,9 @@ class TestInfer(TestCase):
         torchani.utils.timeit(run_ani2x_infer, steps=steps)
 
 
+    def testNVTX(self):
+        torch.ops.mnp.nvtx_range_push("hello")
+        torch.ops.mnp.nvtx_range_pop()
+
 if __name__ == '__main__':
     unittest.main()
