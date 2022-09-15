@@ -325,6 +325,8 @@ class BmmEnsemble2(torch.nn.Module):
     def __init__(self, models):
         super().__init__()
         self.num_network = len(models[0])
+        self.num_models = len(models)
+        self.use_num_models = self.num_models
         self.last_species = torch.empty(1)
         self.idx_list = [torch.empty(0) for i in range(self.num_network)]
         # assert all models have the same networks as model[0]
@@ -402,6 +404,16 @@ class BmmEnsemble2(torch.nn.Module):
             self.set_species(species)
             self.last_species = species
 
+    @torch.jit.export
+    def select_models(self, use_num_models: Optional[int] = None):
+        if use_num_models is None:
+            use_num_models = self.num_models
+            return
+        assert use_num_models <= self.num_models, f"use_num_models {use_num_models} cannot be larger than size {self.num_models}"
+        for net in self.net_list:
+            net.select_models(use_num_models)
+        self.use_num_models = use_num_models
+
 
 class BmmNetwork(torch.nn.Module):
     """
@@ -410,7 +422,8 @@ class BmmNetwork(torch.nn.Module):
     def __init__(self, networks):
         super().__init__()
         layers = []
-        self.batch = len(networks)
+        self.num_models = len(networks)
+        self.use_num_models = self.num_models
         for layer_idx, layer in enumerate(networks[0]):
             if isinstance(layer, torch.nn.Linear):
                 layers.append(BmmLinear([net[layer_idx] for net in networks]))
@@ -420,10 +433,17 @@ class BmmNetwork(torch.nn.Module):
         self.layers = torch.nn.ModuleList(layers)
 
     def forward(self, input_):
-        input_ = input_.expand(self.batch, -1, -1)
+        input_ = input_.expand(self.use_num_models, -1, -1)
         for layer in self.layers:
             input_ = layer(input_)
         return input_.mean(0)
+
+    @torch.jit.export
+    def select_models(self, use_num_models: int):
+        for layer in self.layers:
+            if isinstance(layer, BmmLinear):
+                layer.select_models(use_num_models)
+        self.use_num_models = use_num_models
 
 
 class BmmLinear(torch.nn.Module):
@@ -436,6 +456,8 @@ class BmmLinear(torch.nn.Module):
     """
     def __init__(self, linear_layers):
         super().__init__()
+        self.num_models = len(linear_layers)
+        self.use_num_models = self.num_models
         # assert each layer has same architecture
         weights = [layer.weight.unsqueeze(0).clone().detach() for layer in linear_layers]
         bias = [layer.bias.view(1, 1, -1).clone().detach() for layer in linear_layers]
@@ -443,7 +465,13 @@ class BmmLinear(torch.nn.Module):
         self.bias = torch.nn.Parameter(torch.cat(bias))
 
     def forward(self, input_):
-        return torch.baddbmm(self.bias, input_, self.weights)
+        weights = self.weights[:self.use_num_models, :, :]
+        bias = self.bias[:self.use_num_models, :, :]
+        return torch.baddbmm(bias, input_, weights)
 
     def extra_repr(self):
         return f"batch={self.weights.shape[0]}, in_features={self.weights.shape[1]}, out_features={self.weights.shape[2]}, bias={self.bias is not None}"
+
+    @torch.jit.export
+    def select_models(self, use_num_models: int):
+        self.use_num_models = use_num_models
