@@ -404,7 +404,6 @@ class _ANISubdataset(_ANIDatasetBase):
 
         self._store = self._backend.store(store_location, grouping, create,
                                           dummy_properties, use_cudf=use_cudf)
-        # we StoreFactory monkey patches all stores with "backend" attribute
         self._possible_nonbatch_properties: Set[str]
         if create:
             self._possible_nonbatch_properties = set()
