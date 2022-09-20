@@ -1,12 +1,12 @@
 import tempfile
 from pathlib import Path
-from typing import ContextManager, Optional, Dict, Any
+from typing import Optional, Dict, Any
 from collections import OrderedDict  # noqa F401
 
 import numpy as np
 
 from .._annotations import StrPath
-from .interface import _Store, _ConformerGroup, _ConformerWrapper, _HierarchicalStoreWrapper
+from .interface import _Store, _ConformerGroup, _ConformerWrapper, _HierarchicalStoreWrapper, _TemporaryLocation
 
 try:
     import zarr  # noqa
@@ -15,7 +15,7 @@ except ImportError:
     _ZARR_AVAILABLE = False
 
 
-class _ZarrTemporaryLocation(ContextManager[StrPath]):
+class _ZarrTemporaryLocation(_TemporaryLocation):
     def __init__(self) -> None:
         self._tmp_location = tempfile.TemporaryDirectory(suffix='.zarr')
 

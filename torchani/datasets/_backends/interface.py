@@ -23,6 +23,10 @@ class CacheHolder:
         self.properties = set()
 
 
+class _TemporaryLocation(ContextManager[StrPath]):
+    pass
+
+
 class NamedMapping(Mapping):
     name: str
 

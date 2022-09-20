@@ -15,7 +15,7 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from ._backends import _H5PY_AVAILABLE, _Store, StoreFactory, TemporaryLocation, _ConformerWrapper, _SUFFIXES
+from ._backends import infer_backend, BACKENDS, _H5PY_AVAILABLE, _Store, _ConformerWrapper
 from ._annotations import Transform, Conformers, NumpyConformers, MixedConformers, StrPath, DTypeLike, IdxLike
 from ..utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm
 
@@ -397,9 +397,14 @@ class _ANISubdataset(_ANIDatasetBase):
         # with one or more dummy properties. These will be created on the fly only if they are not
         # present in the dataset already.
         super().__init__()
-        self._store = StoreFactory(store_location, backend, grouping, create, dummy_properties, use_cudf=use_cudf)
+        if backend is None:
+            self._backend = infer_backend(store_location)
+        else:
+            self._backend = BACKENDS[backend]
+
+        self._store = self._backend.store(store_location, grouping, create,
+                                          dummy_properties, use_cudf=use_cudf)
         # we StoreFactory monkey patches all stores with "backend" attribute
-        self._backend = self._store.backend  # type: ignore
         self._possible_nonbatch_properties: Set[str]
         if create:
             self._possible_nonbatch_properties = set()
@@ -480,7 +485,7 @@ class _ANISubdataset(_ANIDatasetBase):
             self._group_sizes, self._properties = store.update_cache(check_properties, verbose)
 
     def __str__(self) -> str:
-        str_ = f"ANI {self._backend} store:\n"
+        str_ = f"ANI {self._backend.name} store:\n"
         d: Dict[str, Any] = {'Conformers': f'{self.num_conformers:,}'}
         d.update({'Conformer groups': self.num_conformer_groups})
         d.update({'Properties': sorted(self.properties)})
@@ -695,7 +700,7 @@ class _ANISubdataset(_ANIDatasetBase):
                          backend: Optional[str] = None) -> '_ANISubdataset':
         return _ANISubdataset(location,
                               create=True,
-                              backend=backend if backend is not None else self._backend,
+                              backend=backend if backend is not None else self._backend.name,
                               grouping=grouping if grouping is not None else self.grouping,
                               verbose=False)
 
@@ -716,7 +721,7 @@ class _ANISubdataset(_ANIDatasetBase):
         r"""Transforms underlying store into a different format
         """
         if backend is None:
-            backend = self._backend
+            backend = self._backend.name
 
         if inplace:
             assert dest_root is None
@@ -724,9 +729,9 @@ class _ANISubdataset(_ANIDatasetBase):
             dest_root = Path(self._store.location.root).parent
 
         self._check_correct_grouping()
-        if self._backend == backend and backend != 'h5py':
+        if self._backend.name == backend and backend != 'h5py':
             return self
-        with TemporaryLocation(backend) as location:
+        with self._backend.temporary_location() as location:
             new_ds = self._make_empty_copy(location, backend=backend)
             with new_ds.keep_open('r+') as rwds:
                 for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
@@ -771,7 +776,7 @@ class _ANISubdataset(_ANIDatasetBase):
         explanation of that argument.
         """
         self._check_unique_element_key()
-        with TemporaryLocation(self._backend) as location:
+        with self._backend.temporary_location() as location:
             new_ds = self._make_empty_copy(location, grouping='by_formula')
             with new_ds.keep_open('r+') as rwds:
                 for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
@@ -808,7 +813,7 @@ class _ANISubdataset(_ANIDatasetBase):
         for an explanation of that argument.
         """
         self._check_unique_element_key()
-        with TemporaryLocation(self._backend) as location:
+        with self._backend.temporary_location() as location:
             new_ds = self._make_empty_copy(location, grouping='by_num_atoms')
             with new_ds.keep_open('r+') as rwds:
                 for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
@@ -1034,7 +1039,7 @@ class ANIDataset(_ANIDatasetBase):
         self._update_cache()
 
     @classmethod
-    def from_dir(cls, dir_: StrPath, only_backend: Optional[str] = 'h5py', **kwargs):
+    def from_dir(cls, dir_: StrPath, only_backend: Optional[str] = None, **kwargs):
         r"""Reads all files in a given directory, if there are multiple files
         with the same name only one of them will be considered"""
         dir_ = Path(dir_).resolve()
@@ -1042,7 +1047,7 @@ class ANIDataset(_ANIDatasetBase):
             raise ValueError("Input should be a directory")
         locations = sorted([p for p in dir_.iterdir() if p.suffix != '.tar.gz'])
         if only_backend is not None:
-            suffix = _SUFFIXES[only_backend]
+            suffix = BACKENDS[only_backend].suffix
             locations = [loc for loc in locations if loc.suffix == suffix]
         names = [p.stem for p in locations]
         return cls(locations=locations, names=names, **kwargs)

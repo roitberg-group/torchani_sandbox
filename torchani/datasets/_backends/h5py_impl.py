@@ -3,14 +3,14 @@ from uuid import uuid4
 import tempfile
 from pathlib import Path
 from functools import partial
-from typing import ContextManager, Any, Set, Union, Tuple, Dict
+from typing import Any, Set, Union, Tuple, Dict
 from collections import OrderedDict  # noqa F401
 
 import numpy as np
 
 from .._annotations import StrPath
 from ...utils import tqdm
-from .interface import _Store, _ConformerGroup, _ConformerWrapper, CacheHolder, _HierarchicalStoreWrapper
+from .interface import _Store, _ConformerGroup, _ConformerWrapper, CacheHolder, _HierarchicalStoreWrapper, _TemporaryLocation
 
 
 try:
@@ -25,7 +25,7 @@ except ImportError:
     _H5PY_AVAILABLE = False
 
 
-class _H5TemporaryLocation(ContextManager[StrPath]):
+class _H5TemporaryLocation(_TemporaryLocation):
     def __init__(self) -> None:
         self._tmp_location = tempfile.TemporaryDirectory()
         self._tmp_filename = Path(self._tmp_location.name).resolve() / f'{uuid4()}.h5'
