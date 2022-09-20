@@ -11,7 +11,6 @@ from ..utils import tqdm
 from ..nn import Ensemble
 from ._annotations import Conformers, StrPath
 from .datasets import ANIDataset
-from ._backends import TemporaryLocation
 
 
 __all__ = ['filter_by_high_force', 'filter_by_high_energy_error', 'concatenate']
@@ -28,7 +27,7 @@ def concatenate(source: ANIDataset,
     if source.metadata:
         warnings.warn("Source dataset has metadata which will not be copied.")
 
-    with TemporaryLocation(source._first_subds._backend) as tmp_location:
+    with source._first_subds._backend.temporary_location() as tmp_location:
         dest = ANIDataset(tmp_location,
                           create=True,
                           grouping=source.grouping,
