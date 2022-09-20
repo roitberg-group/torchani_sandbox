@@ -23,8 +23,8 @@ class Backend:
         temporary_location_cls: Type[_TemporaryLocation],
         store_cls: Type[_Store],
     ):
-        self._name = name
-        self._suffix = suffix
+        self.name = name
+        self.suffix = suffix
         self._temporary_location_cls = temporary_location_cls
         self._store_cls = store_cls
 
@@ -45,10 +45,9 @@ class Backend:
         else:
             if grouping is not None:
                 raise ValueError("Can't specify a grouping for an existing dataset")
-            if self._name == "pq":
+            if self.name == "pq":
                 kwargs.update({"use_cudf": use_cudf})
             store = self._store_cls(location, **kwargs)
-            setattr(store, "backend", self._name)  # Monkey patch is this needed?
         return store
 
     def temporary_location(self) -> "_TemporaryLocation":
@@ -57,14 +56,14 @@ class Backend:
 
 BACKENDS = {
     "h5py": Backend("h5py", ".h5", _H5TemporaryLocation, _H5Store),
-    "pq": Backend("pq", ".pq", _PqTemporaryLocation, _PqStore),
+    "pq": Backend("pq", ".pqdir", _PqTemporaryLocation, _PqStore),
     "zarr": Backend("zarr", ".zarr", _ZarrTemporaryLocation, _ZarrStore),
 }
 
 
 def infer_backend(location: StrPath) -> Backend:
     suffix = Path(location).resolve().suffix
-    for backend in BACKENDS:
+    for backend in BACKENDS.values():
         if backend.suffix == suffix:
             return backend
     raise RuntimeError("Backend could not be infered from store location")
