@@ -20,6 +20,7 @@ from ._backends import _H5PY_AVAILABLE
 if _H5PY_AVAILABLE:
     import h5py
 
+
 # TODO a batcher class would make this code much more clear
 def create_batched_dataset(locations: Union[Collection[StrPath], StrPath, ANIDataset],
                            dest_path: Optional[StrPath] = None,
