@@ -730,7 +730,7 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_correct_grouping()
         if self._backend.name == backend and backend != 'h5py':
             return self
-        with self._backend.temporary_location() as location:
+        with BACKENDS[backend].temporary_location() as location:
             new_ds = self._make_empty_copy(location, backend=backend)
             with new_ds.keep_open('r+') as rwds:
                 for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
