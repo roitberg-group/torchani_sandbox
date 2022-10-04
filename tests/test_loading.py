@@ -2,7 +2,7 @@ import unittest
 import torchani
 from torchani.testing import TestCase
 
-@unittest.skipIf(True, "Very slow")
+
 class TestLoading(TestCase):
     # check that models loaded from a neurochem source are equal to models
     # loaded directly from a state_dict
