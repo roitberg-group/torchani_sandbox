@@ -77,6 +77,10 @@ class SpeciesEnergiesQBC(NamedTuple):
     energies: Tensor
     qbcs: Tensor
 
+class AtomicQBCs(NamedTuple):
+    species: Tensor
+    energies: Tensor
+    ae_stdev: Tensor
 
 class BuiltinModel(Module):
     r"""Private template for the builtin ANI models """
@@ -194,7 +198,7 @@ class BuiltinModel(Module):
     # with_SAEs is used for optionally returning atomic energies without the SAEs added in
         if with_SAEs:
             atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
-        
+
         if average:
             atomic_energies = atomic_energies.mean(dim=0)
         return SpeciesEnergies(species_coordinates[0], atomic_energies)
@@ -281,6 +285,37 @@ class BuiltinModel(Module):
         energies = energies.mean(dim=0)
         assert qbc_factors.shape == energies.shape
         return SpeciesEnergiesQBC(species, energies, qbc_factors)
+
+    def atomic_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
+                    cell: Optional[Tensor] = None,
+                    pbc: Optional[Tensor] = None,
+                    average: bool = False, 
+                    with_SAEs: bool = False,
+                    unbiased: bool = True) -> AtomicQBCs:
+        '''
+        Largely does the same thing as the atomic_energies function, but with a different set of default inputs. 
+
+        Returns standard deviation in atomic energy predictions across the ensemble. 
+        '''
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+        species_coordinates = self._maybe_convert_species(species_coordinates)
+        species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
+        atomic_energies = self.neural_networks._atomic_energies(species_aevs)
+
+        if atomic_energies.dim() == 2:
+            atomic_energies = atomic_energies.unsqueeze(0)
+
+        if average:
+            atomic_energies = atomic_energies.mean(0)
+
+        # Want to return with GSAEs, but that can wait
+        if with_SAEs:
+            atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
+            #atomic_energies += self.energy_shifter.with_gsaes(species_coordinates[0], 'wb97x', '631gd')
+
+        ae_stdev = atomic_energies.std(0, unbiased=unbiased)
+
+        return AtomicQBCs(species_coordinates[0], atomic_energies, ae_stdev)
 
     def __len__(self):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
