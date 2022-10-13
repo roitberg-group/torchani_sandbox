@@ -305,6 +305,8 @@ class BuiltinModel(Module):
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
 
+	ae_stdev = atomic_energies.std(0, unbiased=unbiased)
+
         if average:
             atomic_energies = atomic_energies.mean(0)
 
@@ -312,8 +314,6 @@ class BuiltinModel(Module):
         if with_SAEs:
             atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
             #atomic_energies += self.energy_shifter.with_gsaes(species_coordinates[0], 'wb97x', '631gd')
-
-        ae_stdev = atomic_energies.std(0, unbiased=unbiased)
 
         return AtomicQBCs(species_coordinates[0], atomic_energies, ae_stdev)
 
