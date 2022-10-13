@@ -267,7 +267,7 @@ def _dump_xyz(path,
         if truncate_output_file:
             mode = 'w'
         else:
-            mode = 'x'
+            mode = 'w'
     cell = torch.zeros(3) if cell is None else cell
     cell_diag = torch.diag(cell)
     with open(path, mode) as f:
