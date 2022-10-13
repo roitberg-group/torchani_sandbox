@@ -305,7 +305,7 @@ class BuiltinModel(Module):
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
 
-	ae_stdev = atomic_energies.std(0, unbiased=unbiased)
+        ae_stdev = atomic_energies.std(0, unbiased=unbiased)
 
         if average:
             atomic_energies = atomic_energies.mean(0)
