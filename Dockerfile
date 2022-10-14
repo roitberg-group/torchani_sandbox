@@ -11,7 +11,7 @@ SHELL ["/bin/bash", "-cu"]
 # Copy files into container
 COPY . /torchani_sandbox
 
-# Install modulus and dependencies
+# Install torchani and dependencies
 RUN cd /torchani_sandbox \
     && pip install twine wheel \
     && pip install -r test_requirements.txt \
