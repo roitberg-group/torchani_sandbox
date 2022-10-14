@@ -4,10 +4,10 @@ Cpp source files for CUAEV and MNP extensions.
 - MNP: Multi Net Parallel between different species networks using OpenMP (Inference Only) to reduce CUDA call overhead.
 
 ## Requirement
-The extensions need the nightly version [pytorch](https://pytorch.org/) to be able to work.
-If you use conda and your cuda version is 11.1, you could install it by
+Following [pytorch.org](https://pytorch.org/) to install PyTorch.
+On linux, for example:
 ```
-conda install pytorch torchvision torchaudio cudatoolkit=11.1 -c pytorch-nightly -c nvidia
+conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 ```
 
 ## Build from source
@@ -17,11 +17,10 @@ In most cases, if `gcc` and `cuda` environment are well configured, runing the f
 git clone git@github.com:roitberg-group/torchani_sandbox.git
 cd torchani
 # choose one option below
-# use --ext-all-sms if you are building in SLURM environment and there are multiple different gpus in a node
-# use --ext will only build for detected gpus
+# ============== install ==============
 python setup.py install --ext          # only build for detected gpus
 python setup.py install --ext-all-sms  # build for all gpus
-# or for development
+# ============== development ==============
 # `pip install -e . && ` is only needed for the very first install (because issue of https://github.com/pypa/pip/issues/1883)
 pip install -e . && pip install -v -e . --global-option="--ext"          # only build for detected gpus
 pip install -e . && pip install -v -e . --global-option="--ext-all-sms"  # build for all gpus
@@ -35,7 +34,7 @@ git pull
 pip install -v -e . --global-option="--ext"
 ```
 
-Some notes for building extensions on multiple HPC
+Some notes for building extensions on multiple HPC, cuda version might be outdated and please check again.
 <details>
 <summary>Bridges2</summary>
 
