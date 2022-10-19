@@ -7,7 +7,7 @@ import warnings
 
 
 def alert(text):
-    return('\033[91m{}\33[0m'.format(text))  # red
+    return ('\033[91m{}\33[0m'.format(text))  # red
 
 
 BUILD_EXT_ALL_SM = '--cuaev-all-sms' in sys.argv
@@ -91,6 +91,10 @@ def cuda_extension(build_all=False):
                 SMs.append(sm)
 
     nvcc_args = ["-Xptxas=-v", '--expt-extended-lambda', '-use_fast_math']
+    # use cub in a safe manner, see:
+    # https://github.com/pytorch/pytorch/pull/55292
+    # https://github.com/pytorch/pytorch/pull/66219
+    nvcc_args += ['-DCUB_NS_QUALIFIER=::cuaev::cub', '-DCUB_NS_PREFIX=namespace cuaev {', '-DCUB_NS_POSTFIX=}']
     if SMs and not ONLY_BUILD_SM80:
         for sm in SMs:
             nvcc_args.append(f"-gencode=arch=compute_{sm},code=sm_{sm}")
