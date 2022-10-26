@@ -8,7 +8,7 @@ import os
 import warnings
 import itertools
 from collections import defaultdict, Counter
-from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
+from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union, Mapping
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
 import numpy as np
@@ -32,14 +32,14 @@ PADDING = {
 # CCSD(T)*/CBS but is close enough for atomic energies. For H I set the E to
 # -0.5 since that is the exact nonrelativistic solution and I believe CC can't
 # really converge for H.
-GSAES = {'B973c-def2mTZVP': {'C': -37.81441001258,
+GSAES = {'b973c-def2mtzvp': {'C': -37.81441001258,
                              'Cl': -460.082223445159,
                              'F': -99.688618987039,
                              'H': -0.506930113968,
                              'N': -54.556538547322,
                              'O': -75.029181326588,
                              'S': -398.043159341582},
-         'wB97X-631Gd': {'C': -37.8338334,
+         'wb97x-631gd': {'C': -37.8338334,
                          'Cl': -460.116700600,
                          'F': -99.6949007,
                          'H': -0.4993212,
@@ -47,27 +47,40 @@ GSAES = {'B973c-def2mTZVP': {'C': -37.81441001258,
                          'O': -75.0424519,
                          'S': -398.0814169},
 
-        'wB97MD3BJ-def2TZVPP': {'C': -37.870597534068,
+        'wB97md3bj-def2tzvpp': {'C': -37.870597534068,
                                 'Cl': -460.197921425433,
                                 'F': -99.784869113871,
                                 'H': -0.498639663159,
                                 'N': -54.621568655507,
                                 'O': -75.111870707635,
                                 'S': -398.158126819835},
-        'wB97MV-def2TZVPP': {'C': -37.844395699666,
+        'wb97mv-def2tzvpp': {'C': -37.844395699666,
                              'Cl': -460.124987825603,
                              'F': -99.745234404775,
                              'H': -0.494111111003,
                              'N': -54.590952163069,
                              'O': -75.076760965132,
                              'S': -398.089446664032},
-        'CCSD(T)star-CBS': {'C': -37.780724507998,
+        'ccsd(t)star-cbs': {'C': -37.780724507998,
                             'Cl': -459.664237510771,
                             'F': -99.624864557142,
                             'H': -0.5000000000000,
                             'N': -54.515992576387,
                             'O': -74.976148184192,
                             'S': -397.646401989238}}
+
+
+def sorted_gsaes(elements: Sequence[str], functional: str, basis_set: str, ):
+    r"""Return sorted GSAES by element
+
+    Example usage:
+    gsaes = sorted_gsaes(('H', 'C', 'S'), 'wB97X', '631Gd')
+    # gsaes = [-0.4993213, -37.8338334, -398.0814169]
+
+    Functional and basis set are case insensitive
+    """
+    gsaes = GSAES[f'{functional.lower()}-{basis_set.lower()}']
+    return [gsaes[e] for e in elements]
 
 
 def check_openmp_threads():
@@ -146,7 +159,7 @@ def broadcast_first_dim(properties):
     return properties
 
 
-def pad_atomic_properties(properties: List[Dict[str, Tensor]],
+def pad_atomic_properties(properties: Sequence[Mapping[str, Tensor]],
                           padding_values: Optional[Dict[str, float]] = None) -> Dict[str, Tensor]:
     """Put a sequence of atomic properties together into single tensor.
 
@@ -173,12 +186,15 @@ def pad_atomic_properties(properties: List[Dict[str, Tensor]],
         shape = list(tensor.shape)
         device = tensor.device
         dtype = tensor.dtype
+        if dtype in [torch.uint8, torch.int8, torch.int16, torch.int32]:
+            dtype = torch.long
         shape[0] = total_num_molecules
         shape[1] = padded_sizes[k]
         output[k] = torch.full(shape, padding_values.get(k, 0.0), device=device, dtype=dtype)
         index0 = 0
         for n, x in zip(num_molecules, properties):
             original_size = x[k].shape[1]
+            # here x[k] is implicitly cast to long if it has another integer type
             output[k][index0: index0 + n, 0: original_size, ...] = x[k]
             index0 += n
     return output
@@ -216,10 +232,19 @@ def strip_redundant_padding(atomic_properties):
     return atomic_properties
 
 
-def map2central(cell, coordinates, pbc):
+def map2central(cell: Tensor, coordinates: Tensor, pbc: Tensor) -> Tensor:
+    warnings.warn("map2central is deprecated, use map_to_central instead")
+    return map_to_central(coordinates, cell, pbc)
+
+
+def map_to_central(coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
     """Map atoms outside the unit cell into the cell using PBC.
 
     Arguments:
+
+        coordinates (:class:`torch.Tensor`): Tensor of shape
+            ``(molecules, atoms, 3)``.
+
         cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three
             vectors defining unit cell:
 
@@ -228,9 +253,6 @@ def map2central(cell, coordinates, pbc):
                 tensor([[x1, y1, z1],
                         [x2, y2, z2],
                         [x3, y3, z3]])
-
-        coordinates (:class:`torch.Tensor`): Tensor of shape
-            ``(molecules, atoms, 3)``.
 
         pbc (:class:`torch.Tensor`): boolean vector of size 3 storing
             if pbc is enabled for that direction.
@@ -272,6 +294,12 @@ class EnergyShifter(torch.nn.Module):
             self_energies = torch.tensor(self_energies, dtype=torch.double)
 
         self.register_buffer('self_energies', self_energies)
+
+    @classmethod
+    def with_gsaes(cls, elements: Sequence[str], functional: str, basis_set: str):
+        r"""Instantiate an EnergyShifter with a given set of precomputed atomic self energies"""
+        obj = cls(sorted_gsaes(elements, functional, basis_set), fit_intercept=False)
+        return obj
 
     @torch.jit.export
     def _atomic_saes(self, species: Tensor) -> Tensor:
@@ -508,7 +536,7 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
     return VibAnalysis(wavenumbers, modes, fconstants, rmasses)
 
 
-def get_atomic_masses(species):
+def get_atomic_masses(species, dtype=torch.float):
     r"""Convert a tensor of atomic numbers ("periodic table indices") into a tensor of atomic masses
 
     Atomic masses supported are the first 119 elements, and are taken from:
@@ -560,7 +588,7 @@ def get_atomic_masses(species):
            269.1338    , 278.156     , 281.165     , 281.166     , # noqa
            285.177     , 286.182     , 289.19      , 289.194     , # noqa
            293.204     , 293.208     , 294.214], # noqa
-        dtype=torch.double, device=species.device) # noqa
+        dtype=dtype, device=species.device) # noqa
     masses = default_atomic_masses[species]
     return masses
 
