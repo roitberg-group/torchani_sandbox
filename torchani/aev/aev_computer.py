@@ -325,13 +325,47 @@ class AEVComputer(torch.nn.Module):
         return aev
 
     @jit_unused_if_no_cuaev()
-    def _half_to_full_nbrlist(self, atom_index12):
+    @staticmethod
+    def _half_to_full_nbrlist(atom_index12):
         ilist = atom_index12.view(-1)
         jlist = atom_index12.flip(0).view(-1)
         ilist_sorted, indices = ilist.sort(stable=True)
         jlist = jlist[indices]
         ilist_unique, numneigh = torch.unique_consecutive(ilist_sorted, return_counts=True)
         return ilist_unique, jlist, numneigh
+
+    @jit_unused_if_no_cuaev()
+    @staticmethod
+    def _full_to_half_nbrlist(ilist_unique, jlist, numneigh, species):
+        """
+        Limitations: only works for non-pbc system
+        """
+        ilist_unique = ilist_unique.long()
+        jlist = jlist.long()
+        ilist = torch.repeat_interleave(ilist_unique, numneigh)
+        atom_index12 = torch.cat([ilist.unsqueeze(0), jlist.unsqueeze(0)], 0)
+        atom_index12 = atom_index12[:, atom_index12[0].sort().indices]
+        atom_index12 = atom_index12[:, atom_index12[0] < atom_index12[1]]
+        return atom_index12
+
+    @jit_unused_if_no_cuaev()
+    @staticmethod
+    def _full_to_half_nbrlist_1(ilist_unique, jlist, numneigh, species):
+        """
+        Another implementation of full to half nbrlist.
+        """
+        ilist_unique = ilist_unique.long()
+        jlist = jlist.long()
+        max_atoms = species.flatten().shape[0]
+        ilist = torch.repeat_interleave(ilist_unique, numneigh)
+        atom_index12 = torch.cat([ilist.unsqueeze(0), jlist.unsqueeze(0)], 0)
+        # sort so pair [a, b] always has a < b
+        atom_index12 = atom_index12.sort(0).values
+        # sorting based on x * length + y
+        sort_index = (max_atoms * atom_index12[0] + atom_index12[1]).sort().indices
+        # use the odd index to get half list
+        atom_index12 = atom_index12[:, sort_index[::2]]
+        return atom_index12
 
     @jit_unused_if_no_cuaev()
     def _compute_cuaev_with_nbrlist(self, species, coordinates, atom_index12, diff_vector, distances):
