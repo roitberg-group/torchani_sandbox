@@ -74,7 +74,7 @@ class AEVComputer(torch.nn.Module):
 
     use_cuda_extension: Final[bool]
     use_cuaev_interface: Final[bool]
-    use_fullnbr: Final[bool]
+    use_fullnbr: bool
     triu_index: Tensor
 
     def __init__(self,
