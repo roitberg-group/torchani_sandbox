@@ -1162,6 +1162,116 @@ void launch_cuAngularAEVs_kernel(
 #endif
 }
 
+template <bool is_double_backward, bool use_cos_cutoff>
+void launch_cuRadialAEVs_backward_or_doublebackward_kernel(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const AEVScalarParams& aev_params,
+    const Tensor& grad_output,
+    const Result& result,
+    Tensor& grad_input) {
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+
+  constexpr dim3 block_radial(8, 16, 1);
+  int smem_radial =
+      result.radialNbr.maxNumJPerI * sizeof(float) + aev_params.radial_length * sizeof(float); // grad_dist, grad_aev
+  if (!is_double_backward) {
+    cuRadialAEVs_backward_or_doublebackward<is_double_backward, 8, use_cos_cutoff>
+        <<<result.nI, block_radial, smem_radial, stream>>>(
+            (float*)coordinates_t.data_ptr(),
+            species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+            aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+            aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+            grad_output.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+            grad_input.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+            result.radialNbr.atomJ_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+            result.radialNbr.distJ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+            (AtomI*)result.atomI_t.data_ptr(),
+            (int*)result.radialNbr.numJPerI_t.data_ptr(),
+            (int*)result.startIdxJ_t.data_ptr(),
+            aev_params.Rcr,
+            aev_params.radial_length,
+            aev_params.radial_sublength,
+            result.radialNbr.nJ,
+            result.radialNbr.maxNumJPerI);
+  } else {
+    cuRadialAEVs_backward_or_doublebackward<is_double_backward, 8, use_cos_cutoff>
+        <<<result.nI, block_radial, smem_radial, stream>>>(
+            (float*)coordinates_t.data_ptr(),
+            species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+            aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+            aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+            // only grad_input and grad_output are switched in the else statement
+            grad_input.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+            grad_output.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+            result.radialNbr.atomJ_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+            result.radialNbr.distJ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+            (AtomI*)result.atomI_t.data_ptr(),
+            (int*)result.radialNbr.numJPerI_t.data_ptr(),
+            (int*)result.startIdxJ_t.data_ptr(),
+            aev_params.Rcr,
+            aev_params.radial_length,
+            aev_params.radial_sublength,
+            result.radialNbr.nJ,
+            result.radialNbr.maxNumJPerI);
+  }
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+template <bool is_double_backward, bool use_cos_cutoff>
+void launch_cuAngularAEVs_backward_or_doublebackward_kernel(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const AEVScalarParams& aev_params,
+    const Tensor& grad_output,
+    const Result& result,
+    Tensor& grad_input) {
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+
+  auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
+    int sm_aev = sizeof(float) * (aev_params.angular_length);
+    int sxyz = sizeof(float) * max_nbrs * 3;
+    int sj_xyz_grad = sizeof(float) * max_nbrs * 3;
+    int sRij = sizeof(float) * max_nbrs;
+    int sfc = sizeof(float) * max_nbrs;
+    int sfc_grad = sizeof(float) * max_nbrs;
+    int sj = sizeof(int) * max_nbrs;
+    return sm_aev + (sxyz + sj_xyz_grad + sRij + sfc + sfc_grad + sj) * ncatom_per_tpb;
+  };
+  int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
+
+#ifdef TORCHANI_DEBUG
+  printf("%-35s %'d bytes\n", "backward angular smem_size", smem_size);
+#endif
+
+  constexpr int block_x = C10_WARP_SIZE;
+  constexpr int block_y = 4;
+  constexpr dim3 block(block_x, block_y, 1);
+  cuAngularAEVs_backward_or_doublebackward<is_double_backward, block_x, block_y, use_cos_cutoff>
+      <<<result.nI, block, smem_size, stream>>>(
+          species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+          (float*)coordinates_t.data_ptr(),
+          aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+          aev_params.ShfZ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+          aev_params.EtaA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+          aev_params.Zeta_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+          grad_output.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+          grad_input.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+          result.angularNbr.atomJ_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+          result.angularNbr.distJ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+          (AtomI*)result.atomI_t.data_ptr(),
+          (int*)result.angularNbr.numJPerI_t.data_ptr(),
+          (int*)result.startIdxJ_t.data_ptr(),
+          aev_params.Rca,
+          aev_params.angular_length,
+          aev_params.angular_sublength,
+          aev_params.radial_length,
+          aev_params.num_species,
+          result.angularNbr.maxNumJPerI,
+          result.nI);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
 /* ----------------------------------------------------------------------
    exposed functions
 ------------------------------------------------------------------------- */
@@ -1248,85 +1358,17 @@ Tensor cuaev_backward(const Tensor& grad_output, const AEVScalarParams& aev_para
   Tensor coordinates_t = result.coordinates_t;
   Tensor species_t = result.species_t;
 
-  const int n_molecules = coordinates_t.size(0);
-  const int max_natoms_per_mol = coordinates_t.size(1);
   at::cuda::CUDAGuard device_guard(coordinates_t.device().index());
   at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
 
   auto grad_coord = torch::zeros(coordinates_t.sizes(), coordinates_t.options().requires_grad(false)); // [2, 5, 3]
+  TORCH_CHECK(grad_output.is_contiguous(), "grad_output's data is not contiguous");
 
-  AtomI* atomI_p = (AtomI*)result.atomI_t.data_ptr();
-  int* angular_numJPerI_p = (int*)result.angularNbr.numJPerI_t.data_ptr();
-  int* radial_numJPerI_p = (int*)result.radialNbr.numJPerI_t.data_ptr();
-  int* startIdxJ_p = (int*)result.startIdxJ_t.data_ptr();
-  float* coordinates_p = (float*)coordinates_t.data_ptr();
-
-  // radial
-  constexpr dim3 block_radial(8, 16, 1);
-  int smem_radial =
-      result.radialNbr.maxNumJPerI * sizeof(float) + aev_params.radial_length * sizeof(float); // grad_dist, grad_aev
-  cuRadialAEVs_backward_or_doublebackward<false, 8, use_cos_cutoff><<<result.nI, block_radial, smem_radial, stream>>>(
-      coordinates_p,
-      species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-      aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-      aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-      grad_output.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-      grad_coord.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-      result.radialNbr.atomJ_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-      result.radialNbr.distJ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-      atomI_p,
-      radial_numJPerI_p,
-      startIdxJ_p,
-      aev_params.Rcr,
-      aev_params.radial_length,
-      aev_params.radial_sublength,
-      result.radialNbr.nJ,
-      result.radialNbr.maxNumJPerI);
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
-
-  // angular
-  auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
-    int sm_aev = sizeof(float) * (aev_params.angular_length);
-    int sxyz = sizeof(float) * max_nbrs * 3;
-    int sj_xyz_grad = sizeof(float) * max_nbrs * 3;
-    int sRij = sizeof(float) * max_nbrs;
-    int sfc = sizeof(float) * max_nbrs;
-    int sfc_grad = sizeof(float) * max_nbrs;
-    int sj = sizeof(int) * max_nbrs;
-    return sm_aev + (sxyz + sj_xyz_grad + sRij + sfc + sfc_grad + sj) * ncatom_per_tpb;
-  };
-  int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
-
-#ifdef TORCHANI_DEBUG
-  printf("%-35s %'d bytes\n", "backward angular smem_size", smem_size);
-#endif
-
-  constexpr int block_x = C10_WARP_SIZE;
-  constexpr int block_y = 4;
-  constexpr dim3 block(block_x, block_y, 1);
-  cuAngularAEVs_backward_or_doublebackward<false, block_x, block_y, use_cos_cutoff>
-      <<<result.nI, block, smem_size, stream>>>(
-          species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-          coordinates_p,
-          aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-          aev_params.ShfZ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-          aev_params.EtaA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-          aev_params.Zeta_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-          grad_output.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-          grad_coord.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-          result.angularNbr.atomJ_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-          result.angularNbr.distJ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-          atomI_p,
-          angular_numJPerI_p,
-          startIdxJ_p,
-          aev_params.Rca,
-          aev_params.angular_length,
-          aev_params.angular_sublength,
-          aev_params.radial_length,
-          aev_params.num_species,
-          result.angularNbr.maxNumJPerI,
-          result.nI);
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  // launch radial and angular backward kernels
+  launch_cuRadialAEVs_backward_or_doublebackward_kernel<false, use_cos_cutoff>(
+      coordinates_t, species_t, aev_params, grad_output, result, grad_coord);
+  launch_cuAngularAEVs_backward_or_doublebackward_kernel<false, use_cos_cutoff>(
+      coordinates_t, species_t, aev_params, grad_output, result, grad_coord);
 
   return grad_coord;
 }
@@ -1337,85 +1379,20 @@ Tensor cuaev_double_backward(const Tensor& grad_force, const AEVScalarParams& ae
   Tensor coordinates_t = result.coordinates_t;
   Tensor species_t = result.species_t;
 
-  const int n_molecules = coordinates_t.size(0);
-  const int max_natoms_per_mol = coordinates_t.size(1);
   at::cuda::CUDAGuard device_guard(coordinates_t.device().index());
   at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
 
   int aev_length = aev_params.radial_length + aev_params.angular_length;
-
   auto grad_grad_aev = torch::zeros(
       {coordinates_t.size(0), coordinates_t.size(1), aev_length},
       coordinates_t.options().requires_grad(false)); // [2, 5, 384]
-
-  AtomI* atomI_p = (AtomI*)result.atomI_t.data_ptr();
-  int* angular_numJPerI_p = (int*)result.angularNbr.numJPerI_t.data_ptr();
-  int* radial_numJPerI_p = (int*)result.radialNbr.numJPerI_t.data_ptr();
-  int* startIdxJ_p = (int*)result.startIdxJ_t.data_ptr();
-  float* coordinates_p = (float*)coordinates_t.data_ptr();
   TORCH_CHECK(grad_force.is_contiguous(), "grad_force's data is not contiguous");
 
-  // radial
-  constexpr dim3 block_radial(8, 16, 1);
-  int smem_radial = result.radialNbr.maxNumJPerI * sizeof(float) +
-      aev_params.radial_length * sizeof(float); // grad_dist, grad_grad_aev
-  cuRadialAEVs_backward_or_doublebackward<true, 8, use_cos_cutoff><<<result.nI, block_radial, smem_radial, stream>>>(
-      coordinates_p,
-      species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-      aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-      aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-      grad_grad_aev.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-      grad_force.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-      result.radialNbr.atomJ_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-      result.radialNbr.distJ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-      atomI_p,
-      radial_numJPerI_p,
-      startIdxJ_p,
-      aev_params.Rcr,
-      aev_params.radial_length,
-      aev_params.radial_sublength,
-      result.radialNbr.nJ,
-      result.radialNbr.maxNumJPerI);
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
-
-  // angular
-  auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
-    int sm_aev = sizeof(float) * aev_params.angular_length;
-    int sxyz = sizeof(float) * max_nbrs * 3;
-    int sj_xyz_grad = sizeof(float) * max_nbrs * 3;
-    int sRij = sizeof(float) * max_nbrs;
-    int sfc = sizeof(float) * max_nbrs;
-    int sfc_grad = sizeof(float) * max_nbrs;
-    int sj = sizeof(int) * max_nbrs;
-    return sm_aev + (sxyz + sj_xyz_grad + sRij + sfc + sfc_grad + sj) * ncatom_per_tpb;
-  };
-  int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
-  constexpr int block_x = C10_WARP_SIZE;
-  constexpr int block_y = 4;
-  constexpr dim3 block(block_x, block_y, 1);
-  cuAngularAEVs_backward_or_doublebackward<true, block_x, block_y, use_cos_cutoff>
-      <<<result.nI, block, smem_size, stream>>>(
-          species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-          coordinates_p,
-          aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-          aev_params.ShfZ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-          aev_params.EtaA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-          aev_params.Zeta_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-          grad_force.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-          grad_grad_aev.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-          result.angularNbr.atomJ_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-          result.angularNbr.distJ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-          atomI_p,
-          angular_numJPerI_p,
-          startIdxJ_p,
-          aev_params.Rca,
-          aev_params.angular_length,
-          aev_params.angular_sublength,
-          aev_params.radial_length,
-          aev_params.num_species,
-          result.angularNbr.maxNumJPerI,
-          result.nI);
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  // launch radial and angular double_backward kernels
+  launch_cuRadialAEVs_backward_or_doublebackward_kernel<true, use_cos_cutoff>(
+      coordinates_t, species_t, aev_params, grad_force, result, grad_grad_aev);
+  launch_cuAngularAEVs_backward_or_doublebackward_kernel<true, use_cos_cutoff>(
+      coordinates_t, species_t, aev_params, grad_force, result, grad_grad_aev);
 
   return grad_grad_aev;
 }
