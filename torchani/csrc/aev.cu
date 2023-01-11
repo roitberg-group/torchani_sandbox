@@ -29,6 +29,10 @@ constexpr int csubaev_offsets(int i, int j, int n) {
   return starting + offset;
 }
 
+/* ----------------------------------------------------------------------
+   kernel definitions
+------------------------------------------------------------------------- */
+
 // Convert pair index to atom j and k indices,
 // the orders of j and k indices do not matter
 //
@@ -947,6 +951,64 @@ __global__ void postProcessNbrList(
   }
 }
 
+/* ----------------------------------------------------------------------
+   kernel launch functions
+------------------------------------------------------------------------- */
+
+template <bool use_cos_cutoff>
+void launch_cuAngularAEVs_kernel(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const AEVScalarParams& aev_params,
+    Result& result) {
+  auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
+    int sm_aev = sizeof(float) * aev_params.angular_length;
+    int sxyz = sizeof(float) * max_nbrs * 3;
+    int sRij = sizeof(float) * max_nbrs;
+    int sfc = sizeof(float) * max_nbrs;
+    int sj = sizeof(int) * max_nbrs;
+    return (sm_aev + sxyz + sRij + sfc + sj) * ncatom_per_tpb;
+  };
+
+  int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
+  // temporary fix because of nvcc constexpr BUG
+  constexpr int block_x = C10_WARP_SIZE;
+  constexpr int block_y = 4;
+  constexpr dim3 block(block_x, block_y, 1);
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+
+  cuAngularAEVs<block_x, block_y, use_cos_cutoff><<<result.nI, block, smem_size, stream>>>(
+      species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+      (float*)coordinates_t.data_ptr(),
+      aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+      aev_params.ShfZ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+      aev_params.EtaA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+      aev_params.Zeta_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+      result.aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+      (int*)result.angularNbr.atomJ_t.data_ptr(),
+      (float*)result.angularNbr.distJ_t.data_ptr(),
+      (AtomI*)result.atomI_t.data_ptr(),
+      (int*)result.angularNbr.numJPerI_t.data_ptr(),
+      (int*)result.startIdxJ_t.data_ptr(),
+      aev_params.Rca,
+      aev_params.angular_length,
+      aev_params.angular_sublength,
+      aev_params.radial_length,
+      aev_params.num_species,
+      result.angularNbr.maxNumJPerI,
+      result.nI);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+#ifdef TORCHANI_DEBUG
+  printf("%-35s %d\n", "angularNbr maxNumJPerI", result.angularNbr.maxNumJPerI);
+  printf("%-35s %'d bytes\n", "forward  angular smem_size", smem_size);
+#endif
+}
+
+/* ----------------------------------------------------------------------
+   exposed functions
+------------------------------------------------------------------------- */
+
 // NOTE: assumes size of EtaA_t = Zeta_t = EtaR_t = 1
 template <bool use_cos_cutoff>
 void cuaev_forward(
@@ -1144,46 +1206,7 @@ void cuaev_forward(
   }
 
   { // AngularAEV
-    auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
-      int sm_aev = sizeof(float) * aev_params.angular_length;
-      int sxyz = sizeof(float) * max_nbrs * 3;
-      int sRij = sizeof(float) * max_nbrs;
-      int sfc = sizeof(float) * max_nbrs;
-      int sj = sizeof(int) * max_nbrs;
-      return (sm_aev + sxyz + sRij + sfc + sj) * ncatom_per_tpb;
-    };
-
-    int smem_size = cal_smem_size(result.angularNbr.maxNumJPerI, 1);
-    // temporary fix because of nvcc constexpr BUG
-    constexpr int block_x = C10_WARP_SIZE;
-    constexpr int block_y = 4;
-    constexpr dim3 block(block_x, block_y, 1);
-    cuAngularAEVs<block_x, block_y, use_cos_cutoff><<<result.nI, block, smem_size, stream>>>(
-        species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-        coordinates_p,
-        aev_params.ShfA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-        aev_params.ShfZ_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-        aev_params.EtaA_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-        aev_params.Zeta_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-        result.aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-        angularNbr_atomJ_p,
-        angularNbr_distJ_p,
-        atomI_p,
-        angularNbr_numJPerI_p,
-        startIdxJ_p,
-        aev_params.Rca,
-        aev_params.angular_length,
-        aev_params.angular_sublength,
-        aev_params.radial_length,
-        aev_params.num_species,
-        result.angularNbr.maxNumJPerI,
-        result.nI);
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
-
-#ifdef TORCHANI_DEBUG
-    printf("%-35s %d\n", "angularNbr maxNumJPerI", result.angularNbr.maxNumJPerI);
-    printf("%-35s %'d bytes\n", "forward  angular smem_size", smem_size);
-#endif
+    launch_cuAngularAEVs_kernel<use_cos_cutoff>(coordinates_t, species_t, aev_params, result);
   }
 }
 
