@@ -955,6 +955,130 @@ __global__ void postProcessNbrList(
    kernel launch functions
 ------------------------------------------------------------------------- */
 
+void launch_pairwiseDistance_kernel(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const AEVScalarParams& aev_params,
+    Result& result,
+    const Tensor& atomJ_t,
+    const Tensor& distJ_t) {
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+  auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
+
+  // constants
+  const int n_molecules = species_t.size(0);
+  const int max_natoms_per_mol = species_t.size(1);
+  int total_atoms = n_molecules * max_natoms_per_mol;
+  int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
+
+  constexpr int ATOM_I_PER_BLOCK = 32;
+  // single molecule mode
+  if (n_molecules == 1) {
+#ifdef TORCHANI_DEBUG
+    setlocale(LC_ALL, "");
+    printf("\n%-35s %'d atoms\n", "single molecule", max_natoms_per_mol);
+#endif
+    constexpr int ATOM_J_PER_TILE = 32;
+    int blocks = (total_atoms + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
+    dim3 block(ATOM_J_PER_TILE, ATOM_I_PER_BLOCK, 1);
+    pairwiseDistanceSingleMolecule<ATOM_I_PER_BLOCK, ATOM_J_PER_TILE><<<blocks, block, 0, stream>>>(
+        species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+        (float*)coordinates_t.data_ptr(),
+        result.radialNbr.numJPerI_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+        (AtomI*)result.atomI_t.data_ptr(),
+        (int*)atomJ_t.data_ptr(),
+        (float*)distJ_t.data_ptr(),
+        aev_params.Rcr,
+        max_natoms_per_mol,
+        max_numj_per_i_in_Rcr);
+    result.nI = total_atoms;
+  } else { // batch mode
+    // tmp storage because of padding
+#ifdef TORCHANI_DEBUG
+    setlocale(LC_ALL, "");
+    printf("\n%-35s %d molecules, total %'d atoms\n", "batch molecules", n_molecules, total_atoms);
+#endif
+    Tensor numJPerI_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
+    Tensor atom_i_t = torch::empty(total_atoms * 2, d_options.dtype(torch::kInt32));
+
+    dim3 block(8, 16, 1);
+    // maximum 4096 atoms, which needs 49152 byte (48 kb) of shared memory
+    int smem_pairdist = sizeof(float) * max_natoms_per_mol * 5; // x, y, z, spe, counter
+    pairwiseDistance<<<n_molecules, block, smem_pairdist, stream>>>(
+        species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+        (float*)coordinates_t.data_ptr(),
+        numJPerI_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+        (AtomI*)atom_i_t.data_ptr(),
+        (int*)atomJ_t.data_ptr(),
+        (float*)distJ_t.data_ptr(),
+        aev_params.Rcr,
+        max_natoms_per_mol,
+        max_numj_per_i_in_Rcr);
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+    // remove padding numJPerI if numj == 0
+    result.nI = cubDeviceSelectIf(
+        (int*)numJPerI_t.data_ptr(),
+        (int*)result.radialNbr.numJPerI_t.data_ptr(),
+        total_atoms,
+        [=] __device__(const int numj) { return (bool)numj; },
+        stream);
+
+    // also remove padding atomI
+    // Note: cub::DeviceSelect::Flagged Bug: flag current only allow bool or int which is ether 0 or 1
+    // https://github.com/NVIDIA/cub/issues/235
+    auto flags_t = numJPerI_t.to(torch::kBool);
+    cubDeviceSelectFlagged(
+        (AtomI*)atom_i_t.data_ptr(), (AtomI*)result.atomI_t.data_ptr(), total_atoms, (char*)flags_t.data_ptr(), stream);
+  }
+
+  cubScan((int*)result.radialNbr.numJPerI_t.data_ptr(), (int*)result.startIdxJ_t.data_ptr(), total_atoms, stream);
+  result.radialNbr.nJ = (result.startIdxJ_t[-1] + result.radialNbr.numJPerI_t[-1]).item<int>();
+
+#ifdef TORCHANI_DEBUG
+  printf("%-35s %'d\n", "nI", result.nI);
+  printf("%-35s %'d\n", "radialNbr  nJ", result.radialNbr.nJ);
+#endif
+}
+
+void launch_postProcessNbrList_kernel(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const AEVScalarParams& aev_params,
+    Result& result,
+    const Tensor& atomJ_t,
+    const Tensor& distJ_t) {
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+  const int max_natoms_per_mol = species_t.size(1);
+  int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
+
+  constexpr int ATOM_I_PER_BLOCK = 32;
+  int ATOM_J_PER_TILE = 16;
+  dim3 block(ATOM_J_PER_TILE, ATOM_I_PER_BLOCK, 1);
+  int blocks = (result.nI + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
+  postProcessNbrList<ATOM_I_PER_BLOCK><<<blocks, block, 0, stream>>>(
+      (int*)atomJ_t.data_ptr(),
+      (float*)distJ_t.data_ptr(),
+      (AtomI*)result.atomI_t.data_ptr(),
+      (int*)result.radialNbr.atomJ_t.data_ptr(),
+      (float*)result.radialNbr.distJ_t.data_ptr(),
+      (int*)result.angularNbr.atomJ_t.data_ptr(),
+      (float*)result.angularNbr.distJ_t.data_ptr(),
+      (int*)result.radialNbr.numJPerI_t.data_ptr(),
+      (int*)result.startIdxJ_t.data_ptr(),
+      aev_params.Rca,
+      (int*)result.angularNbr.numJPerI_t.data_ptr(),
+      result.nI,
+      max_natoms_per_mol,
+      max_numj_per_i_in_Rcr);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+#ifdef TORCHANI_DEBUG
+  result.angularNbr.nJ = cubSum((int*)result.angularNbr.numJPerI_t.data_ptr(), result.nI, stream);
+  printf("%-35s %'d\n", "angularNbr nJ", result.angularNbr.nJ);
+#endif
+}
+
 template <bool use_cos_cutoff>
 void launch_cuRadialAEVs_kernel(
     const Tensor& coordinates_t,
@@ -1060,157 +1184,57 @@ void cuaev_forward(
           coordinates_t.device() == aev_params.EtaA_t.device(),
       "coordinates, species, and aev_params should be on the same device");
 
-  float Rcr = aev_params.Rcr;
-  float Rca = aev_params.Rca;
+  int aev_length = aev_params.radial_length + aev_params.angular_length;
   const int n_molecules = species_t.size(0);
   const int max_natoms_per_mol = species_t.size(1);
-  int aev_length = aev_params.radial_length + aev_params.angular_length;
   int total_atoms = n_molecules * max_natoms_per_mol;
-  float* coordinates_p = (float*)coordinates_t.data_ptr();
   TORCH_CHECK(coordinates_t.is_contiguous(), "Coordinate data is not contiguous");
 
   // TODO replace zeros with empty
   result.aev_t = torch::zeros({n_molecules, max_natoms_per_mol, aev_length}, coordinates_t.options());
+
+  // return if species is empty
   if (species_t.numel() == 0) {
     return;
   }
+
+  // some shapes
+  int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
+  int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
+  auto total_natom_pairs = n_molecules * pairs_per_mol;
+  auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
 
   // set cuda device and stream
   at::cuda::CUDAGuard device_guard(coordinates_t.device().index());
   at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
   at::globalContext().lazyInitCUDA();
 
-  int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
-  int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
-  auto total_natom_pairs = n_molecules * pairs_per_mol;
-  auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
-
   // buffer to store all the pairwise distance (Rij)
   Tensor atomJ_t = torch::empty(total_natom_pairs, d_options.dtype(torch::kInt32));
-  int* atomJ_p = (int*)atomJ_t.data_ptr();
   Tensor distJ_t = torch::empty(total_natom_pairs, d_options.dtype(torch::kFloat32));
-  float* distJ_p = (float*)distJ_t.data_ptr();
-
   // radial and angular share the same data of atomI, startIdxJ and nI
   result.atomI_t = torch::empty(total_atoms * 2, d_options.dtype(torch::kInt32));
-  AtomI* atomI_p = (AtomI*)result.atomI_t.data_ptr();
   result.startIdxJ_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
-  int* startIdxJ_p = (int*)result.startIdxJ_t.data_ptr();
-
-  // radial and angular numJPerI counter
-  // radial_num_per_atom ranges from 10 - 60
+  // radial and angular numJPerI counter, radial_num_per_atom ranges from 10 - 60
   result.radialNbr.numJPerI_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
-  int* radialNbr_numJPerI_p = (int*)result.radialNbr.numJPerI_t.data_ptr();
   result.angularNbr.numJPerI_t = torch::zeros(total_atoms, d_options.dtype(torch::kInt32));
-  int* angularNbr_numJPerI_p = (int*)result.angularNbr.numJPerI_t.data_ptr();
 
-  constexpr int ATOM_I_PER_BLOCK = 32;
-  // single molecule mode
-  if (n_molecules == 1) {
-#ifdef TORCHANI_DEBUG
-    setlocale(LC_ALL, "");
-    printf("\n%-35s %'d atoms\n", "single molecule", max_natoms_per_mol);
-#endif
-    constexpr int ATOM_J_PER_TILE = 32;
-    int blocks = (total_atoms + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
-    dim3 block(ATOM_J_PER_TILE, ATOM_I_PER_BLOCK, 1);
-    pairwiseDistanceSingleMolecule<ATOM_I_PER_BLOCK, ATOM_J_PER_TILE><<<blocks, block, 0, stream>>>(
-        species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-        coordinates_p,
-        result.radialNbr.numJPerI_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-        atomI_p,
-        atomJ_p,
-        distJ_p,
-        Rcr,
-        max_natoms_per_mol,
-        max_numj_per_i_in_Rcr);
-    result.nI = total_atoms;
-  } else { // batch mode
-    // tmp storage because of padding
-#ifdef TORCHANI_DEBUG
-    setlocale(LC_ALL, "");
-    printf("\n%-35s %d molecules, total %'d atoms\n", "batch molecules", n_molecules, total_atoms);
-#endif
-    Tensor numJPerI_t = torch::empty(total_atoms, d_options.dtype(torch::kInt32));
-    int* numJPerI_p = (int*)numJPerI_t.data_ptr();
-    Tensor atom_i_t = torch::empty(total_atoms * 2, d_options.dtype(torch::kInt32));
-    AtomI* atom_i_p = (AtomI*)atom_i_t.data_ptr();
+  // launch kernel to genreate tmp neighborlist buffer
+  launch_pairwiseDistance_kernel(coordinates_t, species_t, aev_params, result, atomJ_t, distJ_t);
 
-    dim3 block(8, 16, 1);
-    // maximum 4096 atoms, which needs 49152 byte (48 kb) of shared memory
-    int smem_pairdist = sizeof(float) * max_natoms_per_mol * 5; // x, y, z, spe, counter
-    pairwiseDistance<<<n_molecules, block, smem_pairdist, stream>>>(
-        species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-        coordinates_p,
-        numJPerI_t.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-        atom_i_p,
-        atomJ_p,
-        distJ_p,
-        Rcr,
-        max_natoms_per_mol,
-        max_numj_per_i_in_Rcr);
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
-
-    // remove padding numJPerI if numj == 0
-    result.nI = cubDeviceSelectIf(
-        numJPerI_p, radialNbr_numJPerI_p, total_atoms, [=] __device__(const int numj) { return (bool)numj; }, stream);
-
-    // also remove padding atomI
-    // Note: cub::DeviceSelect::Flagged Bug: flag current only allow bool or int which is ether 0 or 1
-    // https://github.com/NVIDIA/cub/issues/235
-    auto flags_t = numJPerI_t.to(torch::kBool);
-    char* flags_p = (char*)flags_t.data_ptr();
-    cubDeviceSelectFlagged(atom_i_p, atomI_p, total_atoms, flags_p, stream);
-  }
-
-  cubScan(radialNbr_numJPerI_p, startIdxJ_p, total_atoms, stream);
-  result.radialNbr.nJ = (result.startIdxJ_t[-1] + result.radialNbr.numJPerI_t[-1]).item<int>();
-
-#ifdef TORCHANI_DEBUG
-  printf("%-35s %'d\n", "nI", result.nI);
-  printf("%-35s %'d\n", "radialNbr  nJ", result.radialNbr.nJ);
-#endif
-
+  // create radial and angular neighborlist
   result.radialNbr.atomJ_t = torch::empty(result.radialNbr.nJ, d_options.dtype(torch::kInt32));
-  int* radialNbr_atomJ_p = (int*)result.radialNbr.atomJ_t.data_ptr();
   result.radialNbr.distJ_t = torch::empty(result.radialNbr.nJ, d_options.dtype(torch::kFloat32));
-  float* radialNbr_distJ_p = (float*)result.radialNbr.distJ_t.data_ptr();
-
   result.angularNbr.atomJ_t = torch::empty(result.radialNbr.nJ, d_options.dtype(torch::kInt32));
-  int* angularNbr_atomJ_p = (int*)result.angularNbr.atomJ_t.data_ptr();
   result.angularNbr.distJ_t = torch::empty(result.radialNbr.nJ, d_options.dtype(torch::kFloat32));
-  float* angularNbr_distJ_p = (float*)result.angularNbr.distJ_t.data_ptr();
-
-  { // postProcessNbrList
-    int ATOM_J_PER_TILE = 16;
-    dim3 block(ATOM_J_PER_TILE, ATOM_I_PER_BLOCK, 1);
-    int blocks = (result.nI + ATOM_I_PER_BLOCK - 1) / ATOM_I_PER_BLOCK;
-    postProcessNbrList<ATOM_I_PER_BLOCK><<<blocks, block, 0, stream>>>(
-        atomJ_p,
-        distJ_p,
-        atomI_p,
-        radialNbr_atomJ_p,
-        radialNbr_distJ_p,
-        angularNbr_atomJ_p,
-        angularNbr_distJ_p,
-        radialNbr_numJPerI_p,
-        startIdxJ_p,
-        Rca,
-        angularNbr_numJPerI_p,
-        result.nI,
-        max_natoms_per_mol,
-        max_numj_per_i_in_Rcr);
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
-
-#ifdef TORCHANI_DEBUG
-    result.angularNbr.nJ = cubSum(angularNbr_numJPerI_p, result.nI, stream);
-    printf("%-35s %'d\n", "angularNbr nJ", result.angularNbr.nJ);
-#endif
-  }
+  // postProcessNbrList
+  launch_postProcessNbrList_kernel(coordinates_t, species_t, aev_params, result, atomJ_t, distJ_t);
 
   // Merge two cubMax streamSync into one
-  result.radialNbr.maxNumJPerI = cubMax(radialNbr_numJPerI_p, result.nI, stream, /* sync */ false);
-  result.angularNbr.maxNumJPerI = cubMax(angularNbr_numJPerI_p, result.nI, stream, /* sync */ false);
+  result.radialNbr.maxNumJPerI =
+      cubMax((int*)result.radialNbr.numJPerI_t.data_ptr(), result.nI, stream, /* sync */ false);
+  result.angularNbr.maxNumJPerI =
+      cubMax((int*)result.angularNbr.numJPerI_t.data_ptr(), result.nI, stream, /* sync */ false);
   cudaStreamSynchronize(stream);
 
   // launch radial and angular kernels
