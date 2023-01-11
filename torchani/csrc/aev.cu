@@ -956,11 +956,45 @@ __global__ void postProcessNbrList(
 ------------------------------------------------------------------------- */
 
 template <bool use_cos_cutoff>
+void launch_cuRadialAEVs_kernel(
+    const Tensor& coordinates_t,
+    const Tensor& species_t,
+    const AEVScalarParams& aev_params,
+    Result& result) {
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+
+  constexpr dim3 block_radial(8, 16, 1);
+  int smem_radial = aev_params.radial_length * sizeof(float) + result.radialNbr.maxNumJPerI * sizeof(float);
+  cuRadialAEVs<use_cos_cutoff><<<result.nI, block_radial, smem_radial, stream>>>(
+      species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+      aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+      aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+      result.aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
+      (int*)result.radialNbr.atomJ_t.data_ptr(),
+      (float*)result.radialNbr.distJ_t.data_ptr(),
+      (AtomI*)result.atomI_t.data_ptr(),
+      (int*)result.radialNbr.numJPerI_t.data_ptr(),
+      (int*)result.startIdxJ_t.data_ptr(),
+      aev_params.Rcr,
+      aev_params.radial_length,
+      aev_params.radial_sublength,
+      result.radialNbr.nJ,
+      result.radialNbr.maxNumJPerI);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+#ifdef TORCHANI_DEBUG
+  printf("%-35s %d\n", "radialNbr  maxNumJPerI", result.radialNbr.maxNumJPerI);
+#endif
+}
+
+template <bool use_cos_cutoff>
 void launch_cuAngularAEVs_kernel(
     const Tensor& coordinates_t,
     const Tensor& species_t,
     const AEVScalarParams& aev_params,
     Result& result) {
+  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+
   auto cal_smem_size = [&aev_params](int max_nbrs, int ncatom_per_tpb) {
     int sm_aev = sizeof(float) * aev_params.angular_length;
     int sxyz = sizeof(float) * max_nbrs * 3;
@@ -975,7 +1009,6 @@ void launch_cuAngularAEVs_kernel(
   constexpr int block_x = C10_WARP_SIZE;
   constexpr int block_y = 4;
   constexpr dim3 block(block_x, block_y, 1);
-  at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
 
   cuAngularAEVs<block_x, block_y, use_cos_cutoff><<<result.nI, block, smem_size, stream>>>(
       species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
@@ -1180,34 +1213,9 @@ void cuaev_forward(
   result.angularNbr.maxNumJPerI = cubMax(angularNbr_numJPerI_p, result.nI, stream, /* sync */ false);
   cudaStreamSynchronize(stream);
 
-  { // RadialAEV
-    constexpr dim3 block_radial(8, 16, 1);
-    int smem_radial = aev_params.radial_length * sizeof(float) + result.radialNbr.maxNumJPerI * sizeof(float);
-    cuRadialAEVs<use_cos_cutoff><<<result.nI, block_radial, smem_radial, stream>>>(
-        species_t.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-        aev_params.ShfR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-        aev_params.EtaR_t.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
-        result.aev_t.packed_accessor32<float, 3, torch::RestrictPtrTraits>(),
-        radialNbr_atomJ_p,
-        radialNbr_distJ_p,
-        atomI_p,
-        radialNbr_numJPerI_p,
-        startIdxJ_p,
-        aev_params.Rcr,
-        aev_params.radial_length,
-        aev_params.radial_sublength,
-        result.radialNbr.nJ,
-        result.radialNbr.maxNumJPerI);
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
-
-#ifdef TORCHANI_DEBUG
-    printf("%-35s %d\n", "radialNbr  maxNumJPerI", result.radialNbr.maxNumJPerI);
-#endif
-  }
-
-  { // AngularAEV
-    launch_cuAngularAEVs_kernel<use_cos_cutoff>(coordinates_t, species_t, aev_params, result);
-  }
+  // launch radial and angular kernels
+  launch_cuRadialAEVs_kernel<use_cos_cutoff>(coordinates_t, species_t, aev_params, result);
+  launch_cuAngularAEVs_kernel<use_cos_cutoff>(coordinates_t, species_t, aev_params, result);
 }
 
 template <bool use_cos_cutoff>
