@@ -118,19 +118,18 @@ __device__ T* shared_memory_proxy() {
   return reinterpret_cast<T*>(memory);
 }
 
-// TODO change `float Rc` back to `DataT Rc`
 template <typename DataT>
-__device__ __forceinline__ DataT cosine_cutoff_fwd(DataT Rij, float Rc) {
+__device__ __forceinline__ DataT cosine_cutoff_fwd(DataT Rij, double Rc) {
   return DataT(0.5) * mycos(PI * Rij / Rc) + DataT(0.5);
 }
 
 template <typename DataT>
-__device__ __forceinline__ DataT cosine_cutoff_bwd(DataT Rij, float Rc) {
+__device__ __forceinline__ DataT cosine_cutoff_bwd(DataT Rij, double Rc) {
   return -DataT(0.5) * (PI / Rc) * mysin(PI * Rij / Rc);
 }
 
 template <typename DataT>
-__device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, float Rc) {
+__device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, double Rc) {
   DataT eps = SMOOTH_CUTOFF_EPS;
 #if (SMOOTH_CUTOFF_ORDER == 2)
   DataT p = (Rij / Rc) * (Rij / Rc);
@@ -144,7 +143,7 @@ __device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, float Rc) {
 }
 
 template <typename DataT>
-__device__ __forceinline__ DataT smooth_cutoff_bwd(DataT Rij, float Rc) {
+__device__ __forceinline__ DataT smooth_cutoff_bwd(DataT Rij, double Rc) {
   DataT eps = SMOOTH_CUTOFF_EPS;
   int order = SMOOTH_CUTOFF_ORDER;
 #if (SMOOTH_CUTOFF_ORDER == 2)
@@ -167,7 +166,7 @@ __global__ void pairwiseDistance(
     AtomI* __restrict__ atom_i,
     int* __restrict__ atomJ_p,
     DataT* __restrict__ distJ_p,
-    const float Rcr,
+    const DataT Rcr,
     const IndexT max_natoms_per_mol,
     const IndexT max_numj_per_i_in_Rcr) {
   auto smem = shared_memory_proxy<DataT>();
@@ -239,7 +238,7 @@ __global__ void pairwiseDistanceSingleMolecule(
     AtomI* __restrict__ atom_i,
     int* __restrict__ atomJ_p,
     DataT* __restrict__ distJ_p,
-    const float Rcr,
+    const DataT Rcr,
     const IndexT max_natoms_per_mol,
     const IndexT max_numj_per_i_in_Rcr) {
   using Vec3type = typename MyVec3<DataT>::type;
@@ -324,7 +323,7 @@ __global__ void cuAngularAEVs(
     const AtomI* __restrict__ atom_i,
     const int* __restrict__ numJPerI,
     const int* __restrict__ startIdxJ,
-    float Rca,
+    DataT Rca,
     int angular_length,
     int angular_sublength,
     int radial_length,
@@ -482,7 +481,7 @@ __global__ void cuAngularAEVs_backward_or_doublebackward(
     const AtomI* __restrict__ atom_i,
     int* numJPerI,
     int* startIdxJ,
-    float Rca,
+    DataT Rca,
     int angular_length,
     int angular_sublength,
     int radial_length,
@@ -763,7 +762,7 @@ __global__ void cuRadialAEVs(
     const AtomI* __restrict__ atom_i,
     const int* __restrict__ numJPerI,
     const int* __restrict__ startIdxJ,
-    float Rcr,
+    DataT Rcr,
     int radial_length,
     int radial_sublength,
     int nRadialRij,
@@ -837,7 +836,7 @@ __global__ void cuRadialAEVs_backward_or_doublebackward(
     const AtomI* __restrict__ atom_i,
     const int* __restrict__ numJPerI,
     const int* __restrict__ startIdxJ,
-    float Rcr,
+    DataT Rcr,
     int radial_length,
     int radial_sublength,
     int nRadialRij,
@@ -973,7 +972,7 @@ __global__ void postProcessNbrList(
     DataT* __restrict__ angular_distJ,
     const int* __restrict__ radial_numJPerI,
     const int* __restrict__ startIdxPerI,
-    float Rca,
+    DataT Rca,
     int* __restrict__ angular_numJPerI,
     int num_atomI,
     int max_natoms_per_mol,
@@ -1063,7 +1062,7 @@ void launch_pairwiseDistance_kernel(
         (AtomI*)result.atomI_t.data_ptr(),
         (int*)atomJ_t.data_ptr(),
         (DataT*)distJ_t.data_ptr(),
-        aev_params.Rcr, // TODO, Rcr is forced to be float
+        DataT(aev_params.Rcr),
         max_natoms_per_mol,
         max_numj_per_i_in_Rcr);
     result.nI = total_atoms;
@@ -1086,7 +1085,7 @@ void launch_pairwiseDistance_kernel(
         (AtomI*)atom_i_t.data_ptr(),
         (int*)atomJ_t.data_ptr(),
         (DataT*)distJ_t.data_ptr(),
-        aev_params.Rcr,
+        DataT(aev_params.Rcr),
         max_natoms_per_mol,
         max_numj_per_i_in_Rcr);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
@@ -1142,7 +1141,7 @@ void launch_postProcessNbrList_kernel(
       (DataT*)result.angularNbr.distJ_t.data_ptr(),
       (int*)result.radialNbr.numJPerI_t.data_ptr(),
       (int*)result.startIdxJ_t.data_ptr(),
-      aev_params.Rca,
+      DataT(aev_params.Rca),
       (int*)result.angularNbr.numJPerI_t.data_ptr(),
       result.nI,
       max_natoms_per_mol,
@@ -1175,7 +1174,7 @@ void launch_cuRadialAEVs_kernel(
       (AtomI*)result.atomI_t.data_ptr(),
       (int*)result.radialNbr.numJPerI_t.data_ptr(),
       (int*)result.startIdxJ_t.data_ptr(),
-      aev_params.Rcr,
+      DataT(aev_params.Rcr),
       aev_params.radial_length,
       aev_params.radial_sublength,
       result.radialNbr.nJ,
@@ -1223,7 +1222,7 @@ void launch_cuAngularAEVs_kernel(
       (AtomI*)result.atomI_t.data_ptr(),
       (int*)result.angularNbr.numJPerI_t.data_ptr(),
       (int*)result.startIdxJ_t.data_ptr(),
-      aev_params.Rca,
+      DataT(aev_params.Rca),
       aev_params.angular_length,
       aev_params.angular_sublength,
       aev_params.radial_length,
@@ -1265,7 +1264,7 @@ void launch_cuRadialAEVs_backward_or_doublebackward_kernel(
             (AtomI*)result.atomI_t.data_ptr(),
             (int*)result.radialNbr.numJPerI_t.data_ptr(),
             (int*)result.startIdxJ_t.data_ptr(),
-            aev_params.Rcr,
+            DataT(aev_params.Rcr),
             aev_params.radial_length,
             aev_params.radial_sublength,
             result.radialNbr.nJ,
@@ -1285,7 +1284,7 @@ void launch_cuRadialAEVs_backward_or_doublebackward_kernel(
             (AtomI*)result.atomI_t.data_ptr(),
             (int*)result.radialNbr.numJPerI_t.data_ptr(),
             (int*)result.startIdxJ_t.data_ptr(),
-            aev_params.Rcr,
+            DataT(aev_params.Rcr),
             aev_params.radial_length,
             aev_params.radial_sublength,
             result.radialNbr.nJ,
@@ -1338,7 +1337,7 @@ void launch_cuAngularAEVs_backward_or_doublebackward_kernel(
           (AtomI*)result.atomI_t.data_ptr(),
           (int*)result.angularNbr.numJPerI_t.data_ptr(),
           (int*)result.startIdxJ_t.data_ptr(),
-          aev_params.Rca,
+          DataT(aev_params.Rca),
           aev_params.angular_length,
           aev_params.angular_sublength,
           aev_params.radial_length,
