@@ -119,17 +119,17 @@ __device__ T* shared_memory_proxy() {
 }
 
 template <typename DataT>
-__device__ __forceinline__ DataT cosine_cutoff_fwd(DataT Rij, double Rc) {
+__device__ __forceinline__ DataT cosine_cutoff_fwd(DataT Rij, DataT Rc) {
   return DataT(0.5) * mycos(PI * Rij / Rc) + DataT(0.5);
 }
 
 template <typename DataT>
-__device__ __forceinline__ DataT cosine_cutoff_bwd(DataT Rij, double Rc) {
+__device__ __forceinline__ DataT cosine_cutoff_bwd(DataT Rij, DataT Rc) {
   return -DataT(0.5) * (PI / Rc) * mysin(PI * Rij / Rc);
 }
 
 template <typename DataT>
-__device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, double Rc) {
+__device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, DataT Rc) {
   DataT eps = SMOOTH_CUTOFF_EPS;
 #if (SMOOTH_CUTOFF_ORDER == 2)
   DataT p = (Rij / Rc) * (Rij / Rc);
@@ -143,7 +143,7 @@ __device__ __forceinline__ DataT smooth_cutoff_fwd(DataT Rij, double Rc) {
 }
 
 template <typename DataT>
-__device__ __forceinline__ DataT smooth_cutoff_bwd(DataT Rij, double Rc) {
+__device__ __forceinline__ DataT smooth_cutoff_bwd(DataT Rij, DataT Rc) {
   DataT eps = SMOOTH_CUTOFF_EPS;
   int order = SMOOTH_CUTOFF_ORDER;
 #if (SMOOTH_CUTOFF_ORDER == 2)
