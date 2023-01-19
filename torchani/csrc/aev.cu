@@ -1797,7 +1797,6 @@ void cuaev_forward_with_half_nbrlist(
   // some shapes
   int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
   int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
-  auto total_natom_pairs = n_molecules * pairs_per_mol;
   auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
 
   // set cuda device and stream
@@ -1890,7 +1889,6 @@ void cuaev_forward_with_full_nbrlist(
   // some shapes
   int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
   int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
-  auto total_natom_pairs = n_molecules * pairs_per_mol;
   auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
 
   // set cuda device and stream
