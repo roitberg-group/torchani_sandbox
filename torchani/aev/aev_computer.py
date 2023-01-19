@@ -183,15 +183,14 @@ class AEVComputer(torch.nn.Module):
         assert self.cutoff_fn_type != 'others', 'cuaev currently only supports cosine and smooth cutoff functions'
         assert self.cutoff_fn_type != 'smooth_modified', 'cuaev currently only supports standard parameters for smooth cutoff function'
         use_cos_cutoff = self.cutoff_fn_type == 'cosine'
-        # TODO, remove float() once cuaev support double
         self.cuaev_computer = torch.classes.cuaev.CuaevComputer(self.radial_terms.cutoff,
                                                                 self.angular_terms.cutoff,
-                                                                self.radial_terms.EtaR.flatten().float(),
-                                                                self.radial_terms.ShfR.flatten().float(),
-                                                                self.angular_terms.EtaA.flatten().float(),
-                                                                self.angular_terms.Zeta.flatten().float(),
-                                                                self.angular_terms.ShfA.flatten().float(),
-                                                                self.angular_terms.ShfZ.flatten().float(),
+                                                                self.radial_terms.EtaR.flatten(),
+                                                                self.radial_terms.ShfR.flatten(),
+                                                                self.angular_terms.EtaA.flatten(),
+                                                                self.angular_terms.Zeta.flatten(),
+                                                                self.angular_terms.ShfA.flatten(),
+                                                                self.angular_terms.ShfZ.flatten(),
                                                                 self.num_species,
                                                                 use_cos_cutoff)
 
