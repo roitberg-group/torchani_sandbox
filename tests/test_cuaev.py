@@ -423,7 +423,7 @@ class TestCUAEV(TestCase):
             filepath = os.path.join(path, f'../dataset/pdb/{file}')
             mol = read(filepath)
             species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
-            positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device, dtype=self.dtype)
+            positions = torch.tensor([mol.get_positions()], requires_grad=False, device=self.device, dtype=self.dtype)
             speciesPositions = self.ani2x.species_converter((species, positions))
             species, coordinates = speciesPositions
 
@@ -446,8 +446,8 @@ class TestCUAEV(TestCase):
             filepath = os.path.join(path, f'../dataset/pdb/{file}')
             mol = read(filepath)
             species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
-            positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device, dtype=self.dtype)
-            cell = torch.tensor(mol.get_cell(complete=True), dtype=torch.float32, device=self.device)
+            positions = torch.tensor([mol.get_positions()], requires_grad=False, device=self.device, dtype=self.dtype)
+            cell = torch.tensor(mol.get_cell(complete=True), device=self.device, dtype=self.dtype)
             pbc = torch.tensor(mol.get_pbc(), dtype=torch.bool, device=self.device)
             speciesPositions = self.ani2x.species_converter((species, positions))
             species, coordinates = speciesPositions
@@ -471,7 +471,7 @@ class TestCUAEV(TestCase):
             filepath = os.path.join(path, f'../dataset/pdb/{file}')
             mol = read(filepath)
             species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
-            positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device, dtype=self.dtype)
+            positions = torch.tensor([mol.get_positions()], requires_grad=False, device=self.device, dtype=self.dtype)
             speciesPositions = self.ani2x.species_converter((species, positions))
             species, coordinates = speciesPositions
 
@@ -494,8 +494,8 @@ class TestCUAEV(TestCase):
             filepath = os.path.join(path, f'../dataset/pdb/{file}')
             mol = read(filepath)
             species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
-            positions = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=False, device=self.device, dtype=self.dtype)
-            cell = torch.tensor(mol.get_cell(complete=True), dtype=torch.float32, device=self.device)
+            positions = torch.tensor([mol.get_positions()], requires_grad=False, device=self.device, dtype=self.dtype)
+            cell = torch.tensor(mol.get_cell(complete=True), device=self.device, dtype=self.dtype)
             pbc = torch.tensor(mol.get_pbc(), dtype=torch.bool, device=self.device)
             speciesPositions = self.ani2x.species_converter((species, positions))
             species, coordinates = speciesPositions
@@ -510,6 +510,8 @@ class TestCUAEV(TestCase):
             _, cu_aev = self.cuaev_computer_2x_with_full_nbrlist((species, coordinates), cell, pbc)
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad
+            # print((cu_aev - aev).abs().max())
+            # print((cuaev_grad - aev_grad).abs().max())
             self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
             self.assertEqual(cuaev_grad, aev_grad, atol=self.tolerance, rtol=self.tolerance)
 
