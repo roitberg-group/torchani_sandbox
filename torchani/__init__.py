@@ -44,6 +44,7 @@ from . import geometry
 from . import calc
 from pkg_resources import get_distribution, DistributionNotFound
 import warnings
+import torch
 
 try:
     __version__ = get_distribution(__name__).version
@@ -53,6 +54,17 @@ except DistributionNotFound:
 
 __all__ = ['AEVComputer', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
            'utils', 'neurochem', 'models', 'units', 'repulsion', 'datasets', 'transforms', 'cli', 'geometry', 'calc']
+
+# disable tf32
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
+# show warnings to users with ampere or newer gpu
+if torch.cuda.is_available():
+    num_devices = torch.cuda.device_count()
+    max_sm_major = max([torch.cuda.get_device_capability(i)[0] for i in range(num_devices)])
+    if (max_sm_major >= 8):
+        warnings.warn(
+            "TF32 (TensorFloat 32) is disabled for accuracy reason")
 
 try:
     from . import ase  # noqa: F401
