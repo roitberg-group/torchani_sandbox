@@ -1341,7 +1341,7 @@ void launch_postProcessNbrList2_kernel(
   // and there is no need to scan in every timestep
   int* numJPerI_p = (int*)numJPerI_t.data_ptr();
   result.nI = atomI_t.size(0);
-  cubScan((int*)numJPerI_t.data_ptr(), (int*)result.startIdxJ_t.data_ptr(), total_atoms, stream);
+  cubScan((int*)numJPerI_t.data_ptr(), (int*)result.startIdxJ_t.data_ptr(), result.nI, stream);
 
   constexpr int ATOM_I_PER_BLOCK = 32;
   int ATOM_J_PER_TILE = 32;
@@ -1796,7 +1796,6 @@ void cuaev_forward_with_half_nbrlist(
 
   // some shapes
   int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
-  int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
   auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
 
   // set cuda device and stream
@@ -1888,7 +1887,6 @@ void cuaev_forward_with_full_nbrlist(
 
   // some shapes
   int max_numj_per_i_in_Rcr = min(max_natoms_per_mol, MAX_NUMJ_PER_I_IN_RCR);
-  int pairs_per_mol = max_natoms_per_mol * max_numj_per_i_in_Rcr;
   auto d_options = torch::dtype(torch::kUInt8).device(coordinates_t.device());
 
   // set cuda device and stream
