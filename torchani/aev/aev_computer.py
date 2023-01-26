@@ -74,7 +74,6 @@ class AEVComputer(torch.nn.Module):
 
     use_cuda_extension: Final[bool]
     use_cuaev_interface: Final[bool]
-    use_fullnbr: bool
     triu_index: Tensor
 
     def __init__(self,
@@ -89,7 +88,6 @@ class AEVComputer(torch.nn.Module):
                 num_species: Optional[int] = None,
                 use_cuda_extension=False,
                 use_cuaev_interface=False,
-                use_fullnbr=False,
                 cutoff_fn='cosine',
                 neighborlist='full_pairwise',
                 radial_terms='standard',
@@ -102,7 +100,9 @@ class AEVComputer(torch.nn.Module):
         super().__init__()
         self.use_cuda_extension = use_cuda_extension
         self.use_cuaev_interface = use_cuaev_interface
-        self.use_fullnbr = use_fullnbr
+        # External full nbrlist needs to call `_compute_cuaev_with_full_nbrlist` method directly,
+        # and this flag is only needed for test purpose, where half nbrlist is converted to full nbrlist.
+        self.use_fullnbr = False
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
 
@@ -304,7 +304,7 @@ class AEVComputer(torch.nn.Module):
             if self.use_cuaev_interface:
                 # TODO, no_grad for self.neighborlist?
                 atom_index12, _, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
-                aev = self._compute_cuaev_with_nbrlist(species, coordinates, atom_index12, diff_vector, distances)
+                aev = self._compute_cuaev_with_half_nbrlist(species, coordinates, atom_index12, diff_vector, distances)
             else:
                 assert pbc is None or (not pbc.any()), "cuaev currently does not support PBC"
                 aev = self._compute_cuaev(species, coordinates)
@@ -367,12 +367,13 @@ class AEVComputer(torch.nn.Module):
         return atom_index12
 
     @jit_unused_if_no_cuaev()
-    def _compute_cuaev_with_nbrlist(self, species, coordinates, atom_index12, diff_vector, distances):
+    def _compute_cuaev_with_half_nbrlist(self, species, coordinates, atom_index12, diff_vector, distances):
         # TODO could these be int32 by default?
         species = species.to(torch.int32)
         atom_index12 = atom_index12.to(torch.int32)
         # coordinates will not be used in forward calculation, but it's gradient (force) will still be calculated in cuaev kernel
         if self.use_fullnbr:
+            # this is only for test purpose, as convereting half nbrlist to full nbrlist is meaningless
             assert (species.shape[0] == 1)
             ilist_unique, jlist, numneigh = self._half_to_full_nbrlist(atom_index12)
             aev = self._compute_cuaev_with_full_nbrlist(species, coordinates, ilist_unique, jlist, numneigh)
@@ -382,7 +383,11 @@ class AEVComputer(torch.nn.Module):
 
     @jit_unused_if_no_cuaev()
     def _compute_cuaev_with_full_nbrlist(self, species, coordinates, ilist_unique, jlist, numneigh):
-        assert (self.use_fullnbr)
+        """
+        Computing aev with full nbrlist that is from
+            1. Lammps interface
+            2. For testting purpose, half nbrlist is converted to full nbrlist
+        """
         aev = torch.ops.cuaev.run_with_full_nbrlist(coordinates,
                                                     species.to(torch.int32),
                                                     ilist_unique.to(torch.int32),

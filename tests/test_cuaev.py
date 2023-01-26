@@ -61,8 +61,10 @@ class TestCUAEV(TestCase):
 
         self.aev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn).to(self.dtype).to(self.device)
         self.cuaev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.dtype).to(self.device)
-        self.cuaev_computer_2x_with_half_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True, use_fullnbr=False).to(self.dtype).to(self.device)
-        self.cuaev_computer_2x_with_full_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True, use_fullnbr=True).to(self.dtype).to(self.device)
+        self.cuaev_computer_2x_with_half_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True).to(self.dtype).to(self.device)
+        self.cuaev_computer_2x_with_full_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True).to(self.dtype).to(self.device)
+        # full nbrlist is actually converted from half nbrlist, and we need to enable it by set the following
+        self.cuaev_computer_2x_with_full_nbrlist.use_fullnbr = True
         self.ani2x = self.__class__.ani2x.to(self.dtype).to(self.device)
 
     def _skip_if_not_cosine(self):
