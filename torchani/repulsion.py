@@ -51,6 +51,7 @@ class RepulsionXTB(torch.nn.Module):
         self.register_buffer('y_ab', torch.outer(_y_eff, _y_eff))
         self.register_buffer('sqrt_alpha_ab', torch.sqrt(torch.outer(_alpha, _alpha)))
         self.register_buffer('k_rep_ab', k_rep_ab)
+        self.ANGSTROM_TO_BOHR = units.ANGSTROM_TO_BOHR
 
     def _calculate_repulsion(self,
                              species: Tensor,
@@ -59,7 +60,7 @@ class RepulsionXTB(torch.nn.Module):
 
         # all internal calculations of this module are made with atomic units,
         # so distances are first converted to bohr
-        distances = units.angstrom2bohr(distances)
+        distances = distances * self.ANGSTROM_TO_BOHR
 
         assert distances.ndim == 1, "distances should be 1 dimensional"
         assert species.ndim == 2, "species should be 2 dimensional"
@@ -82,7 +83,7 @@ class RepulsionXTB(torch.nn.Module):
         rep_energies = prefactor * torch.exp(-sqrt_alpha_ab * (distances ** k_rep_ab))
 
         if self.cutoff_function is not None:
-            rep_energies *= self.cutoff_function(distances, units.angstrom2bohr(self.cutoff))
+            rep_energies *= self.cutoff_function(distances, self.cutoff * self.ANGSTROM_TO_BOHR)
 
         energies = torch.zeros(species.shape[0], dtype=rep_energies.dtype, device=rep_energies.device)
         molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
