@@ -233,15 +233,15 @@ class AEVComputer(torch.nn.Module):
         return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, **kwargs)
 
     @classmethod
-    def like_1x(cls, **kwargs):
+    def like_1x(cls, **kwargs) -> "AEVComputer":
         return cls(angular_terms='ani1x', radial_terms='ani1x', num_species=4, **kwargs)
 
     @classmethod
-    def like_2x(cls, **kwargs):
+    def like_2x(cls, **kwargs) -> "AEVComputer":
         return cls(angular_terms='ani2x', radial_terms='ani2x', num_species=7, **kwargs)
 
     @classmethod
-    def like_1ccx(cls, **kwargs):
+    def like_1ccx(cls, **kwargs) -> "AEVComputer":
         # just a synonym
         return cls.like_1x(**kwargs)
 
