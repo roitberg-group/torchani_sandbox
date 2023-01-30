@@ -373,7 +373,7 @@ def load(path, additional_properties=()):
             species = m['species']
             coordinates = m['coordinates']
             for i in range(coordinates.shape[0]):
-                ret = {'species': species, 'coordinates': coordinates[i]}
+                ret = {'species': species[i], 'coordinates': coordinates[i]}
                 for k in properties:
                     if k in m:
                         ret[k] = m[k][i]
