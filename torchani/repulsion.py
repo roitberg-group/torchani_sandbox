@@ -56,7 +56,8 @@ class RepulsionXTB(torch.nn.Module):
     def _calculate_repulsion(self,
                              species: Tensor,
                              atom_index12: Tensor,
-                             distances: Tensor) -> Tensor:
+                             distances: Tensor,
+                             ghost_flags: Optional[Tensor] = None) -> Tensor:
 
         # all internal calculations of this module are made with atomic units,
         # so distances are first converted to bohr
@@ -85,6 +86,12 @@ class RepulsionXTB(torch.nn.Module):
         if self.cutoff_function is not None:
             rep_energies *= self.cutoff_function(distances, self.cutoff * self.ANGSTROM_TO_BOHR)
 
+        if ghost_flags is not None:
+            assert ghost_flags.numel() == species.numel(), "ghost_flags and species should have the same number of elements"
+            ghost12 = ghost_flags.flatten()[atom_index12]
+            ghost_mask = torch.logical_or(ghost12[0], ghost12[1])
+            rep_energies = torch.where(ghost_mask, rep_energies * 0.5, rep_energies)
+
         energies = torch.zeros(species.shape[0], dtype=rep_energies.dtype, device=rep_energies.device)
         molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
         energies.index_add_(0, molecule_indices, rep_energies)
@@ -94,9 +101,10 @@ class RepulsionXTB(torch.nn.Module):
                 species: Tensor,
                 atom_index12: Tensor,
                 distances: Tensor,
-                diff_vector: Optional[Tensor] = None) -> Tensor:
+                diff_vector: Optional[Tensor] = None,
+                ghost_flags: Optional[Tensor] = None) -> Tensor:
         # diff_vector is unused in 2-body potentials
-        return self._calculate_repulsion(species, atom_index12, distances)
+        return self._calculate_repulsion(species, atom_index12, distances, ghost_flags)
 
 
 # Wrapper to keep compatibility with old ANI code
@@ -104,9 +112,10 @@ class RepulsionCalculator(RepulsionXTB):
     def forward(self,  # type: ignore
                 species_energies: Tuple[Tensor, Tensor],
                 atom_index12: Tensor,
-                distances: Tensor) -> Tuple[Tensor, Tensor]:
+                distances: Tensor,
+                ghost_flags: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
         species, energies = species_energies
-        rep_energies = self._calculate_repulsion(species, atom_index12, distances)
+        rep_energies = self._calculate_repulsion(species, atom_index12, distances, ghost_flags)
         return SpeciesEnergies(species, energies + rep_energies)
 
 
