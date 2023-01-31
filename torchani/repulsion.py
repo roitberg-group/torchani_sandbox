@@ -114,6 +114,11 @@ class RepulsionCalculator(RepulsionXTB):
                 atom_index12: Tensor,
                 distances: Tensor,
                 ghost_flags: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
+        """
+        Args:
+            ghost_flags (Optional[Tensor], optional): A Tensor with the same shape as the species
+            indicates whether the atom is outside the current domain. Defaults to None.
+        """
         species, energies = species_energies
         rep_energies = self._calculate_repulsion(species, atom_index12, distances, ghost_flags)
         return SpeciesEnergies(species, energies + rep_energies)
