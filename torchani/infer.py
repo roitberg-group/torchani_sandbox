@@ -428,9 +428,10 @@ class BmmNetwork(torch.nn.Module):
             if isinstance(layer, torch.nn.Linear):
                 layers.append(BmmLinear([net[layer_idx] for net in networks]))
             else:
-                assert isinstance(layer, torch.nn.CELU), "Currently only support CELU as activation function"
+                assert isinstance(layer, torch.nn.CELU) or isinstance(layer, torch.nn.GELU), "Currently only support CELU/GELU as activation function"
                 layers.append(layer)
         self.layers = torch.nn.ModuleList(layers)
+        self.is_bmmlinear_layer = [isinstance(layer, BmmLinear) for layer in self.layers]
 
     def forward(self, input_):
         input_ = input_.expand(self.use_num_models, -1, -1)
@@ -440,8 +441,8 @@ class BmmNetwork(torch.nn.Module):
 
     @torch.jit.export
     def select_models(self, use_num_models: int):
-        for layer in self.layers:
-            if isinstance(layer, BmmLinear):
+        for i, layer in enumerate(self.layers):
+            if self.is_bmmlinear_layer[i] and hasattr(layer, "select_models"):
                 layer.select_models(use_num_models)
         self.use_num_models = use_num_models
 
@@ -460,14 +461,23 @@ class BmmLinear(torch.nn.Module):
         self.use_num_models = self.num_models
         # assert each layer has same architecture
         weights = [layer.weight.unsqueeze(0).clone().detach() for layer in linear_layers]
-        bias = [layer.bias.view(1, 1, -1).clone().detach() for layer in linear_layers]
         self.weights = torch.nn.Parameter(torch.cat(weights).transpose(1, 2))
-        self.bias = torch.nn.Parameter(torch.cat(bias))
+        if linear_layers[0].bias is not None:
+            bias = [layer.bias.view(1, 1, -1).clone().detach() for layer in linear_layers]
+            self.bias = torch.nn.Parameter(torch.cat(bias))
+            self.beta = 1
+        else:
+            self.bias = torch.nn.Parameter(torch.empty(1).view(1, 1, 1))
+            self.beta = 0
 
     def forward(self, input_):
+        # TODO, slicing weight and bias at every step is slow and useless
         weights = self.weights[:self.use_num_models, :, :]
-        bias = self.bias[:self.use_num_models, :, :]
-        return torch.baddbmm(bias, input_, weights)
+        if self.beta > 0:
+            bias = self.bias[:self.use_num_models, :, :]
+        else:
+            bias = self.bias
+        return torch.baddbmm(bias, input_, weights, beta=self.beta)
 
     def extra_repr(self):
         return f"batch={self.weights.shape[0]}, in_features={self.weights.shape[1]}, out_features={self.weights.shape[2]}, bias={self.bias is not None}"
