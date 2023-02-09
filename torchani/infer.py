@@ -467,7 +467,7 @@ class BmmLinear(torch.nn.Module):
             self.bias = torch.nn.Parameter(torch.cat(bias))
             self.beta = 1
         else:
-            self.bias = torch.empty(1).view(1, 1, 1)
+            self.bias = torch.nn.Parameter(torch.empty(1).view(1, 1, 1))
             self.beta = 0
 
     def forward(self, input_):
