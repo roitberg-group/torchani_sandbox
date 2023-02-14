@@ -617,7 +617,7 @@ class _ANISubdataset(_ANIDatasetBase):
     def auto_append_conformers(self,
             conformers: MixedConformers,
             atomic_properties: Iterable[str] = _ATOMIC_KEYS,
-            padding: int = PADDING["numbers"]) -> None:
+            padding: int = int(PADDING["numbers"])) -> "_ANISubdataset":
         atomic_properties = set(atomic_properties)
         numpy_conformers = self._to_numpy_conformers(
             conformers,
