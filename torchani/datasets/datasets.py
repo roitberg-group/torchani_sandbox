@@ -634,7 +634,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 if property_ in atomic_properties:
                     numpy_conformers[property_][j] = numpy_conformers[property_][j, idxs]
             if self.grouping == "by_formula":
-                group_key = species_to_formula(znumbers[mask])
+                group_key = species_to_formula(znumbers[mask])[0]
             elif self.grouping == "by_num_atoms":
                 group_key = str(znumbers[mask].shape[0]).zfill(3)
             else:
