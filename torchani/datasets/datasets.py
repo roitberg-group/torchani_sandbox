@@ -625,7 +625,7 @@ class _ANISubdataset(_ANIDatasetBase):
         )
         element_key = _get_any_element_key(numpy_conformers.keys())
         elements = numpy_conformers[element_key]
-        groups: Dict[str, List[MixedConformers]] = {}
+        groups: Dict[str, Any] = {}
         for j, znumbers in enumerate(elements):
             idxs = np.argsort(znumbers)
             mask = (znumbers != padding)
