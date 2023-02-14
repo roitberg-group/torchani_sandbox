@@ -646,7 +646,7 @@ class _ANISubdataset(_ANIDatasetBase):
                     groups[group_key][k].append(numpy_conformers[k][j, mask])
                 else:
                     groups[group_key][k].append(numpy_conformers[k][j])
-        for group, name in groups.items():
+        for name, group in groups.items():
             self.append_conformers(name, {k: np.asarray(v) for k, v in group.items()})
         return self
 
