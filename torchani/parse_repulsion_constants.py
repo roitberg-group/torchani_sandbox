@@ -103,5 +103,3 @@ for line in _data:
     # note that the first value is a dummy value actually
     alpha_constants[PERIODIC_TABLE.index(element)] = float(alpha)
     y_eff_constants[PERIODIC_TABLE.index(element)] = float(y_eff)
-# with open('repulsion_constants.pkl', 'wb') as f:
-#     pickle.dump({'alpha': alpha_constants, 'y_eff': y_eff_constants}, f)
