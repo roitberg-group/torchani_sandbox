@@ -331,7 +331,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
         potentials = list(potentials)
         potentials.append(AEVPotential(self.aev_computer, self.neural_networks))
 
-        # We want to check the cutoffs of the potentials, and the cutoff os the
+        # We want to check the cutoffs of the potentials, and the cutoff of the
         # aev computer, and sort the "aev energy" and the "pairwise energies"
         # in order of decreasing cutoffs. this way the energy with the LARGEST
         # cutoff is computed first, then sequentially things that need smaller
