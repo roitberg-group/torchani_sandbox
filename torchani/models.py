@@ -342,8 +342,9 @@ def _fetch_state_dict(state_dict_file: str,
     url = f'https://github.com/roitberg-group/torchani_model_zoo/releases/download/{tag}/{state_dict_file}'
     # for now for simplicity we load a state dict for the ensemble directly and
     # then parse if needed
-    state_dict = torch.hub.load_state_dict_from_url(url, model_dir=model_dir, map_location=torch.device('cpu'))
-
+    # The argument to map_location is OK but the function is incorrectly typed
+    # in the pytorch stubs
+    state_dict = torch.hub.load_state_dict_from_url(url, model_dir=model_dir, map_location=torch.device('cpu'))  # type: ignore
     if model_index is not None:
         new_state_dict = OrderedDict()
         # Parse the state dict and rename/select only useful keys to build
@@ -358,9 +359,9 @@ def _fetch_state_dict(state_dict_file: str,
                 else:
                     continue
             new_state_dict[k] = v
-        state_dict = new_state_dict
-
-    return state_dict
+    else:
+        new_state_dict = OrderedDict(state_dict)
+    return new_state_dict
 
 
 def _load_ani_model(state_dict_file: Optional[str] = None,
