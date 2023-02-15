@@ -140,14 +140,14 @@ class BaseNeighborlist(Module):
         )
 
     @staticmethod
-    def _rescreen_with_cutoff(cutoff: float, input_neighbor_indices: Tensor, diff_vector: Tensor, distances: Tensor, shift_values: Tensor = None):
+    def _rescreen_with_cutoff(cutoff: float, input_neighbor_indices: Tensor, diff_vectors: Tensor, distances: Tensor, shift_values: Tensor = None):
         closer_indices = (distances <= cutoff).nonzero().flatten()
         input_neighbor_indices = input_neighbor_indices.index_select(1, closer_indices)
         if shift_values is not None:
             shift_values = shift_values.index_select(0, closer_indices)
-        diff_vector = diff_vector.index_select(0, closer_indices)
+        diff_vectors = diff_vectors.index_select(0, closer_indices)
         distances = distances.index_select(0, closer_indices)
-        return input_neighbor_indices, shift_values, diff_vector, distances
+        return NeighborData(indices=input_neighbor_indices, distances=distances, diff_vectors=diff_vectors, shift_values=shift_values)
 
     @torch.jit.export
     def _recast_long_buffers(self) -> None:
