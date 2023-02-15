@@ -302,8 +302,8 @@ class AEVPotential(torch.nn.Module):
                 species: Tensor,
                 atom_index12: Tensor,
                 distances: Tensor,
-                diff_vector: Tensor) -> Tensor:
-        aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vector, distances)
+                diff_vectors: Tensor) -> Tensor:
+        aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vectors, distances)
         energies = self.neural_networks((species, aevs)).energies
         return energies
 
@@ -311,13 +311,13 @@ class AEVPotential(torch.nn.Module):
                          species: Tensor,
                          atom_index12: Tensor,
                          distances: Tensor,
-                         diff_vector: Tensor) -> Tensor:
+                         diff_vectors: Tensor) -> Tensor:
         """
         Returns: members energies for the given configurations with shape of energies is (M, C),
             where M is the number of modules in the ensemble.
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vector, distances)
+        aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vectors, distances)
         atomic_energies = self.neural_networks._atomic_energies((species, aevs))
         return atomic_energies.sum(-1)
 
@@ -351,18 +351,25 @@ class BuiltinModelPairInteractions(BuiltinModel):
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         species, coordinates = self._maybe_convert_species(species_coordinates)
-        atom_index12, _, diff_vectors, distances = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
+        neighbor_data = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
         energies = torch.zeros(species.shape[0], device=species.device, dtype=coordinates.dtype)
         rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
         previous_cutoff = self.aev_computer.neighborlist.cutoff
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                atom_index12, _, diff_vectors, distances = rescreen(pot.cutoff,
-                                                                    atom_index12,
-                                                                    diff_vectors,
-                                                                    distances)
+                neighbor_data = rescreen(
+                    pot.cutoff,
+                    neighbor_data.indices,
+                    neighbor_data.diff_vectors,
+                    neighbor_data.distances
+                )
                 previous_cutoff = pot.cutoff
-            energies += pot(species, atom_index12, distances, diff_vectors)
+            energies += pot(
+                species,
+                neighbor_data.indices,
+                neighbor_data.diff_vectors,
+                neighbor_data.distances
+            )
         return self.energy_shifter((species, energies))
 
     def __getitem__(self, index: int) -> 'BuiltinModel':
@@ -379,22 +386,34 @@ class BuiltinModelPairInteractions(BuiltinModel):
                          cell: Optional[Tensor] = None,
                          pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         species, coordinates = self._maybe_convert_species(species_coordinates)
-        atom_index12, _, diff_vectors, distances = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
+        neighbor_data = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
         energies = torch.zeros(species.shape[0], device=species.device, dtype=coordinates.dtype)
         rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
         previous_cutoff = self.aev_computer.neighborlist.cutoff
         members_energies = None
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                atom_index12, _, diff_vectors, distances = rescreen(pot.cutoff,
-                                                                    atom_index12,
-                                                                    diff_vectors,
-                                                                    distances)
+                neighbor_data = rescreen(
+                    pot.cutoff,
+                    neighbor_data.indices,
+                    neighbor_data.diff_vectors,
+                    neighbor_data.distances
+                )
                 previous_cutoff = pot.cutoff
             if isinstance(pot, AEVPotential):
-                members_energies = pot.members_energies(species, atom_index12, distances, diff_vectors)
+                members_energies = pot.members_energies(
+                    species,
+                    neighbor_data.indices,
+                    neighbor_data.diff_vectors,
+                    neighbor_data.distances
+                )
             else:
-                energies += pot(species, atom_index12, distances, diff_vectors)
+                energies += pot(
+                    species,
+                    neighbor_data.indices,
+                    neighbor_data.diff_vectors,
+                    neighbor_data.distances
+                )
         assert members_energies is not None
         energies = self.energy_shifter((species, energies)).energies
         members_energies += energies.unsqueeze(0)

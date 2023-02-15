@@ -59,6 +59,9 @@ class RepulsionXTB(torch.nn.Module):
                              distances: Tensor,
                              ghost_flags: Optional[Tensor] = None) -> Tensor:
 
+        # clamp distances to prevent singularities when dividing by zero
+        distances = torch.clamp(distances, min=1e-7)
+
         # all internal calculations of this module are made with atomic units,
         # so distances are first converted to bohr
         distances = distances * self.ANGSTROM_TO_BOHR

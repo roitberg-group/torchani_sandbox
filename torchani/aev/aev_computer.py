@@ -302,8 +302,13 @@ class AEVComputer(torch.nn.Module):
         # WARNING: The coordinates that are input into the neighborlist are **not** assumed to be
         # mapped into the central cell for pbc calculations,
         # and **in general are not**
-        atom_index12, _, diff_vector, distances = self.neighborlist(species, coordinates, cell, pbc)
-        aev = self._compute_aev(species, atom_index12, diff_vector, distances)
+        neighbor_data = self.neighborlist(species, coordinates, cell, pbc)
+        aev = self._compute_aev(
+            species,
+            neighbor_data.indices,
+            neighbor_data.diff_vectors,
+            neighbor_data.distances
+        )
         return SpeciesAEV(species, aev)
 
     @jit_unused_if_no_cuaev()
@@ -313,7 +318,7 @@ class AEVComputer(torch.nn.Module):
         return aev
 
     def _compute_aev(self, species: Tensor,
-            atom_index12: Tensor, diff_vector: Tensor, distances: Tensor) -> Tensor:
+            atom_index12: Tensor, diff_vectors: Tensor, distances: Tensor) -> Tensor:
 
         species12 = species.flatten()[atom_index12]
         radial_aev = self._compute_radial_aev(species.shape[0], species.shape[1], species12,
@@ -325,10 +330,10 @@ class AEVComputer(torch.nn.Module):
         even_closer_indices = (distances <= self.angular_terms.cutoff).nonzero().flatten()
         atom_index12 = atom_index12.index_select(1, even_closer_indices)
         species12 = species12.index_select(1, even_closer_indices)
-        diff_vector = diff_vector.index_select(0, even_closer_indices)
+        diff_vectors = diff_vectors.index_select(0, even_closer_indices)
 
         angular_aev = self._compute_angular_aev(species.shape[0], species.shape[1], species12,
-                                                diff_vector, atom_index12)
+                                                diff_vectors, atom_index12)
 
         return torch.cat([radial_aev, angular_aev], dim=-1)
 
