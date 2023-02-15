@@ -7,7 +7,7 @@ import math
 import os
 import warnings
 import itertools
-from collections import defaultdict, Counter
+from collections import Counter
 from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union, Mapping
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
