@@ -1,4 +1,4 @@
-name: torchani
+name: ani
 channels:
   - nodefaults
   - https://conda.anaconda.org/pytorch
