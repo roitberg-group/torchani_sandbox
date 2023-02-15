@@ -139,14 +139,17 @@ class _ConformerWrapper(_ConformerGroup, Generic[_MutMapSubtype]):
 
 
 class _LocationManager(ABC):
+    @abstractmethod
     @property
     def root(self) -> StrPath:
         pass
 
+    @abstractmethod
     @root.setter
     def root(self, value: StrPath) -> None:
         pass
 
+    @abstractmethod
     @root.deleter
     def root(self) -> None:
         pass
