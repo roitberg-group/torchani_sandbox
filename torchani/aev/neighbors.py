@@ -149,6 +149,15 @@ class BaseNeighborlist(Module):
         distances = distances.index_select(0, closer_indices)
         return NeighborData(indices=input_neighbor_indices, distances=distances, diff_vectors=diff_vectors, shift_values=shift_values)
 
+    def dummy(self) -> NeighborData:
+        # return dummy neighbor data
+        device = self.default_cell.device
+        dtype = self.default_cell.dtype
+        indices = torch.tensor([[0], [1]], dtype=torch.long, device=device)
+        distances = torch.tensor([1.0], dtype=dtype, device=device)
+        diff_vectors = torch.tensor([[1.0, 0.0, 0.0]], dtype=dtype, device=device)
+        return NeighborData(indices, distances, diff_vectors, None)
+
     @torch.jit.export
     def _recast_long_buffers(self) -> None:
         pass
