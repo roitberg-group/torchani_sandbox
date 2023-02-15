@@ -29,7 +29,7 @@ jobs:
       # infer.py is too dynamic to check. data/ and neurochem/ are legacy.
       # examples/ and tests/ could be checked,
       # but to type them correctly is time consuming
-      run: mypy --ignore-missing-imports --check-untyped-defs --implicit-optional --exclude examples/ --exclude tests/ --exclude neurochem/ --exclude data/ --exclude infer.py.
+      run: mypy --ignore-missing-imports --check-untyped-defs --implicit-optional --exclude examples/ --exclude tests/ --exclude neurochem/ --exclude data/ --exclude infer.py .
 
 concurrency:
   group: mypy-${{ github.event.pull_request.number || github.sha }}
