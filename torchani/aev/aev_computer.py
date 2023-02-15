@@ -388,6 +388,7 @@ class AEVComputer(torch.nn.Module):
             1. Lammps interface
             2. For testting purpose, half nbrlist is converted to full nbrlist
         """
+        assert coordinates.shape[0] == 1, "_compute_cuaev_with_full_nbrlist currently only support single molecule"
         aev = torch.ops.cuaev.run_with_full_nbrlist(coordinates,
                                                     species.to(torch.int32),
                                                     ilist_unique.to(torch.int32),

@@ -1372,8 +1372,8 @@ void launch_postProcessNbrList2_kernel(
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 
 #ifdef TORCHANI_DEBUG
-  result.radialNbr.nJ = cubSum(radialNbr_numJPerI_p, result.nI, stream);
-  result.angularNbr.nJ = cubSum(angularNbr_numJPerI_p, result.nI, stream);
+  result.radialNbr.nJ = cubSum((int*)result.radialNbr.numJPerI_t.data_ptr(), result.nI, stream);
+  result.angularNbr.nJ = cubSum((int*)result.angularNbr.numJPerI_t.data_ptr(), result.nI, stream);
   printf("%-35s %'d\n", "nI", result.nI);
   printf("%-35s %'d\n", "radialNbr  nJ", result.radialNbr.nJ);
   printf("%-35s %'d\n", "angularNbr nJ", result.angularNbr.nJ);
@@ -1416,7 +1416,8 @@ void launch_postProcessExternalHalfNbrList_kernel(
       (int*)sort_idx_input_t.data_ptr(),
       (int*)sort_idx_t.data_ptr(),
       num_atomIJ,
-      max_natoms_per_mol,
+      // used for radix sort end bits,
+      total_atoms,
       stream);
 
   // Run cubEncode to get numJPerI and atomI_unique
@@ -1462,8 +1463,8 @@ void launch_postProcessExternalHalfNbrList_kernel(
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 
 #ifdef TORCHANI_DEBUG
-  result.radialNbr.nJ = cubSum(radialNbr_numJPerI_p, result.nI, stream);
-  result.angularNbr.nJ = cubSum(angularNbr_numJPerI_p, result.nI, stream);
+  result.radialNbr.nJ = cubSum((int*)result.radialNbr.numJPerI_t.data_ptr(), result.nI, stream);
+  result.angularNbr.nJ = cubSum((int*)result.angularNbr.numJPerI_t.data_ptr(), result.nI, stream);
   printf("%-35s %'d\n", "nI", result.nI);
   printf("%-35s %'d\n", "radialNbr  nJ", result.radialNbr.nJ);
   printf("%-35s %'d\n", "angularNbr nJ", result.angularNbr.nJ);
