@@ -5,6 +5,7 @@ from torch import Tensor
 
 from .compat import Final
 from .nn import SpeciesConverter
+from .structs import SpeciesEnergies
 from .aev import FullPairwise, BaseNeighborlist
 from .utils import map_to_central
 
@@ -15,54 +16,76 @@ from .utils import map_to_central
 # "repulsion" and "dispersion" computers
 # IMPORTANT: This should be inherited from FIRST (leftmost in inheritance list)
 # for the scheme to work properly
-class StandalonePairwiseWrapper(torch.nn.Module):
+class StandaloneWrapper(torch.nn.Module):
     periodic_table_index: Final[bool]
 
     def __init__(self, *args, **kwargs):
-        supported_species = kwargs.get('elements', ('H', 'C', 'N', 'O'))
-        self.periodic_table_index = kwargs.pop('periodic_table_index', False)
+        symbols = kwargs.get('symbols', ('H', 'C', 'N', 'O'))
+        self.periodic_table_index = kwargs.pop('periodic_table_index', True)
         neighborlist = kwargs.pop('neighborlist', FullPairwise)
         cutoff = kwargs.pop('neighborlist_cutoff', 5.2)
         super().__init__(*args, **kwargs)
         # neighborlist uses radial cutoff only
-        self.neighborlist = neighborlist(cutoff) if neighborlist is not None else BaseNeighborlist(cutoff)
-        self.species_converter = SpeciesConverter(supported_species)
+        if neighborlist is not None:
+            self.neighborlist = neighborlist(cutoff)
+        else:
+            self.neighborlist = BaseNeighborlist(cutoff)
+        self.znumbers_to_idxs = SpeciesConverter(symbols)
 
-    def _validate_inputs(self, species_coordinates: Tuple[Tensor, Tensor]) -> None:
+    def _validate_inputs(
+        self,
+        species_coordinates: Tuple[Tensor, Tensor],
+        cell: Optional[Tensor] = None,
+        pbc: Optional[Tensor] = None
+    ) -> None:
         species, coordinates = species_coordinates
         # check shapes for correctness
         assert species.dim() == 2
         assert coordinates.dim() == 3
         assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
+        if pbc is not None and pbc.any():
+            assert cell is not None
 
-    def _perform_module_actions(self,
-                                species_coordinates: Tuple[Tensor, Tensor],
-                                atom_index12: Tensor,
-                                distances: Tensor) -> Tuple[Tensor, Tensor]:
+    def _calculate_energy(
+        self,
+        atomic_idxs: Tensor,
+        coordinates: Tensor,
+        neighbor_idxs: Tensor,
+        distances: Tensor,
+        diff_vectors: Optional[Tensor] = None,
+    ) -> SpeciesEnergies:
         raise NotImplementedError("This method should be overriden by subclasses")
-        return species_coordinates
+        return SpeciesEnergies(atomic_idxs, coordinates)
 
-    def forward(self,
-                species_coordinates: Tuple[Tensor, Tensor],
-                cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
+    def forward(
+        self,
+        species_coordinates: Tuple[Tensor, Tensor],
+        cell: Optional[Tensor] = None,
+        pbc: Optional[Tensor] = None
+    ) -> Tuple[Tensor, Tensor]:
 
-        self._validate_inputs(species_coordinates)
+        self._validate_inputs(species_coordinates, cell, pbc)
+        species, coordinates = species_coordinates
 
         if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-        species, coordinates = species_coordinates
+            atomic_idxs = self.znumbers_to_idxs(species_coordinates).species
+        else:
+            atomic_idxs = species
 
         # the coordinates that are input into the neighborlist are **not** assumed to be
         # mapped into the central cell for pbc calculations,
         # and **in general are not**
-        atom_index12, _, _, distances = self.neighborlist(species, coordinates, cell, pbc)
+        neighbor_data = self.neighborlist(atomic_idxs, coordinates, cell, pbc)
 
         # the coordinates that are input into the next module, on the other hand,
         # are always assumed to be mapped to the central cell
-        if pbc is not None:
-            if pbc.any():
-                assert cell is not None
-                coordinates = map_to_central(coordinates, cell, pbc)
+        if pbc is not None and cell is not None:
+            coordinates = map_to_central(coordinates, cell, pbc)
 
-        return self._perform_module_actions(species_coordinates, atom_index12, distances)
+        energy = self._calculate_energy(
+            (atomic_idxs, coordinates),
+            neighbor_idxs=neighbor_data.indices,
+            distances=neighbor_data.distances,
+            diff_vectors=neighbor_data.diff_vectors,
+        )
+        return SpeciesEnergies(species, torch.zeros(species.shape[0], dtype=energy.dtype, device=energy.device) + energy)

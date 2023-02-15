@@ -4,22 +4,22 @@ import torchani
 from pathlib import Path
 from torchani.models import _fetch_state_dict
 from torchani.testing import TestCase
-from torchani.repulsion import RepulsionCalculator, StandaloneRepulsionCalculator
+from torchani.repulsion import RepulsionXTB, StandaloneRepulsionXTB
 
 
 class TestRepulsion(TestCase):
 
-    def testRepulsionCalculator(self):
-        rep = RepulsionCalculator(5.2)
+    def testRepulsionXTB(self):
+        rep = RepulsionXTB(5.2)
         atom_index12 = torch.tensor([[0], [1]])
         distances = torch.tensor([3.5])
         species = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
-        energies = rep((species, energies), atom_index12, distances).energies
+        energies = rep((species, energies), atom_index12, distances)
         self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
     def testRepulsionStandalone(self):
-        rep = StandaloneRepulsionCalculator(cutoff=5.2, neighborlist_cutoff=5.2)
+        rep = StandaloneRepulsionXTB(cutoff=5.2, neighborlist_cutoff=5.2)
         coordinates = torch.tensor([[0.0, 0.0, 0.0],
                                     [3.5, 0.0, 0.0]]).unsqueeze(0)
         species = torch.tensor([[0, 0]])
@@ -27,7 +27,7 @@ class TestRepulsion(TestCase):
         self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
     def testRepulsionBatches(self):
-        rep = StandaloneRepulsionCalculator(cutoff=5.2, neighborlist_cutoff=5.2)
+        rep = StandaloneRepulsionXTB(cutoff=5.2, neighborlist_cutoff=5.2)
         coordinates1 = torch.tensor([[0.0, 0.0, 0.0],
                                     [1.5, 0.0, 0.0],
                                     [3.0, 0.0, 0.0]]).unsqueeze(0)
@@ -52,12 +52,12 @@ class TestRepulsion(TestCase):
         self.assertEqual(energies, energies_cat)
 
     def testRepulsionLongDistances(self):
-        rep = RepulsionCalculator(5.2)
+        rep = RepulsionXTB(5.2)
         atom_index12 = torch.tensor([[0], [1]])
         distances = torch.tensor([6.0])
         species = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
-        energies = rep((species, energies), atom_index12, distances).energies
+        energies = rep((species, energies), atom_index12, distances)
         self.assertEqual(torch.tensor([0.0]), energies)
 
     def testRepulsionEnergy(self):

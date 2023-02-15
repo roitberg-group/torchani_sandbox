@@ -298,27 +298,36 @@ class AEVPotential(torch.nn.Module):
         self.neural_networks = neural_networks
         self.cutoff = aev_computer.radial_terms.cutoff
 
-    def forward(self,
-                species: Tensor,
-                atom_index12: Tensor,
-                distances: Tensor,
-                diff_vectors: Tensor) -> Tensor:
-        aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vectors, distances)
-        energies = self.neural_networks((species, aevs)).energies
+    def forward(
+        self,
+        atomic_idxs: Tensor,
+        neighbor_idxs: Tensor,
+        distances: Tensor,
+        diff_vectors: Tensor
+    ) -> Tensor:
+        aevs = self.aev_computer._compute_aev(
+            atomic_idxs,
+            neighbor_idxs,
+            diff_vectors,
+            distances
+        )
+        energies = self.neural_networks((atomic_idxs, aevs)).energies
         return energies
 
-    def members_energies(self,
-                         species: Tensor,
-                         atom_index12: Tensor,
-                         distances: Tensor,
-                         diff_vectors: Tensor) -> Tensor:
+    def members_energies(
+        self,
+        atomic_idxs: Tensor,
+        neighbor_idxs: Tensor,
+        distances: Tensor,
+        diff_vectors: Tensor,
+    ) -> Tensor:
         """
-        Returns: members energies for the given configurations with shape of energies is (M, C),
+        Returns: members energies for the given configurations with shape (M, C),
             where M is the number of modules in the ensemble.
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        aevs = self.aev_computer._compute_aev(species, atom_index12, diff_vectors, distances)
-        atomic_energies = self.neural_networks._atomic_energies((species, aevs))
+        aevs = self.aev_computer._compute_aev(atomic_idxs, neighbor_idxs, diff_vectors, distances)
+        atomic_energies = self.neural_networks._atomic_energies((atomic_idxs, aevs))
         return atomic_energies.sum(-1)
 
 
@@ -562,7 +571,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     if repulsion:
         cutoff = aev_computer.radial_terms.cutoff
         pairwise_potentials: List[torch.nn.Module] = []
-        base_repulsion_kwargs = {'elements': elements, 'cutoff': cutoff}
+        base_repulsion_kwargs = {'symbols': elements, 'cutoff': cutoff}
         if repulsion_kwargs is not None:
             base_repulsion_kwargs.update(repulsion_kwargs)
         pairwise_potentials.append(RepulsionXTB(**base_repulsion_kwargs))

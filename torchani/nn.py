@@ -7,11 +7,6 @@ from . import infer
 from .compat import Final
 
 
-class SpeciesEnergies(NamedTuple):
-    species: Tensor
-    energies: Tensor
-
-
 class SpeciesCoordinates(NamedTuple):
     species: Tensor
     coordinates: Tensor

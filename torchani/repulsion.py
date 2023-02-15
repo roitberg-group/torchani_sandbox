@@ -1,12 +1,11 @@
-from typing import Tuple, Sequence, Union, Optional
+from typing import Sequence, Union, Optional
 
 import torch
 from torch import Tensor
 
 from . import units
 from .utils import ATOMIC_NUMBERS
-from .nn import SpeciesEnergies
-from .standalone import StandalonePairwiseWrapper
+from .standalone import StandaloneWrapper
 from .parse_repulsion_constants import alpha_constants, y_eff_constants
 from .aev.cutoffs import _parse_cutoff_fn
 from .compat import Final
@@ -26,10 +25,10 @@ class RepulsionXTB(torch.nn.Module):
                  alpha: Sequence[float] = None,
                  y_eff: Sequence[float] = None,
                  k_rep_ab: torch.Tensor = None,
-                 elements: Sequence[str] = ('H', 'C', 'N', 'O'),
+                 symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
                  cutoff_fn: Union[str, torch.nn.Module] = 'smooth'):
         super().__init__()
-        supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
+        supported_znumbers = torch.tensor([ATOMIC_NUMBERS[e] for e in symbols], dtype=torch.long)
 
         # by default alpha, y_eff and krep parameters are taken from Grimme et. al.
         if alpha is None:
@@ -40,10 +39,10 @@ class RepulsionXTB(torch.nn.Module):
             k_rep_ab = torch.full((len(ATOMIC_NUMBERS) + 1, len(ATOMIC_NUMBERS) + 1), 1.5)
             k_rep_ab[1, 1] = 1.0
             k_rep_ab = k_rep_ab[supported_znumbers, :][:, supported_znumbers]
-        assert k_rep_ab.shape[0] == len(elements)
-        assert k_rep_ab.shape[1] == len(elements)
-        assert len(_y_eff) == len(elements)
-        assert len(_alpha) == len(elements)
+        assert k_rep_ab.shape[0] == len(symbols)
+        assert k_rep_ab.shape[1] == len(symbols)
+        assert len(_y_eff) == len(symbols)
+        assert len(_alpha) == len(symbols)
 
         self.cutoff_function = _parse_cutoff_fn(cutoff_fn)
         self.cutoff = cutoff
@@ -53,11 +52,12 @@ class RepulsionXTB(torch.nn.Module):
         self.register_buffer('k_rep_ab', k_rep_ab)
         self.ANGSTROM_TO_BOHR = units.ANGSTROM_TO_BOHR
 
-    def _calculate_repulsion(self,
-                             species: Tensor,
-                             atom_index12: Tensor,
-                             distances: Tensor,
-                             ghost_flags: Optional[Tensor] = None) -> Tensor:
+    def _calculate_energy(self,
+                          atomic_idxs: Tensor,
+                          neighbor_idxs: Tensor,
+                          distances: Tensor,
+                          diff_vectors: Optional[Tensor] = None,
+                          ghost_flags: Optional[Tensor] = None) -> Tensor:
 
         # clamp distances to prevent singularities when dividing by zero
         distances = torch.clamp(distances, min=1e-7)
@@ -67,15 +67,15 @@ class RepulsionXTB(torch.nn.Module):
         distances = distances * self.ANGSTROM_TO_BOHR
 
         assert distances.ndim == 1, "distances should be 1 dimensional"
-        assert species.ndim == 2, "species should be 2 dimensional"
-        assert atom_index12.ndim == 2, "atom_index12 should be 2 dimensional"
-        assert len(distances) == atom_index12.shape[1]
+        assert atomic_idxs.ndim == 2, "species should be 2 dimensional"
+        assert neighbor_idxs.ndim == 2, "atom_index12 should be 2 dimensional"
+        assert len(distances) == neighbor_idxs.shape[1]
 
         # Distances has all interaction pairs within a given cutoff, for a
         # molecule or set of molecules and atom_index12 holds all pairs of
         # indices species is of shape (C x Atoms)
-        num_atoms = species.shape[1]
-        species12 = species.flatten()[atom_index12]
+        num_atoms = atomic_idxs.shape[1]
+        species12 = atomic_idxs.flatten()[neighbor_idxs]
 
         # find pre-computed constant multiplications for every species pair
         y_ab = self.y_ab[species12[0], species12[1]]
@@ -90,49 +90,33 @@ class RepulsionXTB(torch.nn.Module):
             rep_energies *= self.cutoff_function(distances, self.cutoff * self.ANGSTROM_TO_BOHR)
 
         if ghost_flags is not None:
-            assert ghost_flags.numel() == species.numel(), "ghost_flags and species should have the same number of elements"
-            ghost12 = ghost_flags.flatten()[atom_index12]
+            assert ghost_flags.numel() == atomic_idxs.numel(), "ghost_flags and species should have the same number of elements"
+            ghost12 = ghost_flags.flatten()[neighbor_idxs]
             ghost_mask = torch.logical_or(ghost12[0], ghost12[1])
             rep_energies = torch.where(ghost_mask, rep_energies * 0.5, rep_energies)
 
-        energies = torch.zeros(species.shape[0], dtype=rep_energies.dtype, device=rep_energies.device)
-        molecule_indices = torch.div(atom_index12[0], num_atoms, rounding_mode='floor')
+        energies = torch.zeros(atomic_idxs.shape[0], dtype=rep_energies.dtype, device=rep_energies.device)
+        molecule_indices = torch.div(neighbor_idxs[0], num_atoms, rounding_mode='floor')
         energies.index_add_(0, molecule_indices, rep_energies)
         return energies
 
-    def forward(self,
-                species: Tensor,
-                atom_index12: Tensor,
-                distances: Tensor,
-                diff_vector: Optional[Tensor] = None,
-                ghost_flags: Optional[Tensor] = None) -> Tensor:
+    def forward(
+        self,
+        atomic_idxs: Tensor,
+        neighbor_idxs: Tensor,
+        distances: Tensor,
+        diff_vectors: Optional[Tensor] = None,
+        ghost_flags: Optional[Tensor] = None
+    ) -> Tensor:
         # diff_vector is unused in 2-body potentials
-        return self._calculate_repulsion(species, atom_index12, distances, ghost_flags)
+        return self._calculate_energy(
+            atomic_idxs,
+            neighbor_idxs,
+            distances,
+            diff_vectors=diff_vectors,
+            ghost_flags=ghost_flags
+        )
 
 
-# Wrapper to keep compatibility with old ANI code
-class RepulsionCalculator(RepulsionXTB):
-    def forward(self,  # type: ignore
-                species_energies: Tuple[Tensor, Tensor],
-                atom_index12: Tensor,
-                distances: Tensor,
-                ghost_flags: Optional[Tensor] = None) -> Tuple[Tensor, Tensor]:
-        """
-        Args:
-            ghost_flags (Optional[Tensor], optional): A Tensor with the same shape as the species
-            indicates whether the atom is outside the current domain. Defaults to None.
-        """
-        species, energies = species_energies
-        rep_energies = self._calculate_repulsion(species, atom_index12, distances, ghost_flags)
-        return SpeciesEnergies(species, energies + rep_energies)
-
-
-class StandaloneRepulsionCalculator(StandalonePairwiseWrapper, RepulsionCalculator):  # type: ignore
-    def _perform_module_actions(self,
-                                species_coordinates: Tuple[Tensor, Tensor],
-                                atom_index12: Tensor,
-                                distances: Tensor) -> Tuple[Tensor, Tensor]:
-        species, _ = species_coordinates
-        energies = torch.zeros(species.shape[0], dtype=distances.dtype, device=distances.device)
-        repulsion_energies = self._calculate_repulsion(species, atom_index12, distances)
-        return SpeciesEnergies(species, energies + repulsion_energies)
+class StandaloneRepulsionXTB(StandaloneWrapper, RepulsionXTB):  # type: ignore
+    pass
