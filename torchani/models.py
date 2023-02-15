@@ -386,8 +386,9 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     if use_neurochem_source:
         assert info_file is not None, "Info file is needed to load from a neurochem source"
         assert pretrained, "Non pretrained models not available from neurochem source"
+        # neurochem is legacy and not type-checked
         from . import neurochem  # noqa
-        components = neurochem.parse_resources._get_component_modules(info_file, model_index, aev_computer_kwargs)
+        components = neurochem.parse_resources._get_component_modules(info_file, model_index, aev_computer_kwargs)  # type: ignore
     else:
         assert state_dict_file is not None
         components = _get_component_modules(state_dict_file, model_index, aev_computer_kwargs)
