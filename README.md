@@ -25,7 +25,7 @@ Deploy:
 [![Actions Status](https://github.com/aiqm/torchani/workflows/deploy-docs/badge.svg)](https://github.com/aiqm/torchani/actions)
 [![Actions Status](https://github.com/aiqm/torchani/workflows/deploy-pypi/badge.svg)](https://github.com/aiqm/torchani/actions)
 
-We usually compatibility with stable PyTorch, which this tag shows:
+We are usually compatible with stable PyTorch, which this tag shows:
 
 [![Actions Status](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/stable-torch.yml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/stable-torch.yml)
 
