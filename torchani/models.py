@@ -544,10 +544,9 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         cutoff = aev_computer.radial_terms.cutoff
         pairwise_potentials: List[torch.nn.Module] = []
         base_repulsion_kwargs = {'elements': elements, 'cutoff': cutoff}
-        if repulsion:
-            if repulsion_kwargs is not None:
-                base_repulsion_kwargs.update(repulsion_kwargs)
-            pairwise_potentials.append(RepulsionXTB(**base_repulsion_kwargs))
+        if repulsion_kwargs is not None:
+            base_repulsion_kwargs.update(repulsion_kwargs)
+        pairwise_potentials.append(RepulsionXTB(**base_repulsion_kwargs))
         model_kwargs.update({'pairwise_potentials': pairwise_potentials})
         model_class = BuiltinModelPairInteractions
     else:
