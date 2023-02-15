@@ -1,4 +1,5 @@
-# -*- coding: utf-8 -*-
+# type: ignore
+# This file is legacy, it should not be type-checked
 """Tools for loading, shuffling, and batching ANI datasets
 
 The `torchani.data.load(path)` creates an iterable of raw data,
