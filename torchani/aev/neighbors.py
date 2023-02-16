@@ -140,7 +140,13 @@ class BaseNeighborlist(Module):
         )
 
     @staticmethod
-    def _rescreen_with_cutoff(cutoff: float, neighbor_idxs: Tensor, distances: Tensor, diff_vectors: Tensor, shift_values: Tensor = None):
+    def _rescreen_with_cutoff(
+        cutoff: float,
+        neighbor_idxs: Tensor,
+        distances: Tensor,
+        diff_vectors: Tensor,
+        shift_values: Optional[Tensor] = None
+    ) -> NeighborData:
         closer_indices = (distances <= cutoff).nonzero().flatten()
         neighbor_idxs = neighbor_idxs.index_select(1, closer_indices)
         if shift_values is not None:

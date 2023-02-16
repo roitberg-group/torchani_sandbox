@@ -292,7 +292,9 @@ class BuiltinModel(Module):
 
 # Adaptor to use the aev computer as a three body potential
 class AEVPotential(torch.nn.Module):
-    def __init__(self, aev_computer, neural_networks):
+    cutoff: Final[float]
+
+    def __init__(self, aev_computer: AEVComputer, neural_networks: NN):
         super().__init__()
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
@@ -303,8 +305,9 @@ class AEVPotential(torch.nn.Module):
         element_idxs: Tensor,
         neighbor_idxs: Tensor,
         distances: Tensor,
-        diff_vectors: Tensor
+        diff_vectors: Tensor,
     ) -> Tensor:
+        assert diff_vectors is not None, "AEV potential needs diff vectors always"
         aevs = self.aev_computer._compute_aev(
             element_idxs=element_idxs,
             neighbor_idxs=neighbor_idxs,
@@ -337,7 +340,9 @@ class AEVPotential(torch.nn.Module):
 
 
 class BuiltinModelPairInteractions(BuiltinModel):
-    # NOTE: contribution of pairwise interactions to atomic energies is not implemented yet
+    # NOTE: contribution of pairwise interactions to atomic energies is not
+    # implemented yet
+
     def __init__(self, *args, **kwargs):
         potentials = kwargs.pop('pairwise_potentials', list())
         super().__init__(*args, **kwargs)
@@ -361,23 +366,27 @@ class BuiltinModelPairInteractions(BuiltinModel):
         # Set the neighborlist cutoff to the largest cutoff in existence
         self.aev_computer.neighborlist.cutoff = self.potentials[0].cutoff
 
-    def forward(self, species_coordinates: Tuple[Tensor, Tensor],
-                cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+    def forward(
+        self,
+        species_coordinates: Tuple[Tensor, Tensor],
+        cell: Optional[Tensor] = None,
+        pbc: Optional[Tensor] = None
+    ) -> SpeciesEnergies:
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
         energies = torch.zeros(element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
+        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                neighbor_data = self.aev_computer.neighborlist._rescreen_with_cutoff(
+                neighbor_data = rescreen(
                     cutoff=pot.cutoff,
                     neighbor_idxs=neighbor_data.indices,
                     distances=neighbor_data.distances,
                     diff_vectors=neighbor_data.diff_vectors,
                 )
                 previous_cutoff = pot.cutoff
-            energies += pot(
+            energies = energies + pot(
                 element_idxs=element_idxs,
                 neighbor_idxs=neighbor_data.indices,
                 distances=neighbor_data.distances,
@@ -387,25 +396,30 @@ class BuiltinModelPairInteractions(BuiltinModel):
 
     def __getitem__(self, index: int) -> 'BuiltinModel':
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        return BuiltinModelPairInteractions(self.aev_computer,
-                                            self.neural_networks[index],
-                                            self.energy_shifter,
-                                            self.get_chemical_symbols(),
-                                            self.periodic_table_index,
-                                            pairwise_potentials=[p for p in self.potentials])
+        non_aev_potentials = [p for p in self.potentials if not isinstance(p, AEVPotential)]
+        return BuiltinModelPairInteractions(
+            aev_computer=self.aev_computer,
+            neural_networks=self.neural_networks[index],
+            energy_shifter=self.energy_shifter,
+            elements=self.get_chemical_symbols(),
+            periodic_table_index=self.periodic_table_index,
+            pairwise_potentials=non_aev_potentials,
+        )
 
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                          cell: Optional[Tensor] = None,
                          pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
         energies = torch.zeros(element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
-        members_energies = None
+        members_energies: Optional[Tensor] = None
+        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                neighbor_data = self.aev_computer.neighborlist._rescreen_with_cutoff(
+                neighbor_data = rescreen(
                     pot.cutoff,
                     neighbor_idxs=neighbor_data.indices,
                     distances=neighbor_data.distances,
@@ -432,15 +446,16 @@ class BuiltinModelPairInteractions(BuiltinModel):
         return SpeciesEnergies(element_idxs, members_energies)
 
 
-def _get_component_modules(state_dict_file: str,
-                           model_index: Optional[int] = None,
-                           aev_computer_kwargs: Optional[Dict[str, Any]] = None,
-                           ensemble_size: int = 8,
-                           atomic_maker: Optional[Callable[[str], torch.nn.Module]] = None,
-                           aev_maker: Optional[Callable[..., AEVComputer]] = None,
-                           elements: Optional[Sequence[str]] = None,
-                           self_energies: Optional[Sequence[float]] = None
-                           ) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
+def _get_component_modules(
+    state_dict_file: str,
+    model_index: Optional[int] = None,
+    aev_computer_kwargs: Optional[Dict[str, Any]] = None,
+    ensemble_size: int = 8,
+    atomic_maker: Optional[Callable[[str], torch.nn.Module]] = None,
+    aev_maker: Optional[Callable[..., AEVComputer]] = None,
+    elements: Optional[Sequence[str]] = None,
+    self_energies: Optional[Sequence[float]] = None
+) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
     # Component modules are obtained by default from the name of the state_dict_file,
     # but they can be overriden by passing specific parameters
 
@@ -450,34 +465,30 @@ def _get_component_modules(state_dict_file: str,
     name = state_dict_file.split('_')[0]
     _elements: Sequence[str]
     if name == 'ani1x':
-        _aev_maker = AEVComputer.like_1x
-        _atomic_maker = atomics.like_1x
-        _elements = ('H', 'C', 'N', 'O')
+        _aev_maker = aev_maker or AEVComputer.like_1x
+        _atomic_maker = atomic_maker or atomics.like_1x
+        _elements = elements or ('H', 'C', 'N', 'O')
     elif name == 'ani1ccx':
-        _aev_maker = AEVComputer.like_1ccx
-        _atomic_maker = atomics.like_1ccx
-        _elements = ('H', 'C', 'N', 'O')
+        _aev_maker = aev_maker or AEVComputer.like_1ccx
+        _atomic_maker = atomic_maker or atomics.like_1ccx
+        _elements = elements or ('H', 'C', 'N', 'O')
     elif name == 'ani2x':
-        _aev_maker = AEVComputer.like_2x
-        _atomic_maker = atomics.like_2x
-        _elements = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
+        _aev_maker = aev_maker or AEVComputer.like_2x
+        _atomic_maker = atomic_maker or atomics.like_2x
+        _elements = elements or ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
     else:
         raise ValueError(f'{name} is not a supported model')
-    aev_maker = _aev_maker if aev_maker is None else aev_maker
-    atomic_maker = _atomic_maker if atomic_maker is None else atomic_maker
-    elements = _elements if elements is None else elements
-    self_energies = [0.0 for _ in elements] if self_energies is None else self_energies
 
-    aev_computer = aev_maker(**aev_computer_kwargs)
-    atomic_networks = OrderedDict([(e, atomic_maker(e)) for e in elements])
-    energy_shifter = EnergyShifter(self_energies)
+    aev_computer = _aev_maker(**aev_computer_kwargs)
+    atomic_networks = OrderedDict([(e, _atomic_maker(e)) for e in _elements])
+    energy_shifter = EnergyShifter(self_energies or [0.0] * len(_elements))
     neural_networks: NN
     if model_index is None:
         neural_networks = Ensemble([ANIModel(deepcopy(atomic_networks)) for _ in range(ensemble_size)])
     else:
         neural_networks = ANIModel(atomic_networks)
 
-    return aev_computer, neural_networks, energy_shifter, elements
+    return aev_computer, neural_networks, energy_shifter, _elements
 
 
 def _fetch_state_dict(state_dict_file: str,
@@ -565,10 +576,14 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         components = neurochem.parse_resources._get_component_modules(info_file, model_index, aev_computer_kwargs)  # type: ignore
     else:
         assert state_dict_file is not None
-        components = _get_component_modules(state_dict_file, model_index,
-                                            aev_computer_kwargs, atomic_maker=atomic_maker,
-                                            aev_maker=aev_maker, elements=elements,
-                                            ensemble_size=ensemble_size)
+        components = _get_component_modules(
+            state_dict_file,
+            model_index,
+            aev_computer_kwargs,
+            atomic_maker=atomic_maker,
+            aev_maker=aev_maker,
+            elements=elements,
+            ensemble_size=ensemble_size)
 
     aev_computer, neural_networks, energy_shifter, elements = components
 
@@ -593,7 +608,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     return model
 
 
-def ANI1x(**kwargs):
+def ANI1x(**kwargs) -> BuiltinModel:
     """The ANI-1x model as in `ani-1x_8x on GitHub`_ and `Active Learning Paper`_.
 
     The ANI-1x model is an ensemble of 8 networks that was trained using
@@ -612,7 +627,7 @@ def ANI1x(**kwargs):
     return _load_ani_model(state_dict_file, info_file, **kwargs)
 
 
-def ANI1ccx(**kwargs):
+def ANI1ccx(**kwargs) -> BuiltinModel:
     """The ANI-1ccx model as in `ani-1ccx_8x on GitHub`_ and `Transfer Learning Paper`_.
 
     The ANI-1ccx model is an ensemble of 8 networks that was trained
@@ -632,7 +647,7 @@ def ANI1ccx(**kwargs):
     return _load_ani_model(state_dict_file, info_file, **kwargs)
 
 
-def ANI2x(**kwargs):
+def ANI2x(**kwargs) -> BuiltinModel:
     """The ANI-2x model as in `ANI2x Paper`_ and `ANI2x Results on GitHub`_.
 
     The ANI-2x model is an ensemble of 8 networks that was trained on the

@@ -70,7 +70,9 @@ class TestRepulsion(TestCase):
         )
         model.load_state_dict(_fetch_state_dict('ani1x_state_dict.pt', 0), strict=False)
         model = model.to(device=device, dtype=torch.double)
+        self._testRepulsionEnergy(model, device)
 
+    def _testRepulsionEnergy(self, model, device):
         species = torch.tensor([[8, 1, 1]], device=device)
         energies = []
         distances = torch.linspace(0.1, 6.0, 100)
@@ -83,7 +85,7 @@ class TestRepulsion(TestCase):
         energies = torch.tensor(energies)
         path = Path(__file__).resolve().parent.joinpath('test_data/energies_repulsion_1x.pkl')
         with open(path, 'rb') as f:
-            energies_expect = torch.tensor(torch.load(f))
+            energies_expect = torch.load(f)
         self.assertEqual(energies_expect, energies)
 
 
@@ -95,7 +97,18 @@ class TestRepulsionJIT(TestRepulsion):
         self.sa_rep = torch.jit.script(self.sa_rep)
 
     def testRepulsionEnergy(self):
-        pass
+        #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device('cpu')
+        model = torchani.models.ANI1x(
+            repulsion=True,
+            pretrained=False,
+            model_index=0,
+            cutoff_fn='smooth'
+        )
+        model.load_state_dict(_fetch_state_dict('ani1x_state_dict.pt', 0), strict=False)
+        model = torch.jit.script(model)
+        model = model.to(device=device, dtype=torch.double)
+        self._testRepulsionEnergy(model, device)
 
 
 if __name__ == '__main__':

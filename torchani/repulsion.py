@@ -16,6 +16,7 @@ class RepulsionXTB(torch.nn.Module):
     in work by Grimme: https://pubs.acs.org/doi/10.1021/acs.jctc.8b01176"""
 
     cutoff: Final[float]
+    ANGSTROM_TO_BOHR: Final[float]
     y_ab: Tensor
     sqrt_alpha_ab: Tensor
     k_rep_ab: Tensor
@@ -25,7 +26,7 @@ class RepulsionXTB(torch.nn.Module):
                  cutoff: float = 5.2,
                  alpha: Sequence[float] = None,
                  y_eff: Sequence[float] = None,
-                 k_rep_ab: torch.Tensor = None,
+                 k_rep_ab: Optional[Tensor] = None,
                  symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
                  cutoff_fn: Union[str, torch.nn.Module] = 'smooth'):
         super().__init__()
@@ -40,6 +41,7 @@ class RepulsionXTB(torch.nn.Module):
             k_rep_ab = torch.full((len(ATOMIC_NUMBERS) + 1, len(ATOMIC_NUMBERS) + 1), 1.5)
             k_rep_ab[1, 1] = 1.0
             k_rep_ab = k_rep_ab[atomic_numbers, :][:, atomic_numbers]
+        assert k_rep_ab is not None
         assert k_rep_ab.shape[0] == len(symbols)
         assert k_rep_ab.shape[1] == len(symbols)
         assert len(_y_eff) == len(symbols)
@@ -135,7 +137,7 @@ def StandaloneRepulsionXTB(
     cutoff: float = 5.2,
     alpha: Sequence[float] = None,
     y_eff: Sequence[float] = None,
-    k_rep_ab: torch.Tensor = None,
+    k_rep_ab: Optional[Tensor] = None,
     symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
     cutoff_fn: Union[str, torch.nn.Module] = 'smooth',
     **standalone_kwargs,
