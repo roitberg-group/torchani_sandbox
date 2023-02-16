@@ -11,8 +11,8 @@ from ..compat import Final
 class NeighborData(NamedTuple):
     indices: Tensor
     distances: Tensor
-    shift_values: Optional[Tensor]
     diff_vectors: Tensor
+    shift_values: Optional[Tensor]
 
 
 def _parse_neighborlist(neighborlist: Optional[Union[Module, str]], cutoff: float):
@@ -134,9 +134,9 @@ class BaseNeighborlist(Module):
         screened_distances = screened_diff_vectors.norm(2, -1)
         return NeighborData(
             indices=screened_neighbor_indices,
-            shift_values=shift_values,
-            diff_vectors=screened_diff_vectors,
             distances=screened_distances,
+            diff_vectors=screened_diff_vectors,
+            shift_values=shift_values,
         )
 
     @staticmethod
@@ -147,7 +147,12 @@ class BaseNeighborlist(Module):
             shift_values = shift_values.index_select(0, closer_indices)
         diff_vectors = diff_vectors.index_select(0, closer_indices)
         distances = distances.index_select(0, closer_indices)
-        return NeighborData(indices=input_neighbor_indices, distances=distances, diff_vectors=diff_vectors, shift_values=shift_values)
+        return NeighborData(
+            indices=input_neighbor_indices,
+            distances=distances,
+            diff_vectors=diff_vectors,
+            shift_values=shift_values
+        )
 
     def dummy(self) -> NeighborData:
         # return dummy neighbor data
@@ -156,7 +161,12 @@ class BaseNeighborlist(Module):
         indices = torch.tensor([[0], [1]], dtype=torch.long, device=device)
         distances = torch.tensor([1.0], dtype=dtype, device=device)
         diff_vectors = torch.tensor([[1.0, 0.0, 0.0]], dtype=dtype, device=device)
-        return NeighborData(indices, distances, diff_vectors, None)
+        return NeighborData(
+            indices=indices,
+            distances=distances,
+            diff_vectors=diff_vectors,
+            shift_values=None
+        )
 
     @torch.jit.export
     def _recast_long_buffers(self) -> None:

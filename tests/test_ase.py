@@ -20,8 +20,8 @@ class DummyPotential(torch.nn.Module):
         super().__init__()
         self.register_buffer('cutoff', torch.tensor(cutoff))
 
-    def forward(self, species, atom_index12, distances, diff_vectors):
-        return torch.zeros(species.shape[0], device=distances.device, dtype=distances.dtype)
+    def forward(self, element_idxs, neighbor_idxs, distances, diff_vectors):
+        return torch.zeros(element_idxs.shape[0], device=distances.device, dtype=distances.dtype)
 
 
 class TestASE(TestCase):
@@ -50,11 +50,13 @@ class TestASE(TestCase):
         model_cell = model_cell.to(dtype=torch.double, device=self.device)
         model = torchani.models.ANI1x(model_index=0)
         model = model.to(dtype=torch.double, device=self.device)
-        model_pair = torchani.models.BuiltinModelPairInteractions(aev_computer=model_cell.aev_computer,
-                                                                  neural_networks=model_cell.neural_networks,
-                                                                  energy_shifter=model_cell.energy_shifter,
-                                                                  elements=model_cell.get_chemical_symbols(),
-                                                                  pairwise_potentials=[DummyPotential(6.4), DummyPotential(5.2), DummyPotential(3.0)])
+        model_pair = torchani.models.BuiltinModelPairInteractions(
+            aev_computer=model_cell.aev_computer,
+            neural_networks=model_cell.neural_networks,
+            energy_shifter=model_cell.energy_shifter,
+            elements=model_cell.get_chemical_symbols(),
+            pairwise_potentials=[DummyPotential(6.4), DummyPotential(5.2), DummyPotential(3.0)]
+        )
         model_pair = model_pair.to(dtype=torch.double, device=self.device)
 
         f_cell = self._testForcesPBC(model_cell, only_get_forces=True)

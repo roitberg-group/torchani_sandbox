@@ -10,18 +10,18 @@ from torchani.repulsion import RepulsionXTB, StandaloneRepulsionXTB
 class TestRepulsion(TestCase):
     def testRepulsionXTB(self):
         rep = RepulsionXTB(5.2)
-        atom_index12 = torch.tensor([[0], [1]])
+        neighbor_idxs = torch.tensor([[0], [1]])
         distances = torch.tensor([3.5])
-        species = torch.tensor([[0, 0]])
+        element_idxs = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
-        energies = rep((species, energies), atom_index12, distances)
+        energies = rep(element_idxs, neighbor_idxs, distances)
         self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
     def testStandalone(self):
         rep = StandaloneRepulsionXTB(cutoff=5.2, neighborlist_cutoff=5.2)
         coordinates = torch.tensor([[0.0, 0.0, 0.0],
                                     [3.5, 0.0, 0.0]]).unsqueeze(0)
-        species = torch.tensor([[0, 0]])
+        species = torch.tensor([[1, 1]])
         energies = rep((species, coordinates)).energies
         self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
@@ -36,9 +36,9 @@ class TestRepulsion(TestCase):
         coordinates3 = torch.tensor([[0.0, 0.0, 0.0],
                                      [0.0, 0.0, 0.0],
                                      [3.5, 0.0, 0.0]]).unsqueeze(0)
-        species1 = torch.tensor([[0, 1, 2]])
-        species2 = torch.tensor([[-1, 0, 1]])
-        species3 = torch.tensor([[-1, 0, 0]])
+        species1 = torch.tensor([[1, 6, 7]])
+        species2 = torch.tensor([[-1, 1, 6]])
+        species3 = torch.tensor([[-1, 1, 1]])
         coordinates_cat = torch.cat((coordinates1, coordinates2, coordinates3), dim=0)
         species_cat = torch.cat((species1, species2, species3), dim=0)
 
@@ -52,20 +52,25 @@ class TestRepulsion(TestCase):
 
     def testRepulsionLongDistances(self):
         rep = RepulsionXTB(5.2)
-        atom_index12 = torch.tensor([[0], [1]])
+        neighbor_idxs = torch.tensor([[0], [1]])
         distances = torch.tensor([6.0])
-        species = torch.tensor([[0, 0]])
+        element_idxs = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
-        energies = rep((species, energies), atom_index12, distances)
+        energies = rep(element_idxs, neighbor_idxs, distances)
         self.assertEqual(torch.tensor([0.0]), energies)
 
     def testRepulsionEnergy(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model = torchani.models.ANI1x(repulsion=True, pretrained=False, model_index=0, cutoff_fn='smooth')
+        model = torchani.models.ANI1x(
+            repulsion=True,
+            pretrained=False,
+            model_index=0,
+            cutoff_fn='smooth'
+        )
         model.load_state_dict(_fetch_state_dict('ani1x_state_dict.pt', 0), strict=False)
         model = model.to(device=device, dtype=torch.double)
 
-        species = torch.tensor([[3, 0, 0]], device=device)
+        species = torch.tensor([[8, 1, 1]], device=device)
         energies = []
         distances = torch.linspace(0.1, 6.0, 100)
         for d in distances:
