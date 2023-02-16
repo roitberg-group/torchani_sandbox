@@ -327,9 +327,14 @@ class AEVComputer(torch.nn.Module):
         num_molecules = element_idxs.shape[0]
         num_atoms = element_idxs.shape[1]
         species12 = element_idxs.flatten()[neighbor_idxs]
-        radial_aev = self._compute_radial_aev(num_molecules, num_atoms,
-                                              species12, neighbor_idxs,
-                                              distances)
+
+        radial_aev = self._compute_radial_aev(
+            num_molecules,
+            num_atoms,
+            species12,
+            neighbor_idxs=neighbor_idxs,
+            distances=distances
+        )
 
         # Rca is usually much smaller than Rcr, using neighbor list with
         # cutoff = Rcr is a waste of resources. Now we will get a smaller neighbor
@@ -339,9 +344,13 @@ class AEVComputer(torch.nn.Module):
         species12 = species12.index_select(1, even_closer_indices)
         diff_vectors = diff_vectors.index_select(0, even_closer_indices)
 
-        angular_aev = self._compute_angular_aev(num_molecules, num_atoms,
-                                                species12, neighbor_idxs,
-                                                diff_vectors)
+        angular_aev = self._compute_angular_aev(
+            num_molecules,
+            num_atoms,
+            species12,
+            neighbor_idxs=neighbor_idxs,
+            diff_vectors=diff_vectors
+        )
 
         return torch.cat([radial_aev, angular_aev], dim=-1)
 
@@ -373,8 +382,11 @@ class AEVComputer(torch.nn.Module):
             (num_molecules * num_atoms * self.num_species,
              self.radial_sublength))
         index12 = neighbor_idxs * self.num_species + species12.flip(0)
-        radial_aev.index_add_(0, index12[0], radial_terms_)
-        radial_aev.index_add_(0, index12[1], radial_terms_)
+        try:
+            radial_aev.index_add_(0, index12[0], radial_terms_)
+            radial_aev.index_add_(0, index12[1], radial_terms_)
+        except:
+            breakpoint()
         radial_aev = radial_aev.reshape(num_molecules, num_atoms,
                                         self.radial_length)
         return radial_aev

@@ -364,27 +364,26 @@ class BuiltinModelPairInteractions(BuiltinModel):
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        species, coordinates = self._maybe_convert_species(species_coordinates)
-        neighbor_data = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
-        energies = torch.zeros(species.shape[0], device=species.device, dtype=coordinates.dtype)
-        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
+        element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
+        neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
+        energies = torch.zeros(element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                neighbor_data = rescreen(
-                    pot.cutoff,
-                    neighbor_data.indices,
-                    neighbor_data.distances,
-                    neighbor_data.diff_vectors,
+                neighbor_data = self.aev_computer.neighborlist._rescreen_with_cutoff(
+                    cutoff=pot.cutoff,
+                    neighbor_idxs=neighbor_data.indices,
+                    distances=neighbor_data.distances,
+                    diff_vectors=neighbor_data.diff_vectors,
                 )
                 previous_cutoff = pot.cutoff
             energies += pot(
-                species,
-                neighbor_data.indices,
-                neighbor_data.distances,
-                neighbor_data.diff_vectors,
+                element_idxs=element_idxs,
+                neighbor_idxs=neighbor_data.indices,
+                distances=neighbor_data.distances,
+                diff_vectors=neighbor_data.diff_vectors,
             )
-        return self.energy_shifter((species, energies))
+        return self.energy_shifter((element_idxs, energies))
 
     def __getitem__(self, index: int) -> 'BuiltinModel':
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
@@ -399,39 +398,38 @@ class BuiltinModelPairInteractions(BuiltinModel):
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                          cell: Optional[Tensor] = None,
                          pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        species, coordinates = self._maybe_convert_species(species_coordinates)
-        neighbor_data = self.aev_computer.neighborlist(species, coordinates, cell, pbc)
-        energies = torch.zeros(species.shape[0], device=species.device, dtype=coordinates.dtype)
-        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
+        element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
+        neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
+        energies = torch.zeros(element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
         members_energies = None
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                neighbor_data = rescreen(
+                neighbor_data = self.aev_computer.neighborlist._rescreen_with_cutoff(
                     pot.cutoff,
-                    neighbor_data.indices,
-                    neighbor_data.distances,
-                    neighbor_data.diff_vectors,
+                    neighbor_idxs=neighbor_data.indices,
+                    distances=neighbor_data.distances,
+                    diff_vectors=neighbor_data.diff_vectors,
                 )
                 previous_cutoff = pot.cutoff
             if isinstance(pot, AEVPotential):
                 members_energies = pot.members_energies(
-                    species,
-                    neighbor_data.indices,
-                    neighbor_data.distances,
-                    neighbor_data.diff_vectors,
+                    element_idxs,
+                    neighbor_idxs=neighbor_data.indices,
+                    distances=neighbor_data.distances,
+                    diff_vectors=neighbor_data.diff_vectors,
                 )
             else:
                 energies += pot(
-                    species,
-                    neighbor_data.indices,
-                    neighbor_data.distances,
-                    neighbor_data.diff_vectors,
+                    element_idxs,
+                    neighbor_idxs=neighbor_data.indices,
+                    distances=neighbor_data.distances,
+                    diff_vectors=neighbor_data.diff_vectors,
                 )
         assert members_energies is not None
-        energies = self.energy_shifter((species, energies)).energies
+        energies = self.energy_shifter((element_idxs, energies)).energies
         members_energies += energies.unsqueeze(0)
-        return SpeciesEnergies(species, members_energies)
+        return SpeciesEnergies(element_idxs, members_energies)
 
 
 def _get_component_modules(state_dict_file: str,
