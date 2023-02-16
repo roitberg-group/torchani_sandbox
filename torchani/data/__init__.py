@@ -143,7 +143,7 @@ def collate_fn(samples, padding=None):
     if padding is None:
         padding = PADDING
 
-    return utils.stack_with_padding(samples, padding)
+    return stack_with_padding(samples, padding)
 
 
 class IterableAdapter:
