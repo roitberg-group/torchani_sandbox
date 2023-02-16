@@ -1,10 +1,10 @@
-from typing import Sequence, Union, Optional
+from typing import Sequence, Union, Optional, Tuple
 
 import torch
 from torch import Tensor
 
 from . import units
-from .utils import ATOMIC_NUMBERS
+from .utils import ATOMIC_NUMBERS, PERIODIC_TABLE
 from .wrappers import StandaloneWrapper
 from .parse_repulsion_constants import alpha_constants, y_eff_constants
 from .aev.cutoffs import _parse_cutoff_fn
@@ -47,10 +47,15 @@ class RepulsionXTB(torch.nn.Module):
         self.cutoff_function = _parse_cutoff_fn(cutoff_fn)
         self.cutoff = cutoff
         # pre-calculate pairwise parameters for efficiency
+        self.register_buffer("atomic_numbers", supported_znumbers)
         self.register_buffer('y_ab', torch.outer(_y_eff, _y_eff))
         self.register_buffer('sqrt_alpha_ab', torch.sqrt(torch.outer(_alpha, _alpha)))
         self.register_buffer('k_rep_ab', k_rep_ab)
         self.ANGSTROM_TO_BOHR = units.ANGSTROM_TO_BOHR
+
+    @torch.jit.unused
+    def get_chemical_symbols(self) -> Tuple[str, ...]:
+        return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)
 
     def _calculate_energy(self,
                           atomic_idxs: Tensor,
