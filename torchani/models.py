@@ -498,8 +498,9 @@ def _fetch_state_dict(state_dict_file: str,
 
     # for now for simplicity we load a state dict for the ensemble directly and
     # then parse if needed
-    state_dict = torch.hub.load_state_dict_from_url(url, model_dir=model_dir, map_location=torch.device('cpu'))
-
+    # The argument to map_location is OK but the function is incorrectly typed
+    # in the pytorch stubs
+    state_dict = torch.hub.load_state_dict_from_url(url, model_dir=model_dir, map_location=torch.device('cpu'))  # type: ignore
     if model_index is not None:
         new_state_dict = OrderedDict()
         # Parse the state dict and rename/select only useful keys to build
@@ -514,9 +515,9 @@ def _fetch_state_dict(state_dict_file: str,
                 else:
                     continue
             new_state_dict[k] = v
-        state_dict = new_state_dict
-
-    return state_dict
+    else:
+        new_state_dict = OrderedDict(state_dict)
+    return new_state_dict
 
 
 def _load_ani_model(state_dict_file: Optional[str] = None,
@@ -556,8 +557,9 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     if use_neurochem_source:
         assert info_file is not None, "Info file is needed to load from a neurochem source"
         assert pretrained, "Non pretrained models not available from neurochem source"
+        # neurochem is legacy and not type-checked
         from . import neurochem  # noqa
-        components = neurochem.parse_resources._get_component_modules(info_file, model_index, aev_computer_kwargs)
+        components = neurochem.parse_resources._get_component_modules(info_file, model_index, aev_computer_kwargs)  # type: ignore
     else:
         assert state_dict_file is not None
         components = _get_component_modules(state_dict_file, model_index,
