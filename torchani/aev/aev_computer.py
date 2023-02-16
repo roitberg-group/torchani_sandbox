@@ -376,19 +376,14 @@ class AEVComputer(torch.nn.Module):
         return angular_aev
 
     def _compute_radial_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, neighbor_idxs: Tensor, distances: Tensor) -> Tensor:
-
         radial_terms_ = self.radial_terms(distances)
         radial_aev = radial_terms_.new_zeros(
             (num_molecules * num_atoms * self.num_species,
              self.radial_sublength))
         index12 = neighbor_idxs * self.num_species + species12.flip(0)
-        try:
-            radial_aev.index_add_(0, index12[0], radial_terms_)
-            radial_aev.index_add_(0, index12[1], radial_terms_)
-        except:
-            breakpoint()
-        radial_aev = radial_aev.reshape(num_molecules, num_atoms,
-                                        self.radial_length)
+        radial_aev.index_add_(0, index12[0], radial_terms_)
+        radial_aev.index_add_(0, index12[1], radial_terms_)
+        radial_aev = radial_aev.reshape(num_molecules, num_atoms, self.radial_length)
         return radial_aev
 
     def _triple_by_molecule(
