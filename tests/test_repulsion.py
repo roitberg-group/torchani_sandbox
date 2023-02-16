@@ -97,7 +97,6 @@ class TestRepulsionJIT(TestRepulsion):
         self.sa_rep = torch.jit.script(self.sa_rep)
 
     def testRepulsionEnergy(self):
-        #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         device = torch.device('cpu')
         model = torchani.models.ANI1x(
             repulsion=True,
