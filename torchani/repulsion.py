@@ -19,6 +19,7 @@ class RepulsionXTB(torch.nn.Module):
     y_ab: Tensor
     sqrt_alpha_ab: Tensor
     k_rep_ab: Tensor
+    atomic_numbers: Tensor
 
     def __init__(self,
                  cutoff: float = 5.2,
