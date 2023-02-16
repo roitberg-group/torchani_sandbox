@@ -4,11 +4,10 @@ import torchani
 from pathlib import Path
 from torchani.models import _fetch_state_dict
 from torchani.testing import TestCase
-from torchani.repulsion import RepulsionXTB, StandaloneRepulsionXTB
+from torchani.repulsion import RepulsionXTB, StandaloneXTB
 
 
 class TestRepulsion(TestCase):
-
     def testRepulsionXTB(self):
         rep = RepulsionXTB(5.2)
         atom_index12 = torch.tensor([[0], [1]])
@@ -18,8 +17,8 @@ class TestRepulsion(TestCase):
         energies = rep((species, energies), atom_index12, distances)
         self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
-    def testRepulsionStandalone(self):
-        rep = StandaloneRepulsionXTB(cutoff=5.2, neighborlist_cutoff=5.2)
+    def testStandalone(self):
+        rep = StandaloneXTB(cutoff=5.2, neighborlist_cutoff=5.2)
         coordinates = torch.tensor([[0.0, 0.0, 0.0],
                                     [3.5, 0.0, 0.0]]).unsqueeze(0)
         species = torch.tensor([[0, 0]])
@@ -27,7 +26,7 @@ class TestRepulsion(TestCase):
         self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
     def testRepulsionBatches(self):
-        rep = StandaloneRepulsionXTB(cutoff=5.2, neighborlist_cutoff=5.2)
+        rep = StandaloneXTB(cutoff=5.2, neighborlist_cutoff=5.2)
         coordinates1 = torch.tensor([[0.0, 0.0, 0.0],
                                     [1.5, 0.0, 0.0],
                                     [3.0, 0.0, 0.0]]).unsqueeze(0)

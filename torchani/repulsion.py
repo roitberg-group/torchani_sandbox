@@ -118,5 +118,14 @@ class RepulsionXTB(torch.nn.Module):
         )
 
 
-class StandaloneRepulsionXTB(StandaloneWrapper, RepulsionXTB):  # type: ignore
-    pass
+def StandaloneXTB(
+    cutoff: float = 5.2,
+    alpha: Sequence[float] = None,
+    y_eff: Sequence[float] = None,
+    k_rep_ab: torch.Tensor = None,
+    symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
+    cutoff_fn: Union[str, torch.nn.Module] = 'smooth',
+    **standalone_kwargs,
+) -> StandaloneWrapper:
+    module = RepulsionXTB(cutoff, alpha, y_eff, k_rep_ab, symbols, cutoff_fn)
+    return StandaloneWrapper(module, **standalone_kwargs)
