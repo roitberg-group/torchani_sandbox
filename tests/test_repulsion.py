@@ -8,25 +8,27 @@ from torchani.repulsion import RepulsionXTB, StandaloneRepulsionXTB
 
 
 class TestRepulsion(TestCase):
+    def setUp(self):
+        self.rep = RepulsionXTB(5.2)
+        self.sa_rep = StandaloneRepulsionXTB(cutoff=5.2, neighborlist_cutoff=5.2)
+
     def testRepulsionXTB(self):
-        rep = RepulsionXTB(5.2)
         neighbor_idxs = torch.tensor([[0], [1]])
         distances = torch.tensor([3.5])
         element_idxs = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
-        energies = rep(element_idxs, neighbor_idxs, distances)
+        energies = self.rep(element_idxs, neighbor_idxs, distances)
         self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
     def testStandalone(self):
-        rep = StandaloneRepulsionXTB(cutoff=5.2, neighborlist_cutoff=5.2)
         coordinates = torch.tensor([[0.0, 0.0, 0.0],
                                     [3.5, 0.0, 0.0]]).unsqueeze(0)
         species = torch.tensor([[1, 1]])
-        energies = rep((species, coordinates)).energies
+        energies = self.sa_rep((species, coordinates)).energies
         self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
     def testRepulsionBatches(self):
-        rep = StandaloneRepulsionXTB(cutoff=5.2, neighborlist_cutoff=5.2)
+        rep = self.sa_rep
         coordinates1 = torch.tensor([[0.0, 0.0, 0.0],
                                     [1.5, 0.0, 0.0],
                                     [3.0, 0.0, 0.0]]).unsqueeze(0)
@@ -51,12 +53,11 @@ class TestRepulsion(TestCase):
         self.assertEqual(energies, energies_cat)
 
     def testRepulsionLongDistances(self):
-        rep = RepulsionXTB(5.2)
         neighbor_idxs = torch.tensor([[0], [1]])
         distances = torch.tensor([6.0])
         element_idxs = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
-        energies = rep(element_idxs, neighbor_idxs, distances)
+        energies = self.rep(element_idxs, neighbor_idxs, distances)
         self.assertEqual(torch.tensor([0.0]), energies)
 
     def testRepulsionEnergy(self):
@@ -84,6 +85,17 @@ class TestRepulsion(TestCase):
         with open(path, 'rb') as f:
             energies_expect = torch.tensor(torch.load(f))
         self.assertEqual(energies_expect, energies)
+
+
+class TestRepulsionJIT(TestRepulsion):
+    # JIT compile and repeat all tests except Repulsion Energy
+    def setUp(self):
+        super().setUp()
+        self.rep = torch.jit.script(self.rep)
+        self.sa_rep = torch.jit.script(self.sa_rep)
+
+    def testRepulsionEnergy(self):
+        pass
 
 
 if __name__ == '__main__':
