@@ -5,7 +5,7 @@ from torch import Tensor
 
 from . import units
 from .utils import ATOMIC_NUMBERS
-from .standalone import StandaloneWrapper
+from .wrappers import StandaloneWrapper
 from .parse_repulsion_constants import alpha_constants, y_eff_constants
 from .aev.cutoffs import _parse_cutoff_fn
 from .compat import Final
@@ -118,7 +118,7 @@ class RepulsionXTB(torch.nn.Module):
         )
 
 
-def StandaloneXTB(
+def StandaloneRepulsionXTB(
     cutoff: float = 5.2,
     alpha: Sequence[float] = None,
     y_eff: Sequence[float] = None,

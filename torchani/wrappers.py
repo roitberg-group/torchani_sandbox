@@ -5,7 +5,7 @@ from torch import Tensor
 from torch.nn import Module
 
 from .compat import Final
-from .elements import SpeciesConverter
+from .nn import SpeciesConverter
 from .structs import SpeciesEnergies
 from .aev import FullPairwise, BaseNeighborlist
 
