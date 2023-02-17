@@ -29,41 +29,45 @@ def displace_to_com_frame(
 
 
 def inertia_tensor(
-    coordinates: Tensor,  # (1, A, 3)
-    atomic_numbers: Optional[Tensor] = None,  # (1, A)
-    masses: Optional[Tensor] = None,  # (1, A)
+    coordinates: Tensor,  # (M, A, 3)
+    atomic_numbers: Optional[Tensor] = None,  # (M, A)
+    masses: Optional[Tensor] = None,  # (M, A)
     displace_to_com: bool = False,
-) -> Tensor:  # (1, 3, 3)
-    # returns the inertia tensor, for now I will not support batching
+) -> Tensor:  # (M, 3, 3)
+    # supports batching
     if atomic_numbers is not None:
         assert masses is None
         masses = get_atomic_masses(atomic_numbers, dtype=coordinates.dtype)
     assert masses is not None
-    masses = masses.squeeze(0)
-    coordinates = coordinates.squeeze(0)
     if displace_to_com:
         coordinates = displace_to_com_frame(coordinates, masses=masses)
-    scaled_coordinates = torch.sqrt(masses.view(-1, 1)) * coordinates
-    cov = scaled_coordinates.transpose() @ scaled_coordinates
-    inertia_tensor = torch.trace(cov) * torch.eye(3) - cov
-    return inertia_tensor.unsqueeze(0)
+    scaled_coordinates = torch.sqrt(masses.unsqueeze(-1)) * coordinates
+    cov = torch.matmul(scaled_coordinates.transpose(-1, -2), scaled_coordinates)
+    batched_trace = torch.diagonal(cov, dim1=1, dim2=2).sum(-1)
+    inertia_tensor = batched_trace * torch.eye(3).unsqueeze(0) - cov
+    return inertia_tensor
 
 
 def principal_axes_of_inertia(
-    coordinates: Tensor,  # (1, A, 3)
-    atomic_numbers: Optional[Tensor] = None,  # (1, A)
-    masses: Optional[Tensor] = None,  # (1, A)
-) -> Tuple[Tensor, Tensor]:  # (1, 3), (1, 3, 3)
+    coordinates: Tensor,  # (M, A, 3)
+    atomic_numbers: Optional[Tensor] = None,  # (M, A)
+    masses: Optional[Tensor] = None,  # (M, A)
+) -> Tuple[Tensor, Tensor]:  # (M, 3), (M, 3, 3)
+    # supports batching
     # returns the inertia tensor eigenvalues and eigenvectors,
-    # for now I will not support batching
+    #
+    # torch eigh returns Q where A = QDQ', so AQ = QD
+    # so the eigenvectors are in the columns, this seems to be the same
+    # convention that gaussian uses for diagonalizing the inertia matrix,
+    # so the output eigenvectors matrix is gaussian's X matrix
     eigenvalues, eigenvectors = torch.linalg.eigh(
         inertia_tensor(
             coordinates,
             masses=masses,
             atomic_numbers=atomic_numbers
-        ).squeeze(0)
+        )
     )
-    return eigenvalues.unsqueeze(0), eigenvectors.unsqueeze(0)
+    return eigenvalues, eigenvectors
 
 
 def tile_into_tight_cell(

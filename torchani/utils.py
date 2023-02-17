@@ -458,7 +458,74 @@ class VibAnalysis(NamedTuple):
     rmasses: Tensor
 
 
-def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1', project_to_internal_coords: bool = False):
+def _projection(u: Tensor, v: Tensor) -> Tensor:
+    return u * (v * u).sum(-1) / (u * u).sum(-1)
+
+
+def unstable_gram_schmidt(
+    initial_vectors: Optional[Tensor] = None,
+    target_num: int = 10,
+    features: Optional[int] = None,
+    assume_initial_orthogonal: bool = False,
+    dtype: Optional[torch.dtype] = None,
+    normalize: bool = True,
+) -> Tensor:
+    # dtype is only used if initial vectors are not provided
+    # This procedure is not numerically stable
+    # initial_vectors is (N, F), where F is the feature dimension
+    # we start with some set of vectors, this set must be random
+    assert target_num > 0
+    if initial_vectors is None:
+        if dtype is None:
+            dtype = torch.float32
+        initial_vectors = torch.tensor([], dtype=dtype)  # this size is correct
+        assert features is not None
+        assert features > 0
+        extra_vectors_num = target_num
+    else:
+        if features is not None:
+            assert features == initial_vectors.shape[1]
+        features = initial_vectors.shape[1]
+    assert initial_vectors is not None
+    dtype = initial_vectors.dtype
+
+    extra_vectors_num = target_num - initial_vectors.shape[0]
+    assert extra_vectors_num > 0
+    random_vectors = torch.randn((extra_vectors_num, features), dtype=dtype)
+
+    if assume_initial_orthogonal:
+        orthogonal_basis = list(torch.unbind(initial_vectors, dim=0))
+        # implement this later
+    else:
+        random_vectors = torch.cat((initial_vectors, random_vectors), dim=0)
+        orthogonal_basis = []
+
+    for vec in random_vectors:
+        new_ortho = vec.clone()
+        for ortho in orthogonal_basis:
+            new_ortho -= _projection(ortho, vec)
+        orthogonal_basis.append(new_ortho)
+
+    if normalize:
+        normalized_orthogonal_basis = []
+        for ortho in orthogonal_basis:
+            normalized_orthogonal_basis.append(ortho / torch.linalg.norm(ortho))
+        return torch.stack(normalized_orthogonal_basis, dim=0)
+
+    return torch.stack(orthogonal_basis, dim=0)
+
+
+def modified_gram_schmidt():
+    pass
+
+
+def vibrational_analysis(
+    masses,
+    hessian,
+    mode_type='MDU',
+    unit='cm^-1',
+    project_to_internal_coords: bool = False
+):
     """Computing the vibrational wavenumbers from hessian.
 
     Note that normal modes in many popular software packages such as
@@ -507,7 +574,6 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1', project
     if project_to_internal_coords:
         # generate translational vectors
         translations = torch.eye(3).repeat(num_atoms, 1) * sqrt_mass.T
-
 
     signs = torch.sign(eigenvalues)
     angular_frequencies = eigenvalues.abs().sqrt()
