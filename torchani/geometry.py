@@ -1,28 +1,80 @@
-""" Utilities to generate some specific geometries"""
+r""" Utilities to generate some specific geometries"""
 import torch
 from torch import Tensor
-from typing import Tuple
-from .utils import get_atomic_masses
+from typing import Tuple, Optional
+from .utils import get_atomic_masses, PADDING
 
 
-def displace_to_com_frame(species_coordinates: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tensor]:
+def displace_to_com_frame(
+    coordinates: Tensor,  # (M, A, 3)
+    atomic_numbers: Optional[Tensor] = None,  # (M, A)
+    masses: Optional[Tensor] = None,  # (M, A)
+    padding: int = int(PADDING["species"]),
+) -> Tensor:
     r"""Displace coordinates to the center-of-mass frame, input species must be
-    atomic numbers, padding atoms can be included with -1 as padding,
-    returns the displaced coordinates and the center-of-mass coordinates"""
-    species, coordinates = species_coordinates
-    mask = (species == -1)
-    masses = get_atomic_masses(species, dtype=coordinates.dtype)
+    atomic numbers, padding atoms can be included,
+    returns the displaced coordinatess"""
+    if atomic_numbers is not None:
+        assert masses is None
+        masses = get_atomic_masses(atomic_numbers, dtype=coordinates.dtype)
+    assert masses is not None
+    mask = (atomic_numbers == padding)
     masses.masked_fill_(mask, 0.0)
     mass_sum = masses.unsqueeze(-1).sum(dim=1, keepdim=True)
     com_coordinates = coordinates * masses.unsqueeze(-1) / mass_sum
     com_coordinates = com_coordinates.sum(dim=1, keepdim=True)
     centered_coordinates = coordinates - com_coordinates
     centered_coordinates[mask, :] = 0.0
-    return species, centered_coordinates
+    return centered_coordinates
 
 
-def tile_into_tight_cell(species_coordinates, repeats=(3, 3, 3), noise=None, delta=1.0,
-                         density=None, fixed_displacement_size=None, make_coordinates_positive: bool = True):
+def inertia_tensor(
+    coordinates: Tensor,  # (1, A, 3)
+    atomic_numbers: Optional[Tensor] = None,  # (1, A)
+    masses: Optional[Tensor] = None,  # (1, A)
+    displace_to_com: bool = False,
+) -> Tensor:  # (1, 3, 3)
+    # returns the inertia tensor, for now I will not support batching
+    if atomic_numbers is not None:
+        assert masses is None
+        masses = get_atomic_masses(atomic_numbers, dtype=coordinates.dtype)
+    assert masses is not None
+    masses = masses.squeeze(0)
+    coordinates = coordinates.squeeze(0)
+    if displace_to_com:
+        coordinates = displace_to_com_frame(coordinates, masses=masses)
+    scaled_coordinates = torch.sqrt(masses.view(-1, 1)) * coordinates
+    cov = scaled_coordinates.transpose() @ scaled_coordinates
+    inertia_tensor = torch.trace(cov) * torch.eye(3) - cov
+    return inertia_tensor.unsqueeze(0)
+
+
+def principal_axes_of_inertia(
+    coordinates: Tensor,  # (1, A, 3)
+    atomic_numbers: Optional[Tensor] = None,  # (1, A)
+    masses: Optional[Tensor] = None,  # (1, A)
+) -> Tuple[Tensor, Tensor]:  # (1, 3), (1, 3, 3)
+    # returns the inertia tensor eigenvalues and eigenvectors,
+    # for now I will not support batching
+    eigenvalues, eigenvectors = torch.linalg.eigh(
+        inertia_tensor(
+            coordinates,
+            masses=masses,
+            atomic_numbers=atomic_numbers
+        ).squeeze(0)
+    )
+    return eigenvalues.unsqueeze(0), eigenvectors.unsqueeze(0)
+
+
+def tile_into_tight_cell(
+    species_coordinates,
+    repeats=(3, 3, 3),
+    noise=None,
+    delta=1.0,
+    density=None,
+    fixed_displacement_size=None,
+    make_coordinates_positive: bool = True
+):
     r""" Tile
     Arguments:
         repeats: Integer or tuple of integers (larger than zero), how many

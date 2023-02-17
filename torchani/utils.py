@@ -458,7 +458,7 @@ class VibAnalysis(NamedTuple):
     rmasses: Tensor
 
 
-def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
+def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1', project_to_internal_coords: bool = False):
     """Computing the vibrational wavenumbers from hessian.
 
     Note that normal modes in many popular software packages such as
@@ -496,12 +496,19 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
     # Hq = w^2 * Tq ==> Hq = w^2 * T^(1/2) T^(1/2) q
     # Letting q' = T^(1/2) q, we then have
     # T^(-1/2) H T^(-1/2) q' = w^2 * q'
-    inv_sqrt_mass = (1 / masses.sqrt()).repeat_interleave(3, dim=1)  # shape (molecule, 3 * atoms)
+    sqrt_mass = masses.sqrt().repeat_interleave(3, dim=1)  # shape (molecule, 3 * atoms)
+    inv_sqrt_mass = 1 / sqrt_mass
     mass_scaled_hessian = hessian * inv_sqrt_mass.unsqueeze(1) * inv_sqrt_mass.unsqueeze(2)
     if mass_scaled_hessian.shape[0] != 1:
         raise ValueError('The input should contain only one molecule')
     mass_scaled_hessian = mass_scaled_hessian.squeeze(0)
     eigenvalues, eigenvectors = torch.linalg.eigh(mass_scaled_hessian)
+    num_atoms = masses.shape[1]
+    if project_to_internal_coords:
+        # generate translational vectors
+        translations = torch.eye(3).repeat(num_atoms, 1) * sqrt_mass.T
+
+
     signs = torch.sign(eigenvalues)
     angular_frequencies = eigenvalues.abs().sqrt()
     frequencies = angular_frequencies / (2 * math.pi)
