@@ -1,5 +1,5 @@
 ARG PYT_VER=22.08
-FROM nvcr.io/nvidia/pytorch:$PYT_VER-py3
+FROM pytorch/pytorch:1.12.1-cuda11.3-cudnn8-devel
 
 # environment
 # NGC Container forces using TF32, disable it
