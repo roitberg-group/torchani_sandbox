@@ -8,6 +8,10 @@ ENV TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 # Set default shell to /bin/bash
 SHELL ["/bin/bash", "-cu"]
 
+# install some packages
+RUN apt-get update && \
+    apt-get install -y git wget unzip
+
 # Copy files into container
 COPY . /torchani_sandbox
 
