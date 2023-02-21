@@ -39,7 +39,7 @@ fi
 # conda-build dependency
 conda install conda-build conda-verify anaconda-client -y
 conda install conda-package-handling -y  # Update to newer version, Issue: https://github.com/conda/conda-package-handling/issues/71
-export PATH="${CONDA_PREFIX}/bin:${CONDA}/bin:$PATH"  # anaconda bin location
+export PATH="$PATH:${CONDA_PREFIX}/bin:${CONDA}/bin"  # anaconda bin location
 which anaconda
 
 # build package
