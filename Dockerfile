@@ -1,4 +1,6 @@
 ARG PYT_VER=22.08
+# The conda environment in the nvcr pytorch docker is not working
+# FROM nvcr.io/nvidia/pytorch:$PYT_VER-py3
 FROM pytorch/pytorch:1.12.1-cuda11.3-cudnn8-devel
 
 # environment
