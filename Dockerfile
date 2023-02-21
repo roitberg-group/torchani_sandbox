@@ -18,6 +18,10 @@ RUN apt-get update && \
 # Copy files into container
 COPY . /torchani_sandbox
 
+RUN export CUDA_HOME=/usr/local/cuda/ && \
+    export PATH=${CUDA_HOME}/bin:$PATH && \
+    export LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+
 # Install torchani and dependencies
 RUN cd /torchani_sandbox \
     && pip install twine wheel \
