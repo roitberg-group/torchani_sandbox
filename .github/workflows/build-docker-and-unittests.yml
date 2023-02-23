@@ -70,6 +70,12 @@ jobs:
     needs: build_docker
     runs-on: self-hosted
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT }}
+          # submodules: recursive
+
       - name: UnitTests on GPU
         run: docker run --rm --gpus all ${{ steps.meta.outputs.tags }} bash -c "nvidia-smi && cd tests/ && pytest -s -v ."
 
