@@ -1,17 +1,17 @@
+from typing import Tuple, Optional, Sequence, List, Dict, Union, Mapping
 import tempfile
 from pathlib import Path
-import torch
-from torch import Tensor
-import torch.utils.data
-import math
 import os
 import warnings
 import itertools
 from collections import Counter
-from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union, Mapping
-from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
-from .structs import SpeciesEnergies
+
+import torch
+from torch import Tensor
+import torch.utils.data
 import numpy as np
+
+from .structs import SpeciesEnergies
 from .compat import tqdm
 
 PADDING = {
@@ -22,6 +22,8 @@ PADDING = {
     'forces': 0.0,
     'energies': 0.0
 }
+
+_NUMBERS_PADDING = int(PADDING["numbers"])
 
 # GSAES were calculating using the following splin multiplicities:
 # H: 2, C: 3, N: 4, O: 3, S: 3, F: 2, Cl: 2
@@ -446,160 +448,97 @@ def hessian(coordinates: Tensor, energies: Optional[Tensor] = None, forces: Opti
     ], dim=1)
 
 
-class FreqsModes(NamedTuple):
-    freqs: Tensor
-    modes: Tensor
-
-
-class VibAnalysis(NamedTuple):
-    freqs: Tensor
-    modes: Tensor
-    fconstants: Tensor
-    rmasses: Tensor
-
-
 def _projection(u: Tensor, v: Tensor) -> Tensor:
+    # inputs must have shape (..., features)
     return u * (v * u).sum(-1) / (u * u).sum(-1)
 
 
-def unstable_gram_schmidt(
+def gram_schmidt(
     initial_vectors: Optional[Tensor] = None,
-    target_num: int = 10,
+    target_num: Optional[int] = None,
     features: Optional[int] = None,
-    assume_initial_orthogonal: bool = False,
     dtype: Optional[torch.dtype] = None,
+    device: Optional[str] = None,
+    assume_initial_orthogonal: bool = False,
     normalize: bool = True,
+    stable: bool = True,
+    orthonormality_check: bool = False,
+    orthonormality_threshold: float = 5e-6,
+    seed: Optional[int] = None,
 ) -> Tensor:
+    generator = torch.Generator()
+    if seed is not None:
+        generator.manual_seed(seed)
+    if orthonormality_check:
+        assert normalize
+    # Vectors go in -1 column and features go in -2 column,
+    #
+    # target num is the requrested number of vectors
     # dtype is only used if initial vectors are not provided
     # This procedure is not numerically stable
     # initial_vectors is (N, F), where F is the feature dimension
     # we start with some set of vectors, this set must be random
-    assert target_num > 0
+    #
+    # numerically stable version is preferred
+    #
+    # orthonormality check may be expensive (it is cuadratic in the number of
+    # vectors)
+    vectors_dim = -1
+    features_dim = -2
     if initial_vectors is None:
-        if dtype is None:
-            dtype = torch.float32
-        initial_vectors = torch.tensor([], dtype=dtype)  # this size is correct
         assert features is not None
         assert features > 0
+        if dtype is None:
+            dtype = torch.float32
+            device = "cpu"
+        # Empty vector works fine
+        initial_vectors = torch.tensor([], dtype=dtype, device=device)
         extra_vectors_num = target_num
     else:
+        if dtype is not None:
+            initial_vectors = initial_vectors.to(dtype)
+        if device is not None:
+            initial_vectors = initial_vectors.to(device)
         if features is not None:
-            assert features == initial_vectors.shape[1]
-        features = initial_vectors.shape[1]
+            assert features == initial_vectors.shape[features_dim]
+        features = initial_vectors.shape[features_dim]
+        if target_num is None:
+            target_num = features
     assert initial_vectors is not None
+    assert target_num is not None
+    assert target_num > 0
     dtype = initial_vectors.dtype
+    device = initial_vectors.device
 
-    extra_vectors_num = target_num - initial_vectors.shape[0]
+    extra_vectors_num = target_num - initial_vectors.shape[vectors_dim]
     assert extra_vectors_num > 0
-    random_vectors = torch.randn((extra_vectors_num, features), dtype=dtype)
+    assert features >= target_num, "can't have more orthogonal vectors than dimensions"
+    # This works even if initial_vectors is empty
+    _size = initial_vectors.shape[:-2] + (features, extra_vectors_num)
+    random_vectors = torch.randn(_size, dtype=dtype, device=device, generator=generator)
 
     if assume_initial_orthogonal:
-        orthogonal_basis = list(torch.unbind(initial_vectors, dim=0))
-        # implement this later
+        orthogonal_basis = list(initial_vectors.unbind(vectors_dim))
     else:
-        random_vectors = torch.cat((initial_vectors, random_vectors), dim=0)
+        random_vectors = torch.cat((initial_vectors, random_vectors), dim=vectors_dim)
         orthogonal_basis = []
 
-    for vec in random_vectors:
+    for vec in random_vectors.unbind(vectors_dim):
         new_ortho = vec.clone()
         for ortho in orthogonal_basis:
-            new_ortho -= _projection(ortho, vec)
+            new_ortho -= _projection(ortho, new_ortho if stable else vec)
+        if normalize:
+            # there is no vectors dim in this tensor, so features dim is -1
+            new_ortho = new_ortho / torch.linalg.norm(new_ortho, dim=-1)
         orthogonal_basis.append(new_ortho)
-
+    orthogonal_basis = torch.stack(orthogonal_basis, dim=vectors_dim)
     if normalize:
-        normalized_orthogonal_basis = []
-        for ortho in orthogonal_basis:
-            normalized_orthogonal_basis.append(ortho / torch.linalg.norm(ortho))
-        return torch.stack(normalized_orthogonal_basis, dim=0)
-
-    return torch.stack(orthogonal_basis, dim=0)
-
-
-def modified_gram_schmidt():
-    pass
-
-
-def vibrational_analysis(
-    masses,
-    hessian,
-    mode_type='MDU',
-    unit='cm^-1',
-    project_to_internal_coords: bool = False
-):
-    """Computing the vibrational wavenumbers from hessian.
-
-    Note that normal modes in many popular software packages such as
-    Gaussian and ORCA are output as mass deweighted normalized (MDN).
-    Normal modes in ASE are output as mass deweighted unnormalized (MDU).
-    Some packages such as Psi4 let ychoose different normalizations.
-    Force constants and reduced masses are calculated as in Gaussian.
-
-    mode_type should be one of:
-    - MWN (mass weighted normalized)
-    - MDU (mass deweighted unnormalized)
-    - MDN (mass deweighted normalized)
-
-    MDU modes are not orthogonal, and not normalized,
-    MDN modes are not orthogonal, and normalized.
-    MWN modes are orthonormal, but they correspond
-    to mass weighted cartesian coordinates (x' = sqrt(m)x).
-
-    Imaginary frequencies are output as negative numbers.
-    Very small negative or positive frequencies may correspond to
-    translational, and rotational modes.
-    """
-    if unit == 'meV':
-        unit_converter = sqrt_mhessian2milliev
-    elif unit == 'cm^-1':
-        unit_converter = sqrt_mhessian2invcm
-    else:
-        raise ValueError('Only meV and cm^-1 are supported right now')
-
-    assert hessian.shape[0] == 1, 'Currently only supporting computing one molecule a time'
-    # Solving the eigenvalue problem: Hq = w^2 * T q
-    # where H is the Hessian matrix, q is the normal coordinates,
-    # T = diag(m1, m1, m1, m2, m2, m2, ....) is the mass
-    # We solve this eigenvalue problem through Lowdin diagnolization:
-    # Hq = w^2 * Tq ==> Hq = w^2 * T^(1/2) T^(1/2) q
-    # Letting q' = T^(1/2) q, we then have
-    # T^(-1/2) H T^(-1/2) q' = w^2 * q'
-    sqrt_mass = masses.sqrt().repeat_interleave(3, dim=1)  # shape (molecule, 3 * atoms)
-    inv_sqrt_mass = 1 / sqrt_mass
-    mass_scaled_hessian = hessian * inv_sqrt_mass.unsqueeze(1) * inv_sqrt_mass.unsqueeze(2)
-    if mass_scaled_hessian.shape[0] != 1:
-        raise ValueError('The input should contain only one molecule')
-    mass_scaled_hessian = mass_scaled_hessian.squeeze(0)
-    eigenvalues, eigenvectors = torch.linalg.eigh(mass_scaled_hessian)
-    num_atoms = masses.shape[1]
-    if project_to_internal_coords:
-        # generate translational vectors
-        translations = torch.eye(3).repeat(num_atoms, 1) * sqrt_mass.T
-
-    signs = torch.sign(eigenvalues)
-    angular_frequencies = eigenvalues.abs().sqrt()
-    frequencies = angular_frequencies / (2 * math.pi)
-    frequencies = frequencies * signs
-    # converting from sqrt(hartree / (amu * angstrom^2)) to cm^-1 or meV
-    wavenumbers = unit_converter(frequencies)
-
-    # Note that the normal modes are the COLUMNS of the eigenvectors matrix
-    mw_normalized = eigenvectors.t()
-    md_unnormalized = mw_normalized * inv_sqrt_mass
-    norm_factors = 1 / torch.linalg.norm(md_unnormalized, dim=1)  # units are sqrt(AMU)
-    md_normalized = md_unnormalized * norm_factors.unsqueeze(1)
-
-    rmasses = norm_factors**2  # units are AMU
-    # The conversion factor for Ha/(AMU*A^2) to mDyne/(A*AMU) is about 4.3597482
-    fconstants = mhessian2fconst(eigenvalues) * rmasses  # units are mDyne/A
-
-    if mode_type == 'MDN':
-        modes = (md_normalized).reshape(frequencies.numel(), -1, 3)
-    elif mode_type == 'MDU':
-        modes = (md_unnormalized).reshape(frequencies.numel(), -1, 3)
-    elif mode_type == 'MWN':
-        modes = (mw_normalized).reshape(frequencies.numel(), -1, 3)
-
-    return VibAnalysis(wavenumbers, modes, fconstants, rmasses)
+        orthogonal_basis /= orthogonal_basis.norm(dim=-2, keepdim=True)
+        if orthonormality_check:
+            gram_matrix = orthogonal_basis.transpose(-1, -2) @ orthogonal_basis
+            criteria = gram_matrix - torch.eye(target_num, dtype=dtype, device=device)
+            assert criteria.abs().max() < orthonormality_threshold, "Not orthonormal"
+    return orthogonal_basis
 
 
 def get_atomic_masses(species, dtype=torch.float):
@@ -659,6 +598,33 @@ def get_atomic_masses(species, dtype=torch.float):
     return masses
 
 
+def _maybe_infer_masses(
+    atomic_numbers: Optional[Tensor] = None,  # (M, A)
+    masses: Optional[Tensor] = None,  # (M, A)
+    dtype: Optional[torch.dtype] = torch.float,
+    atomic_numbers_padding: int = int(PADDING["species"]),
+) -> Tensor:
+    # infer masses if not provided
+    if atomic_numbers is not None:
+        assert masses is None
+        mask = (atomic_numbers == atomic_numbers_padding)
+        masses = get_atomic_masses(atomic_numbers, dtype=dtype)
+        masses.masked_fill_(mask, 0.0)
+    assert masses is not None
+    return masses
+
+
+def _maybe_infer_dummy_atoms(
+    atomic_numbers: Optional[Tensor] = None,
+    is_dummy_atom: Optional[Tensor] = None,
+    atomic_numbers_padding: int = int(PADDING["species"]),
+) -> Optional[Tensor]:
+    if atomic_numbers is not None:
+        assert is_dummy_atom is None
+        is_dummy_atom = (atomic_numbers == atomic_numbers_padding)
+    return is_dummy_atom
+
+
 # This constant, when indexed with the corresponding atomic number, gives the
 # element associated with it. Note that there is no element with atomic number
 # 0, so 'Dummy' returned in this case.
@@ -676,5 +642,5 @@ ATOMIC_NUMBERS = {symbol: z for z, symbol in enumerate(PERIODIC_TABLE)}
 
 
 __all__ = ['pad_atomic_properties', 'present_species', 'hessian',
-           'vibrational_analysis', 'strip_redundant_padding',
+           'strip_redundant_padding',
            'ChemicalSymbolsToInts', 'get_atomic_masses', 'tqdm', 'GSAES', 'PERIODIC_TABLE', 'ATOMIC_NUMBERS']

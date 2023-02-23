@@ -8,6 +8,7 @@ import ase.optimize
 import ase.vibrations
 import numpy
 from torchani.testing import TestCase
+from torchani.vibrations import vibrational_analysis
 
 
 path = os.path.dirname(os.path.realpath(__file__))
@@ -37,12 +38,52 @@ class TestVibrational(TestCase):
         vib.clean()
         modes = torch.tensor(modes)
         # compute vibrational by torchani
-        species = torch.tensor(molecule.get_atomic_numbers()).unsqueeze(0)
-        masses = torchani.utils.get_atomic_masses(species, dtype=torch.double)
+        atomic_numbers = torch.tensor(molecule.get_atomic_numbers()).unsqueeze(0)
         coordinates = torch.from_numpy(molecule.get_positions()).unsqueeze(0).requires_grad_(True)
-        _, energies = model((species, coordinates))
+        _, energies = model((atomic_numbers, coordinates))
         hessian = torchani.utils.hessian(coordinates, energies=energies)
-        freq2, modes2, _, _ = torchani.utils.vibrational_analysis(masses, hessian)
+        freq2, modes2, _, _ = vibrational_analysis(
+            hessian,
+            atomic_numbers=atomic_numbers
+        )
+        freq2 = freq2[6:].float()
+        modes2 = modes2[6:]
+        self.assertEqual(freq, freq2, atol=0, rtol=0.02, exact_dtype=False)
+
+        diff1 = (modes - modes2).abs().max(dim=-1).values.max(dim=-1).values
+        diff2 = (modes + modes2).abs().max(dim=-1).values.max(dim=-1).values
+        diff = torch.where(diff1 < diff2, diff1, diff2)
+        self.assertLess(diff.max(), 0.02)
+
+    def testProjectedVibrationalAnalysis(self):
+        model = torchani.models.ANI1x().double()
+        d = 0.9575
+        t = math.pi / 180 * 104.51
+        molecule = ase.Atoms('H2O', positions=[
+            (d, 0, 0),
+            (d * math.cos(t), d * math.sin(t), 0),
+            (0, 0, 0),
+        ], calculator=model.ase())
+        opt = ase.optimize.BFGS(molecule)
+        opt.run(fmax=1e-6)
+        # compute vibrational frequencies by ASE
+        vib = ase.vibrations.Vibrations(molecule)
+        vib.run()
+        freq = torch.tensor([numpy.real(x) for x in vib.get_frequencies()[6:]])
+        modes = []
+        for j in range(6, 6 + len(freq)):
+            modes.append(vib.get_mode(j))
+        vib.clean()
+        modes = torch.tensor(modes)
+        # compute vibrational by torchani
+        atomic_numbers = torch.tensor(molecule.get_atomic_numbers()).unsqueeze(0)
+        coordinates = torch.from_numpy(molecule.get_positions()).unsqueeze(0).requires_grad_(True)
+        _, energies = model((atomic_numbers, coordinates))
+        hessian = torchani.utils.hessian(coordinates, energies=energies)
+        freq2, modes2, _, _ = vibrational_analysis(
+            hessian,
+            atomic_numbers=atomic_numbers
+        )
         freq2 = freq2[6:].float()
         modes2 = modes2[6:]
         self.assertEqual(freq, freq2, atol=0, rtol=0.02, exact_dtype=False)
