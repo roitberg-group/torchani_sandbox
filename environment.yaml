@@ -33,7 +33,7 @@ dependencies:
   - zarr  # Zarr backend
 
   # DL
-  - numpy
+  - numpy=1.20
   - pytorch=1.13.1
   - torchvision=0.14
   - cudatoolkit=11.6
