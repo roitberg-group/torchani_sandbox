@@ -1,10 +1,11 @@
 import torch
 from collections import OrderedDict
 from torch import Tensor
+from torch.jit import Final
+
 from typing import Tuple, NamedTuple, Optional, Sequence
 from . import utils
 from . import infer
-from .compat import Final
 from .structs import SpeciesEnergies
 
 
@@ -130,12 +131,6 @@ class Sequential(torch.nn.ModuleList):
         for module in self:
             input_ = module(input_, cell=cell, pbc=pbc)
         return input_
-
-
-class Gaussian(torch.nn.Module):
-    """Gaussian activation"""
-    def forward(self, x: Tensor) -> Tensor:
-        return torch.exp(- x * x)
 
 
 class FittedSoftplus(torch.nn.Module):

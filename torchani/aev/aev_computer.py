@@ -1,20 +1,20 @@
 import math
 from typing import Tuple, Optional, NamedTuple
 import warnings
-import importlib_metadata
+import importlib.metadata
 
 import torch
 from torch import Tensor
+from torch.jit import Final
 
 from ..utils import cumsum_from_zero
-from ..compat import Final
 # modular parts of AEVComputer
 from .cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
 from .aev_terms import _parse_angular_terms, _parse_radial_terms, StandardAngular, StandardRadial
 from .neighbors import _parse_neighborlist
 
 
-cuaev_is_installed = 'torchani.cuaev' in importlib_metadata.metadata(
+cuaev_is_installed = 'torchani.cuaev' in importlib.metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
 
 if cuaev_is_installed:
