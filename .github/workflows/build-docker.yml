@@ -25,7 +25,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build_docker_and_unittest:
+  build_docker_and_unittest_gpu:
     runs-on: self-hosted
     permissions:
       contents: read
@@ -66,7 +66,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: UnitTests
+      - name: UnitTests on GPU
         run: docker run --rm --gpus all ${{ steps.meta.outputs.tags }} bash -c "nvidia-smi && cd tests/ && pytest -s -v ."
 
       - name: Remove image
