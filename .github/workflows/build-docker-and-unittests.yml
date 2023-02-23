@@ -1,4 +1,4 @@
-name: build_docker
+name: build_docker_and_unittests
 
 on:
   pull_request:
@@ -25,7 +25,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build_docker_and_unittest_gpu:
+  build_docker:
     runs-on: self-hosted
     permissions:
       contents: read
@@ -66,6 +66,10 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+  unittests_gpu:
+    needs: build_docker
+    runs-on: self-hosted
+    steps:
       - name: UnitTests on GPU
         run: docker run --rm --gpus all ${{ steps.meta.outputs.tags }} bash -c "nvidia-smi && cd tests/ && pytest -s -v ."
 
@@ -73,6 +77,18 @@ jobs:
         if: ${{ always() }}
         continue-on-error: true
         run: docker image rm ${{ steps.meta.outputs.tags }}
+
+  unittests_cpu:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT }}
+          submodules: recursive
+
+      - name: Install and Run tests
+        run: docker run --rm --gpus '"device=none"' -v $PWD:/examples nvcr.io/nvidia/pytorch:22.08-py3 bash -c "mkdir -p /torchani_sandbox && cd /torchani_sandbox && cp -r /examples/. /torchani_sandbox/ && pip install -r test_requirements.txt && pip uninstall cudf -y && ./download.sh && python setup.py develop && cd tests/ && pytest -s -v ."
 
 concurrency:
   group: build_docker-${{ github.event.pull_request.number || github.sha }}
