@@ -8,11 +8,11 @@ import math
 import os
 import warnings
 import itertools
-from collections import defaultdict, Counter
+from collections import Counter
 from torch.profiler import record_function, ProfilerActivity
 from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union, Mapping
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
-from .nn import SpeciesEnergies
+from .structs import SpeciesEnergies
 import numpy as np
 from .compat import tqdm
 
@@ -130,19 +130,6 @@ def cumsum_from_zero(input_: Tensor) -> Tensor:
     cumsum = torch.zeros_like(input_)
     torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
     return cumsum
-
-
-def stack_with_padding(properties, padding):
-    output = defaultdict(list)
-    for p in properties:
-        for k, v in p.items():
-            output[k].append(torch.as_tensor(v))
-    for k, v in output.items():
-        if v[0].dim() == 0:
-            output[k] = torch.stack(v)
-        else:
-            output[k] = torch.nn.utils.rnn.pad_sequence(v, True, padding[k])
-    return output
 
 
 def broadcast_first_dim(properties):
@@ -491,6 +478,10 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
     MDN modes are not orthogonal, and normalized.
     MWN modes are orthonormal, but they correspond
     to mass weighted cartesian coordinates (x' = sqrt(m)x).
+
+    Imaginary frequencies are output as negative numbers.
+    Very small negative or positive frequencies may correspond to
+    translational, and rotational modes.
     """
     if unit == 'meV':
         unit_converter = sqrt_mhessian2milliev
@@ -513,8 +504,10 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
         raise ValueError('The input should contain only one molecule')
     mass_scaled_hessian = mass_scaled_hessian.squeeze(0)
     eigenvalues, eigenvectors = torch.linalg.eigh(mass_scaled_hessian)
-    angular_frequencies = eigenvalues.sqrt()
+    signs = torch.sign(eigenvalues)
+    angular_frequencies = eigenvalues.abs().sqrt()
     frequencies = angular_frequencies / (2 * math.pi)
+    frequencies = frequencies * signs
     # converting from sqrt(hartree / (amu * angstrom^2)) to cm^-1 or meV
     wavenumbers = unit_converter(frequencies)
 
