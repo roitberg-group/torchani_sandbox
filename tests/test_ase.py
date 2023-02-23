@@ -15,6 +15,15 @@ import os
 path = os.path.dirname(os.path.realpath(__file__))
 
 
+class DummyPotential(torch.nn.Module):
+    def __init__(self, cutoff):
+        super().__init__()
+        self.register_buffer('cutoff', torch.tensor(cutoff))
+
+    def forward(self, element_idxs, neighbor_idxs, distances, diff_vectors):
+        return torch.zeros(element_idxs.shape[0], device=distances.device, dtype=distances.dtype)
+
+
 class TestASE(TestCase):
 
     def setUp(self):
@@ -32,6 +41,29 @@ class TestASE(TestCase):
         f_cell = self._testForcesPBC(model_cell, only_get_forces=True)
         f = self._testForcesPBC(model, only_get_forces=True)
         self.assertEqual(f, f_cell, rtol=0.1, atol=0.1)
+
+    def testConsistentForcesWithPairModel(self):
+        # Run a Langevin thermostat dynamic for 100 steps and after the dynamic
+        # check once that the numerical and analytical force agree to a given
+        # relative tolerance
+        model_cell = torchani.models.ANI1x(model_index=0, cell_list=True)
+        model_cell = model_cell.to(dtype=torch.double, device=self.device)
+        model = torchani.models.ANI1x(model_index=0)
+        model = model.to(dtype=torch.double, device=self.device)
+        model_pair = torchani.models.BuiltinModelPairInteractions(
+            aev_computer=model_cell.aev_computer,
+            neural_networks=model_cell.neural_networks,
+            energy_shifter=model_cell.energy_shifter,
+            elements=model_cell.get_chemical_symbols(),
+            pairwise_potentials=[DummyPotential(6.4), DummyPotential(5.2), DummyPotential(3.0)]
+        )
+        model_pair = model_pair.to(dtype=torch.double, device=self.device)
+
+        f_cell = self._testForcesPBC(model_cell, only_get_forces=True)
+        f_pair = self._testForcesPBC(model_pair, only_get_forces=True)
+        f = self._testForcesPBC(model, only_get_forces=True)
+        self.assertEqual(f_pair, f_cell, rtol=0.1, atol=0.1)
+        self.assertEqual(f_pair, f, rtol=0.1, atol=0.1)
 
     def testConsistentForcesCellListVerlet(self):
         # Run a Langevin thermostat dynamic for 100 steps and after the dynamic
@@ -135,37 +167,6 @@ class TestASE(TestCase):
 
         dyn.attach(test_stress, interval=2)
         dyn.run(10)
-
-
-class TestASEWithPeriodicTableIndex(unittest.TestCase):
-    # Tests that the values obtained by wrapping a BuiltinModel or
-    # BuiltinEnsemble with a calculator are the same with and without
-    # periodic_table_index
-
-    def setUp(self):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model_pti = torchani.models.ANI1x(periodic_table_index=True)
-        self.model = torchani.models.ANI1x()
-        self.model = self.model.to(dtype=torch.double, device=self.device)
-        self.model_pti = self.model_pti.to(dtype=torch.double, device=self.device)
-
-    def testEqualEnsemblePeriodicTableIndex(self):
-        calculator_pti = self.model_pti.ase()
-        calculator = self.model.ase()
-        atoms = Diamond(symbol="C", pbc=True)
-        atoms_pti = Diamond(symbol="C", pbc=True)
-        atoms.calc = calculator
-        atoms_pti.calc = calculator_pti
-        self.assertEqual(atoms.get_potential_energy(), atoms_pti.get_potential_energy())
-
-    def testEqualOneModelPeriodicTableIndex(self):
-        calculator_pti = self.model_pti[0].ase()
-        calculator = self.model[0].ase()
-        atoms = Diamond(symbol="C", pbc=True)
-        atoms_pti = Diamond(symbol="C", pbc=True)
-        atoms.calc = calculator
-        atoms_pti.calc = calculator_pti
-        self.assertEqual(atoms.get_potential_energy(), atoms_pti.get_potential_energy())
 
 
 if __name__ == '__main__':

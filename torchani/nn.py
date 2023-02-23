@@ -5,11 +5,7 @@ from typing import Tuple, NamedTuple, Optional, Sequence
 from . import utils
 from . import infer
 from .compat import Final
-
-
-class SpeciesEnergies(NamedTuple):
-    species: Tensor
-    energies: Tensor
+from .structs import SpeciesEnergies
 
 
 class SpeciesCoordinates(NamedTuple):
@@ -82,7 +78,8 @@ class ANIModel(torch.nn.ModuleDict):
         return output
 
     def to_infer_model(self, use_mnp=True):
-        return infer.ANIInferModel(list(self.items()), use_mnp)
+        # infer is not type-checked
+        return infer.ANIInferModel(list(self.items()), use_mnp)  # type: ignore
 
 
 class Ensemble(torch.nn.ModuleList):
@@ -113,7 +110,8 @@ class Ensemble(torch.nn.ModuleList):
         return members_atomic_energies
 
     def to_infer_model(self, use_mnp=True):
-        return infer.BmmEnsemble(self, use_mnp)
+        # infer is not type-checked
+        return infer.BmmEnsemble(self, use_mnp)  # type: ignore
 
 
 class Sequential(torch.nn.ModuleList):

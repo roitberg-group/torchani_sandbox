@@ -7,10 +7,10 @@ import math
 import os
 import warnings
 import itertools
-from collections import defaultdict, Counter
-from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union
+from collections import Counter
+from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union, Mapping
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
-from .nn import SpeciesEnergies
+from .structs import SpeciesEnergies
 import numpy as np
 from .compat import tqdm
 
@@ -130,19 +130,6 @@ def cumsum_from_zero(input_: Tensor) -> Tensor:
     return cumsum
 
 
-def stack_with_padding(properties, padding):
-    output = defaultdict(list)
-    for p in properties:
-        for k, v in p.items():
-            output[k].append(torch.as_tensor(v))
-    for k, v in output.items():
-        if v[0].dim() == 0:
-            output[k] = torch.stack(v)
-        else:
-            output[k] = torch.nn.utils.rnn.pad_sequence(v, True, padding[k])
-    return output
-
-
 def broadcast_first_dim(properties):
     num_molecule = 1
     for k, v in properties.items():
@@ -159,7 +146,7 @@ def broadcast_first_dim(properties):
     return properties
 
 
-def pad_atomic_properties(properties: List[Dict[str, Tensor]],
+def pad_atomic_properties(properties: Sequence[Mapping[str, Tensor]],
                           padding_values: Optional[Dict[str, float]] = None) -> Dict[str, Tensor]:
     """Put a sequence of atomic properties together into single tensor.
 
@@ -489,6 +476,10 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
     MDN modes are not orthogonal, and normalized.
     MWN modes are orthonormal, but they correspond
     to mass weighted cartesian coordinates (x' = sqrt(m)x).
+
+    Imaginary frequencies are output as negative numbers.
+    Very small negative or positive frequencies may correspond to
+    translational, and rotational modes.
     """
     if unit == 'meV':
         unit_converter = sqrt_mhessian2milliev
@@ -511,8 +502,10 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
         raise ValueError('The input should contain only one molecule')
     mass_scaled_hessian = mass_scaled_hessian.squeeze(0)
     eigenvalues, eigenvectors = torch.linalg.eigh(mass_scaled_hessian)
-    angular_frequencies = eigenvalues.sqrt()
+    signs = torch.sign(eigenvalues)
+    angular_frequencies = eigenvalues.abs().sqrt()
     frequencies = angular_frequencies / (2 * math.pi)
+    frequencies = frequencies * signs
     # converting from sqrt(hartree / (amu * angstrom^2)) to cm^-1 or meV
     wavenumbers = unit_converter(frequencies)
 
@@ -536,7 +529,7 @@ def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
     return VibAnalysis(wavenumbers, modes, fconstants, rmasses)
 
 
-def get_atomic_masses(species):
+def get_atomic_masses(species, dtype=torch.float):
     r"""Convert a tensor of atomic numbers ("periodic table indices") into a tensor of atomic masses
 
     Atomic masses supported are the first 119 elements, and are taken from:
@@ -588,7 +581,7 @@ def get_atomic_masses(species):
            269.1338    , 278.156     , 281.165     , 281.166     , # noqa
            285.177     , 286.182     , 289.19      , 289.194     , # noqa
            293.204     , 293.208     , 294.214], # noqa
-        dtype=torch.double, device=species.device) # noqa
+        dtype=dtype, device=species.device) # noqa
     masses = default_atomic_masses[species]
     return masses
 

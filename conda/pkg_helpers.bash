@@ -11,15 +11,15 @@ setup_build_version() {
 }
 
 setup_conda_pytorch_constraint() {
-  export CONDA_PYTORCH_CONSTRAINT="- pytorch 1.9.1 *cuda11.1*"
+  export CONDA_PYTORCH_CONSTRAINT="- pytorch 1.12.1 *cuda11.3*"
 }
 
 setup_conda_cudatoolkit_constraint(){
-  export CONDA_CUDATOOLKIT_CONSTRAINT="- cudatoolkit 11.1.*"
+  export CONDA_CUDATOOLKIT_CONSTRAINT="- cudatoolkit 11.3.*"
 }
 
 setup_cuda_home() {
-  export CUDA_HOME=/usr/local/cuda-11.1
+  export CUDA_HOME=/usr/local/cuda/
   export PATH=${CUDA_HOME}/bin:$PATH
   export LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 }
