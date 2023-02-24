@@ -36,7 +36,6 @@ jobs:
     # try deploying to aiqm/torchani-test-docs
     - name: Set up environments
       run: |
-        [ ${{ matrix.tag }} == "push" ] || exit 0  # exit when build
         mkdir -p ~/.ssh
         echo ${{secrets.zasdfgbnm_bot_private_key}} | base64 -d > ~/.ssh/id_rsa
         chmod 0600 ~/.ssh/id_rsa
