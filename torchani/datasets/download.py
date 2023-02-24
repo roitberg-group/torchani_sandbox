@@ -35,7 +35,7 @@ def download_and_extract_archive(
         raise ValueError("Incorrect file type for {file_path}, expected .tar.gz")
 
     # extract
-    with tarfile.open(file_path, "r:gzip") as f:
+    with tarfile.open(file_path, "r:gz") as f:
         f.extractall(file_path.with_suffix(""))
     file_path.unlink()
 
