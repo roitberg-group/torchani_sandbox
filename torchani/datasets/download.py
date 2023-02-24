@@ -12,7 +12,7 @@ _MAX_HOPS = 3
 _CHUNK_SIZE = 1024 * 32
 
 
-def check_integrity(file_path: Path, md5: str) -> bool:
+def _check_integrity(file_path: Path, md5: str) -> bool:
     hasher = hashlib.md5()
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(_CHUNK_SIZE), b""):
@@ -20,24 +20,25 @@ def check_integrity(file_path: Path, md5: str) -> bool:
     return hasher.hexdigest() == md5
 
 
-def download_and_extract_archive(
+# expects a .tar.gz file
+def _download_and_extract_archive(
         base_url: str,
         file_name: str,
-        dest_root: Path,
+        dest_dir: Path,
 ) -> None:
-    file_path = dest_root / file_name
-    url = f"{base_url}{file_name}"
+    dest_dir.mkdir(exist_ok=True)
 
     # download
-    _download_file_from_url(url, file_path)
-
-    if not str(file_path).endswith(".tar.gz"):
-        raise ValueError("Incorrect file type for {file_path}, expected .tar.gz")
+    ar_file_path = dest_dir / file_name
+    url = f"{base_url}{file_name}"
+    _download_file_from_url(url, ar_file_path)
 
     # extract
-    with tarfile.open(file_path, "r:gz") as f:
-        f.extractall(file_path.with_suffix(""))
-    file_path.unlink()
+    with tarfile.open(ar_file_path, "r:gz") as f:
+        f.extractall(dest_dir)
+
+    # delete
+    ar_file_path.unlink()
 
 
 def _download_file_from_url(url: str, file_path: Path) -> None:
