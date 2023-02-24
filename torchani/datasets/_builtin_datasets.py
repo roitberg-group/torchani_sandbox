@@ -100,7 +100,7 @@ from typing import Optional, Any
 from collections import OrderedDict
 from copy import deepcopy
 
-from torchvision.datasets.utils import download_and_extract_archive, list_files, check_integrity
+from .download import download_and_extract_archive, check_integrity
 from .datasets import ANIDataset
 from ._annotations import StrPath
 from ..utils import tqdm
@@ -169,7 +169,7 @@ class _BaseBuiltinDataset(ANIDataset):
             self._maybe_download_hdf5_archive_and_check_integrity(root)
         else:
             self._check_hdf5_files_integrity(root)
-        dataset_paths = [Path(p).resolve() for p in list_files(root, suffix='.h5', prefix=True)]
+        dataset_paths = [p for p in sorted(root.iterdir()) if p.suffix == ".h5"]
 
         # Order dataset paths using the order given in "files and md5s"
         filenames_order = {Path(k).stem: j for j, k in enumerate(self._files_and_md5s.keys())}
@@ -187,7 +187,7 @@ class _BaseBuiltinDataset(ANIDataset):
         # (3) They have the correct checksum
         # If any of these conditions fails the function exits with a RuntimeError
         # other files such as tar.gz archives are neglected
-        present_files = [Path(f).resolve() for f in list_files(root, suffix='.h5', prefix=True)]
+        present_files = [p for p in sorted(root.iterdir()) if p.suffix == ".h5"]
         expected_file_names = set(self._files_and_md5s.keys())
         present_file_names = set([f.name for f in present_files])
         if not present_files:
@@ -208,10 +208,7 @@ class _BaseBuiltinDataset(ANIDataset):
         if root.is_dir() and list(root.iterdir()):
             self._check_hdf5_files_integrity(root)
             return
-        download_and_extract_archive(url=f'{_BASE_URL}{self._archive}', download_root=root, md5=None)
-        tarfile = root / self._archive
-        if tarfile.is_file():
-            tarfile.unlink()
+        download_and_extract_archive(base_url=_BASE_URL, file_name=self._archive, dest_root=root)
         self._check_hdf5_files_integrity(root)
 
 
