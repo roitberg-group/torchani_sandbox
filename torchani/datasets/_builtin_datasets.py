@@ -203,7 +203,7 @@ class _BaseBuiltinDataset(ANIDataset):
 
 
 class _ArchivedBuiltinDataset(_BaseBuiltinDataset):
-    def __init__(self, files, basis_set, functional, root: StrPath = _DEFAULT_DATA_PATH, download: bool = False, verbose: bool = True, **kwargs):
+    def __init__(self, files, basis_set, functional, root: StrPath = None, download: bool = False, verbose: bool = True, **kwargs):
         lot = f'{functional.lower()}-{basis_set.lower()}'
         if lot not in files.keys():
             raise ValueError(f"Unsupported functional-basis set combination, try one of {set(files.keys())}")
