@@ -73,7 +73,11 @@ __device__ __forceinline__ double mycos(double x) {
 }
 
 __device__ __forceinline__ float mycos(float x) {
-  return __cosf(x);
+#ifdef TORCHANI_OPT
+    return __cosf(x);
+#else
+    return cosf(x);
+#endif
 }
 
 __device__ __forceinline__ double mysin(double x) {
@@ -81,7 +85,11 @@ __device__ __forceinline__ double mysin(double x) {
 }
 
 __device__ __forceinline__ float mysin(float x) {
-  return __sinf(x);
+#ifdef TORCHANI_OPT
+    return __sinf(x);
+#else
+    return sinf(x);
+#endif
 }
 
 __device__ __forceinline__ double myexp(double x) {
@@ -89,7 +97,11 @@ __device__ __forceinline__ double myexp(double x) {
 }
 
 __device__ __forceinline__ float myexp(float x) {
-  return __expf(x);
+#ifdef TORCHANI_OPT
+    return __expf(x);
+#else
+    return expf(x);
+#endif
 }
 
 __device__ __forceinline__ double mypow(double x, double y) {
@@ -97,7 +109,11 @@ __device__ __forceinline__ double mypow(double x, double y) {
 }
 
 __device__ __forceinline__ float mypow(float x, float y) {
-  return __powf(x, y);
+#ifdef TORCHANI_OPT
+    return __powf(x, y);
+#else
+    return powf(x, y);
+#endif
 }
 
 __device__ __forceinline__ void mysincos(double x, double* sptr, double* cptr) {
@@ -106,7 +122,11 @@ __device__ __forceinline__ void mysincos(double x, double* sptr, double* cptr) {
 }
 
 __device__ __forceinline__ void mysincos(float x, float* sptr, float* cptr) {
-  __sincosf(x, sptr, cptr);
+#ifdef TORCHANI_OPT
+    __sincosf(x, sptr, cptr);
+#else
+    sincosf(x, sptr, cptr);
+#endif
   return;
 }
 

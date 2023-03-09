@@ -22,7 +22,7 @@ def getGpuName(device=None):
     pynvml.nvmlInit()
     h = pynvml.nvmlDeviceGetHandleByIndex(real_i)
     name = pynvml.nvmlDeviceGetName(h)
-    return name.decode("utf-8")
+    return name
 
 
 def synchronize(flag=False):
@@ -41,7 +41,7 @@ def checkgpu(device=None):
     h = pynvml.nvmlDeviceGetHandleByIndex(real_i)
     info = pynvml.nvmlDeviceGetMemoryInfo(h)
     name = pynvml.nvmlDeviceGetName(h)
-    print('   GPU Memory Used (nvidia-smi): {:7.1f}MB / {:.1f}MB ({})'.format(info.used / 1024 / 1024, info.total / 1024 / 1024, name.decode()))
+    print('   GPU Memory Used (nvidia-smi): {:7.1f}MB / {:.1f}MB ({})'.format(info.used / 1024 / 1024, info.total / 1024 / 1024, name))
     return f'{(info.used / 1024 / 1024):.1f}MB'
 
 
@@ -124,7 +124,8 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
                 if args.run_energy:
                     force = -torch.autograd.grad(energies.sum(), coordinates, create_graph=True, retain_graph=True)[0]
                 else:
-                    force = -torch.autograd.grad(aev.sum(), coordinates, create_graph=True, retain_graph=True)[0]
+                    # force = -torch.autograd.grad(aev.sum(), coordinates, create_graph=True, retain_graph=True)[0]
+                    force = -torch.autograd.grad(aev, coordinates, torch.ones_like(aev), create_graph=True, retain_graph=True)[0]
             except Exception as e:
                 alert(f" Force faild: {str(e)[:50]}...")
                 addSummaryLine(items)
