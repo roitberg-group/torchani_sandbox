@@ -38,7 +38,7 @@ CUAEV_DEBUG = '--cuaev-debug' in sys.argv
 if CUAEV_DEBUG:
     sys.argv.remove('--cuaev-debug')
 
-# compile cuaev with optimizations: e.g. intrinsics functions
+# compile cuaev with optimizations: e.g. intrinsics functions and use_fast_math flag
 CUAEV_OPT = '--cuaev-opt' in sys.argv
 if CUAEV_OPT:
     sys.argv.remove('--cuaev-opt')
@@ -96,7 +96,8 @@ def cuda_extension(build_all=False):
                 SMs.append(sm)
 
     nvcc_args = ['--expt-extended-lambda']
-    # nvcc_args.append('-use_fast_math')
+    if CUAEV_OPT:
+        nvcc_args.append('-use_fast_math')
     # nvcc_args.append('-Xptxas=-v')
 
     # use cub in a safe manner, see:
