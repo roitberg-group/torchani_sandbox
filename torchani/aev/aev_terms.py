@@ -4,8 +4,8 @@ import math
 from typing import Optional, Union
 from pathlib import Path
 from torch import Tensor
+from torch.jit import Final
 from .cutoffs import _parse_cutoff_fn
-from ..compat import Final
 
 state_dicts_path = Path(__file__).parent.parent.joinpath('resources/state_dicts/')
 
@@ -199,7 +199,10 @@ class StandardAngular(torch.nn.Module):
         fcj12 = self.cutoff_fn(distances12, self.cutoff)
         factor1 = ((1 + torch.cos(angles - self.ShfZ)) / 2)**self.Zeta
         factor2 = torch.exp(-self.EtaA * (distances12.sum(0) / 2 - self.ShfA)**2)
-        ret = 2 * factor1 * factor2 * fcj12.prod(0)
+        # Use `fcj12[0] * fcj12[1]` instead of `fcj12.prod(0)` to avoid the INFs/NaNs
+        # problem for smooth cutoff function, for more detail please check issue:
+        # https://github.com/roitberg-group/torchani_sandbox/issues/178
+        ret = 2 * factor1 * factor2 * (fcj12[0] * fcj12[1])
         # At this point, ret now has shape
         # (conformations x atoms, ?, ?, ?, ?) where ? depend on constants.
         # We then should flat the last 4 dimensions to view the subAEV as a two

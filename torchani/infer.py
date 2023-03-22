@@ -1,12 +1,14 @@
+# type: ignore
+# This file is too dynamic to type-check correctly
 import torch
 import warnings
 from . import utils
 from typing import Tuple, NamedTuple, Optional, List
 from torch import Tensor
-import importlib_metadata
+import importlib.metadata
 
 
-mnp_is_installed = 'torchani.mnp' in importlib_metadata.metadata(
+mnp_is_installed = 'torchani.mnp' in importlib.metadata.metadata(
     __package__.split('.')[0]).get_all('Provides')
 
 if mnp_is_installed:

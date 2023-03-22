@@ -1,4 +1,5 @@
 r"""Utilities for working with ANI Datasets"""
+import warnings
 from typing import List, Tuple, Optional, Dict
 
 import torch
@@ -24,6 +25,9 @@ def concatenate(source: ANIDataset,
     if source.grouping not in ['by_formula', 'by_num_atoms']:
         raise ValueError("Please regroup your dataset before concatenating")
 
+    if source.metadata:
+        warnings.warn("Source dataset has metadata which will not be copied.")
+
     with TemporaryLocation(source._first_subds._backend) as tmp_location:
         dest = ANIDataset(tmp_location,
                           create=True,
@@ -34,7 +38,7 @@ def concatenate(source: ANIDataset,
                       total=source.num_conformer_groups,
                       disable=not verbose):
             dest.append_conformers(k.split('/')[-1], v)
-        dest._first_subds._store.location = dest_location
+        dest._first_subds._store.location.root = dest_location
     # TODO this depends on the original stores being files, it should be
     # changed for generality
     if delete_originals:
@@ -42,7 +46,7 @@ def concatenate(source: ANIDataset,
                       desc='Deleting original store',
                       total=source.num_stores,
                       disable=not verbose):
-            subds._store.delete_location()
+            del subds._store.location.root
     return dest
 
 
@@ -153,5 +157,5 @@ def _fetch_and_delete_conformations(dataset: ANIDataset,
 # corresponding to the input keys, each of which has at most "max_split" len
 def _fetch_splitted(conformers: Conformers,
                     keys_to_split: Tuple[str, ...],
-                    max_split: int) -> Tuple[Tuple[Tensor, ...], ...]:
+                    max_split: int) -> Tuple[List[Tensor], ...]:
     return tuple(torch.split(conformers[k], max_split) for k in keys_to_split)
