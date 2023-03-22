@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import h5py
 import numpy as np
+import json
 import torch
 import torchani
 import unittest
@@ -9,9 +10,10 @@ import tempfile
 import warnings
 from copy import deepcopy
 from torchani.transforms import AtomicNumbersToIndices, SubtractSAE, Compose, calculate_saes
-from torchani.utils import PERIODIC_TABLE
+from torchani.utils import PERIODIC_TABLE, ATOMIC_NUMBERS
 from torchani.testing import TestCase
 from torchani.datasets import ANIDataset, ANIBatchedDataset, create_batched_dataset
+from torchani.datasets._builtin_datasets import _BUILTIN_DATASETS
 
 # Optional tests for zarr
 try:
@@ -19,6 +21,12 @@ try:
     ZARR_AVAILABLE = True
 except ImportError:
     ZARR_AVAILABLE = False
+
+try:
+    import pandas
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
 
 path = os.path.dirname(os.path.realpath(__file__))
 dataset_path = os.path.join(path, '../dataset/ani-1x/sample.h5')
@@ -62,7 +70,7 @@ class TestDatasetUtils(TestCase):
 
     def testFilterEnergyError(self):
         ds = self.test_ds_single
-        model = torchani.models.ANI1x(periodic_table_index=True)[0]
+        model = torchani.models.ANI1x()[0]
         out = torchani.datasets.utils.filter_by_high_energy_error(ds, model, threshold=1.0, delete_inplace=True)
         self.assertEqual(len(out[0]), 3)
         self.assertEqual(sum(len(c['coordinates']) for c in out[0]), 412)
@@ -73,14 +81,36 @@ class TestBuiltinDatasets(TestCase):
     def testSmallSample(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             ds = torchani.datasets.TestData(tmpdir, download=True)
-            self.assertEqual(ds.grouping, 'by_formula')
+            self.assertEqual(ds.grouping, 'by_num_atoms')
+
+    def testDownloadSmallSample(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            torchani.datasets.download_builtin_dataset('TestData', 'wb97x-631gd', tmpdir)
+            num_h5_files = len(list(Path(tmpdir).glob("*.h5")))
+            self.assertGreater(num_h5_files, 0)
 
     def testBuiltins(self):
-        classes = ['ANI1x', 'ANI2x', 'COMP6v1']
+        # all these have default levels of theory
+        classes = _BUILTIN_DATASETS
         for c in classes:
             with tempfile.TemporaryDirectory() as tmpdir:
                 with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
                     getattr(torchani.datasets, c)(tmpdir, download=False)
+
+        # these also have the B973c/def2mTZVP LoT
+        for c in ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2', 'AminoacidDimers']:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
+                    getattr(torchani.datasets, c)(tmpdir, download=False, basis_set='def2mTZVP', functional='B973c')
+
+        # these also have the wB97M-D3BJ/def2TZVPP LoT
+        for c in ['ANI1x', 'ANI2x', 'COMP6v1', 'COMP6v2']:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
+                    getattr(torchani.datasets, c)(tmpdir, download=False, basis_set='def2TZVPP', functional='wB97MD3BJ')
+                # Case insensitivity
+                with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
+                    getattr(torchani.datasets, c)(tmpdir, download=False, basis_set='DEF2tZvPp', functional='Wb97md3Bj')
 
 
 class TestFineGrainedShuffle(TestCase):
@@ -625,6 +655,41 @@ class TestANIDataset(TestCase):
             new_groups_copy['species'] = torch.ones((5, 6, 1), dtype=torch.long)
             ds.append_conformers('O6', new_groups_copy)
 
+    def testChunkedIteration(self):
+        ds = self._make_new_dataset()
+        # first we build numpy conformers with ints and str as species (both
+        # allowed)
+        conformers = dict()
+        for gn in self.torch_conformers.keys():
+            conformers[gn] = {k: v.detach().cpu().numpy()
+                                  for k, v in self.torch_conformers[gn].items()}
+
+        # Build the dataset using conformers
+        for k, v in conformers.items():
+            ds.append_conformers(k, v)
+
+        keys = {}
+        coords = []
+        for k, _, v in ds.chunked_numpy_items(max_size=10):
+            coords.append(torch.from_numpy(v['coordinates']))
+            keys.update({k})
+
+        keys_large = {}
+        coords_large = []
+        for k, _, v in ds.chunked_numpy_items(max_size=100000):
+            coords_large.append(torch.from_numpy(v['coordinates']))
+            keys_large.update({k})
+
+        keys_expect = {}
+        coords_expect = []
+        for k, v in ds.numpy_items():
+            coords_expect.append(torch.from_numpy(v['coordinates']))
+            keys_expect.update({k})
+        self.assertEqual(keys_expect, keys)
+        self.assertEqual(torch.cat(coords_expect), torch.cat(coords))
+        self.assertEqual(keys_expect, keys_large)
+        self.assertEqual(torch.cat(coords_expect), torch.cat(coords_large))
+
     def testAppendAndDeleteNumpyConformers(self):
         ds = self._make_new_dataset()
         # first we build numpy conformers with ints and str as species (both
@@ -642,7 +707,8 @@ class TestANIDataset(TestCase):
             ds.append_conformers(k, v)
         # Check that getters give the same result as what was input
         for k, v in ds.numpy_items(chem_symbols=True):
-            self.assertEqual(v, conformers_str[k])
+            for key in v.keys():
+                self.assertEqual(v[key], conformers_str[k][key])
         # Now we delete everything
         for k in conformers_str.keys():
             ds.delete_conformers(k)
@@ -678,6 +744,12 @@ class TestANIDataset(TestCase):
         ds.regroup_by_formula()
         for k, v in ds.items():
             self.assertEqual(v, new_groups[k])
+
+    def testMetadata(self):
+        ds = ANIDataset(locations=self.tmp_dir.name / Path('new.h5'), names="newfile", create=True)
+        meta = {'newfile': {'some metadata': 'metadata string', 'other metadata': 'other string'}}
+        ds.set_metadata(meta)
+        self.assertEqual(ds.metadata, meta)
 
     def testRegroupNumAtoms(self):
         ds = self._make_new_dataset()
@@ -765,6 +837,63 @@ class TestANIDataset(TestCase):
             self.assertEqual(set(v.keys()), {'species', 'coordinates', 'energies'})
         self.assertEqual(len(ds.items()), 3)
 
+    def testDummyPropertiesAlreadyPresent(self):
+        # creating dummy properties in a dataset that already has them does nothing
+        ds = ANIDataset(self.tmp_store_three_groups.name)
+        for k, v in ds.numpy_items(limit=1):
+            expect_coords = v['coordinates']
+        ds = ANIDataset(self.tmp_store_three_groups.name, dummy_properties={'coordinates': {'fill_value': 0}})
+        for k, v in ds.numpy_items(limit=1):
+            self.assertEqual(v['coordinates'], expect_coords)
+
+    def testDummyPropertiesRegroup(self):
+        # creating dummy properties in a dataset that already has them does nothing
+        ANIDataset(self.tmp_store_three_groups.name).regroup_by_num_atoms()
+        ds = ANIDataset(self.tmp_store_three_groups.name, dummy_properties={'charges': dict(), 'dipoles': dict()})
+        self.assertEqual(ds.properties, {'charges', 'dipoles', 'species', 'coordinates', 'energies'})
+        ds = ANIDataset(self.tmp_store_three_groups.name)
+        self.assertEqual(ds.properties, {'species', 'coordinates', 'energies'})
+
+    def testDummyPropertiesAppend(self):
+        # creating dummy properties in a dataset that already has them does nothing
+        ANIDataset(self.tmp_store_three_groups.name).regroup_by_num_atoms()
+        ds = ANIDataset(self.tmp_store_three_groups.name, dummy_properties={'charges': dict()})
+        ds.append_conformers("003", {'species': np.asarray([[1, 1, 1]], dtype=np.int64),
+                                     'energies': np.asarray([10.0], dtype=np.float64),
+                                     'coordinates': np.random.standard_normal((1, 3, 3)).astype(np.float32),
+                                     'charges': np.asarray([1], dtype=np.int64)})
+        ds = ANIDataset(self.tmp_store_three_groups.name)
+        self.assertEqual(ds.properties, {'species', 'coordinates', 'energies', 'charges'})
+
+    def testDummyPropertiesNotPresent(self):
+        charges_params = {'fill_value': 0, 'dtype': np.int64, 'extra_dims': tuple(), 'is_atomic': False}
+        dipoles_params = {'fill_value': 1, 'dtype': np.float64, 'extra_dims': (3,), 'is_atomic': True}
+        ANIDataset(self.tmp_store_three_groups.name).regroup_by_num_atoms()
+        ds = ANIDataset(self.tmp_store_three_groups.name, dummy_properties={'charges': charges_params, 'atomic_dipoles': dipoles_params})
+        self.assertEqual(ds.properties, {'species', 'coordinates', 'energies', 'charges', 'atomic_dipoles'})
+        for k, v in ds.numpy_items():
+            self.assertTrue((v['charges'] == 0).all())
+            self.assertTrue(v['charges'].dtype == np.int64)
+            self.assertEqual(v['charges'].shape, (v['species'].shape[0],))
+            self.assertTrue((v['atomic_dipoles'] == 1.0).all())
+            self.assertTrue(v['atomic_dipoles'].dtype == np.float64)
+            self.assertEqual(v['atomic_dipoles'].shape, v['species'].shape + (3,))
+            self.assertEqual(set(v.keys()), {'species', 'coordinates', 'energies', 'charges', 'atomic_dipoles'})
+
+        # renaming works as expected
+        ds.rename_properties({'charges': 'other_charges', 'atomic_dipoles': 'other_atomic_dipoles'})
+        self.assertEqual(ds.properties, {'species', 'coordinates', 'energies', 'other_charges', 'other_atomic_dipoles'})
+        for k, v in ds.numpy_items():
+            self.assertTrue((v['other_charges'] == 0).all())
+            self.assertTrue((v['other_atomic_dipoles'] == 1.0).all())
+            self.assertEqual(set(v.keys()), {'species', 'coordinates', 'energies', 'other_charges', 'other_atomic_dipoles'})
+
+        # deleting works as expected
+        ds.delete_properties(('other_charges', 'other_atomic_dipoles'))
+        self.assertEqual(ds.properties, {'species', 'coordinates', 'energies'})
+        for k, v in ds.numpy_items():
+            self.assertEqual(set(v.keys()), {'species', 'coordinates', 'energies'})
+
     def testIterConformers(self):
         ds = ANIDataset(self.tmp_store_three_groups.name)
         confs = []
@@ -807,19 +936,63 @@ class TestANIDatasetZarr(TestANIDataset):
         self.tmp_dir.cleanup()
 
     def testConvert(self):
+        self._testConvert('zarr')
+
+    def _testConvert(self, backend):
         ds = ANIDataset(self.tmp_store_three_groups.name)
-        ds.to_backend('h5py')
+        ds.to_backend('h5py', inplace=True)
         for d in ds.values():
             self.assertEqual(set(d.keys()), {'species', 'coordinates', 'energies'})
             self.assertEqual(d['coordinates'].shape[-1], 3)
             self.assertEqual(d['coordinates'].shape[0], d['energies'].shape[0])
         self.assertEqual(len(ds.values()), 3)
-        ds.to_backend('zarr')
+        ds.to_backend(backend, inplace=True)
         for d in ds.values():
             self.assertEqual(set(d.keys()), {'species', 'coordinates', 'energies'})
             self.assertEqual(d['coordinates'].shape[-1], 3)
             self.assertEqual(d['coordinates'].shape[0], d['energies'].shape[0])
         self.assertEqual(len(ds.values()), 3)
+
+
+@unittest.skipIf(not PANDAS_AVAILABLE, 'pandas not installed')
+class TestANIDatasetPandas(TestANIDatasetZarr):
+    def _make_random_test_data(self, numpy_conformers):
+        for j, (k, v) in enumerate(deepcopy(numpy_conformers).items()):
+            # Parquet does not support legacy format, so we tile the species and add
+            # a "grouping" attribute
+            numpy_conformers[k]['species'] = np.tile(numpy_conformers[k]['species'].reshape(1, -1), (self.num_conformers[j], 1))
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.tmp_store_one_group = tempfile.TemporaryDirectory(suffix='.pqdir', dir=self.tmp_dir.name)
+        self.tmp_store_three_groups = tempfile.TemporaryDirectory(suffix='.pqdir', dir=self.tmp_dir.name)
+        self.new_store_name = self.tmp_dir.name / Path('new.pqdir')
+
+        f1 = pandas.DataFrame()
+        f3 = pandas.DataFrame()
+        meta = {'grouping': 'by_formula',
+                'extra_dims': {'coordinates': (3,)},
+                'dtypes': {'coordinates': np.dtype(np.float32).name, 'species': np.dtype(np.int64).name, 'energies': np.dtype(np.float64).name}}
+        with open(Path(self.tmp_store_one_group.name) / Path(self.tmp_store_one_group.name).with_suffix('.json').name, 'x') as f:
+            json.dump(meta, f)
+
+        with open(Path(self.tmp_store_three_groups.name) / Path(self.tmp_store_three_groups.name).with_suffix('.json').name, 'x') as f:
+            json.dump(meta, f)
+
+        frames = []
+        for j, (k, g) in enumerate(numpy_conformers.items()):
+            num_conformations = g['species'].shape[0]
+            tmp_df = pandas.DataFrame()
+            tmp_df['group'] = pandas.Series([k] * num_conformations)
+            tmp_df['species'] = pandas.Series(np.vectorize(lambda x: ATOMIC_NUMBERS[x])(g['species'].astype(str)).tolist())
+            tmp_df['energies'] = pandas.Series(g['energies'])
+            tmp_df['coordinates'] = pandas.Series(g['coordinates'].reshape(num_conformations, -1).tolist())
+            frames.append(tmp_df)
+        f3 = pandas.concat(frames)
+        f1 = frames[0]
+        f1.to_parquet(Path(self.tmp_store_one_group.name) / Path(self.tmp_store_one_group.name).with_suffix('.pq').name)
+        f3.to_parquet(Path(self.tmp_store_three_groups.name) / Path(self.tmp_store_three_groups.name).with_suffix('.pq').name)
+
+    def testConvert(self):
+        self._testConvert('pq')
 
 
 class TestData(TestCase):

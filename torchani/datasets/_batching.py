@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Tuple, Dict, Optional, Sequence, List, Union, Collection
 from collections import OrderedDict
 
-import h5py
 import torch
 from torch import Tensor
 import numpy as np
@@ -16,6 +15,10 @@ import numpy as np
 from ..utils import pad_atomic_properties, cumsum_from_zero, PADDING, tqdm
 from .datasets import ANIDataset, ANIBatchedDataset
 from ._annotations import Conformers, StrPath, Transform
+from ._backends import _H5PY_AVAILABLE
+
+if _H5PY_AVAILABLE:
+    import h5py
 
 
 # TODO a batcher class would make this code much more clear
@@ -104,7 +107,7 @@ def create_batched_dataset(locations: Union[Collection[StrPath], StrPath, ANIDat
                         'padding': PADDING if padding is None else padding,
                         'shuffle': shuffle,
                         'shuffle_seed': shuffle_seed,
-                        'include_properties': include_properties if include_properties is not None else 'all',
+                        'include_properties': sorted(include_properties) if include_properties is not None else 'all',
                         'batch_size': batch_size,
                         'total_num_conformers': dataset.num_conformers,
                         'total_conformer_groups': dataset.num_conformer_groups}
@@ -141,7 +144,7 @@ def _divide_into_folds(conformer_indices: Tensor,
                         dest_path: Path,
                         folds: int,
                         rng: Optional[torch.Generator] = None,
-                        direct_cache: bool = False) -> Tuple[Tuple[Tensor, ...], 'OrderedDict[str, Path]']:
+                        direct_cache: bool = False) -> Tuple[List[Tensor], 'OrderedDict[str, Path]']:
 
     # the idea here is to work with "blocks" of size num_conformers / folds
     # cast to list for mypy
@@ -167,13 +170,13 @@ def _divide_into_folds(conformer_indices: Tensor,
     if not direct_cache:
         _create_split_paths(split_paths)
 
-    return tuple(conformer_splits), split_paths
+    return conformer_splits, split_paths
 
 
 def _divide_into_splits(conformer_indices: Tensor,
                         dest_path: Path,
                         splits: Dict[str, float],
-                        direct_cache: bool = False) -> Tuple[Tuple[Tensor, ...], 'OrderedDict[str, Path]']:
+                        direct_cache: bool = False) -> Tuple[List[Tensor], 'OrderedDict[str, Path]']:
     total_num_conformers = len(conformer_indices)
     split_sizes = OrderedDict([(k, int(total_num_conformers * v)) for k, v in splits.items()])
     split_paths = OrderedDict([(k, dest_path.joinpath(k)) for k in split_sizes.keys()])
@@ -210,7 +213,7 @@ def _create_split_paths(split_paths: 'OrderedDict[str, Path]') -> None:
 
 
 def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
-                              conformer_splits: Tuple[Tensor, ...],
+                              conformer_splits: List[Tensor],
                               inplace_transform: Optional[Transform],
                               file_format: str,
                               include_properties: Optional[Sequence[str]],
@@ -262,6 +265,8 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
             num_batch_indices_packets = len(all_batch_indices_packets)
 
             overall_batch_idx = 0
+            if direct_cache:
+                in_memory_batches: List[Conformers] = []
             for j, batch_indices_packet in enumerate(all_batch_indices_packets):
                 num_batches_in_packet = len(batch_indices_packet)
                 # Now first we cat and sort according to the first index in order to
@@ -310,9 +315,6 @@ def _save_splits_into_batches(split_paths: 'OrderedDict[str, Path]',
                 # The format of this is {'species': (batch1, batch2, ...), 'coordinates': (batch1, batch2, ...)}
                 batch_packet_dict = {k: torch.split(t[indices_to_unsort_batch_cat], batch_sizes)
                                      for k, t in batches_cat.items()}
-                if direct_cache:
-                    in_memory_batches: List[Conformers] = []
-
                 for packet_batch_idx in range(num_batches_in_packet):
                     batch = {k: v[packet_batch_idx] for k, v in batch_packet_dict.items()}
                     batch = inplace_transform(batch)
