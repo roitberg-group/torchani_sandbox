@@ -84,6 +84,12 @@ class AtomicQBCs(NamedTuple):
     energies: Tensor
     ae_stdev: Tensor
 
+class ForceQBCs(NamedTuple):
+    species: Tensor
+    energies: Tensor
+    mean_force: Tensor
+    stdev_force: Tensor
+
 class BuiltinModel(Module):
     r"""Private template for the builtin ANI models """
 
@@ -325,6 +331,27 @@ class BuiltinModel(Module):
 
         return AtomicQBCs(species_coordinates[0], atomic_energies, ae_stdev)
 
+    def force_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
+                   cell: Optional[Tensor] = None,
+                   pbc: Optional[Tensor] = None,
+                   average: bool = False) -> ForceQBCs:
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+        species_coordinates[1].requires_grad=True
+        #species_coordinates = self._maybe_convert_species(species_coordinates)     # This is only needed if periodic_table_index=False
+        members_energies = self.members_energies(species_coordinates, cell, pbc).energies
+        forces = []
+
+        for energy in members_energies:
+            derivative = torch.autograd.grad(energy,species_coordinates[1],retain_graph=True)[0]
+            force = -derivative
+            forces.append(force)
+        forces = torch.cat(forces, dim=0)
+        mean_force = forces.mean(0)
+        stdev_force = forces.std(0)
+        coefficient_variation = stdev_force / mean_force
+
+        return ForceQBCs(species_coordinates[0], members_energies, mean_force, stdev_force)
+        
     def __len__(self):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         return self.neural_networks.size
