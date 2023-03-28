@@ -245,7 +245,7 @@ class BuiltinModel(Module):
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species, members_energies = self.atomic_energies(species_coordinates, cell=cell, pbc=pbc, average=False)
-        return SpeciesEnergies(species, members_energies.sum(-1))
+        return SpeciesEnergies(species, members_energies.sum(-1)), members_energies
 
     @torch.jit.export
     def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
