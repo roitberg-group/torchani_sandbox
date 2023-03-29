@@ -338,13 +338,13 @@ class BuiltinModel(Module):
         species_coordinates[1].requires_grad = True
         # species_coordinates = self._maybe_convert_species(species_coordinates)     # This is only needed if periodic_table_index=False
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
-        forces = []
+        forces_list = []
 
         for energy in members_energies:
             derivative = torch.autograd.grad(energy, species_coordinates[1], retain_graph=True)[0]
             force = -derivative
-            forces.append(force)
-        forces = torch.cat(forces, dim=0)
+            forces_list.append(force)
+        forces = torch.cat(forces_list, dim=0)
         mean_force = forces.mean(0)
         stdev_force = forces.std(0, unbiased=unbiased)
 
