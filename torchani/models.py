@@ -310,7 +310,7 @@ class BuiltinModel(Module):
     def atomic_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
                     cell: Optional[Tensor] = None,
                     pbc: Optional[Tensor] = None,
-                    average: bool = False, 
+                    average: bool = False,
                     with_SAEs: bool = False,
                     unbiased: bool = True) -> AtomicQBCs:
         """
@@ -343,13 +343,13 @@ class BuiltinModel(Module):
                    average: bool = False,
                    unbiased: bool = True) -> ForceQBCs:
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        species_coordinates[1].requires_grad=True
+        species_coordinates[1].requires_grad = True
         # species_coordinates = self._maybe_convert_species(species_coordinates)     # This is only needed if periodic_table_index=False
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
         forces = []
 
         for energy in members_energies:
-            derivative = torch.autograd.grad(energy,species_coordinates[1],retain_graph=True)[0]
+            derivative = torch.autograd.grad(energy, species_coordinates[1], retain_graph=True)[0]
             force = -derivative
             forces.append(force)
         forces = torch.cat(forces, dim=0)
