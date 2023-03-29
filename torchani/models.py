@@ -344,7 +344,8 @@ class BuiltinModel(Module):
                    unbiased: bool = True) -> ForceQBCs:
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species_coordinates[1].requires_grad = True
-        # species_coordinates = self._maybe_convert_species(species_coordinates)     # This is only needed if periodic_table_index=False
+        if not self.periodic_table_index:
+            species_coordinates = self._maybe_convert_species(species_coordinates)     # This is only needed if periodic_table_index=False
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
         forces_list = []
 
