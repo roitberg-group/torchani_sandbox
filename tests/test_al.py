@@ -113,6 +113,42 @@ class TestALQBC(TestALAtomic):
         stdev_atomic_energies = atomic_energies.std(0, unbiased=True)
         self.assertEqual(stdev_atomic_energies, atomic_qbc)
 
+    def testForceQBC(self):
+        # Symmetric methane
+        _, members_energies, mean_force, stdev_force = self.model.force_qbcs((self.species, self.coordinates))
+        _, ani_members_energies = self.model.members_energies((self.species, self.coordinates))
+        forces = []
+        for energy in ani_members_energies:
+            derivative = torch.autograd.grad(energy,(self.species, self.coordinates)[1], retain_graph=True)[0]
+            force = -derivative
+            forces.append(force)
+        forces = torch.cat(forces, dim=0)
+        _mean_force = forces.mean(0)
+        _stdev_force = forces.std(0)
+        self.assertEqual(mean_force, _mean_force)
+        self.assertEqual(stdev_force, _stdev_force)
+
+        # Asymmetric methane
+        ch4_coord = torch.tensor([[[ 4.9725e-04, -2.3656e-02, -4.6554e-02],
+                                   [-9.4934e-01, -4.6713e-01, -2.1225e-01],
+                                   [-2.1828e-01,  6.4611e-01,  8.7319e-01],
+                                   [ 3.7291e-01,  6.5190e-01, -6.9571e-01],
+                                   [ 7.9173e-01, -6.8895e-01,  3.1410e-01]]],
+                                 dtype=torch.double,
+                                 device=self.device)
+        _, members_energies, mean_force, stdev_force = self.model.force_qbcs((self.species, ch4_coord))
+        _, ani_members_energies = self.model.members_energies((self.species, ch4_coord))
+        forces = []
+        for energy in ani_members_energies:
+            derivative = torch.autograd.grad(energy, (self.species, ch4_coord)[1], retain_graph=True)[0]
+            force = -derivative
+            forces.append(force)
+        forces = torch.cat(forces, dim=0)
+        _mean_force = forces.mean(0)
+        _stdev_force = forces.std(0)
+        self.assertEqual(mean_force, _mean_force)
+        self.assertEqual(stdev_force, _stdev_force)
+
 
 if __name__ == '__main__':
     unittest.main()
