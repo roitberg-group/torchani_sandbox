@@ -334,7 +334,7 @@ class BuiltinModel(Module):
     def atomic_stdev(self, species_coordinates: Tuple[Tensor, Tensor],
                     cell: Optional[Tensor] = None,
                     pbc: Optional[Tensor] = None,
-                    average: bool = False, 
+                    average: bool = False,
                     with_SAEs: bool = False,
                     unbiased: bool = True) -> AtomicStdev:
         """
