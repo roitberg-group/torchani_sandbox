@@ -310,8 +310,7 @@ class BuiltinModel(Module):
         Returns standard deviation in atomic energy predictions across the ensemble.
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        if not self.periodic_table_index:
-            species_coordinates = self._maybe_convert_species(species_coordinates)
+        species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         atomic_energies = self.neural_networks._atomic_energies(species_aevs)
 
@@ -337,8 +336,7 @@ class BuiltinModel(Module):
                    unbiased: bool = True) -> ForceQBCs:
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species_coordinates[1].requires_grad = True
-        if not self.periodic_table_index:
-            species_coordinates = self._maybe_convert_species(species_coordinates)     # This is only needed if periodic_table_index=False
+        species_coordinates = self._maybe_convert_species(species_coordinates)
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
         forces_list = []
 
