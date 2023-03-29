@@ -79,16 +79,19 @@ class SpeciesEnergiesQBC(NamedTuple):
     energies: Tensor
     qbcs: Tensor
 
+
 class AtomicQBCs(NamedTuple):
     species: Tensor
     energies: Tensor
     ae_stdev: Tensor
+
 
 class ForceQBCs(NamedTuple):
     species: Tensor
     energies: Tensor
     mean_force: Tensor
     stdev_force: Tensor
+
 
 class BuiltinModel(Module):
     r"""Private template for the builtin ANI models """
@@ -104,11 +107,12 @@ class BuiltinModel(Module):
                  periodic_table_index: bool = True):
 
         super().__init__()
-        # if periodic table index is True then it has been
-        # set by the user, so lets output a warning that this is the default
-        warnings.warn("The default is now to accept atomic numbers as indexes,"
-                      " do not set periodic_table_index=True."
-                      " if you need to accept raw indices set periodic_table_index=False")
+        if not periodic_table_index:
+            # if periodic table index is True then it has been
+            # set by the user, so lets output a warning that this is the default
+            warnings.warn("The default is now to accept atomic numbers as indices,"
+                          " do not set periodic_table_index=True."
+                          " if you need to accept raw indices set periodic_table_index=False")
 
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
@@ -301,10 +305,10 @@ class BuiltinModel(Module):
                     average: bool = False, 
                     with_SAEs: bool = False,
                     unbiased: bool = True) -> AtomicQBCs:
-        '''
-        Largely does the same thing as the atomic_energies function, but with a different set of default inputs. 
-        Returns standard deviation in atomic energy predictions across the ensemble. 
-        '''
+        """
+        Largely does the same thing as the atomic_energies function, but with a different set of default inputs.
+        Returns standard deviation in atomic energy predictions across the ensemble.
+        """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
@@ -321,17 +325,18 @@ class BuiltinModel(Module):
         # Want to return with GSAEs, but that can wait
         if with_SAEs:
             atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
-            #atomic_energies += self.energy_shifter.with_gsaes(species_coordinates[0], 'wb97x', '631gd')
+            # atomic_energies += self.energy_shifter.with_gsaes(species_coordinates[0], 'wb97x', '631gd')
 
         return AtomicQBCs(species_coordinates[0], atomic_energies, ae_stdev)
 
     def force_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
                    cell: Optional[Tensor] = None,
                    pbc: Optional[Tensor] = None,
-                   average: bool = False) -> ForceQBCs:
+                   average: bool = False,
+                   unbiased: bool = True) -> ForceQBCs:
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species_coordinates[1].requires_grad=True
-        #species_coordinates = self._maybe_convert_species(species_coordinates)     # This is only needed if periodic_table_index=False
+        # species_coordinates = self._maybe_convert_species(species_coordinates)     # This is only needed if periodic_table_index=False
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
         forces = []
 
@@ -341,7 +346,7 @@ class BuiltinModel(Module):
             forces.append(force)
         forces = torch.cat(forces, dim=0)
         mean_force = forces.mean(0)
-        stdev_force = forces.std(0)
+        stdev_force = forces.std(0, unbiased=unbiased)
 
         return ForceQBCs(species_coordinates[0], members_energies, mean_force, stdev_force)
 
