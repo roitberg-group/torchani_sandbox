@@ -344,7 +344,8 @@ class BuiltinModel(Module):
         with_SAEs returns the shifted atomic energies according to the model used
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        species_coordinates = self._maybe_convert_species(species_coordinates)
+        if not self.periodic_table_index:
+            species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         atomic_energies = self.neural_networks._atomic_energies(species_aevs)
 
