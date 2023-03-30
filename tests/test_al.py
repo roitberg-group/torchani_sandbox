@@ -177,7 +177,7 @@ class TestALQBC(TestALAtomic):
             derivative = torch.autograd.grad(energy, (self.species, self.coordinates)[1], retain_graph=True)[0]
             force = -derivative
             forces.append(force)
-        forces = torch.cat(forces, dim=0)
+        forces = self.model.members_forces((self.species, self.coordinates)).model_forces
         _mean_force = forces.mean(0)
         _stdev_force = forces.std(0)
         self.assertEqual(mean_force, _mean_force)
