@@ -356,7 +356,6 @@ class BuiltinModel(Module):
                    average: bool = False,
                    unbiased: bool = True) -> ForceQBCs:
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        species_coordinates[1].requires_grad = True
         _, members_forces = self.members_forces(species_coordinates, cell, pbc)
         mean_force = members_forces.mean(0)
         stdev_force = members_forces.std(0)
