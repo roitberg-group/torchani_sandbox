@@ -281,11 +281,11 @@ class BuiltinModel(Module):
                    average: bool = False,
                    unbiased: bool = True) -> SpeciesForces:
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        species_coordinates[1].requires_grad = True
+        coordinates = species_coordinates[1].requires_grad_()
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
         forces_list = []
         for energy in members_energies:
-            derivative = torch.autograd.grad(energy, species_coordinates[1], retain_graph=True)[0]
+            derivative = torch.autograd.grad(energy, coordinates, retain_graph=True)[0]
             force = -derivative
             forces_list.append(force)
         forces = torch.cat(forces_list, dim=0)
