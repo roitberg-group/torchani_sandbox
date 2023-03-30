@@ -93,6 +93,10 @@ class ForceQBCs(NamedTuple):
     stdev_force: Tensor
 
 
+class Forces(NamedTuple):
+    model_forces: Tensor
+
+
 class BuiltinModel(Module):
     r"""Private template for the builtin ANI models """
 
@@ -261,6 +265,22 @@ class BuiltinModel(Module):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species, members_energies = self.atomic_energies(species_coordinates, cell=cell, pbc=pbc, average=False)
         return SpeciesEnergies(species, members_energies.sum(-1))
+
+    def members_forces(self, species_coordinates: Tuple[Tensor, Tensor],
+                   cell: Optional[Tensor] = None,
+                   pbc: Optional[Tensor] = None,
+                   average: bool = False,
+                   unbiased: bool = True) -> Forces:
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+        species_coordinates[1].requires_grad = True
+        members_energies = self.members_energies(species_coordinates, cell, pbc).energies
+        forces_list = []
+        for energy in members_energies:
+            derivative = torch.autograd.grad(energy, species_coordinates[1], retain_graph=True)[0]
+            force = -derivative
+            forces_list.append(force)
+        forces = torch.cat(forces_list, dim=0)
+        return Forces(forces)
 
     @torch.jit.export
     def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
