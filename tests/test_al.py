@@ -60,6 +60,18 @@ class TestALQBC(TestALAtomic):
                               device=self.device)
         self.assertEqual(energies[0], expect)
 
+    def testMembersForces(self):
+        # Symmetric methane
+        forces = self.model.members_forces((self.species, self.coordinates))
+        members_energies = self.model.members_energies((self.species, self.coordinates)).energies
+        forces_list = []
+        for energy in members_energies:
+            derivative = torch.autograd.grad(energy, self.coordinates, retain_graph=True)[0]
+            force = -derivative
+            forces_list.append(force)
+        _forces = torch.cat(forces_list, dim=0)
+        self.assertEqual(forces[0], _forces)
+
     def testQBC(self):
         # fully symmetric methane
         _, _, qbc = self.model.energies_qbcs((self.species, self.coordinates))
