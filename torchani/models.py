@@ -93,7 +93,8 @@ class ForceQBCs(NamedTuple):
     stdev_force: Tensor
 
 
-class Forces(NamedTuple):
+class SpeciesForces(NamedTuple):
+    species: Tensor
     model_forces: Tensor
 
 
@@ -270,7 +271,7 @@ class BuiltinModel(Module):
                    cell: Optional[Tensor] = None,
                    pbc: Optional[Tensor] = None,
                    average: bool = False,
-                   unbiased: bool = True) -> Forces:
+                   unbiased: bool = True) -> SpeciesForces:
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species_coordinates[1].requires_grad = True
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
@@ -280,7 +281,7 @@ class BuiltinModel(Module):
             force = -derivative
             forces_list.append(force)
         forces = torch.cat(forces_list, dim=0)
-        return Forces(forces)
+        return SpeciesForces(species_coordinates[0], forces)
 
     @torch.jit.export
     def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -356,16 +357,10 @@ class BuiltinModel(Module):
                    unbiased: bool = True) -> ForceQBCs:
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species_coordinates[1].requires_grad = True
+        _, members_forces = self.members_forces(species_coordinates, cell, pbc)
+        mean_force = members_forces.mean(0)
+        stdev_force = members_forces.std(0)
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
-        forces_list = []
-
-        for energy in members_energies:
-            derivative = torch.autograd.grad(energy, species_coordinates[1], retain_graph=True)[0]
-            force = -derivative
-            forces_list.append(force)
-        forces = torch.cat(forces_list, dim=0)
-        mean_force = forces.mean(0)
-        stdev_force = forces.std(0, unbiased=unbiased)
 
         return ForceQBCs(species_coordinates[0], members_energies, mean_force, stdev_force)
 
