@@ -86,16 +86,17 @@ class AtomicQBCs(NamedTuple):
     ae_stdev: Tensor
 
 
+class SpeciesForces(NamedTuple):
+    species: Tensor
+    energies: Tensor
+    model_forces: Tensor
+
+
 class ForceQBCs(NamedTuple):
     species: Tensor
     energies: Tensor
     mean_force: Tensor
     stdev_force: Tensor
-
-
-class SpeciesForces(NamedTuple):
-    species: Tensor
-    model_forces: Tensor
 
 
 class BuiltinModel(Module):
@@ -269,9 +270,7 @@ class BuiltinModel(Module):
 
     def members_forces(self, species_coordinates: Tuple[Tensor, Tensor],
                    cell: Optional[Tensor] = None,
-                   pbc: Optional[Tensor] = None,
-                   average: bool = False,
-                   unbiased: bool = True) -> SpeciesForces:
+                   pbc: Optional[Tensor] = None) -> SpeciesForces:
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         coordinates = species_coordinates[1].requires_grad_()
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
@@ -281,7 +280,7 @@ class BuiltinModel(Module):
             force = -derivative
             forces_list.append(force)
         forces = torch.cat(forces_list, dim=0)
-        return SpeciesForces(species_coordinates[0], forces)
+        return SpeciesForces(species_coordinates[0], members_energies, forces)
 
     @torch.jit.export
     def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -356,7 +355,7 @@ class BuiltinModel(Module):
                    average: bool = False,
                    unbiased: bool = True) -> ForceQBCs:
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        _, members_forces = self.members_forces(species_coordinates, cell, pbc)
+        _, members_energies, members_forces = self.members_forces(species_coordinates, cell, pbc)
         mean_force = members_forces.mean(0)
         stdev_force = members_forces.std(0)
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
