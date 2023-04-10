@@ -73,7 +73,7 @@ class Potential(torch.nn.Module):
 class PairwisePotential(Potential):
     r"""Base class for all pairwise potentials
 
-    Subclasses must override calculate_raw_pair_energy
+    Subclasses must override pair_energies
     """
     def __init__(
         self,
@@ -86,23 +86,24 @@ class PairwisePotential(Potential):
         super().__init__(cutoff=cutoff, symbols=symbols)
         self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
 
-    def calculate_raw_pair_energy(self,
-                          element_idxs: Tensor,
-                          neighbor_idxs: Tensor,
-                          distances: Tensor,
-                          diff_vectors: Optional[Tensor] = None,
-                          ghost_flags: Optional[Tensor] = None) -> Tensor:
-        r"""Calculate the raw energy of all pairs of neighbors
+    def pair_energies(
+        self,
+        element_idxs: Tensor,
+        neighbor_idxs: Tensor,
+        distances: Tensor,
+        diff_vectors: Optional[Tensor] = None,
+    ) -> Tensor:
+        r"""Calculate the raw (non-smoothed) energy of all pairs of neighbors
 
         This function must be overriden by subclasses
         If neighbor_idxs is shape (2, P)
         This must return a tensor of shape (P,)"""
         raise NotImplementedError
 
-    # This function wraps calculate_raw_pair_energy
+    # This function wraps calculate_pair_energies
     # It potentially smooths out the energies using a cutoff function,
     # and it scales pair energies of ghost atoms by 1/2
-    def _calculate_pair_energy(
+    def _calculate_pair_energies_wrapper(
         self,
         element_idxs: Tensor,
         neighbor_idxs: Tensor,
@@ -116,15 +117,15 @@ class PairwisePotential(Potential):
         assert neighbor_idxs.ndim == 2, "atom_index12 should be 2 dimensional"
         assert len(distances) == neighbor_idxs.shape[1]
 
-        pair_energies = self.calculate_pair_energy(
+        pair_energies = self.pair_energies(
             element_idxs,
             neighbor_idxs,
             distances,
             diff_vectors,
         )
 
-        if self.cutoff_function is not None:
-            pair_energies *= self.cutoff_function(
+        if self.cutoff_fn is not None:
+            pair_energies *= self.cutoff_fn(
                 distances,
                 self.cutoff
             )
@@ -145,7 +146,7 @@ class PairwisePotential(Potential):
         ghost_flags: Optional[Tensor] = None
     ) -> Tensor:
 
-        pair_energies = self._calculate_pair_energy(
+        pair_energies = self._calculate_pair_energies_wrapper(
             element_idxs,
             neighbor_idxs,
             distances,
@@ -171,7 +172,7 @@ class PairwisePotential(Potential):
         ghost_flags: Optional[Tensor] = None,
         average: bool = False,
     ) -> Tensor:
-        pair_energies = self._calculate_pair_energy(
+        pair_energies = self._calculate_pair_energies_wrapper(
             element_idxs,
             neighbor_idxs,
             distances,

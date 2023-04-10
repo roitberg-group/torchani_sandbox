@@ -9,7 +9,7 @@ from torchani.repulsion import RepulsionXTB, StandaloneRepulsionXTB
 
 class TestRepulsion(TestCase):
     def setUp(self):
-        self.rep = RepulsionXTB(5.2)
+        self.rep = RepulsionXTB(cutoff=5.2)
         self.sa_rep = StandaloneRepulsionXTB(cutoff=5.2, neighborlist_cutoff=5.2)
 
     def testRepulsionXTB(self):
