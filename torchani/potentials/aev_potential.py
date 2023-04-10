@@ -20,7 +20,7 @@ class AEVPotential(Potential):
         # NOTE: symbols that are not elements is supported for backwards
         # compatibility, since ANIModel supports arbitrary ordered dicts
         # as inputs.
-        symbols = (k if k in PERIODIC_TABLE else "Dummy" for k in any_nn)
+        symbols = tuple(k if k in PERIODIC_TABLE else "Dummy" for k in any_nn)
         super().__init__(cutoff=aev_computer.radial_terms.cutoff, symbols=symbols)
         self._aev_computer = aev_computer
         self._neural_networks = neural_networks
@@ -30,7 +30,7 @@ class AEVPotential(Potential):
         element_idxs: Tensor,
         neighbor_idxs: Tensor,
         distances: Tensor,
-        diff_vectors: Tensor,
+        diff_vectors: Optional[Tensor] = None,
         ghost_flags: Optional[Tensor] = None,
     ) -> Tensor:
         assert diff_vectors is not None, "AEV potential needs diff vectors always"

@@ -36,9 +36,14 @@ class RepulsionXTB(PairwisePotential):
         super().__init__(**pairwise_kwargs)
 
         if alpha is None:
-            alpha = torch.tensor(alpha_constants)[self.atomic_numbers]
+            _alpha = torch.tensor(alpha_constants)[self.atomic_numbers]
+        else:
+            _alpha = torch.tensor(alpha)
         if y_eff is None:
-            y_eff = torch.tensor(y_eff_constants)[self.atomic_numbers]
+            _y_eff = torch.tensor(y_eff_constants)[self.atomic_numbers]
+        else:
+            _y_eff = torch.tensor(y_eff)
+
         if k_rep_ab is None:
             k_rep_ab = torch.full((_ELEMENTS_NUM + 1, _ELEMENTS_NUM + 1), 1.5)
             k_rep_ab[1, 1] = 1.0
@@ -46,16 +51,14 @@ class RepulsionXTB(PairwisePotential):
 
         # Validation
         assert k_rep_ab is not None
-        assert alpha is not None
-        assert y_eff is not None
         assert k_rep_ab.shape[0] == len(self.atomic_numbers)
         assert k_rep_ab.shape[1] == len(self.atomic_numbers)
-        assert len(y_eff) == len(self.atomic_numbers)
-        assert len(alpha) == len(self.atomic_numbers)
+        assert len(_y_eff) == len(self.atomic_numbers)
+        assert len(_alpha) == len(self.atomic_numbers)
 
         # Pre-calculate pairwise parameters for efficiency
-        self.register_buffer('y_ab', torch.outer(y_eff, y_eff))
-        self.register_buffer('sqrt_alpha_ab', torch.sqrt(torch.outer(alpha, alpha)))
+        self.register_buffer('y_ab', torch.outer(_y_eff, _y_eff))
+        self.register_buffer('sqrt_alpha_ab', torch.sqrt(torch.outer(_alpha, _alpha)))
         self.register_buffer('k_rep_ab', k_rep_ab)
         self.ANGSTROM_TO_BOHR = ANGSTROM_TO_BOHR
 
