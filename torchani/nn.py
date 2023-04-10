@@ -1,15 +1,12 @@
 import torch
 from collections import OrderedDict
 from torch import Tensor
+from torch.jit import Final
+
 from typing import Tuple, NamedTuple, Optional, Sequence
 from . import utils
 from . import infer
-from .compat import Final
-
-
-class SpeciesEnergies(NamedTuple):
-    species: Tensor
-    energies: Tensor
+from .structs import SpeciesEnergies
 
 
 class SpeciesCoordinates(NamedTuple):
@@ -82,7 +79,8 @@ class ANIModel(torch.nn.ModuleDict):
         return output
 
     def to_infer_model(self, use_mnp=True):
-        return infer.ANIInferModel(list(self.items()), use_mnp)
+        # infer is not type-checked
+        return infer.ANIInferModel(list(self.items()), use_mnp)  # type: ignore
 
 
 class Ensemble(torch.nn.ModuleList):
@@ -113,7 +111,8 @@ class Ensemble(torch.nn.ModuleList):
         return members_atomic_energies
 
     def to_infer_model(self, use_mnp=True):
-        return infer.BmmEnsemble(self, use_mnp)
+        # infer is not type-checked
+        return infer.BmmEnsemble(self, use_mnp)  # type: ignore
 
 
 class Sequential(torch.nn.ModuleList):
@@ -128,12 +127,6 @@ class Sequential(torch.nn.ModuleList):
         for module in self:
             input_ = module(input_, cell=cell, pbc=pbc)
         return input_
-
-
-class Gaussian(torch.nn.Module):
-    """Gaussian activation"""
-    def forward(self, x: Tensor) -> Tensor:
-        return torch.exp(- x * x)
 
 
 class FittedSoftplus(torch.nn.Module):
