@@ -6,7 +6,6 @@ from torchani.models import _fetch_state_dict
 from torchani.testing import TestCase
 from torchani.repulsion import RepulsionXTB, StandaloneRepulsionXTB
 
-CUDA = torch.cuda.is_available()
 
 class TestRepulsion(TestCase):
     def setUp(self):
