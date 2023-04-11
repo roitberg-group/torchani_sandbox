@@ -362,8 +362,8 @@ class BuiltinModelPairInteractions(BuiltinModel):
         **kwargs
     ):
         super().__init__(*args, **kwargs)
-        potentials: List[Potential] = [AEVPotential(self.aev_computer, self.neural_networks)]
-        potentials.extend(pairwise_potentials)
+        potentials: List[Potential] = list(pairwise_potentials)
+        potentials.append(AEVPotential(self.aev_computer, self.neural_networks))
 
         # We want to check the cutoffs of the potentials, and sort them
         # in order of decreasing cutoffs. this way the potential with the LARGEST
