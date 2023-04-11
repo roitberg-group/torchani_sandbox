@@ -22,8 +22,8 @@ class AEVPotential(Potential):
         # as inputs.
         symbols = tuple(k if k in PERIODIC_TABLE else "Dummy" for k in any_nn)
         super().__init__(cutoff=aev_computer.radial_terms.cutoff, symbols=symbols)
-        self._aev_computer = aev_computer
-        self._neural_networks = neural_networks
+        self.aev_computer = aev_computer
+        self.neural_networks = neural_networks
 
     def forward(
         self,
@@ -34,13 +34,13 @@ class AEVPotential(Potential):
         ghost_flags: Optional[Tensor] = None,
     ) -> Tensor:
         assert diff_vectors is not None, "AEV potential needs diff vectors always"
-        aevs = self._aev_computer._compute_aev(
+        aevs = self.aev_computer._compute_aev(
             element_idxs=element_idxs,
             neighbor_idxs=neighbor_idxs,
             distances=distances,
             diff_vectors=diff_vectors,
         )
-        energies = self._neural_networks((element_idxs, aevs)).energies
+        energies = self.neural_networks((element_idxs, aevs)).energies
         return energies
 
     def atomic_energies(
@@ -52,13 +52,13 @@ class AEVPotential(Potential):
         ghost_flags: Optional[Tensor] = None,
         average: bool = False,
     ) -> Tensor:
-        aevs = self._aev_computer._compute_aev(
+        aevs = self.aev_computer._compute_aev(
             element_idxs=element_idxs,
             neighbor_idxs=neighbor_idxs,
             distances=distances,
             diff_vectors=diff_vectors,
         )
-        atomic_energies = self._neural_networks._atomic_energies((element_idxs, aevs))
+        atomic_energies = self.neural_networks._atomic_energies((element_idxs, aevs))
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
         if average:
