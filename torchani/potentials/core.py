@@ -187,9 +187,9 @@ class PairwisePotential(Potential):
             dtype=pair_energies.dtype,
             device=pair_energies.device
         )
-        atomic_energies.index_add_(0, pair_energies / 2, neighbor_idxs[0])
-        atomic_energies.index_add_(0, pair_energies / 2, neighbor_idxs[1])
+        atomic_energies.index_add_(0, neighbor_idxs[0], pair_energies / 2)
+        atomic_energies.index_add_(0, neighbor_idxs[1], pair_energies / 2)
         atomic_energies = atomic_energies.view(molecules_num, atoms_num)
-        if average:
+        if not average:
             return atomic_energies.unsqueeze(0)
         return atomic_energies

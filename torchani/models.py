@@ -445,7 +445,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
                 diff_vectors=neighbor_data.diff_vectors,
             )
 
-        atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0]).unsqueeze(0)
+        atomic_energies += self.energy_shifter._atomic_saes(element_idxs).unsqueeze(0)
 
         if average:
             atomic_energies = atomic_energies.mean(dim=0)
