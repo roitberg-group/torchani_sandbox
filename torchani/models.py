@@ -363,7 +363,9 @@ class BuiltinModelPairInteractions(BuiltinModel):
     ):
         super().__init__(*args, **kwargs)
         potentials: List[Potential] = list(pairwise_potentials)
-        potentials.append(AEVPotential(self.aev_computer, self.neural_networks))
+        aev_potential = AEVPotential(self.aev_computer, self.neural_networks)
+        self.size = aev_potential.size
+        potentials.append(aev_potential)
 
         # We want to check the cutoffs of the potentials, and sort them
         # in order of decreasing cutoffs. this way the potential with the LARGEST
@@ -425,7 +427,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
         # some potentials output atomic energies with shape (M, N, A), where
         # M is all models in the ensemble
         atomic_energies = torch.zeros(
-            (1, element_idxs.shape[0], element_idxs.shape[1]),
+            (self.size, element_idxs.shape[0], element_idxs.shape[1]),
             dtype=coordinates.dtype,
             device=coordinates.device
         )
