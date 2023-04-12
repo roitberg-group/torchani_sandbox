@@ -1,4 +1,5 @@
 import torch
+import math
 from collections import OrderedDict
 from torch import Tensor
 from torch.jit import Final
@@ -7,11 +8,43 @@ from typing import Tuple, NamedTuple, Optional, Sequence
 from . import utils
 from . import infer
 from .structs import SpeciesEnergies
+from .utils import PERIODIC_TABLE, ATOMIC_NUMBERS
 
 
 class SpeciesCoordinates(NamedTuple):
     species: Tensor
     coordinates: Tensor
+
+
+class AtomicModule(torch.nn.Module):
+    r"""Base class for all modules that support a limited number of chemical symbols"""
+    def __init__(
+        self,
+        *args,
+        name: Optional[str] = None,
+        cutoff: float = math.inf,
+        symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
+        **kwargs
+    ):
+        super().__init__()
+        self.atomic_numbers = torch.tensor(
+            [ATOMIC_NUMBERS[e] for e in symbols],
+            dtype=torch.long
+        )
+        self.cutoff = cutoff
+        self.name = name if name is not None else type(self).__name__
+
+    @torch.jit.unused
+    def get_chemical_symbols(self) -> Tuple[str, ...]:
+        return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)
+
+
+class IndentityAtomicModule(AtomicModule):
+    def forward(
+        self,
+        x: Tensor,
+    ) -> Tensor:
+        return x
 
 
 class ANIModel(torch.nn.ModuleDict):

@@ -1,13 +1,16 @@
+import math
+from typing import Sequence, Union, Optional
+
 import torch
-from typing import Sequence, Union, Tuple, Optional
 from torch import Tensor
 from torch.jit import Final
 
-from torchani.utils import ATOMIC_NUMBERS, PERIODIC_TABLE
+from torchani.nn import AtomicModule, IdentityAtomicModule
 from torchani.aev.cutoffs import _parse_cutoff_fn
+from torchani.aev.neighbors import rescreen_with_cutoff
 
 
-class Potential(torch.nn.Module):
+class Potential(AtomicModule):
     r"""Base class for all atomic potentials
 
     Potentials may be many-body potentials or pairwise potentials
@@ -15,20 +18,14 @@ class Potential(torch.nn.Module):
     """
 
     cutoff: Final[float]
-    atomic_numbers: Tensor
 
     def __init__(self,
                  *args,
-                 cutoff: float = 5.2,
+                 cutoff: float = math.inf,
                  symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
+                 name: Optional[str] = None,
                  **kwargs):
-        super().__init__()
-        self.atomic_numbers = torch.tensor([ATOMIC_NUMBERS[e] for e in symbols], dtype=torch.long)
-        self.cutoff = cutoff
-
-    @torch.jit.unused
-    def get_chemical_symbols(self) -> Tuple[str, ...]:
-        return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)
+        super().__init__(symbols=symbols, cutoff=cutoff, name=name)
 
     def forward(
         self,
@@ -73,37 +70,41 @@ class Potential(torch.nn.Module):
 class PairwisePotential(Potential):
     r"""Base class for all pairwise potentials
 
-    Subclasses must override pair_energies
+    Subclasses must override 'pair_energies'
     """
     def __init__(
         self,
         *args,
-        cutoff: float = 5.2,
+        cutoff: float = math.inf,
         symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
         cutoff_fn: Union[str, torch.nn.Module] = 'smooth',
+        name: Optional[str] = None,
         **kwargs
     ):
-        super().__init__(cutoff=cutoff, symbols=symbols)
+        super().__init__(cutoff=cutoff, symbols=symbols, name=name)
         self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
 
-    def pair_energies(
+    def raw_pair_energies(
         self,
         element_idxs: Tensor,
         neighbor_idxs: Tensor,
         distances: Tensor,
         diff_vectors: Optional[Tensor] = None,
     ) -> Tensor:
-        r"""Calculate the raw (non-smoothed) energy of all pairs of neighbors
+        r"""Calculate the raw (non-smoothed with cutoff function) energy of all pairs of neighbors
 
-        This function must be overriden by subclasses
-        If neighbor_idxs is shape (2, P)
+        element_idxs is shape (N, A)
+        neighbor_idxs is shape (P,)
+        distances is shape (P,)
+        diff_vectors is shape (P, 3)
+
         This must return a tensor of shape (P,)"""
         raise NotImplementedError
 
-    # This function wraps calculate_pair_energies
-    # It potentially smooths out the energies using a cutoff function,
+    # This function wraps raw_pair_energies
+    # It smooths out the energies using a cutoff function,
     # and it scales pair energies of ghost atoms by 1/2
-    def _calculate_pair_energies_wrapper(
+    def pair_energies(
         self,
         element_idxs: Tensor,
         neighbor_idxs: Tensor,
@@ -117,12 +118,13 @@ class PairwisePotential(Potential):
         assert neighbor_idxs.ndim == 2, "atom_index12 should be 2 dimensional"
         assert len(distances) == neighbor_idxs.shape[1]
 
-        pair_energies = self.pair_energies(
+        pair_energies = self.raw_pair_energies(
             element_idxs,
             neighbor_idxs,
             distances,
             diff_vectors,
         )
+        assert pair_energies.shape == neighbor_idxs.shape, "raw_pair_energies must return a tensor with the same shape as neighbor_idxs"
 
         if self.cutoff_fn is not None:
             pair_energies *= self.cutoff_fn(
@@ -145,8 +147,8 @@ class PairwisePotential(Potential):
         diff_vectors: Optional[Tensor] = None,
         ghost_flags: Optional[Tensor] = None
     ) -> Tensor:
-
-        pair_energies = self._calculate_pair_energies_wrapper(
+        molecules_num = element_idxs.shape[0]
+        pair_energies = self.pair_energies(
             element_idxs,
             neighbor_idxs,
             distances,
@@ -154,11 +156,11 @@ class PairwisePotential(Potential):
             ghost_flags,
         )
         energies = torch.zeros(
-            element_idxs.shape[0],
+            molecules_num,
             dtype=pair_energies.dtype,
             device=pair_energies.device
         )
-        molecule_indices = torch.div(neighbor_idxs[0], element_idxs.shape[1], rounding_mode='floor')
+        molecule_indices = torch.div(neighbor_idxs[0], molecules_num, rounding_mode='floor')
         energies.index_add_(0, molecule_indices, pair_energies)
         return energies
 
@@ -172,7 +174,7 @@ class PairwisePotential(Potential):
         ghost_flags: Optional[Tensor] = None,
         average: bool = False,
     ) -> Tensor:
-        pair_energies = self._calculate_pair_energies_wrapper(
+        pair_energies = self.pair_energies(
             element_idxs,
             neighbor_idxs,
             distances,
@@ -193,3 +195,69 @@ class PairwisePotential(Potential):
         if not average:
             return atomic_energies.unsqueeze(0)
         return atomic_energies
+
+
+class ScaledPairwisePotential(PairwisePotential):
+    def __init__(
+        self,
+        *args,
+        cutoff: float = math.inf,
+        symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
+        cutoff_fn: Union[str, torch.nn.Module] = 'smooth',
+        name: Optional[str] = None,
+        scaler: Optional[AtomicModule] = None,
+        **kwargs,
+    ):
+        super().__init__(cutoff=cutoff, symbols=symbols, name=name, cutoff_fn=cutoff_fn)
+        if scaler is None:
+            scaler = IdentityAtomicModule()
+        self.scaler = scaler
+        self.scaler.name = name
+
+    def scale_with_factors(
+        self,
+        factors: Tensor,
+        neighbor_idxs: Tensor,
+        unscaled_pair_energies: Tensor,
+    ) -> Tensor:
+        # by default the scaling is
+        # F_ij = f_i * f_j
+        # E_ij = F_ij * U_ij
+        # shape of factors is (N, A,)
+        # shape of neighbor_idxs is (2, P)
+        # shape of pair_energies is (P,)
+        return factors.flatten()[neighbor_idxs].prod(0) * unscaled_pair_energies
+
+    def pair_energies(
+        self,
+        element_idxs: Tensor,
+        neighbor_idxs: Tensor,
+        distances: Tensor,
+        diff_vectors: Optional[Tensor] = None,
+        ghost_flags: Optional[Tensor] = None
+    ) -> Tensor:
+        unscaled_pair_energies = super().pair_energies(
+            element_idxs,
+            neighbor_idxs,
+            distances,
+            diff_vectors,
+            ghost_flags,
+        )
+        if self.scaler.cutoff < self.cutoff:
+            neighbor_data = rescreen_with_cutoff(
+                self.scaler.cutoff,
+                neighbor_idxs,
+                distances,
+                diff_vectors,
+            )
+            neighbor_idxs = neighbor_data.neighbor_idxs
+            distances = neighbor_data.distances
+            diff_vectors = neighbor_data.diff_vectors
+        factors = self.scaler(
+            element_idxs,
+            neighbor_idxs,
+            distances,
+            diff_vectors,
+            ghost_flags,
+        )
+        return self.scale_with_factors(factors, neighbor_idxs, unscaled_pair_energies)
