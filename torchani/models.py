@@ -83,7 +83,7 @@ class SpeciesEnergiesQBC(NamedTuple):
 class AtomicQBCs(NamedTuple):
     species: Tensor
     energies: Tensor
-    ae_stdev: Tensor
+    stdev_atomic_energies: Tensor
 
 
 class SpeciesForces(NamedTuple):
@@ -337,7 +337,7 @@ class BuiltinModel(Module):
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
 
-        ae_stdev = atomic_energies.std(0, unbiased=unbiased)
+        stdev_atomic_energies = atomic_energies.std(0, unbiased=unbiased)
 
         if average:
             atomic_energies = atomic_energies.mean(0)
@@ -347,7 +347,7 @@ class BuiltinModel(Module):
             atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
             # atomic_energies += self.energy_shifter.with_gsaes(species_coordinates[0], 'wb97x', '631gd')
 
-        return AtomicQBCs(species_coordinates[0], atomic_energies, ae_stdev)
+        return AtomicQBCs(species_coordinates[0], atomic_energies, stdev_atomic_energies)
 
     def force_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
                    cell: Optional[Tensor] = None,
