@@ -277,8 +277,9 @@ class BuiltinModel(Module):
         return SpeciesEnergies(species, members_energies.sum(-1))
 
     def members_forces(self, species_coordinates: Tuple[Tensor, Tensor],
-                   cell: Optional[Tensor] = None,
-                   pbc: Optional[Tensor] = None) -> SpeciesForces:
+                       average: bool = False,
+                       cell: Optional[Tensor] = None,
+                       pbc: Optional[Tensor] = None) -> SpeciesForces:
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         coordinates = species_coordinates[1].requires_grad_()
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
@@ -288,6 +289,8 @@ class BuiltinModel(Module):
             force = -derivative
             forces_list.append(force)
         forces = torch.cat(forces_list, dim=0)
+        if average:
+            forces = forces.mean(0)
         return SpeciesForces(species_coordinates[0], members_energies, forces)
 
     @torch.jit.export
