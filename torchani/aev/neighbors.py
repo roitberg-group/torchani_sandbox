@@ -68,8 +68,8 @@ class BaseNeighborlist(Module):
         assert (coordinates < torch.norm(cell, dim=1)).all()
         return coordinates, cell
 
-    @staticmethod
     def _screen_with_cutoff(
+        self,
         cutoff: float,
         coordinates: Tensor,
         input_neighbor_indices: Tensor,
@@ -131,6 +131,14 @@ class BaseNeighborlist(Module):
         screened_diff_vectors = coords0 - coords1
         if shift_values is not None:
             screened_diff_vectors += shift_values
+
+        # This is the very first `diff_vectors` that are used to calculate various potentials:
+        # 2-body (radial), 3-body (angular), repulsion, dispersion and etc.
+        # To enable stress calculation using partial_fdotr approach, `diff_vectors` requires the
+        # `requires_grad` flag to be set and needs to be saved for future differentiation.
+        screened_diff_vectors.requires_grad_()
+        self.diff_vectors = screened_diff_vectors
+
         screened_distances = screened_diff_vectors.norm(2, -1)
         return NeighborData(
             indices=screened_neighbor_indices,
@@ -138,6 +146,9 @@ class BaseNeighborlist(Module):
             diff_vectors=screened_diff_vectors,
             shift_values=shift_values,
         )
+
+    def get_diff_vectors(self):
+        return self.diff_vectors
 
     @staticmethod
     def _rescreen_with_cutoff(
