@@ -48,6 +48,7 @@ class BaseNeighborlist(Module):
         self.cutoff = cutoff
         self.register_buffer('default_cell', torch.eye(3, dtype=torch.float), persistent=False)
         self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool), persistent=False)
+        self.diff_vectors = torch.empty(0)
 
     @torch.jit.export
     def _compute_bounding_cell(self, coordinates: Tensor,
