@@ -110,6 +110,8 @@ class TestRepulsionJIT(TestRepulsion):
         super().setUp()
         self.rep = torch.jit.script(self.rep)
         self.sa_rep = torch.jit.script(self.sa_rep)
+        # PyTorch 11.3 nvfuser has bug
+        torch._C._jit_set_nvfuser_enabled(False)
 
     def _makeModel(self):
         return torch.jit.script(super()._makeModel())
