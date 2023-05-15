@@ -39,9 +39,10 @@ if CUAEV_DEBUG:
     sys.argv.remove('--cuaev-debug')
 
 # compile cuaev with optimizations: e.g. intrinsics functions and use_fast_math flag
-CUAEV_OPT = '--cuaev-opt' in sys.argv
-if CUAEV_OPT:
-    sys.argv.remove('--cuaev-opt')
+# CUAEV_OPT = '--cuaev-opt' in sys.argv
+# if CUAEV_OPT:
+#     sys.argv.remove('--cuaev-opt')
+CUAEV_OPT = True
 
 if not BUILD_EXT_ALL_SM and not FAST_BUILD_EXT:
     log.warn("Will not install cuaev")  # type: ignore
