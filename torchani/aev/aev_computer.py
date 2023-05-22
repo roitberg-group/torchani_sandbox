@@ -340,17 +340,29 @@ class AEVComputer(torch.nn.Module):
 
     @jit_unused_if_no_cuaev()
     @staticmethod
-    def _full_to_half_nbrlist(ilist_unique, jlist, numneigh, species):
+    def _full_to_half_nbrlist(ilist_unique, jlist, numneigh, species, fullnbr_diff_vector):
         """
-        Limitations: only works for non-pbc system
+        Limitations: only works for lammps-type pbc neighborlists (with local and ghost atoms).
+            TorchANI neighborlists only have 1 set of atoms and do mapping with local and image
+            atoms, which will not work here.
         """
         ilist_unique = ilist_unique.long()
         jlist = jlist.long()
         ilist = torch.repeat_interleave(ilist_unique, numneigh)
-        atom_index12 = torch.cat([ilist.unsqueeze(0), jlist.unsqueeze(0)], 0)
-        atom_index12 = atom_index12[:, atom_index12[0].sort().indices]
-        atom_index12 = atom_index12[:, atom_index12[0] < atom_index12[1]]
-        return atom_index12
+        atom_index12 = torch.cat([ilist.unsqueeze(0), jlist.unsqueeze(0)], 0)  # [2, num_pairs]
+
+        # sort by atom i
+        sort_indices = atom_index12[0].sort().indices
+        atom_index12 = atom_index12[:, sort_indices]
+        diff_vector = fullnbr_diff_vector[sort_indices]
+
+        # select half nbr by choose atom i < atom j
+        half_mask = atom_index12[0] < atom_index12[1]
+        atom_index12 = atom_index12[:, half_mask]
+        diff_vector = diff_vector[half_mask]
+
+        distances = diff_vector.norm(2, -1)
+        return atom_index12, diff_vector, distances
 
     @jit_unused_if_no_cuaev()
     @staticmethod
