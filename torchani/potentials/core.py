@@ -77,7 +77,7 @@ class PairwisePotential(Potential):
         *args,
         cutoff: float = 5.2,
         symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
-        cutoff_fn: Union[str, Cutoff] = 'smooth',
+        cutoff_fn: Union[str, Cutoff] = 'dummy',
         **kwargs
     ):
         super().__init__(cutoff=cutoff, symbols=symbols)
