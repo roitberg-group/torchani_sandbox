@@ -12,26 +12,23 @@ class NeighborData(NamedTuple):
     indices: Tensor
     distances: Tensor
     diff_vectors: Tensor
-    shift_values: Optional[Tensor]
+    shift_values: Optional[Tensor] = None
+    ghost_flags: Optional[Tensor] = None
 
 
 def rescreen_with_cutoff(
     cutoff: float,
-    neighbor_idxs: Tensor,
-    distances: Tensor,
-    diff_vectors: Tensor,
-    shift_values: Optional[Tensor] = None
+    neighbor_data: NeighborData,
 ) -> NeighborData:
+    distances = neighbor_data.distances
     closer_indices = (distances <= cutoff).nonzero().flatten()
-    neighbor_idxs = neighbor_idxs.index_select(1, closer_indices)
+    shift_values = neighbor_data.shift_values
     if shift_values is not None:
         shift_values = shift_values.index_select(0, closer_indices)
-    diff_vectors = diff_vectors.index_select(0, closer_indices)
-    distances = distances.index_select(0, closer_indices)
     return NeighborData(
-        indices=neighbor_idxs,
-        distances=distances,
-        diff_vectors=diff_vectors,
+        indices=neighbor_data.indices.index_select(1, closer_indices),
+        distances=distances.index_select(0, closer_indices),
+        diff_vectors=neighbor_data.diff_vectors.index_select(0, closer_indices),
         shift_values=shift_values
     )
 

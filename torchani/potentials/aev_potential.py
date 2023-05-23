@@ -1,9 +1,10 @@
-from typing import Optional, Union
+from typing import Union
 
 from torch import Tensor
-from torchani.aev.aev_computer import AEVComputer
-from torchani.nn import Ensemble, ANIModel
 from torchani.potentials.core import Potential
+from torchani.neighbors import NeighborData
+from torchani.nn import Ensemble, ANIModel
+from torchani.aev.aev_computer import AEVComputer
 from torchani.utils import PERIODIC_TABLE
 
 NN = Union[ANIModel, Ensemble]
@@ -21,7 +22,7 @@ class AEVPotential(Potential):
         # compatibility, since ANIModel supports arbitrary ordered dicts
         # as inputs.
         symbols = tuple(k if k in PERIODIC_TABLE else "Dummy" for k in any_nn)
-        super().__init__(cutoff=aev_computer.radial_terms.cutoff, symbols=symbols)
+        super().__init__(cutoff=aev_computer.radial_terms.cutoff, symbols=symbols, name="AEVComputer")
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
         if isinstance(neural_networks, Ensemble):
@@ -32,11 +33,11 @@ class AEVPotential(Potential):
     def forward(
         self,
         element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None,
-        ghost_flags: Optional[Tensor] = None,
+        neighbor_data: NeighborData,
     ) -> Tensor:
+        neighbor_idxs = neighbor_data.indices
+        diff_vectors = neighbor_data.diff_vectors
+        distances = neighbor_data.distances
         assert diff_vectors is not None, "AEV potential needs diff vectors always"
         aevs = self.aev_computer._compute_aev(
             element_idxs=element_idxs,
@@ -50,12 +51,12 @@ class AEVPotential(Potential):
     def atomic_energies(
         self,
         element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Tensor,
-        ghost_flags: Optional[Tensor] = None,
+        neighbor_data: NeighborData,
         average: bool = False,
     ) -> Tensor:
+        neighbor_idxs = neighbor_data.indices
+        diff_vectors = neighbor_data.diff_vectors
+        distances = neighbor_data.distances
         aevs = self.aev_computer._compute_aev(
             element_idxs=element_idxs,
             neighbor_idxs=neighbor_idxs,

@@ -39,14 +39,6 @@ class AtomicModule(torch.nn.Module):
         return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)
 
 
-class IndentityAtomicModule(AtomicModule):
-    def forward(
-        self,
-        x: Tensor,
-    ) -> Tensor:
-        return x
-
-
 class ANIModel(torch.nn.ModuleDict):
     """ANI model that compute energies from species and AEVs.
 

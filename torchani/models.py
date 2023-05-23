@@ -70,12 +70,10 @@ from .aev import AEVComputer
 from . import atomics
 from torchani.aev.neighbors import rescreen_with_cutoff
 from torchani.potentials import (
+    Potential,
     AEVPotential,
     RepulsionXTB,
-    ScaledPairwisePotential,
     PairwisePotential,
-    AtomicModule,
-    Scaler,
 )
 
 
@@ -363,51 +361,38 @@ class BuiltinModel(Module):
 
 
 class BuiltinModelPairInteractions(BuiltinModel):
-    r"""This model supports passing a sequence of PairwisePotential or ScaledPairwisePotential
+    r"""This model supports passing a sequence of PairwisePotential
 
-    The model holds a dict of 'AtomicModule' and calculates an output energy
-    (and potentially scalars)
-
-    Each atomic module has a 'cutoff', a 'name',
+    Each potential has a 'cutoff', a 'name',
     and is compatible with certain chemical symbols.
 
-    The model sorts the atomic modules according to their cutoff on
+    The model sorts the potentials according to their cutoff on
     initialization, and during forward the output of each model is calculated
     sequentially, after reducing the neighborlist according to the cutoff.
-
-    The ScaledPairwisePotential modules require two distinct calculations with
-    potentially different cutoffs, so the "factors" and "bare values" are calculated
-    in two different passes, and at the end they are combined and added to the total energy.
     """
     def __init__(
         self,
         *args,
-        pairwise_potentials: Iterable[PairwisePotential] = None,
+        pairwise_potentials: Iterable[PairwisePotential] = tuple(),
         **kwargs
     ):
         super().__init__(*args, **kwargs)
-        aev_potential = AEVPotential(self.aev_computer, self.neural_networks)
 
         # Validation
         _names = [p.name for p in pairwise_potentials]
-        _names.extend([p.scaler.name for p in pairwise_potentials if isinstance(p, ScaledPairwisePotential)])
         assert len(_names) == len(set(_names)), "There can't be repeated potential names"
+
+        aev_potential = AEVPotential(self.aev_computer, self.neural_networks)
         assert aev_potential.name not in _names, f"Can't name a module {aev_potential.name}"
 
-        atomic_modules: Dict[str, AtomicModule] = {p: p.name for p in pairwise_potentials}
-        # If there are scaled pairwise potentials, also add the scalers to the list
-        atomic_modules.update({p.scaler.name: p.scaler for p in atomic_modules if isinstance(p, ScaledPairwisePotential)})
+        potentials: Dict[str, Potential] = {p.name: p for p in pairwise_potentials}
         # Always update list with the AEV potential
-        atomic_modules.update({aev_potential.name: aev_potential})
+        potentials.update({aev_potential.name: aev_potential})
 
         self.size = aev_potential.size
-        self.order = sorted(atomic_modules, key=lambda x: atomic_modules[x].cutoff, reverse=True)
-        self.atomic_modules = torch.nn.ModuleDict(atomic_modules)
-
-        # The scalers will multiply the pair energies before performing the summation
-        # an example of a scaler is a calculator of atomic charges q_i * q_j
-        # another example is a calculator of A_ij or B_ij for van-der-waals coeficients
-        # self.scalers = torch.nn.ModuleList(scalers)
+        order = sorted(potentials, key=lambda x: potentials[x].cutoff, reverse=True)
+        # Ordered dict of modules
+        self.potentials = torch.nn.ModuleDict({k: potentials[k] for k in order})
 
         # We want to check the cutoffs of the potentials, and sort them
         # in order of decreasing cutoffs. this way the potential with the LARGEST
@@ -421,7 +406,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
         # self.potentials = torch.nn.ModuleList(potentials)
 
         # Override the neighborlist cutoff with the largest cutoff in existence
-        self.aev_computer.neighborlist.cutoff = self.atomic_modules[0].cutoff
+        self.aev_computer.neighborlist.cutoff = self.potentials[0].cutoff
 
     def forward(
         self,
@@ -429,63 +414,22 @@ class BuiltinModelPairInteractions(BuiltinModel):
         cell: Optional[Tensor] = None,
         pbc: Optional[Tensor] = None
     ) -> SpeciesEnergies:
-
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
+
         molecules_num = element_idxs.shape[0]
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
         energies = torch.zeros(molecules_num, device=element_idxs.device, dtype=coordinates.dtype)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
 
-        pair_energies_map: Dict[str, Tensor] = dict()
-        neighbor_idxs_map: Dict[str, Tensor] = dict()
-        scales_map: Dict[str, Tensor] = dict()
-        for key in self.potential_order:
-            pot = self.potentials[key]
-            if pot.cutoff < previous_cutoff:
-                neighbor_data = rescreen_with_cutoff(
-                    cutoff=pot.cutoff,
-                    neighbor_idxs=neighbor_data.indices,
-                    distances=neighbor_data.distances,
-                    diff_vectors=neighbor_data.diff_vectors,
-                )
-                previous_cutoff = pot.cutoff
+        # TODO: This actually internally rescreens in some potentials and performs
+        # many recalculations, not ideal, this code is very dirty
+        for name, pot in self.potentials.items():
+            current_cutoff = pot.cutoff
+            if current_cutoff < previous_cutoff:
+                neighbor_data = rescreen_with_cutoff(current_cutoff, neighbor_data)
+                previous_cutoff = current_cutoff
+                energies += pot(element_idxs, neighbor_data)
 
-            # Three possible cases, either this is a:
-            # - ScaledPairwisePotential => we need to collect bare value for later use
-            # - Scaler => we need to collect the scale for later use
-            # - ordinary potential => we just add the energy
-            if isinstance(pot, ScaledPairwisePotential):
-                pair_energies_map[pot.name] = pot.modulated_pair_energies(
-                    element_idxs=element_idxs,
-                    neighbor_idxs=neighbor_data.indices,
-                    distances=neighbor_data.distances,
-                    diff_vectors=neighbor_data.diff_vectors,
-                )
-                neighbor_idxs_map[pot.name] = neighbor_data.indices
-            elif isinstance(pot, Scaler):
-                # scales are shape (N, A)
-                scales_map[pot.parent_name] = pot(
-                    element_idxs=element_idxs,
-                    neighbor_idxs=neighbor_data.indices,
-                    distances=neighbor_data.distances,
-                    diff_vectors=neighbor_data.diff_vectors,
-                )
-            else:
-                energies += pot(
-                    element_idxs=element_idxs,
-                    neighbor_idxs=neighbor_data.indices,
-                    distances=neighbor_data.distances,
-                    diff_vectors=neighbor_data.diff_vectors,
-                )
-
-        # Now we scale the corresponding pairwise potentials and add the
-        # energies to the total
-        for pot_name, pair_energies in pair_energies_map.items():
-            neighbor_idxs = neighbor_idxs_map[pot_name]
-            factors = scales_map[pot_name]
-            scaled_pair_energies = self.potentials[pot_name].scale(factors, neighbor_idxs, pair_energies)
-            molecule_idxs = torch.div(neighbor_idxs[0], molecules_num, rounding_mode="floor")
-            energies.index_add_(0, molecule_idxs, scaled_pair_energies)
         return self.energy_shifter((element_idxs, energies))
 
     @torch.jit.export
@@ -496,10 +440,9 @@ class BuiltinModelPairInteractions(BuiltinModel):
         pbc: Optional[Tensor] = None,
         average: bool = True
     ) -> SpeciesEnergies:
-        assert isinstance(self.neural_networks, (Ensemble, ANIModel))
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
+
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
-        previous_cutoff = self.aev_computer.neighborlist.cutoff
 
         # Here we add an extra axis to account for different models,
         # some potentials output atomic energies with shape (M, N, A), where
@@ -509,24 +452,16 @@ class BuiltinModelPairInteractions(BuiltinModel):
             dtype=coordinates.dtype,
             device=coordinates.device
         )
+        previous_cutoff = self.aev_computer.neighborlist.cutoff
+
         for pot in self.potentials:
-            if pot.cutoff < previous_cutoff:
-                neighbor_data = rescreen_with_cutoff(
-                    pot.cutoff,
-                    neighbor_idxs=neighbor_data.indices,
-                    distances=neighbor_data.distances,
-                    diff_vectors=neighbor_data.diff_vectors,
-                )
-                previous_cutoff = pot.cutoff
-            atomic_energies += pot.atomic_energies(
-                element_idxs,
-                neighbor_idxs=neighbor_data.indices,
-                distances=neighbor_data.distances,
-                diff_vectors=neighbor_data.diff_vectors,
-            )
+            current_cutoff = pot.cutoff
+            if current_cutoff < previous_cutoff:
+                neighbor_data = rescreen_with_cutoff(current_cutoff, neighbor_data)
+                previous_cutoff = current_cutoff
+            atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
 
         atomic_energies += self.energy_shifter._atomic_saes(element_idxs).unsqueeze(0)
-
         if average:
             atomic_energies = atomic_energies.mean(dim=0)
         return SpeciesEnergies(species_coordinates[0], atomic_energies)
