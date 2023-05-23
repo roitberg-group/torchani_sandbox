@@ -112,13 +112,15 @@ class PairwisePotential(Potential):
 
         pair_energies = self.pair_energies(element_idxs, neighbors)
 
-        pair_energies *= self.cutoff_fn(
-            neighbors.distances,
-            self.cutoff
-        )
+        if self.cutoff_fn is not None:
+            pair_energies *= self.cutoff_fn(
+                neighbors.distances,
+                self.cutoff
+            )
 
         if ghost_flags is not None:
             assert ghost_flags.numel() == element_idxs.numel(), "ghost_flags and species should have the same number of elements"
+            ghost12 = ghost_flags.flatten()[neighbors.indices]
             ghost12 = ghost_flags.flatten()[neighbors.indices]
             ghost_mask = torch.logical_or(ghost12[0], ghost12[1])
             pair_energies = torch.where(ghost_mask, pair_energies * 0.5, pair_energies)
@@ -128,11 +130,13 @@ class PairwisePotential(Potential):
         self,
         element_idxs: Tensor,
         neighbors: NeighborData,
+        neighbors: NeighborData,
         ghost_flags: Optional[Tensor] = None
     ) -> Tensor:
 
         pair_energies = self._calculate_pair_energies_wrapper(
             element_idxs,
+            neighbors,
             neighbors,
             ghost_flags,
         )
@@ -141,7 +145,7 @@ class PairwisePotential(Potential):
             dtype=pair_energies.dtype,
             device=pair_energies.device
         )
-        molecule_indices = torch.div(neighbors.indices[0], element_idxs.shape[1], rounding_mode='floor')
+        molecule_indices = torch.div(neighbors.indices, element_idxs.shape[1], rounding_mode='floor')
         energies.index_add_(0, molecule_indices, pair_energies)
         return energies
 
@@ -149,6 +153,7 @@ class PairwisePotential(Potential):
     def atomic_energies(
         self,
         element_idxs: Tensor,
+        neighbors: NeighborData,
         neighbors: NeighborData,
         ghost_flags: Optional[Tensor] = None,
         average: bool = False,
@@ -166,8 +171,8 @@ class PairwisePotential(Potential):
             dtype=pair_energies.dtype,
             device=pair_energies.device
         )
-        atomic_energies.index_add_(0, neighbors.indices[0], pair_energies / 2)
-        atomic_energies.index_add_(0, neighbors.indices[1], pair_energies / 2)
+        atomic_energies.index_add_(0, neighbors.indices, pair_energies / 2)
+        atomic_energies.index_add_(0, neighbors.indices, pair_energies / 2)
         atomic_energies = atomic_energies.view(molecules_num, atoms_num)
         if not average:
             return atomic_energies.unsqueeze(0)

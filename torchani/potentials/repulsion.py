@@ -11,6 +11,8 @@ from torchani.tuples import NeighborData
 from torchani.cutoffs import Cutoff
 from torchani.potentials.core import PairwisePotential
 from torchani.potentials._repulsion_constants import alpha_constants, y_eff_constants
+from torchani.potentials.core import PairwisePotential
+from torchani.aev.neighbors import NeighborData
 
 _ELEMENTS_NUM = len(ATOMIC_NUMBERS)
 
