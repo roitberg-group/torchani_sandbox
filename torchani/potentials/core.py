@@ -77,7 +77,7 @@ class PairwisePotential(Potential):
         *args,
         cutoff: float = 5.2,
         symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
-        cutoff_fn: Union[str, Cutoff] = 'smooth',
+        cutoff_fn: Union[str, Cutoff] = 'dummy',
         **kwargs
     ):
         super().__init__(cutoff=cutoff, symbols=symbols)
@@ -172,3 +172,12 @@ class PairwisePotential(Potential):
         if not average:
             return atomic_energies.unsqueeze(0)
         return atomic_energies
+
+
+class DummyPairwisePotential(PairwisePotential):
+    def pair_energies(
+        self,
+        element_idxs: Tensor,
+        neighbors: NeighborData,
+    ) -> Tensor:
+        return torch.zeros_like(neighbors.distances)
