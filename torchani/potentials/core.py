@@ -4,7 +4,7 @@ from torch import Tensor
 from torch.jit import Final
 
 from torchani.utils import ATOMIC_NUMBERS, PERIODIC_TABLE
-from torchani.aev.cutoffs import _parse_cutoff_fn
+from torchani.aev.cutoffs import _parse_cutoff_fn, Cutoff
 from torchani.aev.neighbors import NeighborData
 
 
@@ -77,7 +77,7 @@ class PairwisePotential(Potential):
         *args,
         cutoff: float = 5.2,
         symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
-        cutoff_fn: Union[str, torch.nn.Module] = 'smooth',
+        cutoff_fn: Union[str, Cutoff] = 'smooth',
         **kwargs
     ):
         super().__init__(cutoff=cutoff, symbols=symbols)
@@ -112,11 +112,10 @@ class PairwisePotential(Potential):
 
         pair_energies = self.pair_energies(element_idxs, neighbors)
 
-        if self.cutoff_fn is not None:
-            pair_energies *= self.cutoff_fn(
-                neighbors.distances,
-                self.cutoff
-            )
+        pair_energies *= self.cutoff_fn(
+            neighbors.distances,
+            self.cutoff
+        )
 
         if ghost_flags is not None:
             assert ghost_flags.numel() == element_idxs.numel(), "ghost_flags and species should have the same number of elements"

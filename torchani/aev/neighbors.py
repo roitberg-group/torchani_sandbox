@@ -12,7 +12,6 @@ class NeighborData(NamedTuple):
     indices: Tensor
     distances: Tensor
     diff_vectors: Tensor
-    shift_values: Optional[Tensor]
 
 
 def _parse_neighborlist(neighborlist: Optional[Union[Module, str]], cutoff: float):
@@ -145,7 +144,6 @@ class BaseNeighborlist(Module):
             indices=screened_neighbor_indices,
             distances=screened_distances,
             diff_vectors=screened_diff_vectors,
-            shift_values=shift_values,
         )
 
     def get_diff_vectors(self):
@@ -157,13 +155,10 @@ class BaseNeighborlist(Module):
         neighbors: NeighborData,
     ) -> NeighborData:
         closer_indices = (neighbors.distances <= cutoff).nonzero().flatten()
-        if neighbors.shift_values is not None:
-            shift_values = neighbors.shift_values.index_select(0, closer_indices)
         return NeighborData(
             indices=neighbors.indices.index_select(1, closer_indices),
             distances=neighbors.distances.index_select(0, closer_indices),
             diff_vectors=neighbors.diff_vectors.index_select(0, closer_indices),
-            shift_values=shift_values
         )
 
     def dummy(self) -> NeighborData:
@@ -177,7 +172,6 @@ class BaseNeighborlist(Module):
             indices=indices,
             distances=distances,
             diff_vectors=diff_vectors,
-            shift_values=None
         )
 
     @torch.jit.export
