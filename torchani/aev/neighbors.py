@@ -9,10 +9,10 @@ from ..utils import map_to_central, cumsum_from_zero
 
 
 class NeighborData(NamedTuple):
+    element_indices: Tensor
     indices: Tensor
     distances: Tensor
     diff_vectors: Tensor
-    shift_values: Optional[Tensor]
 
 
 def _parse_neighborlist(neighborlist: Optional[Union[Module, str]], cutoff: float):
@@ -34,13 +34,11 @@ def rescreen(
     neighbors: NeighborData,
 ) -> NeighborData:
     closer_indices = (neighbors.distances <= cutoff).nonzero().flatten()
-    if neighbors.shift_values is not None:
-        shift_values = neighbors.shift_values.index_select(0, closer_indices)
     return NeighborData(
+        element_indices=neighbors.element_indices.index_select(1, closer_indices),
         indices=neighbors.indices.index_select(1, closer_indices),
         distances=neighbors.distances.index_select(0, closer_indices),
         diff_vectors=neighbors.diff_vectors.index_select(0, closer_indices),
-        shift_values=shift_values
     )
 
 
@@ -87,6 +85,7 @@ class BaseNeighborlist(Module):
     def _screen_with_cutoff(
         self,
         cutoff: float,
+        species: Tensor,
         coordinates: Tensor,
         input_neighbor_indices: Tensor,
         shift_values: Optional[Tensor] = None,
@@ -155,12 +154,11 @@ class BaseNeighborlist(Module):
         screened_diff_vectors.requires_grad_()
         self.diff_vectors = screened_diff_vectors
 
-        screened_distances = screened_diff_vectors.norm(2, -1)
         return NeighborData(
+            element_indices=species.flatten()[screened_neighbor_indices],
             indices=screened_neighbor_indices,
-            distances=screened_distances,
+            distances=screened_diff_vectors.norm(2, -1),
             diff_vectors=screened_diff_vectors,
-            shift_values=shift_values,
         )
 
     def get_diff_vectors(self):
@@ -171,13 +169,14 @@ class BaseNeighborlist(Module):
         device = self.default_cell.device
         dtype = self.default_cell.dtype
         indices = torch.tensor([[0], [1]], dtype=torch.long, device=device)
+        element_indices = torch.tensor([[0], [0]], dtype=torch.long, device=device)
         distances = torch.tensor([1.0], dtype=dtype, device=device)
         diff_vectors = torch.tensor([[1.0, 0.0, 0.0]], dtype=dtype, device=device)
         return NeighborData(
+            element_indices=element_indices,
             indices=indices,
             distances=distances,
             diff_vectors=diff_vectors,
-            shift_values=None
         )
 
     @torch.jit.export
@@ -228,6 +227,7 @@ class FullPairwise(BaseNeighborlist):
             coordinates = map_to_central(coordinates, cell, pbc)
             return self._screen_with_cutoff(
                 self.cutoff,
+                species,
                 coordinates,
                 atom_index12,
                 shift_values,
@@ -246,6 +246,7 @@ class FullPairwise(BaseNeighborlist):
                 atom_index12 = atom_index12.view(-1).view(2, -1)
             return self._screen_with_cutoff(
                 self.cutoff,
+                species,
                 coordinates,
                 atom_index12,
                 shift_values=None,
@@ -520,6 +521,7 @@ class CellList(BaseNeighborlist):
             # neighborlist holds at least all atom pairs, but it may hold more.
             return self._screen_with_cutoff(
                 self.cutoff,
+                species,
                 coordinates,
                 atom_pairs,
                 shift_values,
@@ -528,6 +530,7 @@ class CellList(BaseNeighborlist):
         else:
             return self._screen_with_cutoff(
                 self.cutoff,
+                species,
                 coordinates,
                 atom_pairs,
                 shift_values=None,

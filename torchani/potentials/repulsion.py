@@ -51,11 +51,10 @@ class RepulsionXTB(PairwisePotential):
             k_rep_ab = k_rep_ab[self.atomic_numbers, :][:, self.atomic_numbers]
 
         # Validation
-        assert k_rep_ab is not None
-        assert k_rep_ab.shape[0] == len(self.atomic_numbers)
-        assert k_rep_ab.shape[1] == len(self.atomic_numbers)
-        assert len(_y_eff) == len(self.atomic_numbers)
-        assert len(_alpha) == len(self.atomic_numbers)
+        num_znumbers = len(self.atomic_numbers)
+        assert k_rep_ab.shape == (num_znumbers, num_znumbers)
+        assert _y_eff.shape == (num_znumbers,)
+        assert _alpha.shape == (num_znumbers,)
 
         # Pre-calculate pairwise parameters for efficiency
         self.register_buffer('y_ab', torch.outer(_y_eff, _y_eff))
@@ -65,28 +64,18 @@ class RepulsionXTB(PairwisePotential):
 
     def pair_energies(
         self,
-        element_idxs: Tensor,
         neighbors: NeighborData,
     ) -> Tensor:
-
-        # Clamp distances to prevent singularities when dividing by zero
-        distances = torch.clamp(neighbors.distances, min=1e-7)
-
+        # Clamp distances to prevent singularities when dividing by zero.
         # All internal calculations of this module are made with atomic units,
-        # so distances are first converted to bohr
-        distances = distances * self.ANGSTROM_TO_BOHR
+        # so distances are first converted to Bohr
+        distances = torch.clamp(neighbors.distances * self.ANGSTROM_TO_BOHR, min=1e-7)
 
-        # Distances has all interaction pairs within a given cutoff, for a
-        # molecule or set of molecules and atom_index12 holds all pairs of
-        # indices species is of shape (C x Atoms)
-        species12 = element_idxs.flatten()[neighbors.indices]
+        # Find pre-computed constant multiplications for every element-idx pair
+        y_ab = self.y_ab[neighbors.element_indices]
+        sqrt_alpha_ab = self.sqrt_alpha_ab[neighbors.element_indices]
+        k_rep_ab = self.k_rep_ab[neighbors.element_indices]
 
-        # Find pre-computed constant multiplications for every species pair
-        y_ab = self.y_ab[species12[0], species12[1]]
-        sqrt_alpha_ab = self.sqrt_alpha_ab[species12[0], species12[1]]
-        k_rep_ab = self.k_rep_ab[species12[0], species12[1]]
-
-        # calculates repulsion energies using distances and constants
         return (y_ab / distances) * torch.exp(-sqrt_alpha_ab * (distances ** k_rep_ab))
 
 

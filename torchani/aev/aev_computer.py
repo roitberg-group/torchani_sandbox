@@ -248,46 +248,43 @@ class AEVComputer(torch.nn.Module):
         """Compute AEVs
 
         Arguments:
-            input_ (tuple): Can be one of the following two cases:
-
-                If you don't care about periodic boundary conditions at all,
-                then input can be a tuple of two tensors: species, coordinates.
-                species must have shape ``(N, A)``, coordinates must have shape
-                ``(N, A, 3)`` where ``N`` is the number of molecules in a batch,
-                and ``A`` is the number of atoms.
+            input_:
+                Tuple of "element indices (shape ``(N, A)``)" and coordinates
+                (shap ``(N, A, 3)``), where ``N`` is the number of molecules in
+                a batch, and ``A`` is the number of atoms. Coordiantes must be
+                in Angstrom.
 
                 .. warning::
 
-                    The species must be indexed in 0, 1, 2, 3, ..., not the element
-                    index in periodic table. Check :class:`torchani.SpeciesConverter`
-                    if you want periodic table indexing.
+                    Element indices must be 0, 1, 2, 3, ..., not atomic numbers.
 
-                .. note:: The coordinates, and cell are in Angstrom.
-
-                If you want to apply periodic boundary conditions, then the input
-                would be a tuple of two tensors (species, coordinates) and two keyword
-                arguments `cell=...` , and `pbc=...` where species and coordinates are
-                the same as described above, cell is a tensor of shape (3, 3) of the
-                three vectors defining unit cell:
+            cell:
+                For periodic boundary conditions (PBC), this
+                argument must not be None. It is a tensor of shape 3 x 3, which
+                holds the vectors that define the unit cell
 
                 .. code-block:: python
 
                     tensor([[x1, y1, z1],
                             [x2, y2, z2],
                             [x3, y3, z3]])
-
-                and pbc is boolean vector of size 3 storing if pbc is enabled
-                for that direction.
+            pbc:
+                For periodic boundary conditions (PBC), this argument must
+                not be None. It is a bool tensor of size 3 that defines
+                whether PBC is enabled in each direction (x, y, z).
 
         Returns:
-            NamedTuple: Species and AEVs. species are the species from the input
-            unchanged, and AEVs is a tensor of shape ``(N, A, self.aev_length)``
+            NamedTuple with element indices and aevs. The indices are the same
+            ones from the input, unchanged, and aevs is a tensor of shape
+            ``(N, A, self.aev_length)``.
         """
-        species, coordinates = input_
-        # check shapes for correctness
-        assert species.dim() == 2
-        assert coordinates.dim() == 3
-        assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
+        element_idxs, coordinates = input_
+
+        num_molecules = element_idxs.shape[0]
+        num_atoms = element_idxs.shape[1]
+
+        assert element_idxs.shape == (num_molecules, num_atoms), "Bad input shape"
+        assert coordinates.shape == (num_molecules, num_atoms, 3), "Bad input shape"
 
         # validate cutoffs
         assert self.neighborlist.cutoff >= self.radial_terms.cutoff
@@ -298,15 +295,14 @@ class AEVComputer(torch.nn.Module):
                 self._init_cuaev_computer()
                 self.cuaev_is_initialized = True
             assert pbc is None or (not pbc.any()), "cuaev currently does not support PBC"
-            aev = self._compute_cuaev(species, coordinates)
-            return SpeciesAEV(species, aev)
+            aev = self._compute_cuaev(element_idxs, coordinates)
+            return SpeciesAEV(element_idxs, aev)
 
-        # WARNING: The coordinates that are input into the neighborlist are **not** assumed to be
-        # mapped into the central cell for pbc calculations,
-        # and **in general are not**
-        neighbors = self.neighborlist(species, coordinates, cell, pbc)
-        aev = self._compute_aev(species, neighbors)
-        return SpeciesAEV(species, aev)
+        # Coordinates input into neighborlist don't need to be mapped to the
+        # central cell (wrapped) for pbc calculations.
+        neighbors = self.neighborlist(element_idxs, coordinates, cell, pbc)
+        aev = self._compute_aev(num_molecules, num_atoms, neighbors)
+        return SpeciesAEV(element_idxs, aev)
 
     @jit_unused_if_no_cuaev()
     def _compute_cuaev(self, species, coordinates):
@@ -316,43 +312,23 @@ class AEVComputer(torch.nn.Module):
 
     def _compute_aev(
         self,
-        element_idxs: Tensor,
+        num_molecules: int,
+        num_atoms: int,
         neighbors: NeighborData,
     ) -> Tensor:
-        num_molecules = element_idxs.shape[0]
-        num_atoms = element_idxs.shape[1]
-        species12 = element_idxs.flatten()[neighbors.indices]
+        radial_aev = self._compute_radial_aev(num_molecules, num_atoms, neighbors)
 
-        radial_aev = self._compute_radial_aev(
-            num_molecules,
-            num_atoms,
-            species12,
-            neighbor_idxs=neighbors.indices,
-            distances=neighbors.distances
-        )
-
-        # Rca is usually much smaller than Rcr, using neighbor list with
-        # cutoff = Rcr is a waste of resources. Now we will get a smaller neighbor
-        # list that only cares about atoms with distances <= Rca
+        # Rca is less than Rcr, so we rescreen to get a smaller neighbor list
         neighbors = rescreen(self.angular_terms.cutoff, neighbors)
-        species12 = element_idxs.flatten()[neighbors.indices]
-
-        angular_aev = self._compute_angular_aev(
-            num_molecules,
-            num_atoms,
-            species12,
-            neighbor_idxs=neighbors.indices,
-            diff_vectors=neighbors.diff_vectors
-        )
+        angular_aev = self._compute_angular_aev(num_molecules, num_atoms, neighbors)
 
         return torch.cat([radial_aev, angular_aev], dim=-1)
 
-    def _compute_angular_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, neighbor_idxs: Tensor, diff_vectors: Tensor) -> Tensor:
-
+    def _compute_angular_aev(self, num_molecules: int, num_atoms: int, neighbors: NeighborData) -> Tensor:
         central_atom_index, pair_index12, sign12 = self._triple_by_molecule(
-            neighbor_idxs)
-        species12_small = species12[:, pair_index12]
-        vec12 = diff_vectors.index_select(0, pair_index12.view(-1)).view(
+            neighbors.indices)
+        species12_small = neighbors.element_indices[:, pair_index12]
+        vec12 = neighbors.diff_vectors.index_select(0, pair_index12.view(-1)).view(
             2, -1, 3) * sign12.unsqueeze(-1)
         species12_ = torch.where(sign12 == 1, species12_small[1],
                                  species12_small[0])
@@ -368,12 +344,12 @@ class AEVComputer(torch.nn.Module):
                                           self.angular_length)
         return angular_aev
 
-    def _compute_radial_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, neighbor_idxs: Tensor, distances: Tensor) -> Tensor:
-        radial_terms_ = self.radial_terms(distances)
+    def _compute_radial_aev(self, num_molecules: int, num_atoms: int, neighbors: NeighborData) -> Tensor:
+        radial_terms_ = self.radial_terms(neighbors.distances)
         radial_aev = radial_terms_.new_zeros(
             (num_molecules * num_atoms * self.num_species,
              self.radial_sublength))
-        index12 = neighbor_idxs * self.num_species + species12.flip(0)
+        index12 = neighbors.indices * self.num_species + neighbors.element_indices.flip(0)
         radial_aev.index_add_(0, index12[0], radial_terms_)
         radial_aev.index_add_(0, index12[1], radial_terms_)
         radial_aev = radial_aev.reshape(num_molecules, num_atoms, self.radial_length)

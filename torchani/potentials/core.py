@@ -85,7 +85,6 @@ class PairwisePotential(Potential):
 
     def pair_energies(
         self,
-        element_idxs: Tensor,
         neighbors: NeighborData,
     ) -> Tensor:
         r"""Calculate the raw (non-smoothed) energy of all pairs of neighbors
@@ -110,7 +109,7 @@ class PairwisePotential(Potential):
         assert neighbors.indices.ndim == 2, "atom_index12 should be 2 dimensional"
         assert neighbors.distances.shape[0] == neighbors.indices.shape[1]
 
-        pair_energies = self.pair_energies(element_idxs, neighbors)
+        pair_energies = self.pair_energies(neighbors)
 
         if self.cutoff_fn is not None:
             pair_energies *= self.cutoff_fn(
