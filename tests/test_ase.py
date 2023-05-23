@@ -2,7 +2,6 @@ import os
 import unittest
 
 import torch
-from torch import Tensor
 import numpy as np
 from parameterized import parameterized
 from ase.lattice.cubic import Diamond
@@ -12,23 +11,13 @@ from ase import units
 from ase.io import read
 from ase.calculators.test import numeric_force
 
-from torchani.aev.neighbors import NeighborData
 from torchani.aev import CellList
 from torchani.testing import TestCase
 from torchani.models import _fetch_state_dict, ANI1x, BuiltinModelPairInteractions
-from torchani.potentials.core import PairwisePotential
+from torchani.potentials import DummyPairwisePotential
 
 
 path = os.path.dirname(os.path.realpath(__file__))
-
-
-class DummyPotential(PairwisePotential):
-    def pair_energies(
-        self,
-        element_idxs: Tensor,
-        neighbors: NeighborData,
-    ) -> Tensor:
-        return torch.zeros(element_idxs.shape[0], device=neighbors.distances.device, dtype=neighbors.distances.dtype)
 
 
 class TestASE(TestCase):
