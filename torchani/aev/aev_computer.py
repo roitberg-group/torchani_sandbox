@@ -11,7 +11,7 @@ from ..utils import cumsum_from_zero
 # modular parts of AEVComputer
 from .cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
 from .aev_terms import _parse_angular_terms, _parse_radial_terms, StandardAngular, StandardRadial
-from .neighbors import _parse_neighborlist
+from .neighbors import _parse_neighborlist, NeighborData, rescreen
 
 _provided_pkgs = importlib.metadata.metadata(
     __package__.split('.')[0]
@@ -304,13 +304,8 @@ class AEVComputer(torch.nn.Module):
         # WARNING: The coordinates that are input into the neighborlist are **not** assumed to be
         # mapped into the central cell for pbc calculations,
         # and **in general are not**
-        neighbor_data = self.neighborlist(species, coordinates, cell, pbc)
-        aev = self._compute_aev(
-            element_idxs=species,
-            neighbor_idxs=neighbor_data.indices,
-            distances=neighbor_data.distances,
-            diff_vectors=neighbor_data.diff_vectors,
-        )
+        neighbors = self.neighborlist(species, coordinates, cell, pbc)
+        aev = self._compute_aev(species, neighbors)
         return SpeciesAEV(species, aev)
 
     @jit_unused_if_no_cuaev()
@@ -322,36 +317,32 @@ class AEVComputer(torch.nn.Module):
     def _compute_aev(
         self,
         element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Tensor
+        neighbors: NeighborData,
     ) -> Tensor:
         num_molecules = element_idxs.shape[0]
         num_atoms = element_idxs.shape[1]
-        species12 = element_idxs.flatten()[neighbor_idxs]
+        species12 = element_idxs.flatten()[neighbors.indices]
 
         radial_aev = self._compute_radial_aev(
             num_molecules,
             num_atoms,
             species12,
-            neighbor_idxs=neighbor_idxs,
-            distances=distances
+            neighbor_idxs=neighbors.indices,
+            distances=neighbors.distances
         )
 
         # Rca is usually much smaller than Rcr, using neighbor list with
         # cutoff = Rcr is a waste of resources. Now we will get a smaller neighbor
         # list that only cares about atoms with distances <= Rca
-        even_closer_indices = (distances <= self.angular_terms.cutoff).nonzero().flatten()
-        neighbor_idxs = neighbor_idxs.index_select(1, even_closer_indices)
-        species12 = species12.index_select(1, even_closer_indices)
-        diff_vectors = diff_vectors.index_select(0, even_closer_indices)
+        neighbors = rescreen(self.angular_terms.cutoff, neighbors)
+        species12 = element_idxs.flatten()[neighbors.indices]
 
         angular_aev = self._compute_angular_aev(
             num_molecules,
             num_atoms,
             species12,
-            neighbor_idxs=neighbor_idxs,
-            diff_vectors=diff_vectors
+            neighbor_idxs=neighbors.indices,
+            diff_vectors=neighbors.diff_vectors
         )
 
         return torch.cat([radial_aev, angular_aev], dim=-1)

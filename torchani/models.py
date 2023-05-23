@@ -69,6 +69,7 @@ from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is
 from .aev import AEVComputer
 from . import atomics
 from .potentials import AEVPotential, RepulsionXTB, Potential, PairwisePotential
+from torchani.aev.neighbors import rescreen
 
 
 NN = Union[ANIModel, Ensemble]
@@ -388,15 +389,14 @@ class BuiltinModelPairInteractions(BuiltinModel):
         pbc: Optional[Tensor] = None
     ) -> SpeciesEnergies:
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
-        neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
+        neighbors = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
         energies = torch.zeros(element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
-        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                neighbor_data = rescreen(pot.cutoff, neighbor_data)
+                neighbors = rescreen(pot.cutoff, neighbors)
                 previous_cutoff = pot.cutoff
-            energies += pot(element_idxs, neighbor_data)
+            energies += pot(element_idxs, neighbors)
         return self.energy_shifter((element_idxs, energies))
 
     @torch.jit.export
@@ -409,9 +409,8 @@ class BuiltinModelPairInteractions(BuiltinModel):
     ) -> SpeciesEnergies:
         assert isinstance(self.neural_networks, (Ensemble, ANIModel))
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
-        neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
+        neighbors = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
-        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
 
         # Here we add an extra axis to account for different models,
         # some potentials output atomic energies with shape (M, N, A), where
@@ -423,9 +422,9 @@ class BuiltinModelPairInteractions(BuiltinModel):
         )
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                neighbor_data = rescreen(pot.cutoff, neighbor_data)
+                neighbors = rescreen(pot.cutoff, neighbors)
                 previous_cutoff = pot.cutoff
-            atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
+            atomic_energies += pot.atomic_energies(element_idxs, neighbors)
 
         atomic_energies += self.energy_shifter._atomic_saes(element_idxs).unsqueeze(0)
 
