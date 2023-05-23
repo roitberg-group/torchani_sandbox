@@ -9,6 +9,7 @@ from torchani.utils import ATOMIC_NUMBERS
 from torchani.wrappers import StandaloneWrapper
 from torchani.potentials._repulsion_constants import alpha_constants, y_eff_constants
 from torchani.potentials.core import PairwisePotential
+from torchani.aev.neighbors import NeighborData
 
 _ELEMENTS_NUM = len(ATOMIC_NUMBERS)
 
@@ -65,13 +66,11 @@ class RepulsionXTB(PairwisePotential):
     def pair_energies(
         self,
         element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None,
+        neighbors: NeighborData,
     ) -> Tensor:
 
         # Clamp distances to prevent singularities when dividing by zero
-        distances = torch.clamp(distances, min=1e-7)
+        distances = torch.clamp(neighbors.distances, min=1e-7)
 
         # All internal calculations of this module are made with atomic units,
         # so distances are first converted to bohr
@@ -80,7 +79,7 @@ class RepulsionXTB(PairwisePotential):
         # Distances has all interaction pairs within a given cutoff, for a
         # molecule or set of molecules and atom_index12 holds all pairs of
         # indices species is of shape (C x Atoms)
-        species12 = element_idxs.flatten()[neighbor_idxs]
+        species12 = element_idxs.flatten()[neighbors.indices]
 
         # Find pre-computed constant multiplications for every species pair
         y_ab = self.y_ab[species12[0], species12[1]]

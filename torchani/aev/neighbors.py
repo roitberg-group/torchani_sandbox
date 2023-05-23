@@ -154,21 +154,15 @@ class BaseNeighborlist(Module):
     @staticmethod
     def _rescreen_with_cutoff(
         cutoff: float,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Tensor,
-        shift_values: Optional[Tensor] = None
+        neighbors: NeighborData,
     ) -> NeighborData:
-        closer_indices = (distances <= cutoff).nonzero().flatten()
-        neighbor_idxs = neighbor_idxs.index_select(1, closer_indices)
-        if shift_values is not None:
-            shift_values = shift_values.index_select(0, closer_indices)
-        diff_vectors = diff_vectors.index_select(0, closer_indices)
-        distances = distances.index_select(0, closer_indices)
+        closer_indices = (neighbors.distances <= cutoff).nonzero().flatten()
+        if neighbors.shift_values is not None:
+            shift_values = neighbors.shift_values.index_select(0, closer_indices)
         return NeighborData(
-            indices=neighbor_idxs,
-            distances=distances,
-            diff_vectors=diff_vectors,
+            indices=neighbors.indices.index_select(1, closer_indices),
+            distances=neighbors.distances.index_select(0, closer_indices),
+            diff_vectors=neighbors.diff_vectors.index_select(0, closer_indices),
             shift_values=shift_values
         )
 

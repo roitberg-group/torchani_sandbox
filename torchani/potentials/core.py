@@ -5,6 +5,7 @@ from torch.jit import Final
 
 from torchani.utils import ATOMIC_NUMBERS, PERIODIC_TABLE
 from torchani.aev.cutoffs import _parse_cutoff_fn
+from torchani.aev.neighbors import NeighborData
 
 
 class Potential(torch.nn.Module):
@@ -33,9 +34,7 @@ class Potential(torch.nn.Module):
     def forward(
         self,
         element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None,
+        neighbors: NeighborData,
         ghost_flags: Optional[Tensor] = None
     ) -> Tensor:
         r"""
@@ -48,9 +47,7 @@ class Potential(torch.nn.Module):
     @torch.jit.export
     def atomic_energies(self,
                         element_idxs: Tensor,
-                        neighbor_idxs: Tensor,
-                        distances: Tensor,
-                        diff_vectors: Optional[Tensor] = None,
+                        neighbors: NeighborData,
                         ghost_flags: Optional[Tensor] = None,
                         average: bool = False,
                         ) -> Tensor:
@@ -89,15 +86,13 @@ class PairwisePotential(Potential):
     def pair_energies(
         self,
         element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None,
+        neighbors: NeighborData,
     ) -> Tensor:
         r"""Calculate the raw (non-smoothed) energy of all pairs of neighbors
 
         This function must be overriden by subclasses
-        If neighbor_idxs is shape (2, P)
-        This must return a tensor of shape (P,)"""
+        If there are P pairs of neighbors, then
+        this must return a tensor of shape (P,)"""
         raise NotImplementedError
 
     # This function wraps calculate_pair_energies
@@ -106,33 +101,26 @@ class PairwisePotential(Potential):
     def _calculate_pair_energies_wrapper(
         self,
         element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None,
+        neighbors: NeighborData,
         ghost_flags: Optional[Tensor] = None
     ) -> Tensor:
         # Validation
-        assert distances.ndim == 1, "distances should be 1 dimensional"
         assert element_idxs.ndim == 2, "species should be 2 dimensional"
-        assert neighbor_idxs.ndim == 2, "atom_index12 should be 2 dimensional"
-        assert len(distances) == neighbor_idxs.shape[1]
+        assert neighbors.distances.ndim == 1, "distances should be 1 dimensional"
+        assert neighbors.indices.ndim == 2, "atom_index12 should be 2 dimensional"
+        assert neighbors.distances.shape[0] == neighbors.indices.shape[1]
 
-        pair_energies = self.pair_energies(
-            element_idxs,
-            neighbor_idxs,
-            distances,
-            diff_vectors,
-        )
+        pair_energies = self.pair_energies(element_idxs, neighbors)
 
         if self.cutoff_fn is not None:
             pair_energies *= self.cutoff_fn(
-                distances,
+                neighbors.distances,
                 self.cutoff
             )
 
         if ghost_flags is not None:
             assert ghost_flags.numel() == element_idxs.numel(), "ghost_flags and species should have the same number of elements"
-            ghost12 = ghost_flags.flatten()[neighbor_idxs]
+            ghost12 = ghost_flags.flatten()[neighbors.indices]
             ghost_mask = torch.logical_or(ghost12[0], ghost12[1])
             pair_energies = torch.where(ghost_mask, pair_energies * 0.5, pair_energies)
         return pair_energies
@@ -140,17 +128,13 @@ class PairwisePotential(Potential):
     def forward(
         self,
         element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None,
+        neighbors: NeighborData,
         ghost_flags: Optional[Tensor] = None
     ) -> Tensor:
 
         pair_energies = self._calculate_pair_energies_wrapper(
             element_idxs,
-            neighbor_idxs,
-            distances,
-            diff_vectors,
+            neighbors,
             ghost_flags,
         )
         energies = torch.zeros(
@@ -158,7 +142,7 @@ class PairwisePotential(Potential):
             dtype=pair_energies.dtype,
             device=pair_energies.device
         )
-        molecule_indices = torch.div(neighbor_idxs[0], element_idxs.shape[1], rounding_mode='floor')
+        molecule_indices = torch.div(neighbors.indices, element_idxs.shape[1], rounding_mode='floor')
         energies.index_add_(0, molecule_indices, pair_energies)
         return energies
 
@@ -166,17 +150,13 @@ class PairwisePotential(Potential):
     def atomic_energies(
         self,
         element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None,
+        neighbors: NeighborData,
         ghost_flags: Optional[Tensor] = None,
         average: bool = False,
     ) -> Tensor:
         pair_energies = self._calculate_pair_energies_wrapper(
             element_idxs,
-            neighbor_idxs,
-            distances,
-            diff_vectors,
+            neighbors,
             ghost_flags,
         )
         molecules_num = element_idxs.shape[0]
@@ -187,8 +167,8 @@ class PairwisePotential(Potential):
             dtype=pair_energies.dtype,
             device=pair_energies.device
         )
-        atomic_energies.index_add_(0, neighbor_idxs[0], pair_energies / 2)
-        atomic_energies.index_add_(0, neighbor_idxs[1], pair_energies / 2)
+        atomic_energies.index_add_(0, neighbors.indices, pair_energies / 2)
+        atomic_energies.index_add_(0, neighbors.indices, pair_energies / 2)
         atomic_energies = atomic_energies.view(molecules_num, atoms_num)
         if not average:
             return atomic_energies.unsqueeze(0)

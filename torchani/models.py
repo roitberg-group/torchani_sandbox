@@ -394,19 +394,9 @@ class BuiltinModelPairInteractions(BuiltinModel):
         rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                neighbor_data = rescreen(
-                    cutoff=pot.cutoff,
-                    neighbor_idxs=neighbor_data.indices,
-                    distances=neighbor_data.distances,
-                    diff_vectors=neighbor_data.diff_vectors,
-                )
+                neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
-            energies += pot(
-                element_idxs=element_idxs,
-                neighbor_idxs=neighbor_data.indices,
-                distances=neighbor_data.distances,
-                diff_vectors=neighbor_data.diff_vectors,
-            )
+            energies += pot(element_idxs, neighbor_data)
         return self.energy_shifter((element_idxs, energies))
 
     @torch.jit.export
@@ -433,19 +423,9 @@ class BuiltinModelPairInteractions(BuiltinModel):
         )
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                neighbor_data = rescreen(
-                    pot.cutoff,
-                    neighbor_idxs=neighbor_data.indices,
-                    distances=neighbor_data.distances,
-                    diff_vectors=neighbor_data.diff_vectors,
-                )
+                neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
-            atomic_energies += pot.atomic_energies(
-                element_idxs,
-                neighbor_idxs=neighbor_data.indices,
-                distances=neighbor_data.distances,
-                diff_vectors=neighbor_data.diff_vectors,
-            )
+            atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
 
         atomic_energies += self.energy_shifter._atomic_saes(element_idxs).unsqueeze(0)
 
