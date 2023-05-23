@@ -6,8 +6,8 @@ import torch
 import torchani
 from torchani.models import _fetch_state_dict
 from torchani.testing import TestCase
-from torchani.potentials import RepulsionXTB, StandaloneRepulsionXTB
-from torchani.neighbors import NeighborData
+from torchani.repulsion import RepulsionXTB, StandaloneRepulsionXTB
+from torchani.aev.neighbors import NeighborData
 
 
 class TestRepulsion(TestCase):
