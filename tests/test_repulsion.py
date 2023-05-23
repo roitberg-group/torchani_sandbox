@@ -87,7 +87,7 @@ class TestRepulsion(TestCase):
     def _testRepulsionEnergy(self, model, device, atomic: bool = False):
         model = model.to(device, dtype=torch.double)
         species = torch.tensor([[8, 1, 1]], device=device)
-        energies = []
+        _energies = []
         distances = torch.linspace(0.1, 6.0, 100)
         for d in distances:
             coordinates = torch.tensor([[[0.0, 0.0, 0.0],
@@ -95,10 +95,10 @@ class TestRepulsion(TestCase):
                                         [-0.250380004 * d, 0.96814764 * d, 0.0]]],
                                        requires_grad=True, device=device, dtype=torch.double)
             if atomic:
-                energies.append(model.atomic_energies((species, coordinates), average=True).energies.sum(-1).item())
+                _energies.append(model.atomic_energies((species, coordinates), average=True).energies.sum(-1).item())
             else:
-                energies.append(model((species, coordinates)).energies.item())
-        energies = torch.tensor(energies)
+                _energies.append(model((species, coordinates)).energies.item())
+        energies = torch.tensor(_energies)
         path = Path(__file__).resolve().parent.joinpath('test_data/energies_repulsion_1x.pkl')
         with open(path, 'rb') as f:
             energies_expect = torch.load(f)
