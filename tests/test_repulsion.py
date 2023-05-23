@@ -5,6 +5,7 @@ from pathlib import Path
 from torchani.models import _fetch_state_dict
 from torchani.testing import TestCase
 from torchani.repulsion import RepulsionXTB, StandaloneRepulsionXTB
+from torchani.aev.neighbors import NeighborData
 
 
 class TestRepulsion(TestCase):
@@ -13,11 +14,14 @@ class TestRepulsion(TestCase):
         self.sa_rep = StandaloneRepulsionXTB(cutoff=5.2, neighborlist_cutoff=5.2)
 
     def testRepulsionXTB(self):
-        neighbor_idxs = torch.tensor([[0], [1]])
-        distances = torch.tensor([3.5])
         element_idxs = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
-        energies = self.rep(element_idxs, neighbor_idxs, distances)
+        neighbors = NeighborData(
+            indices=torch.tensor([[0], [1]]),
+            distances=torch.tensor([3.5]),
+            diff_vectors=torch.tensor([[3.5, 0, 0]]),
+        )
+        energies = self.rep(element_idxs, neighbors)
         self.assertEqual(torch.tensor([3.5325e-08]), energies)
 
     def testStandalone(self):
@@ -53,11 +57,14 @@ class TestRepulsion(TestCase):
         self.assertEqual(energies, energies_cat)
 
     def testRepulsionLongDistances(self):
-        neighbor_idxs = torch.tensor([[0], [1]])
-        distances = torch.tensor([6.0])
         element_idxs = torch.tensor([[0, 0]])
         energies = torch.tensor([0.0])
-        energies = self.rep(element_idxs, neighbor_idxs, distances)
+        neighbors = NeighborData(
+            indices=torch.tensor([[0], [1]]),
+            distances=torch.tensor([6.0]),
+            diff_vectors=torch.tensor([[6.0, 0, 0]]),
+        )
+        energies = self.rep(element_idxs, neighbors)
         self.assertEqual(torch.tensor([0.0]), energies)
 
     def testRepulsionEnergy(self):
