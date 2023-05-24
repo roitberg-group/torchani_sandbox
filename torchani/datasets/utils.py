@@ -10,7 +10,7 @@ from torchani.models import BuiltinModel
 from torchani.utils import tqdm
 from torchani.nn import Ensemble
 from torchani.datasets._annotations import Conformers, StrPath
-from torchani.datsets.datasets import ANIDataset
+from torchani.datasets.datasets import ANIDataset
 from torchani.datasets._backends import TemporaryLocation
 
 
