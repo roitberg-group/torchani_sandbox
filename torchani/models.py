@@ -361,7 +361,7 @@ class BuiltinModel(Module):
 class BuiltinModelCharges(BuiltinModel):
     def __init__(
         self,
-        charge_network: NN,
+        charge_networks: NN,
         *args,
         pairwise_potentials: Iterable[PairwisePotential] = tuple(),
         **kwargs
@@ -371,13 +371,13 @@ class BuiltinModelCharges(BuiltinModel):
         aev_scalars = AEVScalars(
             aev_computer=self.aev_computer,
             neural_networks=self.neural_networks,
-            charge_network=charge_network,
+            charge_networks=charge_networks,
         )
         self.size = aev_scalars.size
         potentials.append(aev_scalars)
 
         potentials = sorted(potentials, key=lambda x: x.cutoff, reverse=True)
-        self.charge_network = charge_network
+        self.charge_networks = charge_networks
         self.potentials = torch.nn.ModuleList(potentials)
         # Override the neighborlist cutoff with the largest cutoff in existence
         self.aev_computer.neighborlist.cutoff = self.potentials[0].cutoff
@@ -408,11 +408,11 @@ class BuiltinModelCharges(BuiltinModel):
         energies = self.energy_shifter((element_idxs, energies)).energies
         return SpeciesEnergiesCharges(element_idxs, energies, charges)
 
-    def __getitem__(self, index: int) -> 'BuiltinModel':
+    def __getitem__(self, index: int) -> 'BuiltinModelCharges':
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        non_aev_potentials = [p for p in self.potentials if not isinstance(p, AEVPotential)]
+        non_aev_potentials = [p for p in self.potentials if not isinstance(p, AEVScalars)]
         return BuiltinModelCharges(
-            charge_network=self.charge_network,
+            charge_networks=self.charge_networks,
             aev_computer=self.aev_computer,
             neural_networks=self.neural_networks[index],
             energy_shifter=self.energy_shifter,
