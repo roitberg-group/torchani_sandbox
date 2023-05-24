@@ -1,7 +1,7 @@
 import argparse
 
 from torchani.cli.utils import h5info
-from torhcani.datasets._builtin_datasets import download_builtin_dataset, _BUILTIN_DATASETS, _BUILTIN_DATASETS_LOT
+from torchani.datasets._builtin_datasets import download_builtin_dataset, _BUILTIN_DATASETS, _BUILTIN_DATASETS_LOT
 
 
 def build_parser():
