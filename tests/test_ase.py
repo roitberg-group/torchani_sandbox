@@ -21,7 +21,7 @@ from torchani.potentials import DummyPairwisePotential
 path = os.path.dirname(os.path.realpath(__file__))
 =======
 
-from torchani.aev import CellList
+from torchani.neighbors import CellList
 from torchani.testing import TestCase
 from torchani.models import _fetch_state_dict, ANI1x, BuiltinModelPairInteractions
 from torchani.potentials import DummyPairwisePotential
