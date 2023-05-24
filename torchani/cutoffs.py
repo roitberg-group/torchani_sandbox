@@ -8,31 +8,15 @@ from torch.jit import Final
 
 # All cutoffs assume the elements in "distances" are smaller than "cutoff"
 class Cutoff(torch.nn.Module):
-<<<<<<< HEAD:torchani/cutoffs.py
-    def forward(self, distances: Tensor, cutoff: float) -> Tensor:
-        raise NotImplementedError
-=======
-    def __init__(self, *args, **kwargs):
-        super().__init__()
->>>>>>> Partial fixes for bugs:torchani/aev/cutoffs.py
-
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
         raise NotImplementedError
 
-<<<<<<< HEAD:torchani/cutoffs.py
-class CutoffDummy(Cutoff):
-    def forward(self, distances: Tensor, cutoff: float) -> Tensor:
-        return torch.ones_like(distances)
-
-
-=======
 
 class CutoffDummy(Cutoff):
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
         return torch.ones_like(distances)
 
 
->>>>>>> Partial fixes for bugs:torchani/aev/cutoffs.py
 class CutoffCosine(Cutoff):
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
         return 0.5 * torch.cos(distances * (math.pi / cutoff)) + 0.5
@@ -63,15 +47,10 @@ def _parse_cutoff_fn(cutoff_fn: Union[str, Cutoff]) -> torch.nn.Module:
         cutoff_fn = CutoffDummy()
     elif cutoff_fn == 'cosine':
         cutoff_fn = CutoffCosine()
-<<<<<<< HEAD:torchani/cutoffs.py
     elif cutoff_fn in ['smooth', 'smooth2']:
         cutoff_fn = CutoffSmooth(order=2)
     elif cutoff_fn == 'smooth4':
         cutoff_fn = CutoffSmooth(order=4)
-=======
-    elif cutoff_fn == 'smooth':
-        cutoff_fn = CutoffSmooth()
->>>>>>> Partial fixes for bugs:torchani/aev/cutoffs.py
     else:
         assert isinstance(cutoff_fn, Cutoff)
     return cutoff_fn
