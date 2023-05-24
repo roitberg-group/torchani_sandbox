@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Optional, Union, Tuple
 
 from torch import Tensor
 
@@ -65,3 +65,39 @@ class AEVPotential(Potential):
         if average:
             return atomic_energies.sum(0)
         return atomic_energies
+
+
+class AEVScalars(Potential):
+    def __init__(self, aev_computer: AEVComputer, neural_networks: NN, charge_networks: NN):
+        if isinstance(neural_networks, Ensemble):
+            any_nn = neural_networks[0]
+        else:
+            any_nn = neural_networks
+        symbols = tuple(k if k in PERIODIC_TABLE else "Dummy" for k in any_nn)
+        super().__init__(cutoff=aev_computer.radial_terms.cutoff, symbols=symbols)
+
+        self.aev_computer = aev_computer
+        self.neural_networks = neural_networks
+        self.charge_networks = charge_networks
+
+        if isinstance(neural_networks, Ensemble):
+            self.size = neural_networks.size
+        else:
+            self.size = 1
+
+    def forward(
+        self,
+        element_idxs: Tensor,
+        neighbors: NeighborData,
+        ghost_flags: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Tensor]:
+        aevs = self.aev_computer._compute_aev(
+            element_idxs=element_idxs,
+            neighbor_idxs=neighbors.indices,
+            distances=neighbors.distances,
+            diff_vectors=neighbors.diff_vectors,
+        )
+        energies = self.neural_networks((element_idxs, aevs)).energies
+        charges = self.charge_networks((element_idxs, aevs)).charges
+        # TODO: This needs charge normalization
+        return energies, charges

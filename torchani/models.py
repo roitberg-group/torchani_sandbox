@@ -67,10 +67,11 @@ from torch.nn import Module
 from torch.jit import Final
 
 from torchani import atomics
-from torchani.nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
+from torchani.structs import SpeciesEnergies, SpeciesEnergiesCharges
+from torchani.nn import SpeciesConverter, Ensemble, ANIModel
 from torchani.utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from torchani.aev import AEVComputer
-from torchani.potentials import AEVPotential, RepulsionXTB, Potential, PairwisePotential
+from torchani.potentials import AEVScalars, AEVPotential, RepulsionXTB, Potential, PairwisePotential
 from torchani.neighbors import rescreen
 
 
@@ -355,6 +356,70 @@ class BuiltinModel(Module):
     def __len__(self):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         return self.neural_networks.size
+
+
+class BuiltinModelCharges(BuiltinModel):
+    def __init__(
+        self,
+        charge_network: NN,
+        *args,
+        pairwise_potentials: Iterable[PairwisePotential] = tuple(),
+        **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        potentials: List[Potential] = list(pairwise_potentials)
+        aev_scalars = AEVScalars(
+            aev_computer=self.aev_computer,
+            neural_networks=self.neural_networks,
+            charge_network=charge_network,
+        )
+        self.size = aev_scalars.size
+        potentials.append(aev_scalars)
+
+        potentials = sorted(potentials, key=lambda x: x.cutoff, reverse=True)
+        self.charge_network = charge_network
+        self.potentials = torch.nn.ModuleList(potentials)
+        # Override the neighborlist cutoff with the largest cutoff in existence
+        self.aev_computer.neighborlist.cutoff = self.potentials[0].cutoff
+
+    def forward(
+        self,
+        species_coordinates: Tuple[Tensor, Tensor],
+        cell: Optional[Tensor] = None,
+        pbc: Optional[Tensor] = None
+    ) -> SpeciesEnergiesCharges:
+        element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
+        neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
+
+        energies = torch.zeros(element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype)
+        charges = torch.zeros_like(energies)
+
+        previous_cutoff = self.aev_computer.neighborlist.cutoff
+        for pot in self.potentials:
+            if pot.cutoff < previous_cutoff:
+                neighbor_data = rescreen(pot.cutoff, neighbor_data)
+                previous_cutoff = pot.cutoff
+            if isinstance(pot, AEVScalars):
+                energies, charges = pot(element_idxs, neighbor_data)
+            else:
+                energies = pot(element_idxs, neighbor_data)
+            energies += energies
+
+        energies = self.energy_shifter((element_idxs, energies)).energies
+        return SpeciesEnergiesCharges(element_idxs, energies, charges)
+
+    def __getitem__(self, index: int) -> 'BuiltinModel':
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+        non_aev_potentials = [p for p in self.potentials if not isinstance(p, AEVPotential)]
+        return BuiltinModelCharges(
+            charge_network=self.charge_network,
+            aev_computer=self.aev_computer,
+            neural_networks=self.neural_networks[index],
+            energy_shifter=self.energy_shifter,
+            elements=self.get_chemical_symbols(),
+            periodic_table_index=self.periodic_table_index,
+            pairwise_potentials=non_aev_potentials,
+        )
 
 
 class BuiltinModelPairInteractions(BuiltinModel):
