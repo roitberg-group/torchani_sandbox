@@ -1,6 +1,7 @@
-import torch
 import math
 from typing import Union
+
+import torch
 from torch import Tensor
 from torch.jit import Final
 
