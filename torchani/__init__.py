@@ -62,6 +62,7 @@ __all__ = [
     'neurochem',  # TODO: Get rid of this
     'models',
     'units',
+    'repulsion',
     'potentials',
     'neighbors',
     'cutoffs',
