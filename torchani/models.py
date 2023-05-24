@@ -69,6 +69,7 @@ from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is
 from .aev import AEVComputer
 from . import atomics
 from .potentials import AEVPotential, RepulsionXTB, Potential, PairwisePotential
+from torchani.aev.neighbors import rescreen
 
 
 NN = Union[ANIModel, Ensemble]
@@ -391,7 +392,6 @@ class BuiltinModelPairInteractions(BuiltinModel):
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
         energies = torch.zeros(element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
-        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
                 neighbor_data = rescreen(pot.cutoff, neighbor_data)
@@ -411,7 +411,6 @@ class BuiltinModelPairInteractions(BuiltinModel):
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
-        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
 
         # Here we add an extra axis to account for different models,
         # some potentials output atomic energies with shape (M, N, A), where
