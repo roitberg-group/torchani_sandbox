@@ -10,12 +10,16 @@ from torch.jit import Final
 from torchani.utils import cumsum_from_zero
 from torchani.neighbors import _parse_neighborlist
 from torchani.cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
+<<<<<<< HEAD
 from torchani.aev.aev_terms import (
     _parse_angular_terms,
     _parse_radial_terms,
     StandardAngular,
     StandardRadial,
 )
+=======
+from torchani.aev.aev_terms import _parse_angular_terms, _parse_radial_terms, StandardAngular, StandardRadial
+>>>>>>> move cutoffs and neighbors outside aev
 
 _provided_pkgs = importlib.metadata.metadata(
     __package__.split('.')[0]
