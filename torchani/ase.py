@@ -4,12 +4,13 @@
 .. _ASE:
     https://wiki.fysik.dtu.dk/ase
 """
+import warnings
 
 import torch
-from . import utils
 import ase.calculators.calculator
 import ase.units
-import warnings
+
+from torchani import utils
 
 
 class Calculator(ase.calculators.calculator.Calculator):

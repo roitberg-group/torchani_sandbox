@@ -56,20 +56,22 @@ example usage:
 """
 import os
 import warnings
+from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type, Callable, List, Iterable
 from copy import deepcopy
 from pathlib import Path
 from collections import OrderedDict
+
 import torch
 from torch import Tensor
 from torch.nn import Module
 from torch.jit import Final
-from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type, Callable, List, Iterable
-from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
-from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
-from .aev import AEVComputer
-from . import atomics
-from .potentials import AEVPotential, RepulsionXTB, Potential, PairwisePotential
-from torchani.aev.neighbors import rescreen
+
+from torchani import atomics
+from torchani.nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
+from torchani.utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
+from torchani.aev import AEVComputer
+from torchani.potentials import AEVPotential, RepulsionXTB, Potential, PairwisePotential
+from torchani.neighbors import rescreen
 
 
 NN = Union[ANIModel, Ensemble]
