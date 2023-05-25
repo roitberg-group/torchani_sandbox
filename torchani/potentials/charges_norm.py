@@ -114,7 +114,6 @@ class ChargeNormalizer(torch.nn.Module):
         norm_charges = normalizer(species, raw_charges, total_charge)
 
     """
-    factor: torch.nn.Module
 
     def __init__(
         self,
