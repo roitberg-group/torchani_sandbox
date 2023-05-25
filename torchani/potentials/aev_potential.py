@@ -98,7 +98,7 @@ class AEVScalars(Potential):
         else:
             self.size = 1
 
-    def forward(
+    def forward(  # type: ignore
         self,
         element_idxs: Tensor,
         neighbors: NeighborData,

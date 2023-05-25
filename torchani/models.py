@@ -394,7 +394,7 @@ class BuiltinModelCharges(BuiltinModel):
         # Override the neighborlist cutoff with the largest cutoff in existence
         self.aev_computer.neighborlist.cutoff = self.potentials[0].cutoff
 
-    def forward(
+    def forward(  # type: ignore
         self,
         species_coordinates: Tuple[Tensor, Tensor],
         cell: Optional[Tensor] = None,
