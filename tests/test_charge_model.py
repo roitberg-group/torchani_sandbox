@@ -39,6 +39,23 @@ class TestANI2xCharges(TestCase):
         charges = self.model_charges((species, coordinates)).atomic_charges
         _ = - torch.autograd.grad(charges.sum(), coordinates)[0]
         self.assertEqual(charges.sum(), torch.tensor(0.0))
+        # By symmetry this must hold
+        self.assertEqual(charges[:, 0], charges[:, 1])
+
+    def testChargesPolarized(self):
+        coordinates = torch.tensor([[[0.0, 0.0, 0.0],
+                                    [0.0, 0.0, 2.0]]], requires_grad=True)
+        coordinates = coordinates.repeat(2, 1, 1)
+        species = torch.tensor([[1, 9], [1, 17]])
+
+        charges = self.model_charges((species, coordinates)).atomic_charges
+        _ = - torch.autograd.grad(charges.sum(), coordinates)[0]
+        self.assertEqual(charges.sum(), torch.tensor(0.0))
+        # Check correct polarization
+        self.assertGreater(charges[0, 0], 0.0)
+        self.assertGreater(charges[1, 0], 0.0)
+        self.assertLess(charges[0, 1], 0.0)
+        self.assertLess(charges[0, 1], 0.0)
 
     def testForces(self):
         coordinates = torch.tensor([[[0.0, 0.0, 0.0],
