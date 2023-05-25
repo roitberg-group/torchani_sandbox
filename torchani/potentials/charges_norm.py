@@ -6,6 +6,10 @@ import torch
 from torch import Tensor
 
 from torchani.utils import ATOMIC_NUMBERS
+from torchani.potentials.electronegativity_hardness import (
+    ELECTRONEGATIVITY,
+    HARDNESS,
+)
 
 
 class EqualChargeFactor(torch.nn.Module):
@@ -16,26 +20,6 @@ class EqualChargeFactor(torch.nn.Module):
     ) -> Tensor:
         num_charges = (element_idxs != -1).sum(-1)
         return 1 / num_charges
-
-
-ELECTRONEGATIVITY = {
-    "H": 7.18,
-    "C": 6.26,
-    "N": 7.27,
-    "O": 7.54,
-    "S": 6.22,
-    "F": 10.41,
-    "Cl": 8.29,
-}
-HARDNESS = {
-    "H": 12.84,
-    "C": 10.00,
-    "N": 14.53,
-    "O": 12.16,
-    "S": 8.28,
-    "F": 14.02,
-    "Cl": 9.35,
-}
 
 
 class WeightedChargeFactor(torch.nn.Module):
@@ -51,11 +35,13 @@ class WeightedChargeFactor(torch.nn.Module):
         self.atomic_numbers = torch.tensor(
             [ATOMIC_NUMBERS[e] for e in symbols], dtype=torch.long
         )
+
+        # Get constant values from literature if not provided
         if electronegativities is None:
-            electronegativities = [ELECTRONEGATIVITY[s] for s in symbols]
+            electronegativities = [ELECTRONEGATIVITY[j] for j in self.atomic_numbers]
         assert electronegativities is not None  # mypy
         if hardnesses is None:
-            hardnesses = [HARDNESS[s] for s in symbols]
+            hardnesses = [HARDNESS[j] for j in self.atomic_numbers]
         assert hardnesses is not None  # mypy
 
         self.register_buffer(
