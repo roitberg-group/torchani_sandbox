@@ -111,6 +111,6 @@ class AEVScalars(Potential):
             diff_vectors=neighbors.diff_vectors,
         )
         energies = self.neural_networks((element_idxs, aevs)).energies
-        raw_atomic_charges = self.charge_networks((element_idxs, aevs))
+        raw_atomic_charges = self.charge_networks(element_idxs, aevs)
         atomic_charges = self.charge_normalizer(element_idxs, raw_atomic_charges)
         return energies, atomic_charges

@@ -369,14 +369,17 @@ class BuiltinModel(Module):
 class BuiltinModelCharges(BuiltinModel):
     def __init__(
         self,
-        charge_networks: ChargeNetworkAdaptor,
+        *args,
+        charge_networks: Optional[ChargeNetworkAdaptor] = None,
         charge_factor: Union[ChargeFactor, torch.nn.Module] = ChargeFactor.EQUAL,
         charge_factor_args: Optional[Dict[str, Any]] = None,
-        *args,
         pairwise_potentials: Iterable[PairwisePotential] = tuple(),
         **kwargs
     ):
         super().__init__(*args, **kwargs)
+        # TODO: This is a horrible hack needed due to the way that the model
+        # assembly currently works
+        assert charge_networks is not None
         potentials: List[Potential] = list(pairwise_potentials)
         aev_scalars = AEVScalars(
             aev_computer=self.aev_computer,
@@ -413,11 +416,10 @@ class BuiltinModelCharges(BuiltinModel):
                 neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
             if isinstance(pot, AEVScalars):
-                energies, atomic_charges = pot(element_idxs, neighbor_data)
+                _energies, atomic_charges = pot(element_idxs, neighbor_data)
             else:
-                energies = pot(element_idxs, neighbor_data)
-            energies += energies
-
+                _energies = pot(element_idxs, neighbor_data)
+            energies += _energies
         energies = self.energy_shifter((element_idxs, energies)).energies
         return SpeciesEnergiesAtomicCharges(element_idxs, energies, atomic_charges)
 
@@ -724,15 +726,23 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
 
     if pretrained and not use_neurochem_source:
         assert state_dict_file is not None
+
         if use_experimental_charges:
             # TODO: This is super dirty and horrible
             assert isinstance(model, BuiltinModelCharges)
             assert charge_nn_state_dict_file is not None
-            energy_nn_state_dict = {k: v for k, v in _fetch_state_dict(state_dict_file, model_index).items() if k.endswith("weight") or k.endswith("bias")}
-            charge_nn_state_dict = _fetch_state_dict(charge_nn_state_dict_file, local=True)
 
+            raw_state_dict = _fetch_state_dict(state_dict_file, model_index)
+
+            energy_nn_state_dict = {k.replace("neural_networks.", ""): v for k, v in raw_state_dict.items() if k.endswith("weight") or k.endswith("bias")}
+            charge_nn_state_dict = _fetch_state_dict(charge_nn_state_dict_file, local=True)
+            aev_state_dict = {k.replace("aev_computer.", ""): v for k, v in raw_state_dict.items() if k.startswith("aev_computer")}
+
+            model.aev_computer.load_state_dict(aev_state_dict)
+            model.energy_shifter.load_state_dict({"self_energies": raw_state_dict["energy_shifter.self_energies"]})
             model.neural_networks.load_state_dict(energy_nn_state_dict)
             model.charge_networks.load_state_dict(charge_nn_state_dict)
+
         else:
             model.load_state_dict(_fetch_state_dict(state_dict_file, model_index))
     return model
@@ -811,6 +821,6 @@ def ANI2xCharges(**kwargs) -> BuiltinModel:
         state_dict_file,
         info_file,
         use_experimental_charges=True,
-        charge_state_dict_file=charge_nn_state_dict_file,
+        charge_nn_state_dict_file=str(charge_nn_state_dict_file),
         **kwargs
     )
