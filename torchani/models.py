@@ -583,7 +583,7 @@ def _fetch_state_dict(state_dict_file: str,
 
     model_dir = Path(__file__).parent.joinpath('resources/state_dicts').as_posix()
     if not path_is_writable(model_dir):
-        model_dir = os.path.expanduser('~/.local/torchani/')
+        model_dir = os.path.expanduser('~/.local/torchani/state_dicts')
     if private:
         url = f'http://moria.chem.ufl.edu/animodel/private/{state_dict_file}'
     else:
@@ -729,7 +729,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
             assert isinstance(model, BuiltinModelCharges)
             assert charge_nn_state_dict_file is not None
             energy_nn_state_dict = {k: v for k, v in _fetch_state_dict(state_dict_file, model_index).items() if k.endswith("weight") or k.endswith("bias")}
-            charge_nn_state_dict = _fetch_state_dict(charge_nn_state_dict_file)
+            charge_nn_state_dict = _fetch_state_dict(charge_nn_state_dict_file, local=True)
 
             model.neural_networks.load_state_dict(energy_nn_state_dict)
             model.charge_networks.load_state_dict(charge_nn_state_dict)
@@ -797,8 +797,20 @@ def ANI2x(**kwargs) -> BuiltinModel:
 
 
 def ANI2xCharges(**kwargs) -> BuiltinModel:
-    r"""Experimental 2x Model that also outputs atomic charges"""
+    r"""
+    Experimental 2x Model that also outputs atomic charges
+
+    state dict file ``charge_nn_state_dict.pt`` must be present in ~/.local/torchani/state_dicts/ for this to work
+    """
     info_file = 'ani-2x_8x.info'
     state_dict_file = 'ani2x_state_dict.pt'
-    charge_nn_state_dict_file = 'charge_nn_state_dict.pt'
-    return _load_ani_model(state_dict_file, info_file, use_experimental_charges=True, charge_state_dict_file=charge_nn_state_dict_file, **kwargs)
+    charge_nn_state_dict_file = Path.home().joinpath('.local/torchani/state_dicts/charge_nn_state_dict.pt')
+    if not charge_nn_state_dict_file.is_file():
+        raise ValueError(f"The file {str(charge_nn_state_dict_file)} could not be found")
+    return _load_ani_model(
+        state_dict_file,
+        info_file,
+        use_experimental_charges=True,
+        charge_state_dict_file=charge_nn_state_dict_file,
+        **kwargs
+    )
