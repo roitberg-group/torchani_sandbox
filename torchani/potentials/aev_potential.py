@@ -9,6 +9,7 @@ from torchani.nn import Ensemble, ANIModel
 from torchani.utils import PERIODIC_TABLE
 from torchani.aev.aev_computer import AEVComputer
 from torchani.potentials.core import Potential
+from torchani.potentials._adaptor import ChargeNetworkAdaptor
 from torchani.potentials.charges_norm import ChargeNormalizer, ChargeFactor
 
 NN = Union[ANIModel, Ensemble]
@@ -75,7 +76,7 @@ class AEVScalars(Potential):
         self,
         aev_computer: AEVComputer,
         neural_networks: NN,
-        charge_networks: NN,
+        charge_networks: ChargeNetworkAdaptor,
         charge_factor: tp.Union[ChargeFactor, torch.nn.Module] = ChargeFactor.EQUAL,
         charge_factor_args: tp.Optional[tp.Dict[str, tp.Any]] = None,
 
@@ -110,6 +111,6 @@ class AEVScalars(Potential):
             diff_vectors=neighbors.diff_vectors,
         )
         energies = self.neural_networks((element_idxs, aevs)).energies
-        raw_charges = self.charge_networks((element_idxs, aevs)).charges
-        charges = self.charge_normalizer(element_idxs, raw_charges)
-        return energies, charges
+        raw_atomic_charges = self.charge_networks((element_idxs, aevs))
+        atomic_charges = self.charge_normalizer(element_idxs, raw_atomic_charges)
+        return energies, atomic_charges

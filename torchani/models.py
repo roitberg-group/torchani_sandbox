@@ -78,6 +78,7 @@ from torchani.potentials import (
     Potential,
     PairwisePotential,
     ChargeFactor,
+    ChargeNetworkAdaptor,
 )
 from torchani.neighbors import rescreen
 
@@ -368,7 +369,7 @@ class BuiltinModel(Module):
 class BuiltinModelCharges(BuiltinModel):
     def __init__(
         self,
-        charge_networks: NN,
+        charge_networks: ChargeNetworkAdaptor,
         charge_factor: Union[ChargeFactor, torch.nn.Module] = ChargeFactor.EQUAL,
         charge_factor_args: Optional[Dict[str, Any]] = None,
         *args,
@@ -696,7 +697,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
                 ) for s in elements
             ]
         )
-        charge_networks = ANIModel(atomic_charge_networks)
+        charge_networks = ChargeNetworkAdaptor(atomic_charge_networks)
         model_kwargs.update(
             {
                 "charge_factor": ChargeFactor.SQUARED_WEIGHTED,
