@@ -1,30 +1,15 @@
-r"""Charge normalization"""
-class AtomicModule(torch.nn.Module):
-    r"""Base class for all modules that support a limited number of chemical symbols"""
-    def __init__(
-        self,
-        *args,
-        name: Optional[str] = None,
-        cutoff: float = math.inf,
-        symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
-        **kwargs
-    ):
-        super().__init__()
-        self.atomic_numbers = torch.tensor(
-            [ATOMIC_NUMBERS[e] for e in symbols],
-            dtype=torch.long
-        )
-        self.cutoff = cutoff
-        self.name = name if name is not None else type(self).__name__
+r"""Charge normalization utilities"""
+from enum import Enum
+import typing as tp
 
-    @torch.jit.unused
-    def get_chemical_symbols(self) -> Tuple[str, ...]:
-        return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)
+import torch
+from torch import Tensor
+
+from torchani.utils import ATOMIC_NUMBERS
 
 
-class ChargeNorm(AtomicModule):
-    r"""Subclasses will probably want to override 'factor'"""
-    def factor(
+class EqualChargeFactor(torch.nn.Module):
+    def forward(
         self,
         element_idxs: Tensor,
         raw_charges: Tensor,
@@ -32,166 +17,117 @@ class ChargeNorm(AtomicModule):
         num_charges = (element_idxs != -1).sum(-1)
         return 1 / num_charges
 
+
+ELECTRONEGATIVITY = {
+    "H": 7.18,
+    "C": 6.26,
+    "N": 7.27,
+    "O": 7.54,
+    "S": 6.22,
+    "F": 10.41,
+    "Cl": 8.29,
+}
+HARDNESS = {
+    "H": 12.84,
+    "C": 10.00,
+    "N": 14.53,
+    "O": 12.16,
+    "S": 8.28,
+    "F": 14.02,
+    "Cl": 9.35,
+}
+
+
+class WeightedChargeFactor(torch.nn.Module):
+    weights: Tensor
+
+    def __init__(
+        self,
+        electronegativities: tp.Optional[tp.Sequence[float]] = None,
+        hardnesses: tp.Optional[tp.Sequence[float]] = None,
+        symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
+    ):
+        super().__init__()
+        self.atomic_numbers = torch.tensor(
+            [ATOMIC_NUMBERS[e] for e in symbols], dtype=torch.long
+        )
+        if electronegativities is None:
+            electronegativities = [ELECTRONEGATIVITY[s] for s in symbols]
+        assert electronegativities is not None  # mypy
+        if hardnesses is None:
+            hardnesses = [HARDNESS[s] for s in symbols]
+        assert hardnesses is not None  # mypy
+
+        self.register_buffer(
+            "weights",
+            (torch.tensor(electronegativities) / torch.tensor(hardnesses)) ** 2,
+        )
+        assert len(self.weights) == len(self.atomic_numbers)
+
     def forward(
         self,
         element_idxs: Tensor,
         raw_charges: Tensor,
-        total_charge: float = 0.0
+    ) -> Tensor:
+        weights = self.weights[element_idxs]
+        weights = weights.masked_fill(element_idxs == -1, 0.0)
+        return weights / torch.sum(weights, dim=-1, keepdim=True)
+
+
+class SquaredWeightedChargeFactor(WeightedChargeFactor):
+    def forward(
+        self,
+        element_idxs: Tensor,
+        raw_charges: Tensor,
+    ) -> Tensor:
+        weights = self.weights[element_idxs]
+        weights = weights.masked_fill(element_idxs == -1, 0.0)
+        weights = weights * raw_charges**2
+        return weights / torch.sum(weights, dim=-1, keepdim=True)
+
+
+class ChargeFactor(Enum):
+    EQUAL = EqualChargeFactor
+    WEIGHTED = WeightedChargeFactor
+    SQUARED_WEIGHTED = SquaredWeightedChargeFactor
+
+
+def _parse_factor(
+    factor: tp.Union[ChargeFactor, torch.nn.Module],
+    kwargs: tp.Optional[tp.Dict[str, tp.Any]] = None,
+) -> torch.nn.Module:
+    if isinstance(factor, ChargeFactor):
+        assert kwargs is not None  # mypy
+        return factor.value(**kwargs)
+    assert kwargs is None  # mypy
+    return factor
+
+
+class ChargeNormalizer(torch.nn.Module):
+    r"""
+    Usage:
+
+    .. code-block::python
+
+        normalizer = ChargeNorm()
+        total_charge = 0.0
+        norm_charges = normalizer(species, raw_charges, total_charge)
+
+    """
+    factor: torch.nn.Module
+
+    def __init__(
+        self,
+        factor: tp.Union[ChargeFactor, torch.nn.Module] = ChargeFactor.EQUAL,
+        factor_args: tp.Optional[tp.Dict[str, tp.Any]] = None,
+    ):
+        super().__init__()
+        self.factor = _parse_factor(factor, factor_args or {})
+
+    def forward(
+        self, element_idxs: Tensor, raw_charges: Tensor, total_charge: float = 0.0
     ) -> Tensor:
         total_raw_charge = torch.sum(raw_charges, dim=-1, keepdim=True)
         charge_excess = total_charge - total_raw_charge
         factor = self.factor(element_idxs, raw_charges)
         return raw_charges + charge_excess * factor
-
-
-class WeightedChargeNorm(ChargeNorm):
-    def __init__(
-        self,
-        electronegativities: Sequence[float],
-        hardnesses: Sequence[float],
-        symbols: Sequence[str] = ("H", "C", "N", "O"),
-    ):
-        super().__init__(symbols=symbols)
-        _electronegativities = torch.tensor(electronegativities)
-        _hardnesses = torch.tensor(hardnesses)
-        self.register_buffer("weights", (_electronegativities / _hardnesses) ** 2)
-        assert len(self.weights) == len(self.atomic_numbers)
-
-    def factor(
-        self,
-        element_idxs: Tensor,
-        raw_charges: Tensor,
-    ) -> Tensor:
-        weights = self.weights[element_idxs]
-        weights = weights.masked_fill(element_idxs == -1, 0.)
-        return weights / torch.sum(weights, dim=-1, keepdim=True)
-
-
-class WeightedQ2ChargeNorm(WeightedChargeNorm):
-    def factor(
-        self,
-        element_idxs: Tensor,
-        raw_charges: Tensor,
-    ) -> Tensor:
-        weights = self.weights[element_idxs]
-        weights = weights.masked_fill(element_idxs == -1, 0.)
-        weights = weights * raw_charges ** 2
-        return weights / torch.sum(weights, dim=-1, keepdim=True)
-
-    def __init__(
-        self,
-        base_charges: Sequence[float] = None,
-        symbols: Sequence[str] = ("H", "C", "N", "O"),
-        normalization_fn: Optional[ChargeNorm] = None,
-        **kwargs
-    ):
-        super().__init__(symbols=symbols, **kwargs)
-        if normalization_fn is not None:
-            self.normalization_fn = normalization_fn
-            assert self.normalization_fn.atomic_numbers == self.atomic_numbers
-        else:
-            self.normalization_fn = ChargeNorm(symbols=symbols)
-
-        if base_charges is not None:
-            base_charges = torch.tensor(base_charges)
-            assert len(base_charges) == len(self.atomic_numbers)
-        else:
-            base_charges = torch.tensor(0.)
-        torch.register_buffer("base_charges", base_charges)
-
-    def unshifted_raw_charges(
-        self,
-        element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None
-    ) -> Tensor:
-        r"""Output unshifted, unnormalized charges"""
-        return torch.zeros(
-            element_idxs.shape,
-            dtype=distances.dtype,
-            device=distances.device,
-        )
-
-    def raw_charges(
-        self,
-        element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None
-    ) -> Tensor:
-        r"""Output unnormalized charges"""
-        return self.base_charges + self.unshifted_raw_charges(
-            element_idxs=element_idxs,
-            neighbor_idxs=neighbor_idxs,
-            distances=distances,
-            diff_vectors=diff_vectors,
-        )
-
-    def charges(
-        self,
-        element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None,
-        total_charge: Optional[float] = 0.0,
-    ) -> Tensor:
-        r"""Output normalized charges"""
-        raw_charges = self.raw_charges(
-            element_idxs=element_idxs,
-            neighbor_idxs=neighbor_idxs,
-            distances=distances,
-            diff_vectors=diff_vectors,
-        )
-        return self.normalization_fn(raw_charges)
-
-    def raw_products(
-        self,
-        element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None
-    ) -> Tensor:
-        r"""Output all pairwise products of unnormalized charges"""
-        raw_charges = self.raw_charges(
-            element_idxs=element_idxs,
-            neighbor_idxs=neighbor_idxs,
-            distances=distances,
-            diff_vectors=diff_vectors,
-        )
-        return raw_charges[:, neighbor_idxs[0]] * raw_charges[:, neighbor_idxs[1]]
-
-    def products(
-        self,
-        element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None
-    ) -> Tensor:
-        r"""Output all pairwise products of normalized charges
-
-        Note: Directly calling the module will call this function under the hood,
-        you should call the module directly to be able to
-        better interface with torch hooks, etc."""
-        charges = self.charges(
-            element_idxs=element_idxs,
-            neighbor_idxs=neighbor_idxs,
-            distances=distances,
-            diff_vectors=diff_vectors,
-        )
-        return charges[:, neighbor_idxs[0]] * charges[:, neighbor_idxs[1]]
-
-    def forward(
-        self,
-        element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None
-    ) -> Tensor:
-        return self.products(
-            element_idxs=element_idxs,
-            neighbor_idxs=neighbor_idxs,
-            distances=distances,
-            diff_vectors=diff_vectors,
-        )
-

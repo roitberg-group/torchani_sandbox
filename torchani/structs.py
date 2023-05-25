@@ -8,7 +8,7 @@ class SpeciesEnergies(NamedTuple):
     energies: Tensor
 
 
-class SpeciesEnergiesCharges(NamedTuple):
+class SpeciesEnergiesAtomicCharges(NamedTuple):
     species: Tensor
     energies: Tensor
     charges: Tensor

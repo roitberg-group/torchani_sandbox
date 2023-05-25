@@ -67,11 +67,18 @@ from torch.nn import Module
 from torch.jit import Final
 
 from torchani import atomics
-from torchani.structs import SpeciesEnergies, SpeciesEnergiesCharges
+from torchani.structs import SpeciesEnergies, SpeciesEnergiesAtomicCharges
 from torchani.nn import SpeciesConverter, Ensemble, ANIModel
 from torchani.utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from torchani.aev import AEVComputer
-from torchani.potentials import AEVScalars, AEVPotential, RepulsionXTB, Potential, PairwisePotential
+from torchani.potentials import (
+    AEVScalars,
+    AEVPotential,
+    RepulsionXTB,
+    Potential,
+    PairwisePotential,
+    ChargeFactor,
+)
 from torchani.neighbors import rescreen
 
 
@@ -362,6 +369,8 @@ class BuiltinModelCharges(BuiltinModel):
     def __init__(
         self,
         charge_networks: NN,
+        charge_factor: Union[ChargeFactor, torch.nn.Module] = ChargeFactor.EQUAL,
+        charge_factor_args: Optional[Dict[str, Any]] = None,
         *args,
         pairwise_potentials: Iterable[PairwisePotential] = tuple(),
         **kwargs
@@ -372,6 +381,8 @@ class BuiltinModelCharges(BuiltinModel):
             aev_computer=self.aev_computer,
             neural_networks=self.neural_networks,
             charge_networks=charge_networks,
+            charge_factor=charge_factor,
+            charge_factor_args=charge_factor_args,
         )
         self.size = aev_scalars.size
         potentials.append(aev_scalars)
@@ -387,12 +398,13 @@ class BuiltinModelCharges(BuiltinModel):
         species_coordinates: Tuple[Tensor, Tensor],
         cell: Optional[Tensor] = None,
         pbc: Optional[Tensor] = None
-    ) -> SpeciesEnergiesCharges:
+    ) -> SpeciesEnergiesAtomicCharges:
+
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
 
-        energies = torch.zeros(element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype)
-        charges = torch.zeros_like(energies)
+        energies = coordinates.new_zeros(coordinates.shape[0])
+        atomic_charges = coordinates.new_zeros(element_idxs.shape)
 
         previous_cutoff = self.aev_computer.neighborlist.cutoff
         for pot in self.potentials:
@@ -400,13 +412,13 @@ class BuiltinModelCharges(BuiltinModel):
                 neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
             if isinstance(pot, AEVScalars):
-                energies, charges = pot(element_idxs, neighbor_data)
+                energies, atomic_charges = pot(element_idxs, neighbor_data)
             else:
                 energies = pot(element_idxs, neighbor_data)
             energies += energies
 
         energies = self.energy_shifter((element_idxs, energies)).energies
-        return SpeciesEnergiesCharges(element_idxs, energies, charges)
+        return SpeciesEnergiesAtomicCharges(element_idxs, energies, atomic_charges)
 
     def __getitem__(self, index: int) -> 'BuiltinModelCharges':
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
@@ -457,7 +469,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
     ) -> SpeciesEnergies:
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
-        energies = torch.zeros(element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype)
+        energies = coordinates.new_zeros(coordinates.shape[0])
         previous_cutoff = self.aev_computer.neighborlist.cutoff
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
@@ -500,7 +512,6 @@ class BuiltinModelPairInteractions(BuiltinModel):
         return SpeciesEnergies(species_coordinates[0], atomic_energies)
 
     # NOTE: members_energies does not need to be overriden, it works correctly as is
-
     def __getitem__(self, index: int) -> 'BuiltinModel':
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         non_aev_potentials = [p for p in self.potentials if not isinstance(p, AEVPotential)]
@@ -611,6 +622,8 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
                     model_index: int = None,
                     use_neurochem_source: bool = False,
                     ensemble_size: int = 8,
+                    use_experimental_charges: bool = False,
+                    charge_nn_state_dict_file: Optional[str] = None,
                     **model_kwargs) -> BuiltinModel:
     # Helper function to toggle if the loading is done from an NC file or
     # directly using torchani and state_dicts
@@ -656,7 +669,44 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     aev_computer, neural_networks, energy_shifter, elements = components
 
     model_class: Type[BuiltinModel]
-    if repulsion:
+    if use_experimental_charges:
+        # I will manually build this to be equivalent to Kate's networks
+        dims_for_atoms = {'H': (1008, 256, 192, 160),
+                          'C': (1008, 224, 192, 160),
+                          'N': (1008, 192, 160, 128),
+                          'O': (1008, 192, 160, 128),
+                          'S': (1008, 160, 128, 96),
+                          'F': (1008, 160, 128, 96),
+                          'Cl': (1008, 160, 128, 96)}
+
+        # TODO: classifier-out is 2, what does this even mean..?
+        # The charges seem to actually be located in the index [1] of the
+        # output of the networks
+
+        atomic_charge_networks = OrderedDict(
+            [
+                (
+                    s,
+                    atomics.standard(
+                        dims_for_atoms[s],
+                        bias=False,
+                        classifier_out=2,
+                        activation=torch.nn.GELU()
+                    ),
+                ) for s in elements
+            ]
+        )
+        charge_networks = ANIModel(atomic_charge_networks)
+        model_kwargs.update(
+            {
+                "charge_factor": ChargeFactor.SQUARED_WEIGHTED,
+                "charge_factor_args": {"symbols": elements},
+                "charge_networks": charge_networks,
+            }
+        )
+        model_class = BuiltinModelCharges
+
+    elif repulsion:
         cutoff = aev_computer.radial_terms.cutoff
         pairwise_potentials: List[torch.nn.Module] = []
         base_repulsion_kwargs = {'symbols': elements, 'cutoff': cutoff}
@@ -665,6 +715,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         pairwise_potentials.append(RepulsionXTB(**base_repulsion_kwargs))
         model_kwargs.update({'pairwise_potentials': pairwise_potentials})
         model_class = BuiltinModelPairInteractions
+
     else:
         model_class = BuiltinModel
 
@@ -672,7 +723,17 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
 
     if pretrained and not use_neurochem_source:
         assert state_dict_file is not None
-        model.load_state_dict(_fetch_state_dict(state_dict_file, model_index))
+        if use_experimental_charges:
+            # TODO: This is super dirty and horrible
+            assert isinstance(model, BuiltinModelCharges)
+            assert charge_nn_state_dict_file is not None
+            energy_nn_state_dict = {k: v for k, v in _fetch_state_dict(state_dict_file, model_index).items() if k.endswith("weight") or k.endswith("bias")}
+            charge_nn_state_dict = _fetch_state_dict(charge_nn_state_dict_file)
+
+            model.neural_networks.load_state_dict(energy_nn_state_dict)
+            model.charge_networks.load_state_dict(charge_nn_state_dict)
+        else:
+            model.load_state_dict(_fetch_state_dict(state_dict_file, model_index))
     return model
 
 
@@ -732,3 +793,11 @@ def ANI2x(**kwargs) -> BuiltinModel:
     info_file = 'ani-2x_8x.info'
     state_dict_file = 'ani2x_state_dict.pt'
     return _load_ani_model(state_dict_file, info_file, **kwargs)
+
+
+def ANI2xCharges(**kwargs) -> BuiltinModel:
+    r"""Experimental 2x Model that also outputs atomic charges"""
+    info_file = 'ani-2x_8x.info'
+    state_dict_file = 'ani2x_state_dict.pt'
+    charge_nn_state_dict_file = 'charge_nn_state_dict.pt'
+    return _load_ani_model(state_dict_file, info_file, use_experimental_charges=True, charge_state_dict_file=charge_nn_state_dict_file, **kwargs)

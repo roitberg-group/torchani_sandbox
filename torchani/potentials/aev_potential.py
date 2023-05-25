@@ -1,5 +1,7 @@
+import typing as tp
 from typing import Optional, Union, Tuple
 
+import torch
 from torch import Tensor
 
 from torchani.neighbors import NeighborData
@@ -7,6 +9,7 @@ from torchani.nn import Ensemble, ANIModel
 from torchani.utils import PERIODIC_TABLE
 from torchani.aev.aev_computer import AEVComputer
 from torchani.potentials.core import Potential
+from torchani.potentials.charges_norm import ChargeNormalizer, ChargeFactor
 
 NN = Union[ANIModel, Ensemble]
 
@@ -68,7 +71,15 @@ class AEVPotential(Potential):
 
 
 class AEVScalars(Potential):
-    def __init__(self, aev_computer: AEVComputer, neural_networks: NN, charge_networks: NN):
+    def __init__(
+        self,
+        aev_computer: AEVComputer,
+        neural_networks: NN,
+        charge_networks: NN,
+        charge_factor: tp.Union[ChargeFactor, torch.nn.Module] = ChargeFactor.EQUAL,
+        charge_factor_args: tp.Optional[tp.Dict[str, tp.Any]] = None,
+
+    ):
         if isinstance(neural_networks, Ensemble):
             any_nn = neural_networks[0]
         else:
@@ -79,6 +90,7 @@ class AEVScalars(Potential):
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
         self.charge_networks = charge_networks
+        self.charge_normalizer = ChargeNormalizer(factor=charge_factor, factor_args=charge_factor_args)
 
         if isinstance(neural_networks, Ensemble):
             self.size = neural_networks.size
@@ -98,6 +110,6 @@ class AEVScalars(Potential):
             diff_vectors=neighbors.diff_vectors,
         )
         energies = self.neural_networks((element_idxs, aevs)).energies
-        charges = self.charge_networks((element_idxs, aevs)).charges
-        # TODO: This needs charge normalization
+        raw_charges = self.charge_networks((element_idxs, aevs)).charges
+        charges = self.charge_normalizer(element_idxs, raw_charges)
         return energies, charges
