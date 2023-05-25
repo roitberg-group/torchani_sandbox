@@ -35,6 +35,12 @@ class AEVPotential(Potential):
         else:
             self.size = 1
 
+    @torch.jit.export
+    def _recast_long_buffers(self):
+        self.atomic_numbers = self.atomic_numbers.to(dtype=torch.long)
+        self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
+        self.aev_computer.neighborlist._recast_long_buffers()
+
     def forward(
         self,
         element_idxs: Tensor,
@@ -97,6 +103,12 @@ class AEVScalars(Potential):
             self.size = neural_networks.size
         else:
             self.size = 1
+
+    @torch.jit.export
+    def _recast_long_buffers(self):
+        self.atomic_numbers = self.atomic_numbers.to(dtype=torch.long)
+        self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
+        self.aev_computer.neighborlist._recast_long_buffers()
 
     def forward(  # type: ignore
         self,

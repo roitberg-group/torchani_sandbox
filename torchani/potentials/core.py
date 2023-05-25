@@ -27,6 +27,10 @@ class Potential(torch.nn.Module):
         self.atomic_numbers = torch.tensor([ATOMIC_NUMBERS[e] for e in symbols], dtype=torch.long)
         self.cutoff = cutoff
 
+    @torch.jit.export
+    def _recast_long_buffers(self):
+        self.atomic_numbers = self.atomic_numbers.to(dtype=torch.long)
+
     @torch.jit.unused
     def get_chemical_symbols(self) -> Tuple[str, ...]:
         return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)
