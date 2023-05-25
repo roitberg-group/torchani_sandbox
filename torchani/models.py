@@ -419,6 +419,7 @@ class BuiltinModelCharges(BuiltinModel):
                 _energies, atomic_charges = pot(element_idxs, neighbor_data)
             else:
                 _energies = pot(element_idxs, neighbor_data)
+            assert isinstance(_energies, Tensor)  # For the TorchScript interpreter
             energies += _energies
         energies = self.energy_shifter((element_idxs, energies)).energies
         return SpeciesEnergiesAtomicCharges(element_idxs, energies, atomic_charges)
