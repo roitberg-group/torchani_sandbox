@@ -21,8 +21,9 @@ def standard(dims: Sequence[int],
     for dim_in, dim_out in zip(dims[:-1], dims[1:]):
         layers.extend([torch.nn.Linear(dim_in, dim_out, bias=bias), activation])
     # final layer is a linear classifier that is always appended
+    layers.append(PrintLayer())  #added for print layer
     layers.append(torch.nn.Linear(dims[-1], classifier_out, bias=bias))
-    assert len(layers) == (len(dims) - 1) * 2 + 1  #comment out for print layer
+    #assert len(layers) == (len(dims) - 1) * 2 + 1  #comment out for print layer
     return torch.nn.Sequential(*layers)
 
 

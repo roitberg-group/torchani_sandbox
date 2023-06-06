@@ -82,11 +82,15 @@ class ANIModel(torch.nn.ModuleDict):
         aev = aev.flatten(0, 1)
 
         output = aev.new_zeros(species_.shape)
+        layers3 = aev.new_zeros(species_.shape + (160,))
         for i, (s, m) in enumerate(self.items()):           #change for l3
             midx = (species_ == i).nonzero().view(-1)
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
                 output.index_add_(0, midx, m(input_).view(-1))
+                l3 = PrintLayer.get_layer()
+                layers3.index_add_(0, midx, l3)
+        self.layer_info = layers3.view(species.shape[0], species.shape[1], -1)
         output = output.view_as(species)
         return output
 
@@ -108,19 +112,25 @@ class Ensemble(torch.nn.ModuleList):
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         sum_ = 0
+        layers_info_list = []
         for x in self:
             sum_ += x(species_input)[1]  #added zeroth index for layers stuff
+            layers_info_list.append(x.layer_info)
+        self.layer_info = layers_info_list
         species, _ = species_input
         return SpeciesEnergies(species, sum_ / self.size)  # type: ignore
 
     @torch.jit.export
     def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
         members_list = []
+        #layer_info_list = []
         for nnp in self:
-            members_list.append(nnp._atomic_energies((species_aev)).unsqueeze(0)) #add index zero for layerinfo
+            members_list.append(nnp._atomic_energies((species_aev)).unsqueeze(0)[0]) #add index zero for layerinfo
+         #   layer_info_list.append(nnp._atomic_energies((species_aev)).unsqueeze(0)[1])
         members_atomic_energies = torch.cat(members_list, dim=0)
+        #members_layer_info = torch.cat(members_layer_info, dim=0)
         # out shape is (M, C, A)
-        return members_atomic_energies
+        return members_atomic_energies#, members_layer_info
 
     def to_infer_model(self, use_mnp=True):
         # infer is not type-checked
