@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """`TorchANI`_ is a PyTorch implementation of `ANI`_, created and maintained by
 the `Roitberg group`_.  TorchANI contains classes like
 :class:`AEVComputer`, :class:`ANIModel`, and :class:`EnergyShifter` that can

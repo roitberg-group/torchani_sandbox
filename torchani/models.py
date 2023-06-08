@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The ANI model zoo that stores public ANI models.
 
 Currently the model zoo has three models: ANI-1x, ANI-1ccx, and ANI-2x.  The
