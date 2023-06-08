@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """`TorchANI`_ is a PyTorch implementation of `ANI`_, created and maintained by
 the `Roitberg group`_.  TorchANI contains classes like
 :class:`AEVComputer`, :class:`ANIModel`, and :class:`EnergyShifter` that can
@@ -36,7 +35,6 @@ from . import utils
 from . import neurochem
 from . import models
 from . import units
-from . import repulsion
 from . import datasets
 from . import transforms
 from . import cli
@@ -64,7 +62,6 @@ __all__ = [
     'neurochem',  # TODO: Get rid of this
     'models',
     'units',
-    'repulsion',
     'potentials',
     'neighbors',
     'cutoffs',
