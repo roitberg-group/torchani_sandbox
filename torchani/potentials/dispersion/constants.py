@@ -13,8 +13,10 @@ SUPPORTED_D3_ELEMENTS = 94
 def _make_symmetric(x: Tensor) -> Tensor:
     assert x.ndim == 1
     size = (math.sqrt(1 + 8 * len(x)) - 1) / 2
-    assert size.is_integer(), \
-            "input tensor must be of size x * (x + 1) / 2 where x is an integer"
+    if not size.is_integer():
+        raise ValueError(
+            "Input tensor must be of size x * (x + 1) / 2 where x is an integer"
+        )
     size = int(size)
     x_symmetric = torch.zeros((size, size))
     _lower_diagonal_mask = torch.tril(torch.ones((size, size), dtype=torch.bool))
