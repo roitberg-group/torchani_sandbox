@@ -35,7 +35,6 @@ from . import utils
 from . import neurochem
 from . import models
 from . import units
-from . import repulsion
 from . import datasets
 from . import transforms
 from . import cli
@@ -63,7 +62,6 @@ __all__ = [
     'neurochem',  # TODO: Get rid of this
     'models',
     'units',
-    'repulsion',
     'potentials',
     'neighbors',
     'cutoffs',
