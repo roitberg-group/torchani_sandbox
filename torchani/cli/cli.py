@@ -1,7 +1,7 @@
 import argparse
 
 from torchani.cli.utils import h5info
-from torchani.datasets._builtin_datasets import download_builtin_dataset, _BUILTIN_DATASETS, _BUILTIN_DATASETS_LOT
+from torchani.datasets import download_builtin_dataset, _BUILTIN_DATASETS, _BUILTIN_DATASETS_LOT
 
 
 def build_parser():
@@ -13,7 +13,7 @@ def build_parser():
     parser_download = subparsers.add_parser('download', help='download datasets',
                                             description="Download dataset from Moria (needs to be within UF network).\n"
                                             "Check avaiable dataset at: \n"
-                                            "https://github.com/roitberg-group/torchani_sandbox/blob/master/torchani/datasets/_builtin_datasets.py",
+                                            "https://github.com/roitberg-group/torchani_sandbox/blob/master/torchani/datasets/builtin.py",
                                             formatter_class=argparse.RawTextHelpFormatter)
     parser_download.add_argument('dataset', type=str, choices=_BUILTIN_DATASETS, help='the dataset to download')
     parser_download.add_argument('lot', type=str, choices=_BUILTIN_DATASETS_LOT, help='level of theory')
