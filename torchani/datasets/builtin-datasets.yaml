@@ -119,7 +119,7 @@ ANI2x:
                 - "ANI-1x-wB97X-def2TZVPP.h5"
     default-lot:
         "wb97x-631gd"
-ANI2x:
+ANI1x:
     lot:
         wb97x-631gd:
             archive:

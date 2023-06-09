@@ -204,7 +204,7 @@ def _register_dataset_builder(name: str) -> None:
         download: bool = True,
         dummy_properties: Optional[Dict[str, Any]] = None
     ) -> ANIDataset:
-        lot = f"{functional}-{basis_set}"
+        lot = f"{functional}-{basis_set}".lower()
         try:
             archive = data[lot]["archive"]
         except KeyError:
@@ -213,13 +213,13 @@ def _register_dataset_builder(name: str) -> None:
             ) from None
         suffix = ".h5"
 
-        _root = root or _DEFAULT_DATA_PATH / archive.replace(".tar.gz", "")
+        _root = root if root is not None else _DEFAULT_DATA_PATH / archive.replace(".tar.gz", "")
         _root = Path(_root).resolve()
 
         _files_and_md5s = OrderedDict([(k, _MD5S[k]) for k in data[lot]["files"]])
 
         # If the dataset is not found we download it
-        if download and not _root.is_dir():
+        if download and ((not _root.is_dir()) or (not any(_root.glob(f"*{suffix}")))):
             _download_and_extract_archive(base_url=_BASE_URL, file_name=archive, dest_dir=_root)
 
         # Check for corruption
@@ -247,4 +247,5 @@ def _register_dataset_builder(name: str) -> None:
 
 
 for name in _BUILTIN_DATASETS:
-    _register_dataset_builder(name)
+    if name not in sys.modules[__name__].__dict__:
+        _register_dataset_builder(name)
