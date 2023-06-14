@@ -680,7 +680,7 @@ def ANI2x(**kwargs) -> BuiltinModel:
     return _load_ani_model(state_dict_file, info_file, **kwargs)
 
 
-def ANID(**kwargs):
+def ANIdr(**kwargs):
     """ANI model trained with both dispersion and repulsion
 
     The level of theory is B973c, it is an ensemble of 7 models.
