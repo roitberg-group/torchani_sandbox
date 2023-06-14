@@ -599,22 +599,29 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
 
     model_class: Type[BuiltinModel]
     if repulsion or dispersion:
-        pairwise_potentials: List[torch.nn.Module] = []
         model_class = BuiltinModelPairInteractions
+        pairwise_potentials: List[torch.nn.Module] = []
         cutoff = aev_computer.radial_terms.cutoff
+        potential_kwargs = {'symbols': elements, 'cutoff': cutoff}
         if repulsion:
-            base_repulsion_kwargs = {'symbols': elements, 'cutoff': cutoff}
+            base_repulsion_kwargs = deepcopy(potential_kwargs)
             base_repulsion_kwargs.update(repulsion_kwargs or {})
             pairwise_potentials.append(RepulsionXTB(**base_repulsion_kwargs))
-        elif dispersion:
-            base_dispersion_kwargs = {'symbols': elements, 'cutoff': cutoff}
+        if dispersion:
+            base_dispersion_kwargs = deepcopy(potential_kwargs)
             base_dispersion_kwargs.update(dispersion_kwargs or {})
             pairwise_potentials.append(TwoBodyDispersionD3(**base_dispersion_kwargs))
         model_kwargs.update({'pairwise_potentials': pairwise_potentials})
     else:
         model_class = BuiltinModel
 
-    model = model_class(aev_computer, neural_networks, energy_shifter, elements, **model_kwargs)
+    model = model_class(
+        aev_computer,
+        neural_networks,
+        energy_shifter,
+        elements,
+        **model_kwargs,
+    )
 
     if pretrained and not use_neurochem_source:
         assert state_dict_file is not None
@@ -689,14 +696,20 @@ def ANIdr(pretrained: bool = True, **kwargs):
     """
     # An ani model with dispersion
     def dispersion_atomics(atom: str = 'H'):
-        dims_for_atoms = {'H': (1008, 256, 192, 160),
-                          'C': (1008, 256, 192, 160),
-                          'N': (1008, 192, 160, 128),
-                          'O': (1008, 192, 160, 128),
-                          'S': (1008, 160, 128, 96),
-                          'F': (1008, 160, 128, 96),
-                          'Cl': (1008, 160, 128, 96)}
-        return atomics.standard(dims_for_atoms[atom], activation=torch.nn.GELU(), bias=False)
+        dims_for_atoms = {
+            'H': (1008, 256, 192, 160),
+            'C': (1008, 256, 192, 160),
+            'N': (1008, 192, 160, 128),
+            'O': (1008, 192, 160, 128),
+            'S': (1008, 160, 128, 96),
+            'F': (1008, 160, 128, 96),
+            'Cl': (1008, 160, 128, 96)
+        }
+        return atomics.standard(
+            dims_for_atoms[atom],
+            activation=torch.nn.GELU(),
+            bias=False,
+        )
     symbols = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
     model = ANI2x(
         pretrained=False,
