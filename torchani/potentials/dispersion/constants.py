@@ -1,3 +1,20 @@
+r"""Fetch the dispersion constants from .pkl and .csv files, and provide them as Tensor
+
+There are 4 different kinds of constants needed for D3 dispersion:
+
+- Precalculated C6 coefficients
+    shape (Elements, Elements, Ref, Ref), where "Ref" is the number of references
+    (Grimme et. al. provides 5)
+    This means for each pair of elements and reference indices there is an
+    associated precalc C6 coeff
+- Precalculated coordination numbers
+    shape (Elements, Elements, Ref, Ref, 2)
+    Where the final axis indexes the coordination number of the first or second
+    atom respectively.
+    This means for each pair of elements and reference indices there is an
+    associated coordination number for the first and second items.
+"""
+
 import math
 from typing import Dict, Tuple
 import pickle
@@ -57,8 +74,10 @@ def get_c6_constants() -> Tuple[Tensor, Tensor, Tensor]:
     c6_constants = torch.full((el + 1, el + 1, max_refs, max_refs), -1.0)
     c6_coordination_a = torch.full((el + 1, el + 1, max_refs, max_refs), -1.0)
     c6_coordination_b = torch.full((el + 1, el + 1, max_refs, max_refs), -1.0)
-    assert ((c6_constants == -1.0) == (c6_coordination_a == -1.0)).all(), "All missing parameters are not equal"
-    assert ((c6_coordination_a == -1.0) == (c6_coordination_b == -1.0)).all(), "All missing parameters are not equal"
+    if not ((c6_constants == -1.0) == (c6_coordination_a == -1.0)).all():
+        raise RuntimeError("All missing parameters are not equal")
+    if not ((c6_coordination_a == -1.0) == (c6_coordination_b == -1.0)).all():
+        raise RuntimeError("All missing parameters are not equal")
 
     # every "line" in the unraveled c6 list has:
     # 0 1 2 3 4
@@ -89,8 +108,16 @@ def get_cutoff_radii() -> Tensor:
         cutoff_radii = torch.tensor(pickle.load(f))
     assert len(cutoff_radii) == num_cutoff_radii
     cutoff_radii = _make_symmetric(cutoff_radii)
-    cutoff_radii = torch.cat((torch.zeros(len(cutoff_radii), dtype=cutoff_radii.dtype).unsqueeze(0), cutoff_radii), dim=0)
-    cutoff_radii = torch.cat((torch.zeros(cutoff_radii.shape[0], dtype=cutoff_radii.dtype).unsqueeze(1), cutoff_radii), dim=1)
+    cutoff_radii = torch.cat(
+        (torch.zeros(len(cutoff_radii), dtype=cutoff_radii.dtype).unsqueeze(0),
+        cutoff_radii),
+        dim=0
+    )
+    cutoff_radii = torch.cat(
+        (torch.zeros(cutoff_radii.shape[0], dtype=cutoff_radii.dtype).unsqueeze(1),
+        cutoff_radii),
+        dim=1,
+    )
     return cutoff_radii
 
 
@@ -122,13 +149,18 @@ def get_sqrt_empirical_charge() -> Tensor:
     return sqrt_empirical_charge
 
 
-def get_df_constants() -> Dict[str, Dict[str, float]]:
+def get_functional_constants() -> Dict[str, Dict[str, float]]:
     # constants for the density functional from psi4 source code, citations:
     #    A. Najib, L. Goerigk, J. Comput. Theory Chem., 14 5725, 2018)
     #    N. Mardirossian, M. Head-Gordon, Phys. Chem. Chem. Phys, 16, 9904, 2014
     df_constants: Dict[str, Dict[str, float]] = defaultdict(dict)
     # TODO: check where wB97X actually comes from
-    df_constants['wB97X'] = {'s6_bj': 1.000, 'a1': 0.0000, 's8_bj': 0.2641, 'a2': 5.4959}
+    df_constants['wB97X'] = {
+        's6_bj': 1.000,
+        'a1': 0.0000,
+        's8_bj': 0.2641,
+        'a2': 5.4959,
+    }
     # from Grimme's et al website directly:
     # first D3Zero constants
     # functional, s6_zero, sr6, s8_zero,
@@ -178,11 +210,16 @@ def get_df_constants() -> Dict[str, Dict[str, float]]:
                          revPBE38   1.0     1.021   0.862
                          rPW86PBE   1.0     1.224   0.901
                          B97-3c     1.0     1.060   1.500"""
-    # Parameters for B97-3c taken from https://aip.scitation.org/doi/pdf/10.1063/1.5012601
+    # Parameters for B97-3c taken from
+    # https://aip.scitation.org/doi/pdf/10.1063/1.5012601
     _zero_constants = _zero_constants_str.split('\n')
     for line in _zero_constants:
         df, s6_zero, sr6, s8_zero = line.split()
-        df_constants[df] = {'s6_zero': float(s6_zero), 'sr6': float(sr6), 's8_zero': float(s8_zero)}
+        df_constants[df] = {
+            's6_zero': float(s6_zero),
+            'sr6': float(sr6),
+            's8_zero': float(s8_zero)
+        }
     # now D3BJ constants
     # functional, s6_bj, a1, s8_bj, a2
     _bj_constants_str = """B1B95         1.000   0.2092    1.4507    5.5545
@@ -225,10 +262,18 @@ def get_df_constants() -> Dict[str, Dict[str, float]]:
                        TPSS0         1.000   0.3768    1.2576    4.5865
                        TPSS          1.000   0.4535    1.9435    4.4752
                        B97-3c        1.000   0.3700    1.5000    4.1000"""
-    # Parameters for B97-3c taken from https://aip.scitation.org/doi/pdf/10.1063/1.5012601
+    # Parameters for B97-3c taken from
+    # https://aip.scitation.org/doi/pdf/10.1063/1.5012601
     # Other parameters taken directly from the Psi4 source code
     _bj_constants = _bj_constants_str.split('\n')
     for line in _bj_constants:
         df, s6_bj, a1, s8_bj, a2 = line.split()
-        df_constants[df].update({'s6_bj': float(s6_bj), 'a1': float(a1), 's8_bj': float(s8_bj), 'a2': float(a2)})
+        df_constants[df].update(
+            {
+                's6_bj': float(s6_bj),
+                'a1': float(a1),
+                's8_bj': float(s8_bj),
+                'a2': float(a2)
+            }
+        )
     return df_constants
