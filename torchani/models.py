@@ -736,5 +736,5 @@ def ANIdr(pretrained: bool = True, **kwargs):
         **kwargs
     )
     if pretrained:
-        model.load_state_dict(_fetch_state_dict('anid_state_dict_mod.pt', private=True))
+        model.load_state_dict(_fetch_state_dict('anidr_state_dict.pt', private=True))
     return model
