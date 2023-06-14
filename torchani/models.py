@@ -702,6 +702,12 @@ def ANIdr(
     It predicts
     energies on HCNOFSCl elements
     """
+    # TODO: Fix this
+    if model_index is not None:
+        raise ValueError(
+            "Currently ANIdr only supports model_index=None, to get individual models please index the ensemble"
+        )
+
     # An ani model with dispersion
     def dispersion_atomics(atom: str = 'H'):
         dims_for_atoms = {
