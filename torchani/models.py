@@ -691,7 +691,11 @@ def ANI2x(**kwargs) -> BuiltinModel:
     return _load_ani_model(state_dict_file, info_file, **kwargs)
 
 
-def ANIdr(pretrained: bool = True, **kwargs):
+def ANIdr(
+    pretrained: bool = True,
+    model_index: Optional[int] = None,
+    **kwargs,
+):
     """ANI model trained with both dispersion and repulsion
 
     The level of theory is B973c, it is an ensemble of 7 models.
@@ -733,8 +737,15 @@ def ANIdr(pretrained: bool = True, **kwargs):
             'cutoff': 5.3,
             'cutoff_fn': 'smooth2'
         },
-        **kwargs
+        model_index=model_index,
+        **kwargs,
     )
     if pretrained:
-        model.load_state_dict(_fetch_state_dict('anidr_state_dict.pt', private=True))
+        model.load_state_dict(
+            _fetch_state_dict(
+                'anidr_state_dict.pt',
+                model_index=model_index,
+                private=True,
+            )
+        )
     return model
