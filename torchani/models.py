@@ -613,7 +613,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
             pairwise_potentials.append(
                 TwoBodyDispersionD3.from_functional(
                     **base_dispersion_kwargs,
-                    functional="b973c"),
+                ),
             )
         model_kwargs.update({'pairwise_potentials': pairwise_potentials})
     else:
@@ -725,7 +725,7 @@ def ANIdr(pretrained: bool = True, **kwargs):
             'symbols': symbols,
             'cutoff': 8.5,
             'cutoff_fn': 'smooth4',
-            'functional': 'B97-3c'
+            'functional': 'B973c'
         },
         repulsion=True,
         repulsion_kwargs={
