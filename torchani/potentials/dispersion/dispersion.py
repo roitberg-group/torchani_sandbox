@@ -5,12 +5,12 @@ import torch
 from torch import Tensor
 from torch.jit import Final
 
-from torchani.standalone import StandaloneWrapper
+from torchani.wrappers import StandaloneWrapper
 from torchani.units import ANGSTROM_TO_BOHR
-from torchani.dispersion import constants
 from torchani.cutoffs import Cutoff
 from torchani.neighbors import NeighborData
-from torchani.potentials import PairwisePotential
+from torchani.potentials.core import PairwisePotential
+from torchani.potentials.dispersion import constants
 from torchani.potentials.dispersion.damping import (
     Damp,
     _parse_damp_fn_cls,
@@ -110,6 +110,7 @@ class TwoBodyDispersionD3(PairwisePotential):
             s8=d[f"s8_{damp_fn}"],
             damp_fn_6=DampCls.from_functional(functional, symbols=symbols, order=6),
             damp_fn_8=DampCls.from_functional(functional, symbols=symbols, order=8),
+            symbols=symbols,
             **kwargs,
         )
 
@@ -147,8 +148,8 @@ class TwoBodyDispersionD3(PairwisePotential):
         )
 
         # Order 6 and 8 energies
-        order6_energy = self.s6 * order6_coeffs / self._damp_fn_6(species12, distances)
-        order8_energy = self.s8 * order8_coeffs / self._damp_fn_8(species12, distances)
+        order6_energy = self._s6 * order6_coeffs / self._damp_fn_6(species12, distances)
+        order8_energy = self._s8 * order8_coeffs / self._damp_fn_8(species12, distances)
         return -(order6_energy + order8_energy)
 
     # Use the coordination numbers and the internal precalc C6's and
