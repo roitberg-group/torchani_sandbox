@@ -93,7 +93,7 @@ class BJDamp(Damp):
     ) -> "BJDamp":
         if modified_damp:
             raise ValueError("Modified damp is not yet implemented")
-        d = constants.get_functional_constants()[functional or 'wB97X']
+        d = constants.get_functional_constants()[functional.lower()]
         return cls(a1=d["a1"], a2=d["a2"], cutoff_radii=None, **kwargs)
 
     def forward(
@@ -153,7 +153,7 @@ class ZeroDamp(Damp):
         modified_damp: bool = False,
         **kwargs
     ) -> "ZeroDamp":
-        d = constants.get_functional_constants()[functional or 'wB97X']
+        d = constants.get_functional_constants()[functional.lower()]
         if modified_damp:
             raise ValueError("Modified damp is not yet implemented")
 

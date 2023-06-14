@@ -164,10 +164,12 @@ def get_functional_constants() -> Dict[str, Dict[str, float]]:
     # from Grimme's et al website directly:
     # first D3Zero constants
     # functional, s6_zero, sr6, s8_zero,
+    # B97D == B97-D and B973c == B97-3c
     _zero_constants_str = """B1B95      1.0     1.613   1.868
                          B2GPPLYP   0.56    1.586   0.760
                          B3LYP      1.0     1.261   1.703
                          B97-D      1.0     0.892   0.909
+                         B97D       1.0     0.892   0.909
                          BHLYP      1.0     1.370   1.442
                          BLYP       1.0     1.094   1.682
                          BP86       1.0     1.139   1.683
@@ -209,13 +211,14 @@ def get_functional_constants() -> Dict[str, Dict[str, float]]:
                          revPBE0    1.0     0.949   0.792
                          revPBE38   1.0     1.021   0.862
                          rPW86PBE   1.0     1.224   0.901
-                         B97-3c     1.0     1.060   1.500"""
+                         B97-3c     1.0     1.060   1.500
+                         B973c      1.0     1.060   1.500"""
     # Parameters for B97-3c taken from
     # https://aip.scitation.org/doi/pdf/10.1063/1.5012601
     _zero_constants = _zero_constants_str.split('\n')
     for line in _zero_constants:
         df, s6_zero, sr6, s8_zero = line.split()
-        df_constants[df] = {
+        df_constants[df.lower()] = {
             's6_zero': float(s6_zero),
             'sr6': float(sr6),
             's8_zero': float(s8_zero)
@@ -261,14 +264,15 @@ def get_functional_constants() -> Dict[str, Dict[str, float]]:
                        rPW86PBE      1.000   0.4613    1.3845    4.5062
                        TPSS0         1.000   0.3768    1.2576    4.5865
                        TPSS          1.000   0.4535    1.9435    4.4752
-                       B97-3c        1.000   0.3700    1.5000    4.1000"""
+                       B97-3c        1.000   0.3700    1.5000    4.1000
+                       B973c         1.000   0.3700    1.5000    4.1000"""
     # Parameters for B97-3c taken from
     # https://aip.scitation.org/doi/pdf/10.1063/1.5012601
     # Other parameters taken directly from the Psi4 source code
     _bj_constants = _bj_constants_str.split('\n')
     for line in _bj_constants:
         df, s6_bj, a1, s8_bj, a2 = line.split()
-        df_constants[df].update(
+        df_constants[df.lower()].update(
             {
                 's6_bj': float(s6_bj),
                 'a1': float(a1),

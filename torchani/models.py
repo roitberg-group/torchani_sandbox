@@ -610,7 +610,11 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         if dispersion:
             base_dispersion_kwargs = deepcopy(potential_kwargs)
             base_dispersion_kwargs.update(dispersion_kwargs or {})
-            pairwise_potentials.append(TwoBodyDispersionD3(**base_dispersion_kwargs))
+            pairwise_potentials.append(
+                TwoBodyDispersionD3.from_functional(
+                    **base_dispersion_kwargs,
+                    functional="b973c"),
+            )
         model_kwargs.update({'pairwise_potentials': pairwise_potentials})
     else:
         model_class = BuiltinModel

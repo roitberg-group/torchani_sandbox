@@ -102,7 +102,7 @@ class TwoBodyDispersionD3(PairwisePotential):
         **kwargs,
     ) -> "TwoBodyDispersionD3":
 
-        d = constants.get_functional_constants()[functional]
+        d = constants.get_functional_constants()[functional.lower()]
         DampCls = _parse_damp_fn_cls(damp_fn)
 
         return cls(
