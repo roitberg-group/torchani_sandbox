@@ -155,7 +155,7 @@ def get_functional_constants() -> Dict[str, Dict[str, float]]:
     #    N. Mardirossian, M. Head-Gordon, Phys. Chem. Chem. Phys, 16, 9904, 2014
     df_constants: Dict[str, Dict[str, float]] = defaultdict(dict)
     # TODO: check where wB97X actually comes from
-    df_constants['wB97x'] = {
+    df_constants['wb97x'] = {
         's6_bj': 1.000,
         'a1': 0.0000,
         's8_bj': 0.2641,
