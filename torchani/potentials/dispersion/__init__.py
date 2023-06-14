@@ -1,4 +1,4 @@
-from torchani.dispersion.dispersion import DispersionD3, StandaloneDispersionD3
-from . import constants
+from torchani.dispersion.dispersion import TwoBodyDispersionD3, StandaloneTwoBodyDispersionD3
+from torchani.dispersion import constants
 
-__all__ = ["constants", "DispersionD3", "StandaloneDispersionD3"]
+__all__ = ["constants", "TwoBodyDispersionD3", "StandaloneTwoBodyDispersionD3"]
