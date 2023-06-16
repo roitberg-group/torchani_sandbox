@@ -116,8 +116,9 @@ from torchani.datasets._annotations import StrPath
 
 _BASE_URL = 'http://moria.chem.ufl.edu/animodel/ground_truth_data/'
 _DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
+_DATASETS_YAML_PATH = Path(__file__).parent / "builtin-datasets.yaml"
 
-with open(Path(__file__).parent / "builtin-datasets.yaml", mode="rt", encoding="utf-8") as f:
+with open(_DATASETS_YAML_PATH, mode="rt", encoding="utf-8") as f:
     _BUILTIN_DATASETS_SPEC = yaml.safe_load(f)
 
 # Convert csv file with format "file_name, MD5-hash" into a dictionary
@@ -129,12 +130,18 @@ with open(Path(__file__).resolve().parent / "md5s.csv") as f:
         _MD5S[file_.strip()] = md5.strip()
 
 _BUILTIN_DATASETS: List[str] = list(_BUILTIN_DATASETS_SPEC.keys())
-_BUILTIN_DATASETS_LOT: List[str] = list({lot for name in _BUILTIN_DATASETS_SPEC.keys() for lot in _BUILTIN_DATASETS_SPEC[name]["lot"]})
+_BUILTIN_DATASETS_LOT: List[str] = list(
+    {
+        lot for name in _BUILTIN_DATASETS_SPEC.keys()
+        for lot in _BUILTIN_DATASETS_SPEC[name]["lot"]
+    }
+)
 
 
 def download_builtin_dataset(dataset: str, lot: str, root=None):
     """
-    Download dataset at specified root folder, or at the default folder: ./datasets/{dataset}-{lot}/
+    Download dataset at specified root folder, or at the default folder:
+    ./datasets/{dataset}-{lot}/
     """
     assert dataset in _BUILTIN_DATASETS, f"{dataset} is not avaiable"
     assert lot in _BUILTIN_DATASETS_LOT, f"{lot} is not avaiable"
@@ -146,10 +153,18 @@ def download_builtin_dataset(dataset: str, lot: str, root=None):
     basis_set = parts[1]
     location = f'./datasets/{dataset}-{lot}/' if root is None else root
     if Path(location).exists():
-        print(f"Found existing dataset at {Path(location).absolute().as_posix()}, will check files integrality.")
+        print(
+            f"Found existing dataset at {Path(location).absolute().as_posix()},"
+            f" will check files integrality."
+        )
     else:
         print(f"Will download dataset at {Path(location).absolute().as_posix()}")
-    getattr(sys.modules[__name__], dataset)(location, download=True, functional=functional, basis_set=basis_set)
+    getattr(sys.modules[__name__], dataset)(
+        location,
+        download=True,
+        functional=functional,
+        basis_set=basis_set
+    )
 
 
 def _check_files_integrity(
@@ -170,13 +185,17 @@ def _check_files_integrity(
     if not present_files:
         raise RuntimeError(f'Dataset not found in path {str(root)}')
     if expected_file_names != present_file_names:
-        raise RuntimeError(f"Wrong files found for dataset {name} in provided path, "
-                           f"expected {expected_file_names} but found {present_file_names}")
-    for f in tqdm(present_files, desc=f'Checking integrity of files for dataset {name}'):
+        raise RuntimeError(
+            f"Wrong files found for dataset {name} in provided path,"
+            f" expected {expected_file_names} but found {present_file_names}"
+        )
+    for f in tqdm(present_files, desc=f'Checking integrity of dataset {name}'):
         if not _check_integrity(f, files_and_md5s[f.name]):
-            raise RuntimeError(f"All expected files for dataset {name} "
-                               f"were found but file {f.name} failed integrity check, "
-                                "your dataset is corrupted or has been modified")
+            raise RuntimeError(
+                f"All expected files for dataset {name}"
+                f" were found but file {f.name} failed integrity check,"
+                " your dataset is corrupted or has been modified"
+            )
 
 
 # This Function is a Builder Factory that creates builder functions
@@ -195,11 +214,11 @@ def _check_files_integrity(
 #   - dummy_properties
 def _register_dataset_builder(name: str) -> None:
     data = _BUILTIN_DATASETS_SPEC[name]["lot"]
-    default_functional, default_basis = _BUILTIN_DATASETS_SPEC[name]["default-lot"].split("-")
+    default_fn, default_basis = _BUILTIN_DATASETS_SPEC[name]["default-lot"].split("-")
 
     def builder(
         root: Optional[StrPath] = None,
-        functional: str = default_functional,
+        functional: str = default_fn,
         basis_set: str = default_basis,
         verbose: bool = True,
         download: bool = True,
@@ -210,24 +229,31 @@ def _register_dataset_builder(name: str) -> None:
             archive = data[lot]["archive"]
         except KeyError:
             raise ValueError(
-                f"Unsupported functional-basis set combination, try one of {set(data.keys()) - {'default-lot'}}"
+                f"Unsupported functional-basis set combination"
+                f" try one of {set(data.keys()) - {'default-lot'}}"
             ) from None
         suffix = ".h5"
 
-        _root = root if root is not None else _DEFAULT_DATA_PATH / archive.replace(".tar.gz", "")
+        _root = root or _DEFAULT_DATA_PATH / archive.replace(".tar.gz", "")
         _root = Path(_root).resolve()
 
         _files_and_md5s = OrderedDict([(k, _MD5S[k]) for k in data[lot]["files"]])
 
         # If the dataset is not found we download it
         if download and ((not _root.is_dir()) or (not any(_root.glob(f"*{suffix}")))):
-            _download_and_extract_archive(base_url=_BASE_URL, file_name=archive, dest_dir=_root)
+            _download_and_extract_archive(
+                base_url=_BASE_URL,
+                file_name=archive,
+                dest_dir=_root
+            )
 
         # Check for corruption
         _check_files_integrity(_files_and_md5s, _root, suffix, name)
 
         # Order dataset paths using the order given in "files and md5s"
-        filenames_order = {Path(k).stem: j for j, k in enumerate(_files_and_md5s.keys())}
+        filenames_order = {
+            Path(k).stem: j for j, k in enumerate(_files_and_md5s.keys())
+        }
         _filenames_and_paths = sorted(
             [(p.stem, p) for p in sorted(_root.glob(f"*{suffix}"))],
             key=lambda tup: filenames_order[tup[0]]
