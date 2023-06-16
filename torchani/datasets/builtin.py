@@ -103,10 +103,11 @@ integration grids may be slightly different, but the difference should not be
 significant.
 """
 import sys
-import yaml
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from collections import OrderedDict
+
+import yaml
 
 from torchani.utils import tqdm
 from torchani.datasets.download import _download_and_extract_archive, _check_integrity
