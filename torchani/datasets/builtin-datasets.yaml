@@ -249,10 +249,10 @@ ANICCScan:
                 "ANI-ccscan-b973c-def2mtzvp.tar.gz"
             files:
                 - "ANI-ccscan-b973c-def2mtzvp.h5"
-        b973c-def2mtzvp:
+        uwb97x-631gd:
             archive:
                 "ANI-ccscan-Uwb97x-631gd.tar.gz"
             files:
                 - "ANI-ccscan-Uwb97x-631gd.h5"
     default-lot:
-        "Uwb97x-631gd"
+        "uwb97x-631gd"
