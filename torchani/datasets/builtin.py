@@ -74,6 +74,12 @@ wavefunction_method/basis_set when appropriate.
   (disjoint from LightIons and IonsHeavy)
   This dataset is not meant to be trained to on its own.
 
+- ANI-CCScan, with LoT:
+    - B973c/def2mTZVP
+    - UwB97x/6-31Gd
+  Dataset includes relaxed scans of stretching carbon-carbon single bonds
+  for a number of compounds. UwB97x means "Unrestricted" Kohn-Sham was used.
+
 - TestData, with LoT:
     - wB97X/631Gd
   GDB subset, only for debugging and code testing purposes.
