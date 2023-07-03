@@ -80,6 +80,14 @@ wavefunction_method/basis_set when appropriate.
   Dataset includes relaxed scans of stretching carbon-carbon single bonds
   for a number of compounds. UwB97x means "Unrestricted" Kohn-Sham was used.
 
+- DielsAlder, with LoT:
+    - UwB97x/6-31Gd
+  Dataset includes structures sampled in different ways from a diels alder
+  reaction. Among them, from the intrinsic reaction coordinate (IRC), and from
+  specific points of the potential energy surface (PES), in some cases using
+  active learning, with the QBC criteria, and with normal mode sampling.
+  UwB97x means "Unrestricted" Kohn-Sham was used.
+
 - TestData, with LoT:
     - wB97X/631Gd
   GDB subset, only for debugging and code testing purposes.
