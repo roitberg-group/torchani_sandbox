@@ -242,3 +242,17 @@ COMP6v2:
                 - "COMP6-v1_full-wB97MV-def2TZVPP.h5"
     default-lot:
         "wb97x-631gd"
+ANICCScan:
+    lot:
+        b973c-def2mtzvp:
+            archive:
+                "ANI-ccscan-b973c-def2mtzvp.tar.gz"
+            files:
+                - "ANI-ccscan-b973c-def2mtzvp.h5"
+        b973c-def2mtzvp:
+            archive:
+                "ANI-ccscan-Uwb97x-631gd.tar.gz"
+            files:
+                - "ANI-ccscan-Uwb97x-631gd.h5"
+    default-lot:
+        "Uwb97x-631gd"
