@@ -9,8 +9,7 @@ import yaml
 
 from torchani.datasets import ANIDataset
 from torchani.datasets.builtin import _DATASETS_YAML_PATH
-
-_CHUNK_SIZE = 1024 * 32
+from torchani.datasets.download import _CHUNK_SIZE
 
 
 def h5info(path: tp.Union[str, Path]) -> None:
@@ -73,15 +72,21 @@ def h5pack(
         file_paths = sorted(paths.rglob("*.h5"))
     else:
         file_paths = sorted(Path(p) for p in paths)
-
+    if interactive:
+        print(
+            "Packaging ANI Dataset\n"
+            "When prompted write the requested names\n"
+            "**Only alphanumeric characters or '_' are supported**"
+        )
     parts = {"Data": name, "Functional": functional, "Basis-set": basis_set}
     for kind in parts.copy().keys():
         while not re.match(r"\w+$", parts[kind]):
             if interactive:
                 if parts[kind]:
                     print(f"Invalid name {parts[kind]}")
+                    print("**Only alphanumeric characters or '_' are supported**")
                 parts[kind] = input(
-                    f"{kind} name? (only alphanumeric characters or _ supported): "
+                    f"{kind} name?: "
                 )
             else:
                 raise ValueError(
@@ -118,24 +123,31 @@ def h5pack(
         csv_path = (Path(__file__).parent.parent / "datasets") / "md5s.csv"
     else:
         csv_path = dest_dir / f"{ds_name}.md5s.csv"
+        if csv_path.exists():
+            raise ValueError(
+                f"CSV path {str(csv_path)} should not exist"
+            )
+        csv_path.touch()
+
+    registered_md5s: tp.Set[tp.Tuple[str, str]] = set()
+    with open(csv_path, "r", encoding="utf-8") as csvfile:
+        reader = csv.reader(csvfile, delimiter=",")
+
+        for row in reader:
+            if row[0] == "filename":
+                continue
+            registered_md5s.add((row[0], row[1]))
 
     with tarfile.open(dest_dir / archive_name, "w:gz") as archive:
-        with open(csv_path, "r+", encoding="utf-8") as csvfile:
+        with open(csv_path, "a", encoding="utf-8") as csvfile:
             writer = csv.writer(csvfile, delimiter=",", quoting=csv.QUOTE_MINIMAL)
             if not internal:
                 writer.writerow(["filename", "md5_hash"])
-            registered_md5s: tp.Set[str] = set()
-            reader = csv.reader(csvfile, delimiter=",")
-
-            for row in reader:
-                if row[0] == "filename":
-                    continue
-                registered_md5s.add(row[1])
 
             for f in file_paths:
                 if force_renaming:
                     data_part_name = input(
-                        "Data part name? (only alphanumeric characters or _): "
+                        "Data part name for file {f.name}?: "
                     )
                 else:
                     data_part_name = f.stem
@@ -143,9 +155,10 @@ def h5pack(
                     if interactive:
                         if data_part_name:
                             print(f"Invalid name {parts[kind]}")
+                            print("**Only alphanumeric characters or '_' are supported**")
 
                         data_part_name = input(
-                            "Data part name for file {str(f)}? (alphanumeric or _): "
+                            "Data part name for file {f.name}?: "
                         )
                     else:
                         raise ValueError(
@@ -168,9 +181,14 @@ def h5pack(
 
                 data_dict[ds_name]["lot"][lot]["files"].append(arcname)
                 md5 = hasher.hexdigest()
-                if md5 not in registered_md5s:
+                if (arcname, md5) not in registered_md5s:
                     writer.writerow([arcname, md5])
-                    registered_md5s.add(md5)
+                    registered_md5s.add((arcname, md5))
+                else:
+                    print(
+                        f"NOTE: File {arcname} is already present in the MD5 registry"
+                    )
+
         if internal:
             yaml_path = _DATASETS_YAML_PATH
             with open(_DATASETS_YAML_PATH, mode="rt", encoding="utf-8") as yamlfile:
