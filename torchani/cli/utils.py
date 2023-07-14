@@ -73,6 +73,8 @@ def h5pack(
     else:
         file_paths = sorted(Path(p) for p in paths)
     if interactive:
+        if internal:
+            print("WARNING: Modifying internal repository files")
         print(
             "Packaging ANI Dataset\n"
             "When prompted write the requested names\n"
