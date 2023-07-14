@@ -147,7 +147,7 @@ def h5pack(
             for f in file_paths:
                 if force_renaming:
                     data_part_name = input(
-                        "Data part name for file {f.name}?: "
+                        f"Data part name for file {f.name}?: "
                     )
                 else:
                     data_part_name = f.stem
@@ -158,7 +158,7 @@ def h5pack(
                             print("**Only alphanumeric characters or '_' are supported**")
 
                         data_part_name = input(
-                            "Data part name for file {f.name}?: "
+                            f"Data part name for file {f.name}?: "
                         )
                     else:
                         raise ValueError(
@@ -204,7 +204,8 @@ def h5pack(
                         data_dict["ds_name"]["lot"]
                     )
             else:
-                data_dict = internal_data_dict.update(data_dict)
+                internal_data_dict.update(data_dict)
+                data_dict = internal_data_dict.copy()
         else:
             yaml_path = dest_dir / f"{parts['Data']}.yaml"
 
