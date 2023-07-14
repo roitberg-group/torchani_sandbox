@@ -1,6 +1,6 @@
 import argparse
 
-from torchani.cli.utils import h5info
+from torchani.cli.utils import h5info, h5pack
 from torchani.datasets import download_builtin_dataset, _BUILTIN_DATASETS, _BUILTIN_DATASETS_LOT
 
 
@@ -25,6 +25,21 @@ def build_parser():
                                             description="Show h5file informations.")
     parser_h5info.add_argument('path', type=str, help='path to a h5 dataset file or a directory')
 
+    parser_h5pack = subparsers.add_parser(
+        'h5pack',
+        help='Package h5 files into a dataset',
+        description="Package h5 files into a dataset"
+    )
+    parser_h5pack.add_argument(
+        'path',
+        type=str,
+        help='Path to a h5 dataset directory'
+    )
+    parser_h5pack.add_argument(
+        '--internal',
+        action="store_true",
+        help='Append the dataset to the internal datasets'
+    )
     # parse args
     args = main_parser.parse_args()
     return args
@@ -38,6 +53,9 @@ def main():
 
     if args.workflow == "h5info":
         h5info(args.path)
+
+    if args.workflow == "h5pack":
+        h5pack(args.path, args.internal)
 
 
 if __name__ == '__main__':
