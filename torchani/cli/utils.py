@@ -156,7 +156,7 @@ def h5pack(
                 while not re.match(r"\w+$", data_part_name):
                     if interactive:
                         if data_part_name:
-                            print(f"Invalid name {parts[kind]}")
+                            print(f"Invalid name {data_part_name}")
                             print("**Only alphanumeric characters or '_' are supported**")
 
                         data_part_name = input(
@@ -166,9 +166,34 @@ def h5pack(
                         raise ValueError(
                             "File names should only use alphanumeric characters or _"
                         )
+                    main_part_name = input(
+                        f"Main part name for file {f.name}?: "
+                    )
+                if force_renaming:
+                    main_part_name = input(
+                        f"Main part name for file {f.name}?: "
+                    )
+                else:
+                    main_part_name = ds_name
+                while not re.match(r"\w+$", main_part_name):
+                    if interactive:
+                        if data_part_name:
+                            print(f"Invalid name {main_part_name}")
+                            print("**Only alphanumeric characters or '_' are supported**")
+
+                        data_part_name = input(
+                            f"Main part name for file {f.name}?: "
+                        )
+                    else:
+                        raise ValueError(
+                            "File names should only use alphanumeric characters or _"
+                        )
+                    main_part_name = input(
+                        f"Main part name for file {f.name}?: "
+                    )
                 new_stem = "-".join(
                     (
-                        ds_name,
+                        main_part_name,
                         data_part_name,
                         parts["Functional"],
                         parts["Basis-set"]
