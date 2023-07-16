@@ -190,6 +190,14 @@ QM9Clean:
       archive: QM9Clean-b3lyp-631g_2df_p.tar.gz
       files:
       - QM9Clean-gdb17_clean-b3lyp-631g_2df_p.h5
+QM9Dirty:
+  default-lot: b3lyp-631g_2df_p
+  lot:
+    b3lyp-631g_2df_p:
+      archive: QM9Dirty-b3lyp-631g_2df_p.tar.gz
+      files:
+      - QM9Clean-gdb17_clean-b3lyp-631g_2df_p.h5
+      - QM9Dirty-gdb17_failed-b3lyp-631g_2df_p.h5
 TestData:
   default-lot: wb97x-631gd
   lot:
