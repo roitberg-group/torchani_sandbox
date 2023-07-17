@@ -87,7 +87,6 @@ wavefunction_method/basis_set when appropriate.
   specific points of the potential energy surface (PES), in some cases using
   active learning, with the QBC criteria, and with normal mode sampling.
   UwB97x means "Unrestricted" Kohn-Sham was used.
-
 - TestData, with LoT:
     - wB97X/631Gd
   GDB subset, only for debugging and code testing purposes.
