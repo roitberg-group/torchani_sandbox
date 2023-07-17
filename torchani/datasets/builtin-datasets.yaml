@@ -277,3 +277,4 @@ Iso17TrainSet1:
       archive: Iso17TrainSet1-pbe_ts-fhi_aims_numerical.tar.gz
       files:
       - Iso17Train-set_1-pbe_ts-fhi_aims_numerical.h5
+
