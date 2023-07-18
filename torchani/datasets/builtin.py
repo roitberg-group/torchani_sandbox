@@ -151,6 +151,22 @@ Iso17 dataset:
         Equilibrium geometries of molecules with C7O2H10 stoichiometry,
         same molecules as TestSet2
 
+- SN2, with LoT:
+    - DSD-BLYP-D3(BJ)/def2mTZVP
+    Dataset from the PhysNet paper
+    Unke, O. T. and Meuwly, M. "PhysNet: A Neural Network for Predicting
+    Energies, Forces, Dipole Moments and Partial Charges" arxiv:1902.08408
+    (2019).
+    Used to test accuracy in SN2 type reactions with charges
+    CH3X + X'-- -> CH3X' + X-
+    Note that this dataset has charged species, and contains all possible structures
+    that can be formed in fragmentation reactions:
+    H3X, HX, CHX or CH2X- as well as geometries for H2, CH2, CH3+ and XY
+    All possible combinations are included.
+    It is unclear what the reference point for the dipoles in the dataset are,
+    the units are eA, the reference is most likely the center-of-charge.
+
+
 Note that the conformations present in datasets with different LoT may be
 different.
 
