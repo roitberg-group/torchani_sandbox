@@ -109,10 +109,6 @@ wavefunction_method/basis_set when appropriate.
     - wB97X/631Gd
   GDB subset, only for debugging and code testing purposes.
 
-- TestData, with LoT:
-    - wB97X/631Gd
-  GDB subset, only for debugging and code testing purposes.
-
 - TestDataIons, with LoT:
     - B973c/def2mTZVP
   Only for debugging and code testing purposes, includes forces, dipoles and charges.
