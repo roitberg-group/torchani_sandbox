@@ -75,11 +75,16 @@ class Calculator(ase.calculators.calculator.Calculator):
             if 'stress' in properties:
                 cell = cell @ scaling
             energy = self.model((species, coordinates), cell=cell, pbc=pbc).energies
+            #member_energy = self.model.members_energies((species, coordinates))
         else:
             energy = self.model((species, coordinates)).energies
+            #member_energy = self.model.members_energies((species, coordinates))
+
 
         energy *= ase.units.Hartree
+        #member_energy*=ase.units.Hartree
         self.results['energy'] = energy.item()
+        #self.results['members_energy'] = member_energy.detach().numpy()
         self.results['free_energy'] = energy.item()
 
         if 'forces' in properties:
