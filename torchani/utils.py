@@ -86,6 +86,8 @@ GSAES = {
         "F": -99.795668645591,
         "Cl": -460.052391015914,
         "Br": -2573.595184605241,
+        # Note that this value is copied directly form the source,
+        # but may be a typo? the difference in energy for I is suspicious.
         "I": -297.544092721991,
     },
     "revpbe_d3bj-def2tzvp": {
