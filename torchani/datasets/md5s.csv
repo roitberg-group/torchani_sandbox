@@ -7,14 +7,14 @@ ANI-1x_sample-B973c-def2mTZVP.h5,0ff3e3f5f691ee8addb80fbeb1cd9f88
 ANI-1x-wB97MD3BJ-def2TZVPP.h5,3e37e3c323e0179f5bc179c97af513c9
 ANI-1x-wB97MV-def2TZVPP.h5,a0597475d3f0e5acc923cbbcc37dc833
 ANI-1x-wB97X-631Gd.h5,0530b7877f301c741a4d4f2616547ee6
-ANI-1x-wB97X-def2TZVPP.h5,d50d068eb38af2bf83151ffbdbf38e9b
+ANI-1x-wb97x-def2tzvpp.h5,967a81e2aec124533db6da0778fa3050
 ANI-2q_heavy-wB97X-631Gd.h5,627a1359192d8ec5a86f5d97330c5bb6
 ANI-2x_dimers-wB97X-631Gd.h5,5aaec56ff3d1dac046f852693763b8b2
 ANI-2x_heavy_and_dimers-B973c-def2mTZVP.h5,d850d37caef67be3306026470e54dc74
 ANI-2x_heavy_and_dimers-wB97MD3BJ-def2TZVPP.h5,256c478e7dcccb79b070f8ac0b27c49f
 ANI-2x_heavy_and_dimers-wB97MV-def2TZVPP.h5,e0a56f9d272de6b587f0447701f0d95b
 ANI-2x_heavy-wB97X-631Gd.h5,c8bc40c274683eaf3182edd2d21f222a
-ANI-2x_subset-wB97X-def2TZVPP.h5,f43d205d0cd868cdf07439d68083f287
+ANI-2x_subset-wb97x-def2tzvpp.h5,59a864032866f357717dae7f542ea40b
 ANI-BenchMD-wB97X-631Gd.h5,2e36db2069eb2a9d1f7ce41d49d4c012
 ANI-BenchMD-wB97X-def2TZVPP.h5,6b3b56a916378ce53bc149022713f6a3
 COMP6-heavy-B973c-def2mTZVP.h5,b94c8956ff4f4afb2221ec66da603a24
@@ -51,6 +51,9 @@ test_data2.h5,cd57a243e344776a49f24776ae2ff440
 Tripeptides-sulphur-wB97X-631Gd.h5,f21c22858182c69b8b7a5ff2c674eb50
 Tripeptides-v1-wB97X-631Gd.h5,543cd0de994270f3bc3cbafb4d29236c
 Tripeptides-v1-wB97X-def2TZVPP.h5,e7cef6693516bddae33a1c9011acd0ca
+QM9Clean-gdb17_clean-b3lyp-631g_2df_p.h5,5eec48d59c638ceb38088f57e7c180bb
+QM9C7O2H10-C7O2H10-g4mp2-631g_2df_p.h5,63e684945b02485d841e60c77e0ee416
+QM9Dirty-gdb17_failed-b3lyp-631g_2df_p.h5,8de352573947f03a32ca7629e0fbff00
 Iso17Equilibrium-set_1-pbe_ts-fhi_aims_numerical.h5,97d27341d7141b9ec51fb6ab44071162
 Iso17Equilibrium-set_2-pbe_ts-fhi_aims_numerical.h5,27e1cb85c46f7b36531450e571ae152d
 Iso17Test-set_1-pbe_ts-fhi_aims_numerical.h5,c6a68ad4ffab0418eb397ba8d11ffb35
