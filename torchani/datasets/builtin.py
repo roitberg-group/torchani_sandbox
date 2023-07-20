@@ -115,6 +115,7 @@ wavefunction_method/basis_set when appropriate.
     (C, N, O, S) that can be derived from chemical graphs of proteins
     containing the 20 natural amino acids connected via peptide bonds or
     disulfide bridges.
+    Note that molecules in this dataset may have charges.
     dataset presented in the physnet paper:
     https://arxiv.org/abs/1902.08408 (2019)
 
