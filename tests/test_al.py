@@ -67,10 +67,10 @@ class TestALQBC(TestALAtomic):
         members_energies = self.model.members_energies((self.species, self.coordinates)).energies
         forces_list = []
         for energy in members_energies:
-            derivative = torch.autograd.grad(energy, self.coordinates, retain_graph=True)[0]
+            derivative = torch.autograd.grad(energy.sum(), self.coordinates, retain_graph=True)[0]
             force = -derivative
             forces_list.append(force)
-        _forces = torch.cat(forces_list, dim=0)
+        _forces = torch.stack(forces_list, dim=0)
         self.assertEqual(forces, _forces)
 
     def testQBC(self):
