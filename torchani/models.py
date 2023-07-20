@@ -106,6 +106,12 @@ class ForceQBCs(NamedTuple):
     mean_force: Tensor
     stdev_force: Tensor
 
+class ForceMagnitudes(NamedTuple):
+    species: Tensor
+    members_magnitudes: Tensor
+    mean_magnitudes: Tensor
+    relative_range: Tensor
+
 
 class BuiltinModel(Module):
     r"""Private template for the builtin ANI models """
@@ -280,15 +286,26 @@ class BuiltinModel(Module):
                        average: bool = False,
                        cell: Optional[Tensor] = None,
                        pbc: Optional[Tensor] = None) -> SpeciesForces:
+        """Calculates predicted forces from ensemble members, can return the average prediction
+        
+        Args:
+            species_coordinates: minibatch of configurations
+            average: boolean value which determines whether to return the predicted forces from each model or the ensemble average
+            cell: the cell used in PBC computation, set to None if PBC is not enabled
+            pbc: the bool tensor indicating which direction PBC is enabled, set to none if PBC is not enabled
+        
+        Returns:
+            SpeciesForces: species, molecular energies, and atomic forces predicted by an ensemble of neural network models
+        """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         coordinates = species_coordinates[1].requires_grad_()
         members_energies = self.members_energies(species_coordinates, cell, pbc).energies
         forces_list = []
         for energy in members_energies:
-            derivative = torch.autograd.grad(energy, coordinates, retain_graph=True)[0]
+            derivative = torch.autograd.grad(energy.sum(), coordinates, retain_graph=True)[0]
             force = -derivative
             forces_list.append(force)
-        forces = torch.cat(forces_list, dim=0)
+        forces = torch.stack(forces_list, dim=0)
         if average:
             forces = forces.mean(0)
         return SpeciesForces(species_coordinates[0], members_energies, forces)
@@ -339,6 +356,8 @@ class BuiltinModel(Module):
         """
         Largely does the same thing as the atomic_energies function, but with a different set of default inputs.
         Returns standard deviation in atomic energy predictions across the ensemble.
+
+        with_SAEs returns the shifted atomic energies according to the model used 
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species_coordinates = self._maybe_convert_species(species_coordinates)
@@ -353,10 +372,8 @@ class BuiltinModel(Module):
         if average:
             atomic_energies = atomic_energies.mean(0)
 
-        # Want to return with GSAEs, but that can wait
         if with_SAEs:
             atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
-            # atomic_energies += self.energy_shifter.with_gsaes(species_coordinates[0], 'wb97x', '631gd')
 
         return AtomicQBCs(species_coordinates[0], atomic_energies, stdev_atomic_energies)
 
@@ -365,13 +382,23 @@ class BuiltinModel(Module):
                    pbc: Optional[Tensor] = None,
                    average: bool = False,
                    unbiased: bool = True) -> ForceQBCs:
+        """
+        Returns the standard deviation in predicted forces 
+        """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         _, members_energies, members_forces = self.members_forces(species_coordinates, cell, pbc)
         mean_force = members_forces.mean(0)
         stdev_force = members_forces.std(0)
-        members_energies = self.members_energies(species_coordinates, cell, pbc).energies
 
         return ForceQBCs(species_coordinates[0], members_energies, mean_force, stdev_force)
+
+    def force_magnitudes(self, species_coordinates: Tuple[Tensor, Tensor],
+                         cell: Optional[Tensor] = None,
+                         pbc: Optional[Tensor] = None,
+                         average: bool = False,
+                         unbiased: bool = True) -> ForceMagnitudes:
+        return None
+
 
     def __len__(self):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
