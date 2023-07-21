@@ -398,3 +398,10 @@ SPICESolvatedAminoacids:
       archive: SPICESolvatedAminoacids-wb97m_d3bj-def2tzvppd.tar.gz
       files:
       - SPICE-solvated_aminoacids_v1_1-wb97m_d3bj-def2tzvppd.h5
+SolvatedProteinFragments:
+  default-lot: revpbe_d3bj-def2tzvp
+  lot:
+    revpbe_d3bj-def2tzvp:
+      archive: SolvatedProteinFragments-revpbe_d3bj-def2tzvp.tar.gz
+      files:
+      - SolvatedProteinFragments-fragments-revpbe_d3bj-def2tzvp.h5
