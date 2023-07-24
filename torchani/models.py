@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The ANI model zoo that stores public ANI models.
 
 Currently the model zoo has three models: ANI-1x, ANI-1ccx, and ANI-2x.  The
@@ -56,19 +55,28 @@ example usage:
 """
 import os
 import warnings
+from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type, Callable, List, Iterable
 from copy import deepcopy
 from pathlib import Path
 from collections import OrderedDict
+
 import torch
 from torch import Tensor
 from torch.nn import Module
 from torch.jit import Final
-from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type, Callable, List, Iterable
-from .nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
-from .utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
-from .aev import AEVComputer
-from . import atomics
-from .potentials import AEVPotential, RepulsionXTB, Potential, PairwisePotential
+
+from torchani import atomics
+from torchani.nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
+from torchani.utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
+from torchani.aev import AEVComputer
+from torchani.potentials import (
+    AEVPotential,
+    RepulsionXTB,
+    TwoBodyDispersionD3,
+    Potential,
+    PairwisePotential,
+)
+from torchani.neighbors import rescreen
 
 
 NN = Union[ANIModel, Ensemble]
@@ -352,10 +360,7 @@ class BuiltinModel(Module):
     def __len__(self):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         return self.neural_networks.size
-"""
-    def get_layer_list(self, species_coordinates: Tuple[Tensor, Tensor]):
-        return self.forward(species_coordinates), self.neural_networks.layer_info
-"""
+
 class BuiltinModelPairInteractions(BuiltinModel):
     def __init__(
         self,
@@ -393,22 +398,11 @@ class BuiltinModelPairInteractions(BuiltinModel):
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
         energies = torch.zeros(element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
-        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                neighbor_data = rescreen(
-                    cutoff=pot.cutoff,
-                    neighbor_idxs=neighbor_data.indices,
-                    distances=neighbor_data.distances,
-                    diff_vectors=neighbor_data.diff_vectors,
-                )
+                neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
-            energies += pot(
-                element_idxs=element_idxs,
-                neighbor_idxs=neighbor_data.indices,
-                distances=neighbor_data.distances,
-                diff_vectors=neighbor_data.diff_vectors,
-            )
+            energies += pot(element_idxs, neighbor_data)
         return self.energy_shifter((element_idxs, energies))
 
     @torch.jit.export
@@ -423,7 +417,6 @@ class BuiltinModelPairInteractions(BuiltinModel):
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
-        rescreen = self.aev_computer.neighborlist._rescreen_with_cutoff
 
         # Here we add an extra axis to account for different models,
         # some potentials output atomic energies with shape (M, N, A), where
@@ -435,19 +428,9 @@ class BuiltinModelPairInteractions(BuiltinModel):
         )
         for pot in self.potentials:
             if pot.cutoff < previous_cutoff:
-                neighbor_data = rescreen(
-                    pot.cutoff,
-                    neighbor_idxs=neighbor_data.indices,
-                    distances=neighbor_data.distances,
-                    diff_vectors=neighbor_data.diff_vectors,
-                )
+                neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
-            atomic_energies += pot.atomic_energies(
-                element_idxs,
-                neighbor_idxs=neighbor_data.indices,
-                distances=neighbor_data.distances,
-                diff_vectors=neighbor_data.diff_vectors,
-            )
+            atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
 
         atomic_energies += self.energy_shifter._atomic_saes(element_idxs).unsqueeze(0)
 
@@ -562,6 +545,8 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
                     info_file: Optional[str] = None,
                     repulsion_kwargs: Optional[Dict[str, Any]] = None,
                     repulsion: bool = False,
+                    dispersion_kwargs: Optional[Dict[str, Any]] = None,
+                    dispersion: bool = False,
                     cutoff_fn: Union[str, torch.nn.Module] = 'cosine',  # for aev
                     pretrained: bool = True,
                     model_index: int = None,
@@ -612,19 +597,34 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     aev_computer, neural_networks, energy_shifter, elements = components
 
     model_class: Type[BuiltinModel]
-    if repulsion:
-        cutoff = aev_computer.radial_terms.cutoff
-        pairwise_potentials: List[torch.nn.Module] = []
-        base_repulsion_kwargs = {'symbols': elements, 'cutoff': cutoff}
-        if repulsion_kwargs is not None:
-            base_repulsion_kwargs.update(repulsion_kwargs)
-        pairwise_potentials.append(RepulsionXTB(**base_repulsion_kwargs))
-        model_kwargs.update({'pairwise_potentials': pairwise_potentials})
+    if repulsion or dispersion:
         model_class = BuiltinModelPairInteractions
+        pairwise_potentials: List[torch.nn.Module] = []
+        cutoff = aev_computer.radial_terms.cutoff
+        potential_kwargs = {'symbols': elements, 'cutoff': cutoff}
+        if repulsion:
+            base_repulsion_kwargs = deepcopy(potential_kwargs)
+            base_repulsion_kwargs.update(repulsion_kwargs or {})
+            pairwise_potentials.append(RepulsionXTB(**base_repulsion_kwargs))
+        if dispersion:
+            base_dispersion_kwargs = deepcopy(potential_kwargs)
+            base_dispersion_kwargs.update(dispersion_kwargs or {})
+            pairwise_potentials.append(
+                TwoBodyDispersionD3.from_functional(
+                    **base_dispersion_kwargs,
+                ),
+            )
+        model_kwargs.update({'pairwise_potentials': pairwise_potentials})
     else:
         model_class = BuiltinModel
 
-    model = model_class(aev_computer, neural_networks, energy_shifter, elements, **model_kwargs)
+    model = model_class(
+        aev_computer,
+        neural_networks,
+        energy_shifter,
+        elements,
+        **model_kwargs,
+    )
 
     if pretrained and not use_neurochem_source:
         assert state_dict_file is not None
@@ -688,3 +688,69 @@ def ANI2x(**kwargs) -> BuiltinModel:
     info_file = 'ani-2x_8x.info'
     state_dict_file = 'ani2x_state_dict.pt'
     return _load_ani_model(state_dict_file, info_file, **kwargs)
+
+
+def ANIdr(
+    pretrained: bool = True,
+    model_index: Optional[int] = None,
+    **kwargs,
+):
+    """ANI model trained with both dispersion and repulsion
+
+    The level of theory is B973c, it is an ensemble of 7 models.
+    It predicts
+    energies on HCNOFSCl elements
+    """
+    # TODO: Fix this
+    if model_index is not None:
+        raise ValueError(
+            "Currently ANIdr only supports model_index=None, to get individual models please index the ensemble"
+        )
+
+    # An ani model with dispersion
+    def dispersion_atomics(atom: str = 'H'):
+        dims_for_atoms = {
+            'H': (1008, 256, 192, 160),
+            'C': (1008, 256, 192, 160),
+            'N': (1008, 192, 160, 128),
+            'O': (1008, 192, 160, 128),
+            'S': (1008, 160, 128, 96),
+            'F': (1008, 160, 128, 96),
+            'Cl': (1008, 160, 128, 96)
+        }
+        return atomics.standard(
+            dims_for_atoms[atom],
+            activation=torch.nn.GELU(),
+            bias=False,
+        )
+    symbols = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
+    model = ANI2x(
+        pretrained=False,
+        cutoff_fn='smooth',
+        atomic_maker=dispersion_atomics,
+        ensemble_size=7,
+        dispersion=True,
+        dispersion_kwargs={
+            'symbols': symbols,
+            'cutoff': 8.5,
+            'cutoff_fn': 'smooth4',
+            'functional': 'B973c'
+        },
+        repulsion=True,
+        repulsion_kwargs={
+            'symbols': symbols,
+            'cutoff': 5.3,
+            'cutoff_fn': 'smooth2'
+        },
+        model_index=model_index,
+        **kwargs,
+    )
+    if pretrained:
+        model.load_state_dict(
+            _fetch_state_dict(
+                'anidr_state_dict.pt',
+                model_index=model_index,
+                private=True,
+            )
+        )
+    return model

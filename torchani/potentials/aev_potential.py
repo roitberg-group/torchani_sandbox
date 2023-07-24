@@ -1,10 +1,12 @@
 from typing import Optional, Union
 
 from torch import Tensor
-from torchani.aev.aev_computer import AEVComputer
+
+from torchani.neighbors import NeighborData
 from torchani.nn import Ensemble, ANIModel
-from torchani.potentials.core import Potential
 from torchani.utils import PERIODIC_TABLE
+from torchani.aev.aev_computer import AEVComputer
+from torchani.potentials.core import Potential
 
 NN = Union[ANIModel, Ensemble]
 
@@ -32,17 +34,14 @@ class AEVPotential(Potential):
     def forward(
         self,
         element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Optional[Tensor] = None,
+        neighbors: NeighborData,
         ghost_flags: Optional[Tensor] = None,
     ) -> Tensor:
-        assert diff_vectors is not None, "AEV potential needs diff vectors always"
         aevs = self.aev_computer._compute_aev(
             element_idxs=element_idxs,
-            neighbor_idxs=neighbor_idxs,
-            distances=distances,
-            diff_vectors=diff_vectors,
+            neighbor_idxs=neighbors.indices,
+            distances=neighbors.distances,
+            diff_vectors=neighbors.diff_vectors,
         )
         energies = self.neural_networks((element_idxs, aevs)).energies
         return energies
@@ -50,17 +49,15 @@ class AEVPotential(Potential):
     def atomic_energies(
         self,
         element_idxs: Tensor,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Tensor,
+        neighbors: NeighborData,
         ghost_flags: Optional[Tensor] = None,
         average: bool = False,
     ) -> Tensor:
         aevs = self.aev_computer._compute_aev(
             element_idxs=element_idxs,
-            neighbor_idxs=neighbor_idxs,
-            distances=distances,
-            diff_vectors=diff_vectors,
+            neighbor_idxs=neighbors.indices,
+            distances=neighbors.distances,
+            diff_vectors=neighbors.diff_vectors,
         )
         atomic_energies = self.neural_networks._atomic_energies((element_idxs, aevs))
         if atomic_energies.dim() == 2:

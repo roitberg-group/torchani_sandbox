@@ -7,8 +7,10 @@ from torch.jit import Final
 from torchani.units import ANGSTROM_TO_BOHR
 from torchani.utils import ATOMIC_NUMBERS
 from torchani.wrappers import StandaloneWrapper
-from torchani.potentials._repulsion_constants import alpha_constants, y_eff_constants
+from torchani.neighbors import NeighborData
+from torchani.cutoffs import Cutoff
 from torchani.potentials.core import PairwisePotential
+from torchani.potentials._repulsion_constants import alpha_constants, y_eff_constants
 
 _ELEMENTS_NUM = len(ATOMIC_NUMBERS)
 
@@ -31,9 +33,16 @@ class RepulsionXTB(PairwisePotential):
         alpha: Sequence[float] = None,
         y_eff: Sequence[float] = None,
         k_rep_ab: Optional[Tensor] = None,
+<<<<<<< HEAD
         **pairwise_kwargs,
     ):
         super().__init__(**pairwise_kwargs)
+=======
+        cutoff_fn: Union[str, Cutoff] = "smooth",
+        **pairwise_kwargs,
+    ):
+        super().__init__(cutoff_fn=cutoff_fn, **pairwise_kwargs)
+>>>>>>> master
 
         if alpha is None:
             _alpha = torch.tensor(alpha_constants)[self.atomic_numbers]
@@ -65,6 +74,7 @@ class RepulsionXTB(PairwisePotential):
     def pair_energies(
         self,
         element_idxs: Tensor,
+<<<<<<< HEAD
         neighbor_idxs: Tensor,
         distances: Tensor,
         diff_vectors: Optional[Tensor] = None,
@@ -72,6 +82,13 @@ class RepulsionXTB(PairwisePotential):
 
         # Clamp distances to prevent singularities when dividing by zero
         distances = torch.clamp(distances, min=1e-7)
+=======
+        neighbors: NeighborData,
+    ) -> Tensor:
+
+        # Clamp distances to prevent singularities when dividing by zero
+        distances = torch.clamp(neighbors.distances, min=1e-7)
+>>>>>>> master
 
         # All internal calculations of this module are made with atomic units,
         # so distances are first converted to bohr
@@ -80,7 +97,11 @@ class RepulsionXTB(PairwisePotential):
         # Distances has all interaction pairs within a given cutoff, for a
         # molecule or set of molecules and atom_index12 holds all pairs of
         # indices species is of shape (C x Atoms)
+<<<<<<< HEAD
         species12 = element_idxs.flatten()[neighbor_idxs]
+=======
+        species12 = element_idxs.flatten()[neighbors.indices]
+>>>>>>> master
 
         # Find pre-computed constant multiplications for every species pair
         y_ab = self.y_ab[species12[0], species12[1]]
@@ -97,7 +118,11 @@ def StandaloneRepulsionXTB(
     y_eff: Sequence[float] = None,
     k_rep_ab: Optional[Tensor] = None,
     symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
+<<<<<<< HEAD
     cutoff_fn: Union[str, torch.nn.Module] = 'smooth',
+=======
+    cutoff_fn: Union[str, Cutoff] = 'smooth',
+>>>>>>> master
     **standalone_kwargs,
 ) -> StandaloneWrapper:
     module = RepulsionXTB(
