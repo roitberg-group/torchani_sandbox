@@ -61,41 +61,5 @@ class StandaloneWrapper(Module):
             element_idxs = self.znumbers_to_idxs(species_coordinates).species
         else:
             element_idxs = species
-<<<<<<< HEAD
-
-        # the coordinates that are input into the neighborlist are **not**
-        # assumed to be mapped into the central cell for pbc calculations, and
-        # **in general are not**
-        if self.needs_neighbor_data:
-            neighbor_data = self.neighborlist(element_idxs, coordinates, cell, pbc)
-        else:
-            neighbor_data = self.neighborlist.dummy()
-
-        energy = self.module(  # type: ignore
-            element_idxs,
-            neighbor_idxs=neighbor_data.indices,
-            distances=neighbor_data.distances,
-            diff_vectors=neighbor_data.diff_vectors,
-        )
-        return SpeciesEnergies(species, torch.zeros(species.shape[0], dtype=energy.dtype, device=energy.device) + energy)
-
-
-# This is used for sequential calls AEVComputer -> NN -> Potential -> Potential -> ...
-class SequentialWrapper(Module):
-    def __init__(self, module: Module):
-        super().__init__()
-        self.module = module
-        # module must implement
-        # _calculate_sequential((element_idxs, Tensor)) -> (element_idxs, Tensor)
-
-    def forward(
-        self,
-        element_idxs_tensor: Tuple[Tensor, Tensor],
-        cell: Optional[Tensor] = None,
-        pbc: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Tensor]:
-        return self.module._calculate_sequential(element_idxs_tensor)  # type: ignore
-=======
         neighbors = self.neighborlist(element_idxs, coordinates, cell, pbc)
         return SpeciesEnergies(species, self.module(element_idxs, neighbors))
->>>>>>> master
