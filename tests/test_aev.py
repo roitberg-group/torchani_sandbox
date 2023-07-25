@@ -426,5 +426,32 @@ class TestAEVOnBenzenePBC(TestCase):
         self.assertEqual(self.aev, aev2)
 
 
+class TestAEV4Body(TestCase):
+
+    def setUp(self):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.dtype = torch.float32
+        self.aev_computer_1x = torchani.AEVComputer4Body.like_1x().to(self.device)
+        self.aev_computer_2x = torchani.AEVComputer4Body.like_2x().to(self.device)
+
+    def testSimple(self):
+        coordinates = torch.tensor([
+            [[0.03192167, 0.00638559, 0.01301679],
+             [-0.83140486, 0.39370209, -0.26395324],
+             [-0.66518241, -0.84461308, 0.20759389],
+             [0.45554739, 0.54289633, 0.81170881],
+             [0.66091919, -0.16799635, -0.91037834]],
+            [[-4.1862600, 0.0575700, -0.0381200],
+             [-3.1689400, 0.0523700, 0.0200000],
+             [-4.4978600, 0.8211300, 0.5604100],
+             [-4.4978700, -0.8000100, 0.4155600],
+             [0.00000000, -0.00000000, -0.00000000]]
+        ], requires_grad=True, device=self.device, dtype=self.dtype)
+        species = torch.tensor([[1, 0, 0, 0, 0], [2, 2, 2, 0, -1]], device=self.device)
+
+        _, aev = self.aev_computer_1x((species, coordinates))
+        _, aev = self.aev_computer_2x((species, coordinates))
+
+
 if __name__ == '__main__':
     unittest.main()

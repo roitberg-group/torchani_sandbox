@@ -13,6 +13,7 @@ from torchani.cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
 from torchani.aev.aev_terms import (
     _parse_angular_terms,
     _parse_radial_terms,
+    _parse_fourbody_terms,
     StandardAngular,
     StandardRadial,
 )
@@ -435,3 +436,186 @@ class AEVComputer(torch.nn.Module):
         n = atom_index12.shape[1]
         sign12 = ((local_index12 < n).to(torch.int8) * 2) - 1
         return central_atom_index, local_index12 % n, sign12
+
+
+class AEVComputer4Body(AEVComputer):
+    def __init__(self, fourbody_terms='standard', **kwargs):
+        super().__init__(**kwargs)
+
+        if self.use_cuda_extension:
+            raise NotImplementedError("AEVComputer4Body does not support cuda extension")
+
+        num_species = self.num_species
+        # C(n + r - 1, r)
+        self.num_species_3pairs = (num_species + 2) * (num_species + 1) * (num_species) // (2 * 3)
+
+        # for now we just use angular's parameter for 4body terms
+        cutoff_fn = self.angular_terms.cutoff_fn
+        EtaA4 = kwargs.get('EtaA')
+        Zeta4 = kwargs.get('Zeta')
+        ShfA4 = kwargs.get('ShfA')
+        ShfZ4 = kwargs.get('ShfZ')
+        Rca4 = kwargs.get('Rca')
+
+        self.fourbody_terms = _parse_fourbody_terms(fourbody_terms, cutoff_fn, EtaA4, Zeta4, ShfA4, ShfZ4, Rca4)
+        self.fourbody_sublength = self.fourbody_terms.sublength
+        self.fourbody_length = self.fourbody_terms.sublength * self.num_species_3pairs
+        self.aev_length = self.radial_length + self.angular_length + self.fourbody_length
+
+        self.register_buffer('triu3_index',
+                             self._calculate_triu3_index(num_species).to(device=self.radial_terms.EtaR.device))
+
+    def _compute_aev(
+        self,
+        element_idxs: Tensor,
+        neighbor_idxs: Tensor,
+        distances: Tensor,
+        diff_vectors: Tensor
+    ) -> Tensor:
+
+        # ############# this part is copy pasted from AEVComputer ##############
+        num_molecules = element_idxs.shape[0]
+        num_atoms = element_idxs.shape[1]
+        species12 = element_idxs.flatten()[neighbor_idxs]
+
+        radial_aev = self._compute_radial_aev(
+            num_molecules,
+            num_atoms,
+            species12,
+            neighbor_idxs=neighbor_idxs,
+            distances=distances
+        )
+
+        # Rca is usually much smaller than Rcr, using neighbor list with
+        # cutoff = Rcr is a waste of resources. Now we will get a smaller neighbor
+        # list that only cares about atoms with distances <= Rca
+        even_closer_indices = (distances <= self.angular_terms.cutoff).nonzero().flatten()
+        neighbor_idxs = neighbor_idxs.index_select(1, even_closer_indices)
+        species12 = species12.index_select(1, even_closer_indices)
+        diff_vectors = diff_vectors.index_select(0, even_closer_indices)
+
+        angular_aev = self._compute_angular_aev(
+            num_molecules,
+            num_atoms,
+            species12,
+            neighbor_idxs=neighbor_idxs,
+            diff_vectors=diff_vectors
+        )
+        #######################################################################
+
+        # now let's compute the 4body terms
+        fourbody_aev = self._compute_fourbody_aev(
+            num_molecules,
+            num_atoms,
+            species12,
+            neighbor_idxs=neighbor_idxs,
+            diff_vectors=diff_vectors
+        )
+
+        return torch.cat([radial_aev, angular_aev, fourbody_aev], dim=-1)
+
+    def _quadruple_by_molecule(
+            self, atom_index12: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+        """Input: indices for pairs of atoms that are close to each other.
+        each pair only appear once, i.e. only one of the pairs (1, 2) and
+        (2, 1) exists.
+
+        Output: indices for all central atoms and it pairs of neighbors. For
+        example, if input has pair (0, 1), (0, 2), (0, 3), (0, 4), (1, 2),
+        (1, 3), (1, 4), (2, 3), (2, 4), (3, 4), then the output would have
+        central atom 0, 1, 2, 3, 4 and for cental atom 0, its pairs of neighbors
+        are (1, 2, 3), (1, 2, 4), (1, 3, 4), (2, 3, 4)
+        """
+        # convert representation from pair to central-others
+        ai1 = atom_index12.view(-1)
+        sorted_ai1, rev_indices = ai1.sort()
+
+        # sort and compute unique key
+        uniqued_central_atom_index, counts = torch.unique_consecutive(
+            sorted_ai1, return_inverse=False, return_counts=True)
+
+        # compute central_atom_index
+        pair_sizes = (counts * (counts - 1) * (counts - 2)).div(6, rounding_mode='floor')
+        pair_indices = torch.repeat_interleave(pair_sizes)
+        central_atom_index = uniqued_central_atom_index.index_select(
+            0, pair_indices)
+
+        # do local combinations within unique key, assuming sorted
+        m = counts.max().item() if counts.numel() > 0 else 0
+        n = pair_sizes.shape[0]
+        # TODO1: replace pair to triple
+        # TODO2: replace tril_indices in triple_by_molecule to torch.combinations
+        # TODO3: replace all something12 to something123
+        # TODO4: this function could be combined with _triple_by_molecule, because the logic are exactly the same
+        # TODO5: this function's document is very comfusing, and very complicated.
+        #        1. this is not grouping atoms, but instead of grouping vectors
+        #        2. by triple_by_molecule, it actually mean finds all combinations of 2 neighbors for each central atom,
+        #           by quadruple_by_molecule, it actually mean finds all combinations of 3 neighbors for each central atom,
+        # TODO6: adding tests, so the user can understand what this function is doing
+        #        for example, use testcase:
+        #        atom12 = torch.tensor([
+        #             [0, 0, 0, 0, 1, 1],
+        #             [1, 2, 3, 4, 2, 3]])
+        intra_pair_indices = torch.combinations(torch.arange(m), 3).to(ai1.device).T.unsqueeze(1).expand(-1, n, -1)
+
+        mask = (torch.arange(intra_pair_indices.shape[2], device=ai1.device) < pair_sizes.unsqueeze(1)).flatten()
+        sorted_local_index12 = intra_pair_indices.flatten(1, 2)[:, mask]
+        sorted_local_index12 += cumsum_from_zero(counts).index_select(
+            0, pair_indices)
+
+        # unsort result from last part
+        local_index12 = rev_indices[sorted_local_index12]
+
+        # compute mapping between representation of central-other to pair
+        n = atom_index12.shape[1]
+        sign12 = ((local_index12 < n).to(torch.int8) * 2) - 1
+        return central_atom_index, local_index12 % n, sign12
+
+    def _compute_fourbody_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, neighbor_idxs: Tensor,
+                              diff_vectors: Tensor) -> Tensor:
+
+        central_atom_index, pair_index123, sign123 = self._quadruple_by_molecule(neighbor_idxs)
+        species12_small = species12[:, pair_index123]
+        vec123 = diff_vectors.index_select(0, pair_index123.view(-1)).view(
+            3, -1, 3) * sign123.unsqueeze(-1)
+        species123_ = torch.where(sign123 == 1, species12_small[1],
+                                  species12_small[0])
+
+        fourbody_terms_ = self.fourbody_terms(vec123)
+        fourbody_aev = fourbody_terms_.new_zeros(
+            (num_molecules * num_atoms * self.num_species_3pairs,
+             self.fourbody_sublength))
+        index = central_atom_index * self.num_species_3pairs + self.triu3_index[
+            species123_[0], species123_[1], species123_[2]]
+
+        fourbody_aev.index_add_(0, index, fourbody_terms_)
+        fourbody_aev = fourbody_aev.reshape(num_molecules, num_atoms,
+                                            self.fourbody_length)
+        return fourbody_aev
+
+    @staticmethod
+    def _calculate_triu3_index(num_species: int) -> Tensor:
+        # helper method for initialization
+        species1, species2, species3 = torch.combinations(torch.arange(num_species), 3, with_replacement=True).T.unbind(0)
+        pair_index = torch.arange(species1.shape[0], dtype=torch.long)
+        ret = torch.zeros(num_species, num_species, num_species, dtype=torch.long)
+        ret[species1, species2, species3] = pair_index
+        ret[species1, species3, species2] = pair_index
+        ret[species2, species1, species3] = pair_index
+        ret[species2, species3, species1] = pair_index
+        ret[species3, species1, species2] = pair_index
+        ret[species3, species2, species1] = pair_index
+        return ret
+
+    @classmethod
+    def like_1x(cls, **kwargs) -> "AEVComputer":
+        return cls(angular_terms='ani1x', radial_terms='ani1x', fourbody_terms='ani1x', num_species=4, **kwargs)
+
+    @classmethod
+    def like_2x(cls, **kwargs) -> "AEVComputer":
+        return cls(angular_terms='ani2x', radial_terms='ani2x', fourbody_terms='ani2x', num_species=7, **kwargs)
+
+    @classmethod
+    def like_1ccx(cls, **kwargs) -> "AEVComputer":
+        # just a synonym
+        return cls.like_1x(**kwargs)

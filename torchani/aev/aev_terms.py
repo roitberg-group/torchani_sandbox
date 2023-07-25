@@ -208,6 +208,137 @@ class StandardAngular(torch.nn.Module):
         return cls.like_1x(**kwargs)
 
 
+class StandardFourBody(torch.nn.Module):
+    """Compute the fourbody subAEV terms of the center atom given neighbor pairs.
+
+    This function just compute the terms. The sum is not computed.  The input
+    tensor has shape (conformations, atoms, N), where N is the number of neighbor
+    3atom pairs within the cutoff radius and the output tensor should have shape
+    (conformations, atoms, ``self.sublength``)
+    """
+    sublength: Final[int]
+    cutoff: Final[float]
+    EtaA: Tensor
+    Zeta: Tensor
+    ShfA: Tensor
+    ShfZ: Tensor
+
+    def __init__(self,
+                 EtaA: Tensor,
+                 Zeta: Tensor,
+                 ShfA: Tensor,
+                 ShfZ: Tensor,
+                 cutoff: float,
+                 cutoff_fn='cosine'):
+        super().__init__()
+        # initialize the cutoff function
+        self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
+
+        # convert constant tensors to a ready-to-broadcast shape
+        # shape convension (..., EtaA, Zeta, ShfA, ShfZ)
+        self.register_buffer('EtaA', EtaA.view(-1, 1, 1, 1))
+        self.register_buffer('Zeta', Zeta.view(1, -1, 1, 1))
+        self.register_buffer('ShfA', ShfA.view(1, 1, -1, 1))
+        self.register_buffer('ShfZ', ShfZ.view(1, 1, 1, -1))
+        self.sublength = self.EtaA.numel() * self.Zeta.numel() * self.ShfA.numel() * self.ShfZ.numel()
+        self.cutoff = cutoff
+
+    def forward(self, vectors123: Tensor) -> Tensor:
+        vectors123 = vectors123.view(3, -1, 3, 1, 1, 1, 1)
+        distances123 = vectors123.norm(2, dim=-5)
+        # prepare vectors (ij, ik), (ij, il), (ik, il)
+        ijik_ijil_ikil = torch.tensor([0, 1, 0, 2, 1, 2], device=vectors123.device)
+        vectors123 = vectors123.index_select(0, ijik_ijil_ikil).view(3, 2, -1, 3, 1, 1, 1, 1)
+        distances123_ = distances123.index_select(0, ijik_ijil_ikil).view(3, 2, -1, 1, 1, 1, 1)
+
+        cos_angles = vectors123.prod(1).sum(2) / torch.clamp(distances123_.prod(1), min=1e-10)
+        # 0.95 is multiplied to the cos values to prevent acos from returning NaN.
+        angles = torch.acos(0.95 * cos_angles)
+
+        fcj123 = self.cutoff_fn(distances123, self.cutoff)
+        factor1 = ((1 + (torch.cos(angles[0] - self.ShfZ) + torch.cos(angles[1] - self.ShfZ) + torch.cos(angles[2] - self.ShfZ)) / 3) / 2)**self.Zeta
+        factor2 = torch.exp(-self.EtaA * (distances123.sum(0) / 3 - self.ShfA)**2)
+        # Use `fcj123[0] * fcj123[1]` instead of `fcj123.prod(0)` to avoid the INFs/NaNs
+        # problem for smooth cutoff function, for more detail please check issue:
+        # https://github.com/roitberg-group/torchani_sandbox/issues/178
+        ret = 2 * factor1 * factor2 * (fcj123[0] * fcj123[1] * fcj123[2])
+        # At this point, ret now has shape
+        # (conformations x atoms, ?, ?, ?, ?) where ? depend on constants.
+        # We then should flat the last 4 dimensions to view the subAEV as a two
+        # dimensional tensor (onnx doesn't support negative indices in flatten)
+        return ret.flatten(start_dim=1)
+
+    @classmethod
+    def cover_linearly(cls, eta: float, num_shifts: int, zeta: float,
+            num_angle_sections: int, start: float = 0.9, cutoff: float = 5.2, cutoff_fn='cosine'):
+        r""" Builds fourbody terms by linearly subdividing space in the fourbody
+        dimension and in the radial one up to a cutoff
+
+        "num_shifts" are created, starting from "start" until "cutoff",
+        excluding it. "num_angle_sections" does a similar thing for the angles.
+        This is the way fourbody and radial shifts were originally created in
+        ANI.
+        """
+        EtaA = torch.tensor([eta], dtype=torch.float)
+        ShfA = torch.linspace(start, cutoff, int(num_shifts) + 1)[:-1].to(torch.float)
+        Zeta = torch.tensor([zeta], dtype=torch.float)
+        angle_start = math.pi / (2 * int(num_angle_sections))
+        ShfZ = (torch.linspace(0, math.pi, int(num_angle_sections) + 1) + angle_start)[:-1].to(torch.float)
+        return cls(EtaA, Zeta, ShfA, ShfZ, cutoff, cutoff_fn)
+
+    @classmethod
+    def like_1x(cls, **kwargs):
+        exact = kwargs.pop('exact', True)
+        m = cls.cover_linearly(cutoff=3.5, eta=8.0, zeta=32.0, num_shifts=4, num_angle_sections=8, **kwargs)
+        if exact:
+            state_dict = torch.load(state_dicts_path.joinpath('angular_1x_state_dict.pth'))
+            m.load_state_dict(state_dict)
+        else:
+            _warn_parameters()
+        return m
+
+    @classmethod
+    def like_2x(cls, **kwargs):
+        exact = kwargs.pop('exact', True)
+        m = cls.cover_linearly(cutoff=3.5, eta=12.5, num_shifts=8, start=0.8, zeta=14.1, num_angle_sections=4, **kwargs)
+        if exact:
+            state_dict = torch.load(state_dicts_path.joinpath('angular_2x_state_dict.pth'))
+            m.load_state_dict(state_dict)
+        else:
+            _warn_parameters()
+        return m
+
+    @classmethod
+    def like_1ccx(cls, **kwargs):
+        return cls.like_1x(**kwargs)
+
+
+def _parse_fourbody_terms(fourbody_terms, cutoff_fn, EtaA, Zeta, ShfA, ShfZ, Rca):
+
+    # legacy input
+    if fourbody_terms == 'standard':
+        return StandardFourBody(EtaA, Zeta, ShfA, ShfZ, Rca, cutoff_fn=cutoff_fn)
+
+    # new input
+    assert EtaA is None
+    assert Zeta is None
+    assert ShfA is None
+    assert ShfZ is None
+    assert Rca is None
+    if fourbody_terms == 'ani1x':
+        fourbody_terms = StandardFourBody.like_1x(cutoff_fn=cutoff_fn)
+    elif fourbody_terms == 'ani2x':
+        fourbody_terms = StandardFourBody.like_2x(cutoff_fn=cutoff_fn)
+    elif fourbody_terms == 'ani1ccx':
+        fourbody_terms = StandardFourBody.like_1ccx(cutoff_fn=cutoff_fn)
+    else:
+        assert isinstance(fourbody_terms, torch.nn.Module), "Custom fourbody terms should be a torch module"
+        assert hasattr(fourbody_terms, 'sublength'), "Custom fourbody terms should have a sublength attribute"
+        assert hasattr(fourbody_terms, 'cutoff'), "Custom fourbody terms should have a cutoff attribute"
+
+    return fourbody_terms
+
+
 # for legacy aev computer initialization the parameters for the angular and
 # radial terms are passed directly to the aev computer and we forward them
 # here, otherwise the fully built module is passed, so we just return it,

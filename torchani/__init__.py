@@ -30,7 +30,7 @@ formats of NeuroChem at :attr:`torchani.neurochem`, and more at :attr:`torchani.
 
 from .utils import EnergyShifter
 from .nn import ANIModel, Ensemble, SpeciesConverter
-from .aev import AEVComputer
+from .aev import AEVComputer, AEVComputer4Body
 from . import utils
 from . import neurochem
 from . import models
@@ -54,6 +54,7 @@ except DistributionNotFound:
 
 __all__ = [
     'AEVComputer',
+    'AEVComputer4Body',
     'EnergyShifter',
     'ANIModel',
     'Ensemble',
