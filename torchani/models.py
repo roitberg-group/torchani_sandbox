@@ -210,7 +210,9 @@ class BuiltinModel(Module):
     @torch.jit.export
     def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                         cell: Optional[Tensor] = None,
-                        pbc: Optional[Tensor] = None, average: bool = True) -> SpeciesEnergies:
+                        pbc: Optional[Tensor] = None,
+                        average: bool = False,
+                        with_SAEs: bool = False) -> SpeciesEnergies:
         """Calculates predicted atomic energies of all atoms in a molecule
 
         Args:
@@ -232,6 +234,10 @@ class BuiltinModel(Module):
 
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
+
+        if with_SAEs:
+            atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
+
         if average:
             atomic_energies = atomic_energies.mean(dim=0)
         return SpeciesEnergies(species_coordinates[0], atomic_energies)
@@ -380,23 +386,36 @@ class BuiltinModel(Module):
     def force_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
                    cell: Optional[Tensor] = None,
                    pbc: Optional[Tensor] = None,
-                   average: bool = False,
                    unbiased: bool = True) -> ForceQBCs:
         """
-        Returns the standard deviation in predicted forces 
+        Returns the mean and standard deviation of predicted forces across ensemble
+
+        Args:
+            species_coordinates
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         _, members_energies, members_forces = self.members_forces(species_coordinates, cell, pbc)
-        mean_force = members_forces.mean(0)
-        stdev_force = members_forces.std(0)
 
-        return ForceQBCs(species_coordinates[0], members_energies, mean_force, stdev_force)
+        mean_forces = members_forces.mean(0)
+
+        stdev_force = members_forces.std(0, unbiased=unbiased)
+
+        return ForceQBCs(species_coordinates[0], members_energies, mean_forces, stdev_force)
 
     def force_magnitudes(self, species_coordinates: Tuple[Tensor, Tensor],
                          cell: Optional[Tensor] = None,
                          pbc: Optional[Tensor] = None,
                          average: bool = False,
                          unbiased: bool = True) -> ForceMagnitudes:
+        '''
+        Computes the L2 norm of predicted atomic force vectors, returning magnitudes and
+        standard deviation across the ensemble for each atom in a minibatch of configurations
+
+        Args:
+            species_coordinates: 
+            average:
+            unbiased:
+        '''
         return None
 
 

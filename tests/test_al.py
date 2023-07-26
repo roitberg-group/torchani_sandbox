@@ -24,7 +24,7 @@ class TestALAtomic(TestCase):
 
     def testAverageAtomicEnergies(self):
         _, energies = self.model.atomic_energies(
-            (self.species, self.coordinates))
+            (self.species, self.coordinates), average=True)
         self.assertEqual(energies.shape, self.coordinates.shape[:-1])
         # energies of all hydrogens should be equal
         expect = torch.full(energies[:, :-1].shape, -0.54853380570289400620, dtype=torch.double, device=self.device)
@@ -125,10 +125,13 @@ class TestALQBC(TestALAtomic):
 
     def testForceQBC(self):
         # Symmetric methane
-        _, _, mean_force, stdev_force = self.model.force_qbcs((self.species, self.coordinates))
+        _, _, mean_force, stdev_force = self.model.force_qbcs((self.species, self.coordinates), average=True)
         forces = self.model.members_forces((self.species, self.coordinates)).model_forces
+        print(forces.shape)
         _mean_force = forces.mean(0)
-        _stdev_force = forces.std(0)
+        _stdev_force = forces.std(0, unbiased=True)
+        print(mean_force.shape, _mean_force.shape)
+        print(stdev_force.shape, _stdev_force.shape)
         self.assertEqual(mean_force, _mean_force)
         self.assertEqual(stdev_force, _stdev_force)
 
