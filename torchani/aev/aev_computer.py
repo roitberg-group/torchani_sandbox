@@ -385,7 +385,6 @@ class AEVComputer(torch.nn.Module):
 
     @jit_unused_if_no_cuaev()
     def _compute_cuaev_with_half_nbrlist(self, species, coordinates, atom_index12, diff_vector, distances):
-        # TODO could these be int32 by default?
         species = species.to(torch.int32)
         atom_index12 = atom_index12.to(torch.int32)
         # coordinates will not be used in forward calculation, but it's gradient (force) will still be calculated in cuaev kernel
