@@ -513,13 +513,13 @@ class TestCUAEV(TestCase):
             coordinates.requires_grad_()
             _, aev = self.aev_computer_2x((species, coordinates), cell, pbc)
             aev.backward(torch.ones_like(aev))
-            aev_grad = coordinates.grad
+            aev_grad = coordinates.grad  # noqa: F841
 
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
             _, cu_aev = self.cuaev_computer_2x_with_full_nbrlist((species, coordinates), cell, pbc)
             cu_aev.backward(torch.ones_like(cu_aev))
-            cuaev_grad = coordinates.grad
+            cuaev_grad = coordinates.grad  # noqa: F841
             # print((cu_aev - aev).abs().max())
             # print((cuaev_grad - aev_grad).abs().max())
 
