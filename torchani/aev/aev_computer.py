@@ -302,7 +302,6 @@ class AEVComputer(torch.nn.Module):
                 self._init_cuaev_computer()
                 self.cuaev_is_initialized = True
             if self.use_cuaev_interface:
-                # TODO, no_grad for self.neighborlist?
                 atom_index12, distances, diff_vector, _ = self.neighborlist(species, coordinates, cell, pbc)
                 aev = self._compute_cuaev_with_half_nbrlist(species, coordinates, atom_index12, diff_vector, distances)
             else:
