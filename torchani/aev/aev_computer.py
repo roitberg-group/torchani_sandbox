@@ -100,8 +100,8 @@ class AEVComputer(torch.nn.Module):
         super().__init__()
         self.use_cuda_extension = use_cuda_extension
         self.use_cuaev_interface = use_cuaev_interface
-        # External full nbrlist needs to call `_compute_cuaev_with_full_nbrlist` method directly,
-        # and this flag is only needed for test purpose, where half nbrlist is converted to full nbrlist.
+        # External full nbrlist needs to call `_compute_cuaev_with_full_nbrlist` method directly.
+        # The following flag `use_fullnbr` is only for test purpose, where half nbrlist will be converted to full nbrlist.
         self.use_fullnbr = False
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
