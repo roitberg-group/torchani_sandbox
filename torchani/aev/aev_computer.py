@@ -544,19 +544,25 @@ class AEVComputer4Body(AEVComputer):
         m = counts.max().item() if counts.numel() > 0 else 0
         n = pair_sizes.shape[0]
         # TODO1: replace pair to triple
-        # TODO2: replace tril_indices in triple_by_molecule to torch.combinations
         # TODO3: replace all something12 to something123
         # TODO4: this function could be combined with _triple_by_molecule, because the logic are exactly the same
         # TODO5: this function's document is very comfusing, and very complicated.
-        #        1. this is not grouping atoms, but instead of grouping vectors
+        #        1. this is not grouping atoms, but instead of grouping vectors. and the returned indices are not atom indices, but vector indices.
         #        2. by triple_by_molecule, it actually mean finds all combinations of 2 neighbors for each central atom,
         #           by quadruple_by_molecule, it actually mean finds all combinations of 3 neighbors for each central atom,
-        # TODO6: adding tests, so the user can understand what this function is doing
-        #        for example, use testcase:
-        #        atom12 = torch.tensor([
-        #             [0, 0, 0, 0, 1, 1],
-        #             [1, 2, 3, 4, 2, 3]])
-        intra_pair_indices = torch.combinations(torch.arange(m), 3).to(ai1.device).T.unsqueeze(1).expand(-1, n, -1)
+
+        # We use torch.combinations instead of torch.tril_indices to generate all possible triplets of indices from a list of indices, because
+        # torch.tril_indices does not support 3d tensors. However, torch.combinations does not give us the order we want, specifically it give us
+        # upper triangle indices, but we want lower triangle indices for future masks of lower number of pairs. So we need to convert the upper
+        # triangle indices to lower triangle indices.
+        # E.g. torch.tril_indices(4, 4, -1, device=ai1.device) gives:
+        # tensor([[1, 2, 2, 3, 3, 3],
+        #         [0, 0, 1, 0, 1, 2]], device='cuda:0')
+        # torch.combinations(torch.arange(4), 2).T gives:
+        # tensor([[0, 0, 0, 1, 1, 2],
+        #         [1, 2, 3, 2, 3, 3]])
+        intra_pair_indices = torch.combinations(torch.arange(m), 3).to(ai1.device).T
+        intra_pair_indices = intra_pair_indices[:, intra_pair_indices[-1].argsort()].unsqueeze(1).expand(-1, n, -1)
 
         mask = (torch.arange(intra_pair_indices.shape[2], device=ai1.device) < pair_sizes.unsqueeze(1)).flatten()
         sorted_local_index12 = intra_pair_indices.flatten(1, 2)[:, mask]

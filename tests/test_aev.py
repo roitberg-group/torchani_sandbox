@@ -433,6 +433,7 @@ class TestAEV4Body(TestCase):
         self.dtype = torch.float32
         self.aev_computer_1x = torchani.AEVComputer4Body.like_1x().to(self.device)
         self.aev_computer_2x = torchani.AEVComputer4Body.like_2x().to(self.device)
+        self.ani2x = torchani.models.ANI2x(model_index=None)
 
     def testSimple(self):
         coordinates = torch.tensor([
@@ -447,11 +448,29 @@ class TestAEV4Body(TestCase):
              [-4.4978700, -0.8000100, 0.4155600],
              [0.00000000, -0.00000000, -0.00000000]]
         ], requires_grad=True, device=self.device, dtype=self.dtype)
-        species = torch.tensor([[1, 0, 0, 0, 0], [2, 2, 2, 0, -1]], device=self.device)
+        species = torch.tensor([[1, 2, 3, 3, 0], [3, 3, 3, 3, 2]], device=self.device)
 
         _, aev = self.aev_computer_1x((species, coordinates))
         _, aev = self.aev_computer_2x((species, coordinates))
 
+    def testBatch(self):
+        coordinates = torch.rand([2, 50, 3], device=self.device, dtype=self.dtype) * 5
+        species = torch.randint(-1, 3, (2, 50), device=self.device)
+
+        _, aev = self.aev_computer_1x((species, coordinates))
+        _, aev = self.aev_computer_2x((species, coordinates))
+
+    def testPDB(self):
+        files = ['small.pdb', '1hz5.pdb']
+        for file in files:
+            filepath = os.path.join(path, f'../dataset/pdb/{file}')
+            mol = ase.io.read(filepath)
+            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
+            positions = torch.tensor([mol.get_positions()], requires_grad=False, device=self.device, dtype=self.dtype)
+            speciesPositions = self.ani2x.species_converter((species, positions))
+            species, coordinates = speciesPositions
+
+            _, aev = self.aev_computer_2x((species, coordinates))
 
 if __name__ == '__main__':
     unittest.main()
