@@ -1,3 +1,10 @@
+# requirements:
+"""
+pip install kaleido
+mamba install -c conda-forge nbformat
+pip install plotly
+"""
+
 import torch
 import torchani
 import numpy as np
