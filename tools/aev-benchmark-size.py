@@ -5,11 +5,10 @@ import argparse
 import textwrap
 
 import torch
+import torchani
 import pynvml
 import numpy as np
 from ase.io import read
-
-from torchani.models import ANI2x
 
 
 summary = '\n'
