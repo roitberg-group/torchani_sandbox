@@ -194,10 +194,10 @@ class BmmLinear(torch.nn.Module):
         self.use_num_models = use_num_models
 
 
-# #########################################################################################################################################
+# ###########################################################################################
 # The code below implements the MNP (Multi Net Parallel) functionality, aimed at paralleling multiple networks across distinct CUDA streams.
 # However, given the complexity of this algorithm and its lack of generalizability, it should be deprecated in the future.
-# #########################################################################################################################################
+# ###########################################################################################
 
 
 class MultiNetFunction(torch.autograd.Function):
