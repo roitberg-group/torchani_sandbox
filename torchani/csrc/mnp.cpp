@@ -247,7 +247,7 @@ Tensor run_autograd(
     std::vector<at::Stream> stream_list,
     bool is_bmm,
     double celu_alpha = 0.1) {
-  // TODO use_stream is disabled forever
+  // TODO use_stream is disabled forever because of torchscript compatibility
   bool use_stream = false;
   // maybe create stream inside mnp?
   // bool use_stream = aev.device().type() == torch::kCUDA;
