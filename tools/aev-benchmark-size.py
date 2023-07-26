@@ -1,13 +1,15 @@
 import time
-import torch
-import torchani
-import pynvml
 import gc
 import os
-import numpy as np
-from ase.io import read
 import argparse
 import textwrap
+
+import torch
+import pynvml
+import numpy as np
+from ase.io import read
+
+from torchani.models import ANI2x
 
 
 summary = '\n'
@@ -381,6 +383,7 @@ if __name__ == "__main__":
 
     device = torch.device('cuda')
     files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
+
     nnp_ref = torchani.models.ANI2x(periodic_table_index=True, model_index=None, cell_list=args.use_cell_list,
                                     use_cuaev_interface=args.use_cuaev_interface, use_cuda_extension=args.use_cuaev_interface).to(device)
     nnp_cuaev = torchani.models.ANI2x(periodic_table_index=True, model_index=None).to(device)

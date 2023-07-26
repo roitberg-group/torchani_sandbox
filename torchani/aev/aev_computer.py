@@ -7,15 +7,21 @@ import torch
 from torch import Tensor
 from torch.jit import Final
 
-from ..utils import cumsum_from_zero
-# modular parts of AEVComputer
-from .cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
-from .aev_terms import _parse_angular_terms, _parse_radial_terms, StandardAngular, StandardRadial
-from .neighbors import _parse_neighborlist
+from torchani.utils import cumsum_from_zero
+from torchani.neighbors import _parse_neighborlist
+from torchani.cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
+from torchani.aev.aev_terms import (
+    _parse_angular_terms,
+    _parse_radial_terms,
+    StandardAngular,
+    StandardRadial,
+)
 
+_provided_pkgs = importlib.metadata.metadata(
+    __package__.split('.')[0]
+).get_all('Provides')
 
-cuaev_is_installed = 'torchani.cuaev' in importlib.metadata.metadata(
-    __package__.split('.')[0]).get_all('Provides')
+cuaev_is_installed = (_provided_pkgs is not None) and ('torchani.cuaev' in _provided_pkgs)
 
 if cuaev_is_installed:
     # We need to import torchani.cuaev to tell PyTorch to initialize torch.ops.cuaev
