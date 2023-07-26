@@ -1,18 +1,18 @@
+import math
 from typing import Tuple, Optional, Union, NamedTuple
 
 import torch
-import math
 from torch import Tensor
 from torch.nn import functional, Module
 from torch.jit import Final
-from ..utils import map_to_central, cumsum_from_zero
+
+from torchani.utils import map_to_central, cumsum_from_zero
 
 
 class NeighborData(NamedTuple):
     indices: Tensor
     distances: Tensor
     diff_vectors: Tensor
-    shift_values: Optional[Tensor]
 
 
 def _parse_neighborlist(neighborlist: Optional[Union[Module, str]], cutoff: float):
@@ -27,6 +27,18 @@ def _parse_neighborlist(neighborlist: Optional[Union[Module, str]], cutoff: floa
     else:
         assert isinstance(neighborlist, Module)
     return neighborlist
+
+
+def rescreen(
+    cutoff: float,
+    neighbors: NeighborData,
+) -> NeighborData:
+    closer_indices = (neighbors.distances <= cutoff).nonzero().flatten()
+    return NeighborData(
+        indices=neighbors.indices.index_select(1, closer_indices),
+        distances=neighbors.distances.index_select(0, closer_indices),
+        diff_vectors=neighbors.diff_vectors.index_select(0, closer_indices),
+    )
 
 
 class BaseNeighborlist(Module):
@@ -48,6 +60,7 @@ class BaseNeighborlist(Module):
         self.cutoff = cutoff
         self.register_buffer('default_cell', torch.eye(3, dtype=torch.float), persistent=False)
         self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool), persistent=False)
+        self.diff_vectors = torch.empty(0)
 
     @torch.jit.export
     def _compute_bounding_cell(self, coordinates: Tensor,
@@ -68,8 +81,8 @@ class BaseNeighborlist(Module):
         assert (coordinates < torch.norm(cell, dim=1)).all()
         return coordinates, cell
 
-    @staticmethod
     def _screen_with_cutoff(
+        self,
         cutoff: float,
         coordinates: Tensor,
         input_neighbor_indices: Tensor,
@@ -131,34 +144,23 @@ class BaseNeighborlist(Module):
         screened_diff_vectors = coords0 - coords1
         if shift_values is not None:
             screened_diff_vectors += shift_values
+
+        # This is the very first `diff_vectors` that are used to calculate various potentials:
+        # 2-body (radial), 3-body (angular), repulsion, dispersion and etc.
+        # To enable stress calculation using partial_fdotr approach, `diff_vectors` requires the
+        # `requires_grad` flag to be set and needs to be saved for future differentiation.
+        screened_diff_vectors.requires_grad_()
+        self.diff_vectors = screened_diff_vectors
+
         screened_distances = screened_diff_vectors.norm(2, -1)
         return NeighborData(
             indices=screened_neighbor_indices,
             distances=screened_distances,
             diff_vectors=screened_diff_vectors,
-            shift_values=shift_values,
         )
 
-    @staticmethod
-    def _rescreen_with_cutoff(
-        cutoff: float,
-        neighbor_idxs: Tensor,
-        distances: Tensor,
-        diff_vectors: Tensor,
-        shift_values: Optional[Tensor] = None
-    ) -> NeighborData:
-        closer_indices = (distances <= cutoff).nonzero().flatten()
-        neighbor_idxs = neighbor_idxs.index_select(1, closer_indices)
-        if shift_values is not None:
-            shift_values = shift_values.index_select(0, closer_indices)
-        diff_vectors = diff_vectors.index_select(0, closer_indices)
-        distances = distances.index_select(0, closer_indices)
-        return NeighborData(
-            indices=neighbor_idxs,
-            distances=distances,
-            diff_vectors=diff_vectors,
-            shift_values=shift_values
-        )
+    def get_diff_vectors(self):
+        return self.diff_vectors
 
     def dummy(self) -> NeighborData:
         # return dummy neighbor data
@@ -171,7 +173,6 @@ class BaseNeighborlist(Module):
             indices=indices,
             distances=distances,
             diff_vectors=diff_vectors,
-            shift_values=None
         )
 
     @torch.jit.export
