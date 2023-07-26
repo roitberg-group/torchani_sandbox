@@ -124,7 +124,6 @@ def benchmark(speciesPositions, aev_comp, runbackward=False, mol_info=None, verb
                 if args.run_energy:
                     force = -torch.autograd.grad(energies.sum(), coordinates, create_graph=True, retain_graph=True)[0]
                 else:
-                    # force = -torch.autograd.grad(aev.sum(), coordinates, create_graph=True, retain_graph=True)[0]
                     force = -torch.autograd.grad(aev, coordinates, torch.ones_like(aev), create_graph=True, retain_graph=True)[0]
             except Exception as e:
                 alert(f" Force faild: {str(e)[:50]}...")
