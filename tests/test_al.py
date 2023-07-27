@@ -125,7 +125,7 @@ class TestALQBC(TestALAtomic):
 
     def testForceQBC(self):
         # Symmetric methane
-        _, _, mean_force, stdev_force = self.model.force_qbcs((self.species, self.coordinates), average=True)
+        _, _, mean_force, stdev_force = self.model.force_qbcs((self.species, self.coordinates))
         forces = self.model.members_forces((self.species, self.coordinates)).model_forces
         print(forces.shape)
         _mean_force = forces.mean(0)
