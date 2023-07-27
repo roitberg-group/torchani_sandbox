@@ -308,7 +308,7 @@ class AEVComputer(torch.nn.Module):
                 self._init_cuaev_computer()
                 self.cuaev_is_initialized = True
             if self.use_cuaev_interface:
-                atom_index12, distances, diff_vector, _ = self.neighborlist(species, coordinates, cell, pbc)
+                atom_index12, distances, diff_vector = self.neighborlist(species, coordinates, cell, pbc)
                 aev = self._compute_cuaev_with_half_nbrlist(species, coordinates, atom_index12, diff_vector, distances)
             else:
                 assert pbc is None or (not pbc.any()), "cuaev currently does not support PBC"
@@ -391,7 +391,13 @@ class AEVComputer(torch.nn.Module):
         """
         Computing aev with full nbrlist that is from
             1. Lammps interface
-            2. For testting purpose, half nbrlist is converted to full nbrlist
+            2. For testting purpose, the full nbrlist converted from half nbrlist
+
+        The full neighbor list format needs the following three tensors:
+            - `ilist_unique`: This is a 1D tensor containing all local atom indices.
+            - `jlist`: A 1D tensor containing all the neighbors for all atoms. The neighbors for atom `i` could
+                       be inferred from the numneigh tensor.
+            - `numneigh`: This is a 1D tensor that specifies the number of neighbors for each atom i.
         """
         assert coordinates.shape[0] == 1, "_compute_cuaev_with_full_nbrlist currently only support single molecule"
         aev = torch.ops.cuaev.run_with_full_nbrlist(coordinates,
