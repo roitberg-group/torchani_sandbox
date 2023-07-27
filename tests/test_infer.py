@@ -11,6 +11,9 @@ from parameterized import parameterized_class
 # However note that this error for large system is not that big actually.
 torch.backends.cuda.matmul.allow_tf32 = False
 
+# TODO: waiting for the NVFuser [Bug](https://github.com/pytorch/pytorch/issues/84510) to be fixed
+torch._C._jit_set_nvfuser_enabled(False)
+
 devices = ['cuda', 'cpu']
 ani2x = torchani.models.ANI2x(periodic_table_index=False)
 species_converter = torchani.nn.SpeciesConverter(ani2x.get_chemical_symbols())
