@@ -451,7 +451,7 @@ class TestCUAEV(TestCase):
             self.assertEqual(cuaev_grad, aev_grad, atol=self.tolerance, rtol=self.tolerance)
 
     def testWithHalfNbrList_pbc(self):
-        files = ['6W8H.pdb']
+        files = ['water-0.8nm.pdb']
         for file in files:
             filepath = os.path.join(path, f'../dataset/pdb/{file}')
             mol = read(filepath)
@@ -499,7 +499,7 @@ class TestCUAEV(TestCase):
             self.assertEqual(cuaev_grad, aev_grad, atol=self.tolerance, rtol=self.tolerance)
 
     def testWithFullNbrList_pbc(self):
-        files = ['6W8H.pdb']
+        files = ['water-0.8nm.pdb']
         for file in files:
             filepath = os.path.join(path, f'../dataset/pdb/{file}')
             mol = read(filepath)
