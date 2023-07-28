@@ -89,7 +89,14 @@ class Calculator(ase.calculators.calculator.Calculator):
         self.results['free_energy'] = energy.item()
 
         if hasattr(output, "atomic_charges"):
-            self.results["charges"] = output.atomic_charges
+            self.results["charges"] = (
+                output
+                .atomic_charges
+                .detach()
+                .squeeze(0)
+                .cpu()
+                .numpy()
+            )
 
         if hasattr(output, "atomic_polarizabilities"):
             self.results["polarizabilities"] = output.atomic_polarizabilities
