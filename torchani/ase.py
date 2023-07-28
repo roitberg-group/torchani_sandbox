@@ -27,7 +27,7 @@ class Calculator(ase.calculators.calculator.Calculator):
             parallel on multi-GPUs using lammps. Default as False.
     """
 
-    implemented_properties = ['energy', 'forces', 'stress', 'free_energy']
+    implemented_properties = ['energy', 'forces', 'stress', 'free_energy', 'charges', "polarizabilities"]
 
     def __init__(self, model, overwrite: bool = False, stress_partial_fdotr: bool = False):
         super().__init__()
@@ -79,13 +79,20 @@ class Calculator(ase.calculators.calculator.Calculator):
         if pbc_enabled:
             if 'stress' in properties and not self.stress_partial_fdotr:
                 cell = cell @ scaling
-            energy = self.model((species, coordinates), cell=cell, pbc=pbc).energies
+            output = self.model((species, coordinates), cell=cell, pbc=pbc)
         else:
-            energy = self.model((species, coordinates)).energies
+            output = self.model((species, coordinates))
 
+        energy = output.energies
         energy *= ase.units.Hartree
         self.results['energy'] = energy.item()
         self.results['free_energy'] = energy.item()
+
+        if hasattr(output, "atomic_charges"):
+            self.results["charges"] = output.atomic_charges
+
+        if hasattr(output, "atomic_polarizabilities"):
+            self.results["polarizabilities"] = output.atomic_polarizabilities
 
         if 'forces' in properties:
             forces = self._get_ani_forces(coordinates, energy, properties)
