@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The ANI model zoo that stores public ANI models.
 
 Currently the model zoo has three models: ANI-1x, ANI-1ccx, and ANI-2x.  The
@@ -75,6 +74,7 @@ from torchani.potentials import (
     AEVScalars,
     AEVPotential,
     RepulsionXTB,
+    TwoBodyDispersionD3,
     Potential,
     PairwisePotential,
     ChargeFactor,
@@ -621,6 +621,8 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
                     info_file: Optional[str] = None,
                     repulsion_kwargs: Optional[Dict[str, Any]] = None,
                     repulsion: bool = False,
+                    dispersion_kwargs: Optional[Dict[str, Any]] = None,
+                    dispersion: bool = False,
                     cutoff_fn: Union[str, torch.nn.Module] = 'cosine',  # for aev
                     pretrained: bool = True,
                     model_index: int = None,
@@ -673,7 +675,9 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
     aev_computer, neural_networks, energy_shifter, elements = components
 
     model_class: Type[BuiltinModel]
+
     if use_experimental_charges:
+        model_class = BuiltinModelCharges
         # I will manually build this to be equivalent to Kate's networks
         dims_for_atoms = {'H': (1008, 256, 192, 160),
                           'C': (1008, 224, 192, 160),
@@ -683,9 +687,8 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
                           'F': (1008, 160, 128, 96),
                           'Cl': (1008, 160, 128, 96)}
 
-        # TODO: classifier-out is 2, what does this even mean..?
-        # The charges seem to actually be located in the index [1] of the
-        # output of the networks
+        # Classifier-out is 2 The charges are actually located in the index [1]
+        # of the output of the networks
 
         atomic_charge_networks = OrderedDict(
             [
@@ -708,22 +711,34 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
                 "charge_networks": charge_networks,
             }
         )
-        model_class = BuiltinModelCharges
-
-    elif repulsion:
-        cutoff = aev_computer.radial_terms.cutoff
-        pairwise_potentials: List[torch.nn.Module] = []
-        base_repulsion_kwargs = {'symbols': elements, 'cutoff': cutoff}
-        if repulsion_kwargs is not None:
-            base_repulsion_kwargs.update(repulsion_kwargs)
-        pairwise_potentials.append(RepulsionXTB(**base_repulsion_kwargs))
-        model_kwargs.update({'pairwise_potentials': pairwise_potentials})
+    elif repulsion or dispersion:
         model_class = BuiltinModelPairInteractions
-
+        pairwise_potentials: List[torch.nn.Module] = []
+        cutoff = aev_computer.radial_terms.cutoff
+        potential_kwargs = {'symbols': elements, 'cutoff': cutoff}
+        if repulsion:
+            base_repulsion_kwargs = deepcopy(potential_kwargs)
+            base_repulsion_kwargs.update(repulsion_kwargs or {})
+            pairwise_potentials.append(RepulsionXTB(**base_repulsion_kwargs))
+        if dispersion:
+            base_dispersion_kwargs = deepcopy(potential_kwargs)
+            base_dispersion_kwargs.update(dispersion_kwargs or {})
+            pairwise_potentials.append(
+                TwoBodyDispersionD3.from_functional(
+                    **base_dispersion_kwargs,
+                ),
+            )
+        model_kwargs.update({'pairwise_potentials': pairwise_potentials})
     else:
         model_class = BuiltinModel
 
-    model = model_class(aev_computer, neural_networks, energy_shifter, elements, **model_kwargs)
+    model = model_class(
+        aev_computer,
+        neural_networks,
+        energy_shifter,
+        elements,
+        **model_kwargs,
+    )
 
     if pretrained and not use_neurochem_source:
         assert state_dict_file is not None
@@ -825,3 +840,69 @@ def ANI2xCharges(**kwargs) -> BuiltinModel:
         charge_nn_state_dict_file=str(charge_nn_state_dict_file),
         **kwargs
     )
+
+
+def ANIdr(
+    pretrained: bool = True,
+    model_index: Optional[int] = None,
+    **kwargs,
+):
+    """ANI model trained with both dispersion and repulsion
+
+    The level of theory is B973c, it is an ensemble of 7 models.
+    It predicts
+    energies on HCNOFSCl elements
+    """
+    # TODO: Fix this
+    if model_index is not None:
+        raise ValueError(
+            "Currently ANIdr only supports model_index=None, to get individual models please index the ensemble"
+        )
+
+    # An ani model with dispersion
+    def dispersion_atomics(atom: str = 'H'):
+        dims_for_atoms = {
+            'H': (1008, 256, 192, 160),
+            'C': (1008, 256, 192, 160),
+            'N': (1008, 192, 160, 128),
+            'O': (1008, 192, 160, 128),
+            'S': (1008, 160, 128, 96),
+            'F': (1008, 160, 128, 96),
+            'Cl': (1008, 160, 128, 96)
+        }
+        return atomics.standard(
+            dims_for_atoms[atom],
+            activation=torch.nn.GELU(),
+            bias=False,
+        )
+    symbols = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
+    model = ANI2x(
+        pretrained=False,
+        cutoff_fn='smooth',
+        atomic_maker=dispersion_atomics,
+        ensemble_size=7,
+        dispersion=True,
+        dispersion_kwargs={
+            'symbols': symbols,
+            'cutoff': 8.5,
+            'cutoff_fn': 'smooth4',
+            'functional': 'B973c'
+        },
+        repulsion=True,
+        repulsion_kwargs={
+            'symbols': symbols,
+            'cutoff': 5.3,
+            'cutoff_fn': 'smooth2'
+        },
+        model_index=model_index,
+        **kwargs,
+    )
+    if pretrained:
+        model.load_state_dict(
+            _fetch_state_dict(
+                'anidr_state_dict.pt',
+                model_index=model_index,
+                private=True,
+            )
+        )
+    return model
