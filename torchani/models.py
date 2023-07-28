@@ -424,6 +424,14 @@ class BuiltinModelCharges(BuiltinModel):
         energies = self.energy_shifter((element_idxs, energies)).energies
         return SpeciesEnergiesAtomicCharges(element_idxs, energies, atomic_charges)
 
+    @torch.jit.export
+    def _recast_long_buffers(self):
+        self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
+        self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
+        self.aev_computer.neighborlist._recast_long_buffers()
+        for p in self.potentials:
+            p._recast_long_buffers()
+
     def __getitem__(self, index: int) -> 'BuiltinModelCharges':
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         non_aev_potentials = [p for p in self.potentials if not isinstance(p, AEVScalars)]
