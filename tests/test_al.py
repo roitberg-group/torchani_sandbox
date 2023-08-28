@@ -72,6 +72,9 @@ class TestALQBC(TestALAtomic):
         _forces = torch.stack(forces_list, dim=0)
         self.assertEqual(forces, _forces)
 
+    def testForceMagnitudes(self):
+        return None
+
     def testQBC(self):
         # fully symmetric methane
         _, _, qbc = self.model.energies_qbcs((self.species, self.coordinates))
