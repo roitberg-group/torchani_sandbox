@@ -103,14 +103,17 @@ class SpeciesForces(NamedTuple):
 class ForceQBCs(NamedTuple):
     species: Tensor
     energies: Tensor
-    mean_force: Tensor
-    stdev_force: Tensor
+    mean_forces: Tensor
+    stdev_forces: Tensor
+    mean_magnitudes: Tensor
+    stdev_magnitudes: Tensor
+    relative_range: Tensor
 
 class ForceMagnitudes(NamedTuple):
     species: Tensor
-    members_magnitudes: Tensor
-    mean_magnitudes: Tensor
+    magnitudes: Tensor
     relative_range: Tensor
+    relative_stdev: Tensor
 
 
 class BuiltinModel(Module):
@@ -331,8 +334,9 @@ class BuiltinModel(Module):
         Args:
             species_coordinates: minibatch of configurations
             cell: the cell used in PBC computation, set to None if PBC is not enabled
-            pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
-            unbiased: Whether to take an unbiased standard deviation over the ensemble's members.
+            pbc: the bool tensor indicating which direction PBC is enabled, 
+                    set to None if PBC is not enabled
+            unbiased: Whether to unbias the standard deviation over ensemble predictions
 
         Returns:
             species_energies_qbcs: tuple of tensors, species, energies and qbc
@@ -383,6 +387,34 @@ class BuiltinModel(Module):
 
         return AtomicQBCs(species_coordinates[0], atomic_energies, stdev_atomic_energies)
 
+    def force_magnitudes(self, species_coordinates: Tuple[Tensor, Tensor],
+                         cell: Optional[Tensor] = None,
+                         pbc: Optional[Tensor] = None,
+                         average: bool = False,
+                         unbiased: bool = True) -> ForceMagnitudes:
+        '''
+        Computes the L2 norm of predicted atomic force vectors, returning magnitudes
+        and the relative range (max prediction minus mean prediction divided by mean)
+        of those predicted magnitdues across the ensemble for each atom in a minibatch 
+        of configurations
+
+        Args:
+            species_coordinates: minibatch of configurations
+            average:
+            unbiased:
+        '''
+        assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
+
+        species, energies, members_forces = self.members_forces(species_coordinates, cell, pbc)
+        magnitudes = members_forces.norm(dim=-1)
+        mean_magnitudes = magnitudes.mean(0)
+        # Comment about max/min_mag here
+        max_magnitudes = magnitudes.max(dim=0).values
+        min_magnitudes = magnitudes.min(dim=0).values
+        relative_range = (max_magnitudes - min_magnitudes) / mean_magnitudes
+        relative_stdev = magnitudes.std(0) / mean_magnitudes
+        return ForceMagnitudes(species, magnitudes, relative_range, relative_stdev)
+
     def force_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
                    cell: Optional[Tensor] = None,
                    pbc: Optional[Tensor] = None,
@@ -401,23 +433,6 @@ class BuiltinModel(Module):
         stdev_force = members_forces.std(0, unbiased=unbiased)
 
         return ForceQBCs(species_coordinates[0], members_energies, mean_forces, stdev_force)
-
-    def force_magnitudes(self, species_coordinates: Tuple[Tensor, Tensor],
-                         cell: Optional[Tensor] = None,
-                         pbc: Optional[Tensor] = None,
-                         average: bool = False,
-                         unbiased: bool = True) -> ForceMagnitudes:
-        '''
-        Computes the L2 norm of predicted atomic force vectors, returning magnitudes and
-        standard deviation across the ensemble for each atom in a minibatch of configurations
-
-        Args:
-            species_coordinates: 
-            average:
-            unbiased:
-        '''
-        return None
-
 
     def __len__(self):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
