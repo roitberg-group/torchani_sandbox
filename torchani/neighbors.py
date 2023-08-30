@@ -1,5 +1,5 @@
 import math
-from typing import Tuple, Optional, Union, NamedTuple
+from typing import Tuple, Optional, Union
 
 import torch
 from torch import Tensor

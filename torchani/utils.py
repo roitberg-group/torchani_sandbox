@@ -420,14 +420,14 @@ class IntsToChemicalSymbols(torch.nn.Module):
         species: list or tensor of species integer values you wish to convert
 
     """
-    #_dummy: Tensor
+    # _dummy: Tensor
     rev_species: Dict[int, str]
 
     def __init__(self, all_species: Sequence[str]):
         super().__init__()
         self.rev_species = {i: s for i, s in enumerate(all_species)}
         # dummy tensor to hold output device
-        #self.register_buffer('_dummy', torch.empty(0), persistent=False)
+        # self.register_buffer('_dummy', torch.empty(0), persistent=False)
 
     def forward(self, species) -> Tensor:
         r"""Convert species from list or Tensor of integers to list of strings of equal dimension"""

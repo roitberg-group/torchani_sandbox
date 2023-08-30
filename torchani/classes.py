@@ -4,7 +4,7 @@ Location of data classes for use in ANI built-in models:
     * AtomicQBCs: 
     * SpeciesForces: 
     * ForceQBC: 
-    * ForceMagnitudes:
+    * ForceMagnitudes: 
 
 """
 from torch import Tensor
@@ -40,7 +40,7 @@ class SpeciesForces(NamedTuple):
 
 
 class ForceQBCs(NamedTuple):
-    # NOTE: this needs to be updated, should not output so much stuff -- what do i want to see? 
+    # NOTE: this needs to be updated, should not output so much stuff -- what do i want to see?
     species: Tensor
     energies: Tensor
     mean_forces: Tensor
