@@ -5,7 +5,7 @@ from torch.jit import Final
 
 from torchani.utils import ATOMIC_NUMBERS, PERIODIC_TABLE
 from torchani.cutoffs import _parse_cutoff_fn, Cutoff
-from torchani.neighbors import NeighborData
+from torchani.classes import NeighborData
 
 
 class Potential(torch.nn.Module):

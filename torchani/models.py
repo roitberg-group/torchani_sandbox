@@ -55,7 +55,7 @@ example usage:
 """
 import os
 import warnings
-from typing import Tuple, Optional, NamedTuple, Sequence, Union, Dict, Any, Type, Callable, List, Iterable
+from typing import Tuple, Optional, Sequence, Union, Dict, Any, Type, Callable, List, Iterable
 from copy import deepcopy
 from pathlib import Path
 from collections import OrderedDict
@@ -66,7 +66,15 @@ from torch.nn import Module
 from torch.jit import Final
 
 from torchani import atomics
-from torchani.nn import SpeciesConverter, SpeciesEnergies, Ensemble, ANIModel
+from torchani.classes import (
+    SpeciesEnergies,
+    SpeciesEnergiesQBC,
+    AtomicQBCs,
+    SpeciesForces,
+    ForceQBCs,
+    ForceMagnitudes
+)
+from torchani.nn import SpeciesConverter, Ensemble, ANIModel
 from torchani.utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
 from torchani.aev import AEVComputer
 from torchani.potentials import (
@@ -80,40 +88,6 @@ from torchani.neighbors import rescreen
 
 
 NN = Union[ANIModel, Ensemble]
-
-
-class SpeciesEnergiesQBC(NamedTuple):
-    species: Tensor
-    energies: Tensor
-    qbcs: Tensor
-
-
-class AtomicQBCs(NamedTuple):
-    species: Tensor
-    energies: Tensor
-    stdev_atomic_energies: Tensor
-
-
-class SpeciesForces(NamedTuple):
-    species: Tensor
-    energies: Tensor
-    model_forces: Tensor
-
-
-class ForceQBCs(NamedTuple):
-    species: Tensor
-    energies: Tensor
-    mean_forces: Tensor
-    stdev_forces: Tensor
-    mean_magnitudes: Tensor
-    stdev_magnitudes: Tensor
-    relative_range: Tensor
-
-class ForceMagnitudes(NamedTuple):
-    species: Tensor
-    magnitudes: Tensor
-    relative_range: Tensor
-    relative_stdev: Tensor
 
 
 class BuiltinModel(Module):
