@@ -40,6 +40,7 @@ class SpeciesForces(NamedTuple):
 
 
 class ForceQBCs(NamedTuple):
+    # NOTE: this needs to be updated, should not output so much stuff -- what do i want to see? 
     species: Tensor
     energies: Tensor
     mean_forces: Tensor
