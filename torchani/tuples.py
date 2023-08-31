@@ -41,16 +41,14 @@ class SpeciesForces(NamedTuple):
 
 class ForceStdev(NamedTuple):
     species: Tensor
-    energies: Tensor
-    mean_forces: Tensor
-    stdev_forces: Tensor
+    magnitudes: Tensor
+    relative_stdev: Tensor
+    relative_range: Tensor
 
 
 class ForceMagnitudes(NamedTuple):
     species: Tensor
     magnitudes: Tensor
-    relative_range: Tensor
-    relative_stdev: Tensor
 
 
 class NeighborData(NamedTuple):
