@@ -7,7 +7,7 @@ from torch.jit import Final
 from torchani.units import ANGSTROM_TO_BOHR
 from torchani.utils import ATOMIC_NUMBERS
 from torchani.wrappers import StandaloneWrapper
-from torchani.classes import NeighborData
+from torchani.structs import NeighborData
 from torchani.cutoffs import Cutoff
 from torchani.potentials.core import PairwisePotential
 from torchani.potentials._repulsion_constants import alpha_constants, y_eff_constants

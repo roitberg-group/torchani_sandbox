@@ -66,12 +66,12 @@ from torch.nn import Module
 from torch.jit import Final
 
 from torchani import atomics
-from torchani.classes import (
+from torchani.structs import (
     SpeciesEnergies,
     SpeciesEnergiesQBC,
     AtomicQBCs,
     SpeciesForces,
-    ForceQBCs,
+    ForceStdev,
     ForceMagnitudes
 )
 from torchani.nn import SpeciesConverter, Ensemble, ANIModel
@@ -389,9 +389,10 @@ class BuiltinModel(Module):
         relative_stdev = magnitudes.std(0) / mean_magnitudes
         return ForceMagnitudes(species, magnitudes, relative_range, relative_stdev)
 
-    def force_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
+    def force_stdev(self, species_coordinates: Tuple[Tensor, Tensor],
                    cell: Optional[Tensor] = None,
                    pbc: Optional[Tensor] = None,
+                   average: bool = True,
                    unbiased: bool = True) -> ForceQBCs:
         """
         Returns the mean and standard deviation of predicted forces across ensemble
@@ -400,13 +401,14 @@ class BuiltinModel(Module):
             species_coordinates
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        _, members_energies, members_forces = self.members_forces(species_coordinates, cell, pbc)
+        species, members_energies, members_forces = self.members_forces(species_coordinates, cell, pbc)
 
-        mean_forces = members_forces.mean(0)
+        if average:
+            members_forces = members_forces.mean(0)
 
         stdev_force = members_forces.std(0, unbiased=unbiased)
 
-        return ForceQBCs(species_coordinates[0], members_energies, mean_forces, stdev_force)
+        return ForceStdev(species, members_energies, members_forces, stdev_force)
 
     def __len__(self):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
