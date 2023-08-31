@@ -7,7 +7,7 @@ from torch.nn import functional, Module
 from torch.jit import Final
 
 from torchani.utils import map_to_central, cumsum_from_zero
-from torchani.structs import NeighborData
+from torchani.tuples import NeighborData
 
 
 def _parse_neighborlist(neighborlist: Optional[Union[Module, str]], cutoff: float):

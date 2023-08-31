@@ -66,10 +66,10 @@ from torch.nn import Module
 from torch.jit import Final
 
 from torchani import atomics
-from torchani.structs import (
+from torchani.tuples import (
     SpeciesEnergies,
     SpeciesEnergiesQBC,
-    AtomicQBCs,
+    AtomicStdev,
     SpeciesForces,
     ForceStdev,
     ForceMagnitudes
@@ -331,7 +331,7 @@ class BuiltinModel(Module):
         assert qbc_factors.shape == energies.shape
         return SpeciesEnergiesQBC(species, energies, qbc_factors)
 
-    def atomic_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
+    def atomic_stdev(self, species_coordinates: Tuple[Tensor, Tensor],
                     cell: Optional[Tensor] = None,
                     pbc: Optional[Tensor] = None,
                     average: bool = False,
@@ -379,14 +379,14 @@ class BuiltinModel(Module):
         '''
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
 
-        species, energies, members_forces = self.members_forces(species_coordinates, cell, pbc)
+        species, _, members_forces = self.members_forces(species_coordinates, cell, pbc)
         magnitudes = members_forces.norm(dim=-1)
         mean_magnitudes = magnitudes.mean(0)
         # Comment about max/min_mag here
         max_magnitudes = magnitudes.max(dim=0).values
         min_magnitudes = magnitudes.min(dim=0).values
-        relative_range = (max_magnitudes - min_magnitudes) / mean_magnitudes
-        relative_stdev = magnitudes.std(0) / mean_magnitudes
+        relative_range = ((max_magnitudes - min_magnitudes) + 1e-8) / (mean_magnitudes + 1e-8)
+        relative_stdev = (magnitudes.std(0) + 1e-8) / (mean_magnitudes + 1e-8)
         return ForceMagnitudes(species, magnitudes, relative_range, relative_stdev)
 
     def force_stdev(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -403,10 +403,10 @@ class BuiltinModel(Module):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species, members_energies, members_forces = self.members_forces(species_coordinates, cell, pbc)
 
+        stdev_force = members_forces.std(0, unbiased=unbiased)
+
         if average:
             members_forces = members_forces.mean(0)
-
-        stdev_force = members_forces.std(0, unbiased=unbiased)
 
         return ForceStdev(species, members_energies, members_forces, stdev_force)
 
