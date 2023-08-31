@@ -7,7 +7,7 @@ import pkbar
 
 import torchani
 from torchani.units import hartree2kcalmol
-from tool_utils import time_functions_in_model
+from .tool_utils import time_functions_in_model
 
 H_network = torch.nn.Sequential(
     torch.nn.Linear(384, 160),
