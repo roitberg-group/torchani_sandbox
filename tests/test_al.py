@@ -86,33 +86,15 @@ class TestALQBC(TestALAtomic):
         self.assertEqual(avg_forces, _forces)
 
     def testForceMagnitudes(self):
-        # NOTE: This test imperfectly checks that force_magnitudes works as it is intended to;
-        #  however, dividing by the mean magnitude in near-equilibrium geometries can lead to issues
-        ch4_coord = torch.tensor([[[4.9725e-04, -2.3656e-02, -4.6554e-02],
-                            [-9.4934e-01, -4.6713e-01, -2.1225e-01],
-                            [-2.1828e-01, 6.4611e-01, 8.7319e-01],
-                            [3.7291e-01, 6.5190e-01, -6.9571e-01],
-                            [7.9173e-01, -6.8895e-01, 3.1410e-01]]], dtype=torch.double, device=self.device)
-        _, magnitudes = self.model.force_magnitudes((self.species, ch4_coord), average=False)
-        _, _, _members_forces = self.model.members_forces((self.species, ch4_coord))
+        _, magnitudes, relative_range, relative_stdev = self.model.force_magnitudes((self.species, self.coordinates))
+        _, _, _members_forces = self.model.members_forces((self.species, self.coordinates))
         _magnitudes = _members_forces.norm(dim=-1)
-        self.assertEqual(magnitudes, _magnitudes)
-
-    def testForceQBC(self):
-        # NOTE: Same as above test case, checks that this works for asymmetrical geometry
-        #  Also note that average=False for force_qbc and force_magnitudes
-        ch4_coord = torch.tensor([[[4.9725e-04, -2.3656e-02, -4.6554e-02],
-                            [-9.4934e-01, -4.6713e-01, -2.1225e-01],
-                            [-2.1828e-01, 6.4611e-01, 8.7319e-01],
-                            [3.7291e-01, 6.5190e-01, -6.9571e-01],
-                            [7.9173e-01, -6.8895e-01, 3.1410e-01]]], dtype=torch.double, device=self.device)
-        _, magnitudes, relative_stdev, relative_range = self.model.force_qbc((self.species, ch4_coord))
-        _, _magnitudes = self.model.force_magnitudes((self.species, ch4_coord), average=False)
+        _mean_magnitudes = _magnitudes.mean(0)
         _max_mag = _magnitudes.max(dim=0).values
         _min_mag = _magnitudes.min(dim=0).values
-        _mean_magnitudes = _magnitudes.mean(0)
-        _relative_stdev = (_magnitudes.std(0, unbiased=True) + 1e-8) / (_mean_magnitudes + 1e-8)
         _relative_range = ((_max_mag - _min_mag) + 1e-8) / (_mean_magnitudes + 1e-8)
+
+        _relative_stdev = (_magnitudes.std(0) + 1e-8) / (_mean_magnitudes + 1e-8)
         self.assertEqual(magnitudes, _magnitudes)
         self.assertEqual(relative_range, _relative_range)
         self.assertEqual(relative_stdev, _relative_stdev)
@@ -149,7 +131,7 @@ class TestALQBC(TestALAtomic):
     def testAtomicQBC(self):
         torch.set_printoptions(precision=15)
         # Symmetric methane
-        atomic_qbc = self.model.atomic_qbcs((self.species, self.coordinates)).stdev_atomic_energies
+        atomic_qbc = self.model.atomic_stdev((self.species, self.coordinates)).stdev_atomic_energies
         _, atomic_energies = self.model.atomic_energies((self.species, self.coordinates), average=False)
         stdev_atomic_energies = atomic_energies.std(0)
         self.assertEqual(stdev_atomic_energies, atomic_qbc)
@@ -162,7 +144,7 @@ class TestALQBC(TestALAtomic):
                                    [7.9173e-01, -6.8895e-01, 3.1410e-01]]],
                                  dtype=torch.double,
                                  device=self.device)
-        _, _, atomic_qbc = self.model.atomic_qbcs((self.species, ch4_coord))
+        _, _, atomic_qbc = self.model.atomic_stdev((self.species, ch4_coord))
         _, atomic_energies = self.model.atomic_energies((self.species, ch4_coord), average=False)
 
         stdev_atomic_energies = atomic_energies.std(0, unbiased=True)
@@ -170,7 +152,7 @@ class TestALQBC(TestALAtomic):
 
     def testForceStdev(self):
         # Symmetric methane
-        _, _, mean_force, stdev_force = self.model.force_qbcs((self.species, self.coordinates))
+        _, _, mean_force, stdev_force = self.model.force_stdev((self.species, self.coordinates))
         forces = self.model.members_forces((self.species, self.coordinates)).model_forces
         print(forces.shape)
         _mean_force = forces.mean(0)
