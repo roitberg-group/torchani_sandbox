@@ -87,22 +87,34 @@ class TestALQBC(TestALAtomic):
 
     def testForceMagnitudes(self):
         # NOTE: This test imperfectly checks that force_magnitudes works as it is intended to;
-        #       however, dividing by the mean magnitude in near-equilibrium geometries can lead to issues
+        #  however, dividing by the mean magnitude in near-equilibrium geometries can lead to issues
         ch4_coord = torch.tensor([[[4.9725e-04, -2.3656e-02, -4.6554e-02],
                             [-9.4934e-01, -4.6713e-01, -2.1225e-01],
                             [-2.1828e-01, 6.4611e-01, 8.7319e-01],
                             [3.7291e-01, 6.5190e-01, -6.9571e-01],
                             [7.9173e-01, -6.8895e-01, 3.1410e-01]]],
-                            dtype=torch.double,
-                            device=self.device)
-        _, magnitudes, relative_range, relative_stdev = self.model.force_magnitudes((self.species, ch4_coord))
+                            dtype=torch.double, device=self.device)
+        _, magnitudes = self.model.force_magnitudes((self.species, ch4_coord), average=False)
         _, _, _members_forces = self.model.members_forces((self.species, ch4_coord))
         _magnitudes = _members_forces.norm(dim=-1)
-        _mean_magnitudes = _magnitudes.mean(0)
+        self.assertEqual(magnitudes, _magnitudes)
+
+    def testForceQBC(self):
+        # NOTE: Same as above test case, checks that this works for asymmetrical geometry
+        #  Also note that average=False for force_qbc and force_magnitudes
+        ch4_coord = torch.tensor([[[4.9725e-04, -2.3656e-02, -4.6554e-02],
+                            [-9.4934e-01, -4.6713e-01, -2.1225e-01],
+                            [-2.1828e-01, 6.4611e-01, 8.7319e-01],
+                            [3.7291e-01, 6.5190e-01, -6.9571e-01],
+                            [7.9173e-01, -6.8895e-01, 3.1410e-01]]],
+                            dtype=torch.double, device=self.device)
+        _, magnitudes, relative_stdev, relative_range = self.model.force_qbc((self.species, ch4_coord))
+        _, _magnitudes = self.model.force_magnitudes((self.species, ch4_coord), average=False)
         _max_mag = _magnitudes.max(dim=0).values
         _min_mag = _magnitudes.min(dim=0).values
+        _mean_magnitudes = _magnitudes.mean(0)
+        _relative_stdev = _magnitudes.std(0, unbiased=True) / _mean_magnitudes
         _relative_range = (_max_mag - _min_mag) / _mean_magnitudes
-        _relative_stdev = _magnitudes.std(0) / _mean_magnitudes
         self.assertEqual(magnitudes, _magnitudes)
         self.assertEqual(relative_range, _relative_range)
         self.assertEqual(relative_stdev, _relative_stdev)
@@ -157,33 +169,6 @@ class TestALQBC(TestALAtomic):
 
         stdev_atomic_energies = atomic_energies.std(0, unbiased=True)
         self.assertEqual(stdev_atomic_energies, atomic_qbc)
-
-    def testForceStdev(self):
-        # Symmetric methane
-        _, _, mean_force, stdev_force = self.model.force_stdev((self.species, self.coordinates))
-        forces = self.model.members_forces((self.species, self.coordinates)).model_forces
-        print(forces.shape)
-        _mean_force = forces.mean(0)
-        _stdev_force = forces.std(0, unbiased=True)
-        print(mean_force.shape, _mean_force.shape)
-        print(stdev_force.shape, _stdev_force.shape)
-        self.assertEqual(mean_force, _mean_force)
-        self.assertEqual(stdev_force, _stdev_force)
-
-        # Asymmetric methane
-        ch4_coord = torch.tensor([[[4.9725e-04, -2.3656e-02, -4.6554e-02],
-                                   [-9.4934e-01, -4.6713e-01, -2.1225e-01],
-                                   [-2.1828e-01, 6.4611e-01, 8.7319e-01],
-                                   [3.7291e-01, 6.5190e-01, -6.9571e-01],
-                                   [7.9173e-01, -6.8895e-01, 3.1410e-01]]],
-                                 dtype=torch.double,
-                                 device=self.device)
-        _, _, mean_force, stdev_force = self.model.force_stdev((self.species, ch4_coord))
-        forces = self.model.members_forces((self.species, ch4_coord)).model_forces
-        _mean_force = forces.mean(0)
-        _stdev_force = forces.std(0)
-        self.assertEqual(mean_force, _mean_force)
-        self.assertEqual(stdev_force, _stdev_force)
 
 
 if __name__ == '__main__':
