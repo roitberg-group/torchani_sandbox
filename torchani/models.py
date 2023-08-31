@@ -270,13 +270,13 @@ class BuiltinModel(Module):
                        cell: Optional[Tensor] = None,
                        pbc: Optional[Tensor] = None) -> SpeciesForces:
         """Calculates predicted forces from ensemble members, can return the average prediction
-        
+
         Args:
             species_coordinates: minibatch of configurations
             average: boolean value which determines whether to return the predicted forces from each model or the ensemble average
             cell: the cell used in PBC computation, set to None if PBC is not enabled
             pbc: the bool tensor indicating which direction PBC is enabled, set to none if PBC is not enabled
-        
+
         Returns:
             SpeciesForces: species, molecular energies, and atomic forces predicted by an ensemble of neural network models
         """
@@ -308,7 +308,7 @@ class BuiltinModel(Module):
         Args:
             species_coordinates: minibatch of configurations
             cell: the cell used in PBC computation, set to None if PBC is not enabled
-            pbc: the bool tensor indicating which direction PBC is enabled, 
+            pbc: the bool tensor indicating which direction PBC is enabled,
                     set to None if PBC is not enabled
             unbiased: Whether to unbias the standard deviation over ensemble predictions
 
@@ -341,7 +341,7 @@ class BuiltinModel(Module):
         Largely does the same thing as the atomic_energies function, but with a different set of default inputs.
         Returns standard deviation in atomic energy predictions across the ensemble.
 
-        with_SAEs returns the shifted atomic energies according to the model used 
+        with_SAEs returns the shifted atomic energies according to the model used
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species_coordinates = self._maybe_convert_species(species_coordinates)
