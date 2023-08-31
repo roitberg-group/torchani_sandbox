@@ -336,7 +336,7 @@ class BuiltinModel(Module):
                     pbc: Optional[Tensor] = None,
                     average: bool = False,
                     with_SAEs: bool = False,
-                    unbiased: bool = True) -> AtomicQBCs:
+                    unbiased: bool = True) -> AtomicStdev:
         """
         Largely does the same thing as the atomic_energies function, but with a different set of default inputs.
         Returns standard deviation in atomic energy predictions across the ensemble.
@@ -359,7 +359,7 @@ class BuiltinModel(Module):
         if with_SAEs:
             atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
 
-        return AtomicQBCs(species_coordinates[0], atomic_energies, stdev_atomic_energies)
+        return AtomicStdev(species_coordinates[0], atomic_energies, stdev_atomic_energies)
 
     def force_magnitudes(self, species_coordinates: Tuple[Tensor, Tensor],
                          cell: Optional[Tensor] = None,
@@ -393,7 +393,7 @@ class BuiltinModel(Module):
                    cell: Optional[Tensor] = None,
                    pbc: Optional[Tensor] = None,
                    average: bool = True,
-                   unbiased: bool = True) -> ForceQBCs:
+                   unbiased: bool = True) -> ForceStdev:
         """
         Returns the mean and standard deviation of predicted forces across ensemble
 
