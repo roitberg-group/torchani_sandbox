@@ -11,7 +11,7 @@ import pynvml
 
 import torchani
 from torchani.units import hartree2kcalmol
-from tool_utils import time_functions_in_model
+from .tool_utils import time_functions_in_model
 
 summary = ''
 runcounter = 0

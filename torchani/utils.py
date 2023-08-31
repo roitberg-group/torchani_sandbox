@@ -399,17 +399,17 @@ class ChemicalSymbolsToAtomicNumbers(torch.nn.Module):
 class IntsToChemicalSymbols(torch.nn.Module):
     r"""Helper that can be called to convert tensor or list of integers to list of chemical symbol strings
 
-    On initialization the class should be supplied with either a list or torch.Tensor. 
+    On initialization the class should be supplied with either a list or torch.Tensor.
     Returned is a list of corresponding chemical symbol strings, of equal dimension to the input.
-    
+
     Usage example:
-    
+
         #species list used for indexing
         elements = ['H','C','N','O','S','F', 'Cl']
-    
+
         # A 1-D Tenosr, however the dimension can be larger
         species = torch.Tensor([3, 0, 0, -1, -1, -1])
-    
+
         IntsToChemicalSymbols(elements, species)
 
         Output:
