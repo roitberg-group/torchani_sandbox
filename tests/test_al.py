@@ -86,15 +86,23 @@ class TestALQBC(TestALAtomic):
         self.assertEqual(avg_forces, _forces)
 
     def testForceMagnitudes(self):
-        _, magnitudes, relative_range, relative_stdev = self.model.force_magnitudes((self.species, self.coordinates))
-        _, _, _members_forces = self.model.members_forces((self.species, self.coordinates))
+        # NOTE: This test imperfectly checks that force_magnitudes works as it is intended to;
+        #       however, dividing by the mean magnitude in near-equilibrium geometries can lead to issues
+        ch4_coord = torch.tensor([[[4.9725e-04, -2.3656e-02, -4.6554e-02],
+                            [-9.4934e-01, -4.6713e-01, -2.1225e-01],
+                            [-2.1828e-01, 6.4611e-01, 8.7319e-01],
+                            [3.7291e-01, 6.5190e-01, -6.9571e-01],
+                            [7.9173e-01, -6.8895e-01, 3.1410e-01]]],
+                            dtype=torch.double,
+                            device=self.device)
+        _, magnitudes, relative_range, relative_stdev = self.model.force_magnitudes((self.species, ch4_coord))
+        _, _, _members_forces = self.model.members_forces((self.species, ch4_coord))
         _magnitudes = _members_forces.norm(dim=-1)
         _mean_magnitudes = _magnitudes.mean(0)
         _max_mag = _magnitudes.max(dim=0).values
         _min_mag = _magnitudes.min(dim=0).values
-        _relative_range = ((_max_mag - _min_mag) + 1e-8) / (_mean_magnitudes + 1e-8)
-
-        _relative_stdev = (_magnitudes.std(0) + 1e-8) / (_mean_magnitudes + 1e-8)
+        _relative_range = (_max_mag - _min_mag) / _mean_magnitudes
+        _relative_stdev = _magnitudes.std(0) / _mean_magnitudes
         self.assertEqual(magnitudes, _magnitudes)
         self.assertEqual(relative_range, _relative_range)
         self.assertEqual(relative_stdev, _relative_stdev)
