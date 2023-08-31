@@ -7,7 +7,7 @@ from torch.jit import Final
 
 from torchani import utils
 from torchani import infer
-from torchani.classes import (
+from torchani.structs import (
     SpeciesCoordinates,
     SpeciesEnergies
 )
