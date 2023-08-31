@@ -385,8 +385,10 @@ class BuiltinModel(Module):
         # Comment about max/min_mag here
         max_magnitudes = magnitudes.max(dim=0).values
         min_magnitudes = magnitudes.min(dim=0).values
-        relative_range = ((max_magnitudes - min_magnitudes) + 1e-8) / (mean_magnitudes + 1e-8)
-        relative_stdev = (magnitudes.std(0) + 1e-8) / (mean_magnitudes + 1e-8)
+        # NOTE: This function doesn't work nicely with geometrically optimized structures
+        #       since dividing by the mean magnitude 
+        relative_range = (max_magnitudes - min_magnitudes) / mean_magnitudes
+        relative_stdev = magnitudes.std(0) / mean_magnitudes
         return ForceMagnitudes(species, magnitudes, relative_range, relative_stdev)
 
     def force_stdev(self, species_coordinates: Tuple[Tensor, Tensor],
