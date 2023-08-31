@@ -381,13 +381,11 @@ class BuiltinModel(Module):
         if average:
             magnitudes = magnitudes.mean(0)
 
-        return ForceMagnitudes(species, magnitudes)
-
-    def force_qbc(self, species_coordinates: Tuple[Tensor, Tensor],
+    def force_stdev(self, species_coordinates: Tuple[Tensor, Tensor],
                    cell: Optional[Tensor] = None,
                    pbc: Optional[Tensor] = None,
-                   average: bool = False,
-                   unbiased: bool = True) -> ForceStdev:
+                   average: bool = True,
+                   unbiased: bool = True) -> ForceQBCs:
         """
         Returns the mean force magnitudes and relative range and standard deviation
         of predicted forces across an ensemble of networks.
@@ -396,19 +394,16 @@ class BuiltinModel(Module):
             species_coordinates
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        species, magnitudes = self.force_magnitudes(species_coordinates, cell, pbc, average=False)
+        species, members_energies, members_forces = self.members_forces(species_coordinates, cell, pbc)
 
-        max_magnitudes = magnitudes.max(dim=0).values
-        min_magnitudes = magnitudes.min(dim=0).values
+        if average:
+            members_forces = members_forces.mean(0)
 
         mean_magnitudes = magnitudes.mean(0)
         relative_stdev = (magnitudes.std(0, unbiased=unbiased) + 1e-8) / (mean_magnitudes + 1e-8)
         relative_range = ((max_magnitudes - min_magnitudes) + 1e-8) / (mean_magnitudes + 1e-8)
 
-        if average:
-            magnitudes = mean_magnitudes
-
-        return ForceStdev(species, magnitudes, relative_stdev, relative_range)
+        return ForceStdev(species, members_energies, members_forces, stdev_force)
 
     def __len__(self):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
