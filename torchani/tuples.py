@@ -7,8 +7,8 @@ Location of data classes for use in ANI built-in models:
     * ForceMagnitudes: 
 
 """
-from torch import Tensor
 from typing import NamedTuple
+from torch import Tensor
 
 
 class SpeciesCoordinates(NamedTuple):
