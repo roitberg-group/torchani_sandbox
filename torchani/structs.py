@@ -27,7 +27,7 @@ class SpeciesEnergiesQBC(NamedTuple):
     qbcs: Tensor
 
 
-class AtomicQBCs(NamedTuple):
+class AtomicStdev(NamedTuple):
     species: Tensor
     energies: Tensor
     stdev_atomic_energies: Tensor

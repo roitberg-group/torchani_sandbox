@@ -385,7 +385,7 @@ class BuiltinModel(Module):
                    cell: Optional[Tensor] = None,
                    pbc: Optional[Tensor] = None,
                    average: bool = True,
-                   unbiased: bool = True) -> ForceQBCs:
+                   unbiased: bool = True) -> ForceStdev:
         """
         Returns the mean force magnitudes and relative range and standard deviation
         of predicted forces across an ensemble of networks.
