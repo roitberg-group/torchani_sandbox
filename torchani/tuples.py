@@ -40,14 +40,10 @@ class SpeciesForces(NamedTuple):
 
 
 class ForceStdev(NamedTuple):
-    # NOTE: this needs to be updated, should not output so much stuff -- what do i want to see?
     species: Tensor
     energies: Tensor
     mean_forces: Tensor
     stdev_forces: Tensor
-    mean_magnitudes: Tensor
-    stdev_magnitudes: Tensor
-    relative_range: Tensor
 
 
 class ForceMagnitudes(NamedTuple):
