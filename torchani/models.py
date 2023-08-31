@@ -364,13 +364,10 @@ class BuiltinModel(Module):
     def force_magnitudes(self, species_coordinates: Tuple[Tensor, Tensor],
                          cell: Optional[Tensor] = None,
                          pbc: Optional[Tensor] = None,
-                         average: bool = False,
-                         unbiased: bool = True) -> ForceMagnitudes:
+                         average: bool = True) -> ForceMagnitudes:
         '''
-        Computes the L2 norm of predicted atomic force vectors, returning magnitudes
-        and the relative range (max prediction minus mean prediction divided by mean)
-        of those predicted magnitdues across the ensemble for each atom in a minibatch 
-        of configurations
+        Computes the L2 norm of predicted atomic force vectors, returning magnitudes,
+        averaged by default.
 
         Args:
             species_coordinates: minibatch of configurations
@@ -381,36 +378,37 @@ class BuiltinModel(Module):
 
         species, _, members_forces = self.members_forces(species_coordinates, cell, pbc)
         magnitudes = members_forces.norm(dim=-1)
-        mean_magnitudes = magnitudes.mean(0)
-        # Comment about max/min_mag here
-        max_magnitudes = magnitudes.max(dim=0).values
-        min_magnitudes = magnitudes.min(dim=0).values
-        # NOTE: This function doesn't work nicely with geometrically optimized structures
-        #       since dividing by the mean magnitude 
-        relative_range = (max_magnitudes - min_magnitudes) / mean_magnitudes
-        relative_stdev = magnitudes.std(0) / mean_magnitudes
-        return ForceMagnitudes(species, magnitudes, relative_range, relative_stdev)
+        if average:
+            magnitudes = magnitudes.mean(0)
 
-    def force_stdev(self, species_coordinates: Tuple[Tensor, Tensor],
+        return ForceMagnitudes(species, magnitudes)
+
+    def force_qbc(self, species_coordinates: Tuple[Tensor, Tensor],
                    cell: Optional[Tensor] = None,
                    pbc: Optional[Tensor] = None,
-                   average: bool = True,
+                   average: bool = False,
                    unbiased: bool = True) -> ForceStdev:
         """
-        Returns the mean and standard deviation of predicted forces across ensemble
+        Returns the mean force magnitudes and relative range and standard deviation
+        of predicted forces across an ensemble of networks.
 
         Args:
             species_coordinates
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        species, members_energies, members_forces = self.members_forces(species_coordinates, cell, pbc)
+        species, magnitudes = self.force_magnitudes(species_coordinates, cell, pbc, average=False)
 
-        stdev_force = members_forces.std(0, unbiased=unbiased)
+        max_magnitudes = magnitudes.max(dim=0).values
+        min_magnitudes = magnitudes.min(dim=0).values
+
+        mean_magnitudes = magnitudes.mean(0)
+        relative_stdev = magnitudes.std(0, unbiased=unbiased) / mean_magnitudes
+        relative_range = (max_magnitudes - min_magnitudes) / mean_magnitudes
 
         if average:
-            members_forces = members_forces.mean(0)
+            magnitudes = mean_magnitudes
 
-        return ForceStdev(species, members_energies, members_forces, stdev_force)
+        return ForceStdev(species, magnitudes, relative_stdev, relative_range)
 
     def __len__(self):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
