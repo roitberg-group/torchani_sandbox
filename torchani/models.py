@@ -402,8 +402,8 @@ class BuiltinModel(Module):
         min_magnitudes = magnitudes.min(dim=0).values
 
         mean_magnitudes = magnitudes.mean(0)
-        relative_stdev = magnitudes.std(0, unbiased=unbiased) / mean_magnitudes
-        relative_range = (max_magnitudes - min_magnitudes) / mean_magnitudes
+        relative_stdev = (magnitudes.std(0, unbiased=unbiased) + 1e-8) / (mean_magnitudes + 1e-8)
+        relative_range = ((max_magnitudes - min_magnitudes) + 1e-8) / (mean_magnitudes + 1e-8)
 
         if average:
             magnitudes = mean_magnitudes
