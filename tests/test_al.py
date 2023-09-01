@@ -111,8 +111,8 @@ class TestALQBC(TestALAtomic):
         _max_mag = _magnitudes.max(dim=0).values
         _min_mag = _magnitudes.min(dim=0).values
         _mean_magnitudes = _magnitudes.mean(0)
-        _relative_stdev = _magnitudes.std(0, unbiased=True) / _mean_magnitudes
-        _relative_range = (_max_mag - _min_mag) / _mean_magnitudes
+        _relative_stdev = (_magnitudes.std(0, unbiased=True) + 1e-8) / (_mean_magnitudes + 1e-8)
+        _relative_range = ((_max_mag - _min_mag) + 1e-8) / (_mean_magnitudes + 1e-8)
         self.assertEqual(magnitudes, _magnitudes)
         self.assertEqual(relative_range, _relative_range)
         self.assertEqual(relative_stdev, _relative_stdev)
