@@ -129,7 +129,6 @@ class PairwisePotential(Potential):
         self,
         element_idxs: Tensor,
         neighbors: NeighborData,
-        neighbors: NeighborData,
         ghost_flags: Optional[Tensor] = None
     ) -> Tensor:
 
@@ -152,7 +151,6 @@ class PairwisePotential(Potential):
     def atomic_energies(
         self,
         element_idxs: Tensor,
-        neighbors: NeighborData,
         neighbors: NeighborData,
         ghost_flags: Optional[Tensor] = None,
         average: bool = False,
