@@ -2,6 +2,10 @@ import os
 import unittest
 
 import torch
+<<<<<<< HEAD
+=======
+from torch import Tensor
+>>>>>>> Partial fixes for bugs
 import numpy as np
 from parameterized import parameterized
 from ase.lattice.cubic import Diamond
@@ -10,6 +14,7 @@ from ase.md.nptberendsen import NPTBerendsen
 from ase import units
 from ase.io import read
 from ase.calculators.test import numeric_force
+<<<<<<< HEAD
 
 from torchani.neighbors import CellList
 from torchani.testing import TestCase
@@ -18,6 +23,26 @@ from torchani.potentials import DummyPairwisePotential
 
 
 path = os.path.dirname(os.path.realpath(__file__))
+=======
+
+from torchani.aev.neighbors import NeighborData
+from torchani.aev import CellList
+from torchani.testing import TestCase
+from torchani.models import _fetch_state_dict, ANI1x, BuiltinModelPairInteractions
+from torchani.potentials.core import PairwisePotential
+
+
+path = os.path.dirname(os.path.realpath(__file__))
+
+
+class DummyPotential(PairwisePotential):
+    def pair_energies(
+        self,
+        element_idxs: Tensor,
+        neighbors: NeighborData,
+    ) -> Tensor:
+        return torch.zeros(element_idxs.shape[0], device=neighbors.distances.device, dtype=neighbors.distances.dtype)
+>>>>>>> Partial fixes for bugs
 
 
 class TestASE(TestCase):
@@ -51,11 +76,15 @@ class TestASE(TestCase):
             neural_networks=model_cell.neural_networks,
             energy_shifter=model_cell.energy_shifter,
             elements=model_cell.get_chemical_symbols(),
+<<<<<<< HEAD
             pairwise_potentials=[
                 DummyPairwisePotential(cutoff=6.4),
                 DummyPairwisePotential(cutoff=5.2),
                 DummyPairwisePotential(cutoff=3.0),
             ]
+=======
+            pairwise_potentials=[DummyPotential(cutoff=6.4, cutoff_fn=None), DummyPotential(cutoff=5.2, cutoff_fn=None), DummyPotential(cutoff=3.0, cutoff_fn=None)]
+>>>>>>> Partial fixes for bugs
         )
         model_pair = model_pair.to(dtype=torch.double, device=self.device)
 
