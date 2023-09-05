@@ -157,8 +157,6 @@ class BaseNeighborlist(Module):
     def get_diff_vectors(self):
         return self.diff_vectors
 
-<<<<<<< HEAD:torchani/neighbors.py
-=======
     @staticmethod
     def _rescreen_with_cutoff(
         cutoff: float,
@@ -171,7 +169,6 @@ class BaseNeighborlist(Module):
             diff_vectors=neighbors.diff_vectors.index_select(0, closer_indices),
         )
 
->>>>>>> Partial fixes for bugs:torchani/aev/neighbors.py
     def dummy(self) -> NeighborData:
         # return dummy neighbor data
         device = self.default_cell.device
