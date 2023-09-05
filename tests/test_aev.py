@@ -9,7 +9,7 @@ import ase
 import ase.io
 import math
 import traceback
-from .common_aev_test import _TestAEVBase
+from common_aev_test import _TestAEVBase
 from torchani.testing import TestCase
 from torchani.utils import ChemicalSymbolsToInts
 
