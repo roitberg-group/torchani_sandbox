@@ -10,17 +10,6 @@ from ase.md.nptberendsen import NPTBerendsen
 from ase import units
 from ase.io import read
 from ase.calculators.test import numeric_force
-<<<<<<< HEAD
-
-from torchani.neighbors import CellList
-from torchani.testing import TestCase
-from torchani.models import _fetch_state_dict, ANI1x, BuiltinModelPairInteractions
-from torchani.potentials import DummyPairwisePotential
-
-
-path = os.path.dirname(os.path.realpath(__file__))
-=======
-
 from torchani.neighbors import CellList
 from torchani.testing import TestCase
 from torchani.models import _fetch_state_dict, ANI1x, BuiltinModelPairInteractions

@@ -412,7 +412,7 @@ class BuiltinModel(Module):
         relative_stdev = (magnitudes.std(0, unbiased=unbiased) + 1e-8) / (mean_magnitudes + 1e-8)
         relative_range = ((max_magnitudes - min_magnitudes) + 1e-8) / (mean_magnitudes + 1e-8)
 
-        return ForceStdev(species, members_energies, members_forces, stdev_force)
+        return ForceStdev(species, magnitudes, relative_stdev, relative_range)
 
     def __len__(self):
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
