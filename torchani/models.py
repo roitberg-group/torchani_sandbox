@@ -266,9 +266,9 @@ class BuiltinModel(Module):
         return SpeciesEnergies(species, members_energies.sum(-1))
 
     def members_forces(self, species_coordinates: Tuple[Tensor, Tensor],
-                       average: bool = False,
                        cell: Optional[Tensor] = None,
-                       pbc: Optional[Tensor] = None) -> SpeciesForces:
+                       pbc: Optional[Tensor] = None,
+                       average: bool = False) -> SpeciesForces:
         """Calculates predicted forces from ensemble members, can return the average prediction
 
         Args:
@@ -376,7 +376,7 @@ class BuiltinModel(Module):
         '''
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
 
-        species, _, members_forces = self.members_forces(species_coordinates, cell, pbc, average=False)
+        species, _, members_forces = self.members_forces(species_coordinates, cell, pbc)
         magnitudes = members_forces.norm(dim=-1)
         if average:
             magnitudes = magnitudes.mean(0)
