@@ -1,6 +1,6 @@
 import argparse
 
-from torchani.cli.utils import h5info
+from torchani.cli.utils import h5info, h5pack
 from torchani.datasets._builtin_datasets import download_builtin_dataset, _BUILTIN_DATASETS, _BUILTIN_DATASETS_LOT
 
 

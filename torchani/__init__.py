@@ -42,7 +42,6 @@ from . import geometry
 from . import calc
 from . import neighbors
 from . import cutoffs
-from . import tuples
 from pkg_resources import get_distribution, DistributionNotFound
 import warnings
 import torch
