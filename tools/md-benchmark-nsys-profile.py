@@ -7,7 +7,7 @@ import ase.md
 import autonvtx
 
 from torchani.models import ANI1x
-from .tool_utils import time_functions_in_model
+from tool_utils import time_functions_in_model
 
 parser = argparse.ArgumentParser()
 parser.add_argument('filename', help="file for the molecule")
