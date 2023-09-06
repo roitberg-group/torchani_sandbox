@@ -15,6 +15,11 @@ from torchani.potentials.dispersion.damping import (
     Damp,
     _parse_damp_fn_cls,
 )
+from torchani.potentials import PairwisePotential
+from torchani.potentials.dispersion.damping import (
+    Damp,
+    _parse_damp_fn_cls,
+)
 
 
 class TwoBodyDispersionD3(PairwisePotential):

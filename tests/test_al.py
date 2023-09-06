@@ -38,6 +38,7 @@ class TestALAtomic(TestCase):
         # energies of all hydrogens should be equal
         self.assertEqual(energies[0, 0, 0], torch.tensor(-0.54562734428531045605, device=self.device,
                          dtype=torch.double))
+                         dtype=torch.double))
         for e in energies:
             self.assertTrue((e[:, :-1] == e[:, 0]).all())
 
