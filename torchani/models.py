@@ -376,7 +376,7 @@ class BuiltinModel(Module):
         '''
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
 
-        species, _, members_forces = self.members_forces(species_coordinates, cell, pbc)
+        species, _, members_forces = self.members_forces(species_coordinates, cell, pbc, average=False)
         magnitudes = members_forces.norm(dim=-1)
         if average:
             magnitudes = magnitudes.mean(0)
