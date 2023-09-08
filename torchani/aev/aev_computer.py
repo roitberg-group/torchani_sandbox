@@ -106,9 +106,6 @@ class AEVComputer(torch.nn.Module):
         super().__init__()
         self.use_cuda_extension = use_cuda_extension
         self.use_cuaev_interface = use_cuaev_interface
-        # External full nbrlist needs to call `_compute_cuaev_with_full_nbrlist` method directly.
-        # The following flag `use_fullnbr` is only for test purpose, where half nbrlist will be converted to full nbrlist.
-        self.use_fullnbr = False
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
 
@@ -351,8 +348,8 @@ class AEVComputer(torch.nn.Module):
     def _full_to_half_nbrlist(ilist_unique, jlist, numneigh, species, fullnbr_diff_vector):
         """
         Limitations: only works for lammps-type pbc neighborlists (with local and ghost atoms).
-            TorchANI neighborlists only have 1 set of atoms and do mapping with local and image
-            atoms, which will not work here.
+                     TorchANI neighborlists only have 1 set of atoms and do mapping with local and image
+                     atoms, which will not work here.
         """
         ilist_unique = ilist_unique.long()
         jlist = jlist.long()
@@ -376,14 +373,9 @@ class AEVComputer(torch.nn.Module):
     def _compute_cuaev_with_half_nbrlist(self, species, coordinates, atom_index12, diff_vector, distances):
         species = species.to(torch.int32)
         atom_index12 = atom_index12.to(torch.int32)
-        # coordinates will not be used in forward calculation, but it's gradient (force) will still be calculated in cuaev kernel
-        if self.use_fullnbr:
-            # this is only for test purpose, as convereting half nbrlist to full nbrlist is meaningless
-            assert (species.shape[0] == 1)
-            ilist_unique, jlist, numneigh = self._half_to_full_nbrlist(atom_index12)
-            aev = self._compute_cuaev_with_full_nbrlist(species, coordinates, ilist_unique, jlist, numneigh)
-        else:
-            aev = torch.ops.cuaev.run_with_half_nbrlist(coordinates, species, atom_index12, diff_vector, distances, self.cuaev_computer)
+        # The coordinates will not be used in forward calculation, but it's gradient (force) will still be calculated in cuaev kernel,
+        # so it's important to have coordinates passed as an argument.
+        aev = torch.ops.cuaev.run_with_half_nbrlist(coordinates, species, atom_index12, diff_vector, distances, self.cuaev_computer)
         return aev
 
     @jit_unused_if_no_cuaev()
