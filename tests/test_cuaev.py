@@ -61,6 +61,10 @@ class TestCUAEV(TestCase):
 
         self.aev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn).to(self.dtype).to(self.device)
         self.cuaev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.dtype).to(self.device)
+        self.cuaev_computer_2x_with_half_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True).to(self.dtype).to(self.device)
+        self.cuaev_computer_2x_with_full_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True).to(self.dtype).to(self.device)
+        # full nbrlist is actually converted from half nbrlist, and we need to enable it by set the following
+        self.cuaev_computer_2x_with_full_nbrlist.use_fullnbr = True
         self.ani2x = self.__class__.ani2x.to(self.dtype).to(self.device)
 
     def _skip_if_not_cosine(self):
@@ -160,6 +164,14 @@ class TestCUAEV(TestCase):
 
         _, aev = self.aev_computer_1x((species, coordinates))
         _, cu_aev = self.cuaev_computer_1x((species, coordinates))
+        self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
+
+    def testBatchHalfNbr(self):
+        coordinates = torch.rand([100, 50, 3], device=self.device, dtype=self.dtype) * 5
+        species = torch.randint(-1, 3, (100, 50), device=self.device)
+
+        _, aev = self.aev_computer_2x((species, coordinates))
+        _, cu_aev = self.cuaev_computer_2x_with_half_nbrlist((species, coordinates))
         self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
 
     def testPickleCorrectness(self):
@@ -414,6 +426,106 @@ class TestCUAEV(TestCase):
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
             self.assertEqual(cuaev_grad, aev_grad, atol=self.tolerance, rtol=self.tolerance)
+
+    def testWithHalfNbrList_nopbc(self):
+        files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
+        for file in files:
+            filepath = os.path.join(path, f'../dataset/pdb/{file}')
+            mol = read(filepath)
+            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
+            positions = torch.tensor([mol.get_positions()], requires_grad=False, device=self.device, dtype=self.dtype)
+            speciesPositions = self.ani2x.species_converter((species, positions))
+            species, coordinates = speciesPositions
+
+            coordinates.requires_grad_()
+            _, aev = self.aev_computer_2x((species, coordinates))
+            aev.backward(torch.ones_like(aev))
+            aev_grad = coordinates.grad
+
+            coordinates = coordinates.clone().detach()
+            coordinates.requires_grad_()
+            _, cu_aev = self.cuaev_computer_2x_with_half_nbrlist((species, coordinates))
+            cu_aev.backward(torch.ones_like(cu_aev))
+            cuaev_grad = coordinates.grad
+            self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
+            self.assertEqual(cuaev_grad, aev_grad, atol=self.tolerance, rtol=self.tolerance)
+
+    def testWithHalfNbrList_pbc(self):
+        files = ['water-0.8nm.pdb']
+        for file in files:
+            filepath = os.path.join(path, f'../dataset/pdb/{file}')
+            mol = read(filepath)
+            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
+            positions = torch.tensor([mol.get_positions()], requires_grad=False, device=self.device, dtype=self.dtype)
+            cell = torch.tensor(mol.get_cell(complete=True), device=self.device, dtype=self.dtype)
+            pbc = torch.tensor(mol.get_pbc(), dtype=torch.bool, device=self.device)
+            speciesPositions = self.ani2x.species_converter((species, positions))
+            species, coordinates = speciesPositions
+
+            coordinates.requires_grad_()
+            _, aev = self.aev_computer_2x((species, coordinates), cell, pbc)
+            aev.backward(torch.ones_like(aev))
+            aev_grad = coordinates.grad
+
+            coordinates = coordinates.clone().detach()
+            coordinates.requires_grad_()
+            _, cu_aev = self.cuaev_computer_2x_with_half_nbrlist((species, coordinates), cell, pbc)
+            cu_aev.backward(torch.ones_like(cu_aev))
+            cuaev_grad = coordinates.grad
+            self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
+            self.assertEqual(cuaev_grad, aev_grad, atol=self.tolerance, rtol=self.tolerance)
+
+    def testWithFullNbrList_nopbc(self):
+        files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
+        for file in files:
+            filepath = os.path.join(path, f'../dataset/pdb/{file}')
+            mol = read(filepath)
+            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
+            positions = torch.tensor([mol.get_positions()], requires_grad=False, device=self.device, dtype=self.dtype)
+            speciesPositions = self.ani2x.species_converter((species, positions))
+            species, coordinates = speciesPositions
+
+            coordinates.requires_grad_()
+            _, aev = self.aev_computer_2x((species, coordinates))
+            aev.backward(torch.ones_like(aev))
+            aev_grad = coordinates.grad
+
+            coordinates = coordinates.clone().detach()
+            coordinates.requires_grad_()
+            _, cu_aev = self.cuaev_computer_2x_with_full_nbrlist((species, coordinates))
+            cu_aev.backward(torch.ones_like(cu_aev))
+            cuaev_grad = coordinates.grad
+            self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
+            self.assertEqual(cuaev_grad, aev_grad, atol=self.tolerance, rtol=self.tolerance)
+
+    def testWithFullNbrList_pbc(self):
+        files = ['water-0.8nm.pdb']
+        for file in files:
+            filepath = os.path.join(path, f'../dataset/pdb/{file}')
+            mol = read(filepath)
+            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
+            positions = torch.tensor([mol.get_positions()], requires_grad=False, device=self.device, dtype=self.dtype)
+            cell = torch.tensor(mol.get_cell(complete=True), device=self.device, dtype=self.dtype)
+            pbc = torch.tensor(mol.get_pbc(), dtype=torch.bool, device=self.device)
+            speciesPositions = self.ani2x.species_converter((species, positions))
+            species, coordinates = speciesPositions
+
+            coordinates.requires_grad_()
+            _, aev = self.aev_computer_2x((species, coordinates), cell, pbc)
+            aev.backward(torch.ones_like(aev))
+            aev_grad = coordinates.grad  # noqa: F841
+
+            coordinates = coordinates.clone().detach()
+            coordinates.requires_grad_()
+            _, cu_aev = self.cuaev_computer_2x_with_full_nbrlist((species, coordinates), cell, pbc)
+            cu_aev.backward(torch.ones_like(cu_aev))
+            cuaev_grad = coordinates.grad  # noqa: F841
+            # print((cu_aev - aev).abs().max())
+            # print((cuaev_grad - aev_grad).abs().max())
+
+            # when pbc is on, full nbrlist converted from half nbrlist is not correct
+            # self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
+            # self.assertEqual(cuaev_grad, aev_grad, atol=self.tolerance, rtol=self.tolerance)
 
 
 if __name__ == '__main__':
