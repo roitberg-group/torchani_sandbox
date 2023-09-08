@@ -490,6 +490,9 @@ class TestCUAEV(TestCase):
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
             atom_index12, _, _ = self.cuaev_computer_2x_use_interface.neighborlist(species, coordinates)
+            if not self.cuaev_computer_2x_use_interface.cuaev_is_initialized:
+                self.cuaev_computer_2x_use_interface._init_cuaev_computer()
+                self.cuaev_computer_2x_use_interface.cuaev_is_initialized = True
             assert (species.shape[0] == 1)
             ilist_unique, jlist, numneigh = self.cuaev_computer_2x_use_interface._half_to_full_nbrlist(atom_index12)
             cu_aev = self.cuaev_computer_2x_use_interface._compute_cuaev_with_full_nbrlist(species, coordinates, ilist_unique, jlist, numneigh)
@@ -520,6 +523,9 @@ class TestCUAEV(TestCase):
             coordinates.requires_grad_()
 
             atom_index12, _, _ = self.cuaev_computer_2x_use_interface.neighborlist(species, coordinates)
+            if not self.cuaev_computer_2x_use_interface.cuaev_is_initialized:
+                self.cuaev_computer_2x_use_interface._init_cuaev_computer()
+                self.cuaev_computer_2x_use_interface.cuaev_is_initialized = True
             assert (species.shape[0] == 1)
             ilist_unique, jlist, numneigh = self.cuaev_computer_2x_use_interface._half_to_full_nbrlist(atom_index12)
             cu_aev = self.cuaev_computer_2x_use_interface._compute_cuaev_with_full_nbrlist(species, coordinates, ilist_unique, jlist, numneigh)
