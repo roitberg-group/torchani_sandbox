@@ -199,6 +199,8 @@ class BuiltinModel(Module):
             average: If True (the default) it returns the average over all models
                 in the ensemble, should there be more than one (output shape (C, A)),
                 otherwise it returns one atomic energy per model (output shape (M, C, A)).
+            with_SAEs: If True, returns atomic energies shifted with ground state atomic
+                energies. Set to false by default
 
         Returns:
             species_energies: tuple of tensors, species and atomic energies

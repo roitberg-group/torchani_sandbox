@@ -62,7 +62,7 @@ class TestALQBC(TestALAtomic):
 
     def testMembersForces(self):
         # Symmetric methane
-        forces = self.model.members_forces((self.species, self.coordinates)).model_forces
+        forces = self.model.members_forces((self.species, self.coordinates)).forces
         members_energies = self.model.members_energies((self.species, self.coordinates)).energies
         forces_list = []
         for energy in members_energies:
@@ -74,7 +74,7 @@ class TestALQBC(TestALAtomic):
 
     def testAverageMembersForces(self):
         # Symmetric methane
-        avg_forces = self.model.members_forces((self.species, self.coordinates), average=True).model_forces
+        avg_forces = self.model.members_forces((self.species, self.coordinates), average=True).forces
         members_energies = self.model.members_energies((self.species, self.coordinates)).energies
         forces_list = []
         for energy in members_energies:

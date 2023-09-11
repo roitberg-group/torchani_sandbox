@@ -47,7 +47,7 @@ class SpeciesForces(NamedTuple):
     '''
     species: Tensor
     energies: Tensor
-    model_forces: Tensor
+    forces: Tensor
 
 
 class ForceStdev(NamedTuple):
