@@ -17,7 +17,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 ###############################################################################
 # Let's now load the built-in ANI-2x model. The builtin ANI-2x contains 8
-# models trained with diffrent initialization. Predicting the energy and force
+# models trained with different initialization. Predicting the energy and force
 # using the average of the 8 models outperform using a single model, so it is
 # always recommended to use an ensemble, unless the speed of computation is an
 # issue in your application.
@@ -78,5 +78,5 @@ print('Atomic energies of first model, for species 6 1 1 1 1: \n',
 unshifted_atomic_energies = model.atomic_energies((species, coordinates),
                                                   average=False,
                                                   with_SAEs=False).energies
-print('Atomic energies, before addings ground state atomic energies: \n',
+print('Atomic energies, before adding ground state atomic energies: \n',
       unshifted_atomic_energies[0])
