@@ -119,7 +119,8 @@ GSAES = {
         "N": -54.5915914,
         "O": -75.0768759,
         "S": -398.1079973
-    }}
+    },
+}
 
 
 def sorted_gsaes(elements: Sequence[str], functional: str, basis_set: str, ):
