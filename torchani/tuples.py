@@ -66,12 +66,3 @@ class ForceMagnitudes(NamedTuple):
     '''
     species: Tensor
     magnitudes: Tensor
-
-
-class NeighborData(NamedTuple):
-    '''
-    Used to define data about neighboring atoms.
-    '''
-    indices: Tensor
-    distances: Tensor
-    diff_vectors: Tensor

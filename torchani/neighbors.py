@@ -1,5 +1,5 @@
 import math
-from typing import Tuple, Optional, Union
+from typing import Tuple, Optional, Union, NamedTuple
 
 import torch
 from torch import Tensor
@@ -7,7 +7,15 @@ from torch.nn import functional, Module
 from torch.jit import Final
 
 from torchani.utils import map_to_central, cumsum_from_zero
-from torchani.tuples import NeighborData
+
+
+class NeighborData(NamedTuple):
+    '''
+    Used to define data about neighboring atoms.
+    '''
+    indices: Tensor
+    distances: Tensor
+    diff_vectors: Tensor
 
 
 def _parse_neighborlist(neighborlist: Optional[Union[Module, str]], cutoff: float):
