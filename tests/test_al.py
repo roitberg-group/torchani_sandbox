@@ -146,13 +146,13 @@ class TestALQBC(TestALAtomic):
         std[1] = std[1] / math.sqrt(4)
         self.assertEqual(std, qbc)
 
-    def testAtomicQBC(self):
+    def testAtomicStdev(self):
         torch.set_printoptions(precision=15)
         # Symmetric methane
-        atomic_qbc = self.model.atomic_stdev((self.species, self.coordinates)).stdev_atomic_energies
+        atomic_stdev = self.model.atomic_stdev((self.species, self.coordinates)).stdev_atomic_energies
         _, atomic_energies = self.model.atomic_energies((self.species, self.coordinates), average=False)
         stdev_atomic_energies = atomic_energies.std(0)
-        self.assertEqual(stdev_atomic_energies, atomic_qbc)
+        self.assertEqual(stdev_atomic_energies, atomic_stdev)
 
         # Asymmetric methane
         ch4_coord = torch.tensor([[[4.9725e-04, -2.3656e-02, -4.6554e-02],

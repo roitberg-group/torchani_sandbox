@@ -410,10 +410,6 @@ class BuiltinModel(Module):
         if average:
             magnitudes = mean_magnitudes
 
-        mean_magnitudes = magnitudes.mean(0)
-        relative_stdev = (magnitudes.std(0, unbiased=unbiased) + 1e-8) / (mean_magnitudes + 1e-8)
-        relative_range = ((max_magnitudes - min_magnitudes) + 1e-8) / (mean_magnitudes + 1e-8)
-
         return ForceStdev(species, magnitudes, relative_stdev, relative_range)
 
     def __len__(self):
