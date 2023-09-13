@@ -188,7 +188,7 @@ class BuiltinModel(Module):
     def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
                         cell: Optional[Tensor] = None,
                         pbc: Optional[Tensor] = None,
-                        average: bool = False,
+                        average: bool = True,
                         with_SAEs: bool = True) -> SpeciesEnergies:
         """Calculates predicted atomic energies of all atoms in a molecule
 
