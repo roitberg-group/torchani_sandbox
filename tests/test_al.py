@@ -24,7 +24,7 @@ class TestALAtomic(TestCase):
 
     def testAverageAtomicEnergies(self):
         _, energies = self.model.atomic_energies(
-            (self.species, self.coordinates), with_SAEs=True, average=True)
+            (self.species, self.coordinates), shift_energy=True, average=True)
         self.assertEqual(energies.shape, self.coordinates.shape[:-1])
         # energies of all hydrogens should be equal
         expect = torch.full(energies[:, :-1].shape, -0.54853380570289400620, dtype=torch.double, device=self.device)
@@ -32,7 +32,7 @@ class TestALAtomic(TestCase):
 
     def testAtomicEnergies(self):
         _, energies = self.model.atomic_energies(
-            (self.species, self.coordinates), with_SAEs=True, average=False)
+            (self.species, self.coordinates), shift_energy=True, average=False)
         self.assertTrue(energies.shape[1:] == self.coordinates.shape[:-1])
         self.assertTrue(energies.shape[0] == len(self.model.neural_networks))
         # energies of all hydrogens should be equal

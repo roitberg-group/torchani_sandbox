@@ -57,7 +57,7 @@ print('Force (Hartree / Å): \n', forces)
 # you can get the atomic energies (WARNING: these have no physical meaning)
 # by calling:
 _, atomic_energies = model.atomic_energies((species, coordinates),
-                                           with_SAEs=True, average=True)
+                                           shift_energy=True, average=True)
 
 ###############################################################################
 # this gives you the average (shifted) energies over all models of the ensemble
@@ -68,7 +68,7 @@ print('Average Atomic energies, for species 6 1 1 1 1: \n', atomic_energies)
 ###############################################################################
 # you can access model specific atomic energies by indexing:
 _, atomic_energies = model.atomic_energies((species, coordinates),
-                                           with_SAEs=True, average=False)
+                                           shift_energy=True, average=False)
 print('Atomic energies of first model, for species 6 1 1 1 1: \n',
       atomic_energies[0, :, :])
 
@@ -76,7 +76,7 @@ print('Atomic energies of first model, for species 6 1 1 1 1: \n',
 # You can also return atomic energy contributions  directly from their atomic
 # NNs before ground state atomic energies are added:
 unshifted_atomic_energies = model.atomic_energies((species, coordinates),
-                                                  with_SAEs=False,
+                                                  shift_energy=False,
                                                   average=False).energies
 print('Atomic energies, before adding ground state atomic energies: \n',
       unshifted_atomic_energies[0])

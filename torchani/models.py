@@ -189,7 +189,7 @@ class BuiltinModel(Module):
                         cell: Optional[Tensor] = None,
                         pbc: Optional[Tensor] = None,
                         average: bool = True,
-                        with_SAEs: bool = True) -> SpeciesEnergies:
+                        shift_energy: bool = True) -> SpeciesEnergies:
         """Calculates predicted atomic energies of all atoms in a molecule
 
         Args:
@@ -213,7 +213,7 @@ class BuiltinModel(Module):
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
 
-        if with_SAEs:
+        if shift_energy:
             atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
 
         if average:
@@ -264,7 +264,7 @@ class BuiltinModel(Module):
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species, members_energies = self.atomic_energies(species_coordinates, cell=cell, pbc=pbc,
-                                                         with_SAEs=True, average=False)
+                                                         shift_energy=True, average=False)
         return SpeciesEnergies(species, members_energies.sum(-1))
 
     def members_forces(self, species_coordinates: Tuple[Tensor, Tensor],
