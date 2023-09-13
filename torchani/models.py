@@ -199,8 +199,8 @@ class BuiltinModel(Module):
             average: If True (the default) it returns the average over all models
                      in the ensemble, should there be more than one (output shape (C, A)),
                      otherwise it returns one atomic energy per model (output shape (M, C, A)).
-            with_SAEs: returns atomic energies shifted with ground state atomic energies.
-                       Set to True by default
+            shift_energy: returns atomic energies shifted with ground state atomic energies.
+                          Set to True by default
 
         Returns:
             species_energies: tuple of tensors, species and atomic energies
@@ -337,13 +337,13 @@ class BuiltinModel(Module):
                     cell: Optional[Tensor] = None,
                     pbc: Optional[Tensor] = None,
                     average: bool = False,
-                    with_SAEs: bool = False,
+                    shift_energy: bool = False,
                     unbiased: bool = True) -> AtomicStdev:
         """
         Largely does the same thing as the atomic_energies function, but with a different set of default inputs.
         Returns standard deviation in atomic energy predictions across the ensemble.
 
-        with_SAEs returns the shifted atomic energies according to the model used
+        shift_energy returns the shifted atomic energies according to the model used
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species_coordinates = self._maybe_convert_species(species_coordinates)
@@ -358,7 +358,7 @@ class BuiltinModel(Module):
         if average:
             atomic_energies = atomic_energies.mean(0)
 
-        if with_SAEs:
+        if shift_energy:
             atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
 
         return AtomicStdev(species_coordinates[0], atomic_energies, stdev_atomic_energies)
@@ -472,7 +472,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
         cell: Optional[Tensor] = None,
         pbc: Optional[Tensor] = None,
         average: bool = True,
-        with_SAEs: bool = True
+        shift_energy: bool = True
     ) -> SpeciesEnergies:
         assert isinstance(self.neural_networks, (Ensemble, ANIModel))
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
@@ -493,7 +493,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
                 previous_cutoff = pot.cutoff
             atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
 
-        if with_SAEs:
+        if shift_energy:
             atomic_energies += self.energy_shifter._atomic_saes(element_idxs).unsqueeze(0)
 
         if average:
