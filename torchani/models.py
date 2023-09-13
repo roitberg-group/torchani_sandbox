@@ -373,8 +373,7 @@ class BuiltinModel(Module):
 
         Args:
             species_coordinates: minibatch of configurations
-            average:
-            unbiased:
+            average: by default, returns the ensemble average magnitude for each atomic force vector
         '''
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
 
@@ -395,7 +394,9 @@ class BuiltinModel(Module):
         of predicted forces across an ensemble of networks.
 
         Args:
-            species_coordinates
+            species_coordinates: minibatch of configurations
+            average: returns magnitudes predicted by each model by default
+            unbiased: whether or not to use Bessel's correction in computing the standard deviation, True by default
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species, magnitudes = self.force_magnitudes(species_coordinates, cell, pbc, average=False)
