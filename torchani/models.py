@@ -189,7 +189,7 @@ class BuiltinModel(Module):
                         cell: Optional[Tensor] = None,
                         pbc: Optional[Tensor] = None,
                         average: bool = False,
-                        with_SAEs: bool = False) -> SpeciesEnergies:
+                        with_SAEs: bool = True) -> SpeciesEnergies:
         """Calculates predicted atomic energies of all atoms in a molecule
 
         Args:
@@ -471,7 +471,8 @@ class BuiltinModelPairInteractions(BuiltinModel):
         species_coordinates: Tuple[Tensor, Tensor],
         cell: Optional[Tensor] = None,
         pbc: Optional[Tensor] = None,
-        average: bool = True
+        average: bool = True,
+        with_SAEs: bool = True
     ) -> SpeciesEnergies:
         assert isinstance(self.neural_networks, (Ensemble, ANIModel))
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
@@ -492,7 +493,8 @@ class BuiltinModelPairInteractions(BuiltinModel):
                 previous_cutoff = pot.cutoff
             atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
 
-        atomic_energies += self.energy_shifter._atomic_saes(element_idxs).unsqueeze(0)
+        if with_SAEs:
+            atomic_energies += self.energy_shifter._atomic_saes(element_idxs).unsqueeze(0)
 
         if average:
             atomic_energies = atomic_energies.mean(dim=0)
