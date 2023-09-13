@@ -76,7 +76,7 @@ print('Atomic energies of first model, for species 6 1 1 1 1: \n',
 # You can also return atomic energy contributions  directly from their atomic
 # NNs before ground state atomic energies are added:
 unshifted_atomic_energies = model.atomic_energies((species, coordinates),
-                                                  average=False,
-                                                  with_SAEs=False).energies
+                                                  with_SAEs=False,
+                                                  average=False).energies
 print('Atomic energies, before adding ground state atomic energies: \n',
       unshifted_atomic_energies[0])

@@ -197,10 +197,10 @@ class BuiltinModel(Module):
             cell: the cell used in PBC computation, set to None if PBC is not enabled
             pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
             average: If True (the default) it returns the average over all models
-                in the ensemble, should there be more than one (output shape (C, A)),
-                otherwise it returns one atomic energy per model (output shape (M, C, A)).
-            with_SAEs: If True, returns atomic energies shifted with ground state atomic
-                energies. Set to false by default
+                     in the ensemble, should there be more than one (output shape (C, A)),
+                     otherwise it returns one atomic energy per model (output shape (M, C, A)).
+            with_SAEs: returns atomic energies shifted with ground state atomic energies. 
+                       Set to True by default
 
         Returns:
             species_energies: tuple of tensors, species and atomic energies
@@ -209,7 +209,6 @@ class BuiltinModel(Module):
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         atomic_energies = self.neural_networks._atomic_energies(species_aevs)
-        atomic_energies += self.energy_shifter._atomic_saes(species_coordinates[0])
 
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
@@ -264,7 +263,8 @@ class BuiltinModel(Module):
                 shape of energies is (M, C), where M is the number of modules in the ensemble.
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        species, members_energies = self.atomic_energies(species_coordinates, cell=cell, pbc=pbc, average=False)
+        species, members_energies = self.atomic_energies(species_coordinates, cell=cell, pbc=pbc,
+                                                         with_SAEs=True, average=False)
         return SpeciesEnergies(species, members_energies.sum(-1))
 
     def members_forces(self, species_coordinates: Tuple[Tensor, Tensor],
