@@ -17,7 +17,7 @@ import matplotlib as mpl
 from torchani import geometry
 from torchani.models import ANI1x, ANI2x, ANI1ccx
 from torchani.ase import Calculator
-from .molecule_utils import make_water, tensor_from_xyz
+from molecule_utils import make_water, tensor_from_xyz
 
 
 def plot_file(file_path, comment, show=False):
