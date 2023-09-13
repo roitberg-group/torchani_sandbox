@@ -10,9 +10,6 @@ from torchani.utils import map_to_central, cumsum_from_zero
 
 
 class NeighborData(NamedTuple):
-    '''
-    Used to define data about neighboring atoms.
-    '''
     indices: Tensor
     distances: Tensor
     diff_vectors: Tensor
