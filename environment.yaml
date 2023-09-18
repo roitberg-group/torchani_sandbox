@@ -17,14 +17,16 @@ dependencies:
   - pytorch=1.13.1
   - cudatoolkit=11.6
 
-  # Progress bars
+  # progress bars
   - tqdm
   - pkbar
 
-  # Legacy neurochem parser
+  # legacy neurochem parser
   - lark-parser
   - pyyaml
+
+  # downloading models via web
   - requests
 
-  # Ase interface
+  # ase interface
   - ase
