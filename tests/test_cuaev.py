@@ -61,10 +61,7 @@ class TestCUAEV(TestCase):
 
         self.aev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn).to(self.dtype).to(self.device)
         self.cuaev_computer_2x = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True).to(self.dtype).to(self.device)
-        self.cuaev_computer_2x_with_half_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True).to(self.dtype).to(self.device)
-        self.cuaev_computer_2x_with_full_nbrlist = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True).to(self.dtype).to(self.device)
-        # full nbrlist is actually converted from half nbrlist, and we need to enable it by set the following
-        self.cuaev_computer_2x_with_full_nbrlist.use_fullnbr = True
+        self.cuaev_computer_2x_use_interface = torchani.AEVComputer.like_2x(cutoff_fn=self.cutoff_fn, use_cuda_extension=True, use_cuaev_interface=True).to(self.dtype).to(self.device)
         self.ani2x = self.__class__.ani2x.to(self.dtype).to(self.device)
 
     def _skip_if_not_cosine(self):
@@ -171,7 +168,7 @@ class TestCUAEV(TestCase):
         species = torch.randint(-1, 3, (100, 50), device=self.device)
 
         _, aev = self.aev_computer_2x((species, coordinates))
-        _, cu_aev = self.cuaev_computer_2x_with_half_nbrlist((species, coordinates))
+        _, cu_aev = self.cuaev_computer_2x_use_interface((species, coordinates))
         self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
 
     def testPickleCorrectness(self):
@@ -444,7 +441,7 @@ class TestCUAEV(TestCase):
 
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
-            _, cu_aev = self.cuaev_computer_2x_with_half_nbrlist((species, coordinates))
+            _, cu_aev = self.cuaev_computer_2x_use_interface((species, coordinates))
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
@@ -469,7 +466,7 @@ class TestCUAEV(TestCase):
 
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
-            _, cu_aev = self.cuaev_computer_2x_with_half_nbrlist((species, coordinates), cell, pbc)
+            _, cu_aev = self.cuaev_computer_2x_use_interface((species, coordinates), cell, pbc)
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
@@ -492,7 +489,14 @@ class TestCUAEV(TestCase):
 
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
-            _, cu_aev = self.cuaev_computer_2x_with_full_nbrlist((species, coordinates))
+            atom_index12, _, _ = self.cuaev_computer_2x_use_interface.neighborlist(species, coordinates)
+            if not self.cuaev_computer_2x_use_interface.cuaev_is_initialized:
+                self.cuaev_computer_2x_use_interface._init_cuaev_computer()
+                self.cuaev_computer_2x_use_interface.cuaev_is_initialized = True
+            assert (species.shape[0] == 1)
+            ilist_unique, jlist, numneigh = self.cuaev_computer_2x_use_interface._half_to_full_nbrlist(atom_index12)
+            cu_aev = self.cuaev_computer_2x_use_interface._compute_cuaev_with_full_nbrlist(species, coordinates, ilist_unique, jlist, numneigh)
+
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad
             self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
@@ -517,7 +521,15 @@ class TestCUAEV(TestCase):
 
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
-            _, cu_aev = self.cuaev_computer_2x_with_full_nbrlist((species, coordinates), cell, pbc)
+
+            atom_index12, _, _ = self.cuaev_computer_2x_use_interface.neighborlist(species, coordinates)
+            if not self.cuaev_computer_2x_use_interface.cuaev_is_initialized:
+                self.cuaev_computer_2x_use_interface._init_cuaev_computer()
+                self.cuaev_computer_2x_use_interface.cuaev_is_initialized = True
+            assert (species.shape[0] == 1)
+            ilist_unique, jlist, numneigh = self.cuaev_computer_2x_use_interface._half_to_full_nbrlist(atom_index12)
+            cu_aev = self.cuaev_computer_2x_use_interface._compute_cuaev_with_full_nbrlist(species, coordinates, ilist_unique, jlist, numneigh)
+
             cu_aev.backward(torch.ones_like(cu_aev))
             cuaev_grad = coordinates.grad  # noqa: F841
             # print((cu_aev - aev).abs().max())

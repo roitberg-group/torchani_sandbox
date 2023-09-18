@@ -15,7 +15,7 @@ from torch import Tensor
 import torch.utils.data
 
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
-from torchani.structs import SpeciesEnergies
+from torchani.tuples import SpeciesEnergies
 from torchani.compat import tqdm
 
 PADDING = {
@@ -110,6 +110,15 @@ GSAES = {
         "N": -54.587739850180995,
         "O": -75.071223222771,
         "S": -398.041639842051,
+    },
+    "wb97x-def2tzvpp": {
+        "C": -37.8459781,
+        "Cl": -460.1467777,
+        "F": -99.7471707,
+        "H": -0.5013925,
+        "N": -54.5915914,
+        "O": -75.0768759,
+        "S": -398.1079973
     },
 }
 
