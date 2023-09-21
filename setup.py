@@ -1,5 +1,6 @@
 import os
 import subprocess
+from pathlib import Path
 from setuptools import setup, find_packages
 from distutils import log
 import sys
@@ -128,7 +129,11 @@ def cuda_extension(build_all=False):
         nvcc_args.append('-DTORCHANI_OPT')
     print("nvcc_args: ", nvcc_args)
     print('-' * 75)
-    include_dirs = [*maybe_download_cub(), os.path.abspath("torchani/csrc/")]
+    include_dirs = [
+        *maybe_download_cub(),
+        os.path.abspath("torchani/csrc/"),
+        str(Path.home() / "Conda/pkgs/libcusolver-dev-11.4.0.1-0/include"),
+    ]
     return CUDAExtension(
         name='torchani.cuaev',
         sources=["torchani/csrc/cuaev.cpp", "torchani/csrc/aev.cu"],
