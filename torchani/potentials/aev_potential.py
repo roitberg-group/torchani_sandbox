@@ -41,18 +41,35 @@ class AEVPotential(Potential):
         self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
         self.aev_computer.neighborlist._recast_long_buffers()
 
-    def forward(
+    # Needs coordinates for the cuaev extension
+    def forward(  # type: ignore
         self,
         element_idxs: Tensor,
         neighbors: NeighborData,
+        coordinates: Tensor,
         ghost_flags: Optional[Tensor] = None,
     ) -> Tensor:
-        aevs = self.aev_computer._compute_aev(
-            element_idxs=element_idxs,
-            neighbor_idxs=neighbors.indices,
-            distances=neighbors.distances,
-            diff_vectors=neighbors.diff_vectors,
-        )
+
+        if self.aev_computer.use_cuda_extension:
+            if not self.aev_computer.use_cuaev_interface:
+                raise ValueError("Cuda extension without interface not supported for pairwise models")
+            if not self.aev_computer.cuaev_is_initialized:
+                self.aev_computer._init_cuaev_computer()
+                self.aev_computer.cuaev_is_initialized = True
+            aevs = self.aev_computer._compute_cuaev_with_half_nbrlist(
+                element_idxs,
+                coordinates,
+                neighbors.indices,
+                neighbors.diff_vectors,
+                neighbors.distances,
+            )
+        else:
+            aevs = self.aev_computer._compute_aev(
+                element_idxs=element_idxs,
+                neighbor_idxs=neighbors.indices,
+                distances=neighbors.distances,
+                diff_vectors=neighbors.diff_vectors,
+            )
         energies = self.neural_networks((element_idxs, aevs)).energies
         return energies
 
@@ -114,14 +131,29 @@ class AEVScalars(Potential):
         self,
         element_idxs: Tensor,
         neighbors: NeighborData,
+        coordinates: Tensor,
         ghost_flags: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor]:
-        aevs = self.aev_computer._compute_aev(
-            element_idxs=element_idxs,
-            neighbor_idxs=neighbors.indices,
-            distances=neighbors.distances,
-            diff_vectors=neighbors.diff_vectors,
-        )
+        if self.aev_computer.use_cuda_extension:
+            if not self.aev_computer.use_cuaev_interface:
+                raise ValueError("Cuda extension without interface not supported for charged models")
+            if not self.aev_computer.cuaev_is_initialized:
+                self.aev_computer._init_cuaev_computer()
+                self.aev_computer.cuaev_is_initialized = True
+            aevs = self.aev_computer._compute_cuaev_with_half_nbrlist(
+                element_idxs,
+                coordinates,
+                neighbors.indices,
+                neighbors.diff_vectors,
+                neighbors.distances,
+            )
+        else:
+            aevs = self.aev_computer._compute_aev(
+                element_idxs=element_idxs,
+                neighbor_idxs=neighbors.indices,
+                distances=neighbors.distances,
+                diff_vectors=neighbors.diff_vectors,
+            )
         energies = self.neural_networks((element_idxs, aevs)).energies
         raw_atomic_charges = self.charge_networks(element_idxs, aevs)
         atomic_charges = self.charge_normalizer(element_idxs, raw_atomic_charges)

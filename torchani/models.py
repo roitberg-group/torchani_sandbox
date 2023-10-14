@@ -472,7 +472,7 @@ class BuiltinModelCharges(BuiltinModel):
                 neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
             if isinstance(pot, AEVScalars):
-                _energies, atomic_charges = pot(element_idxs, neighbor_data)
+                _energies, atomic_charges = pot(element_idxs, neighbor_data, coordinates=coordinates)
             else:
                 _energies = pot(element_idxs, neighbor_data)
             assert isinstance(_energies, Tensor)  # For the TorchScript interpreter
@@ -543,7 +543,10 @@ class BuiltinModelPairInteractions(BuiltinModel):
             if pot.cutoff < previous_cutoff:
                 neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
-            energies += pot(element_idxs, neighbor_data)
+            if isinstance(pot, AEVPotential):
+                energies += pot(element_idxs, neighbor_data, coordinates=coordinates)
+            else:
+                energies += pot(element_idxs, neighbor_data)
         return self.energy_shifter((element_idxs, energies))
 
     @torch.jit.export
