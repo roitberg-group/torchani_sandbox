@@ -145,13 +145,14 @@ class BuiltinModel(Module):
         self._dummy_ensemble = Ensemble([self._dummy_model])
 
     def to_infer_model(self, *args, **kwargs) -> 'BuiltinModel':
+        # NOTE: I (nick) ignored a mypy error here, idk why it wants us to edit this class to torch.tensor instead of torch.Tensor
         """ Convert the neural networks module of the model into a module
             optimized for inference.
 
             Currently this function assumes that the atomic networks consist of
             an MLP with CELU activation functions, all with the same alpha.
         """
-        self.neural_networks = self.neural_networks.to_infer_model(*args, **kwargs)
+        self.neural_networks = self.neural_networks.to_infer_model(*args, **kwargs) # type: ignore
         return self
 
     @torch.jit.unused
