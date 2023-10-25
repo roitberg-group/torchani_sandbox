@@ -33,6 +33,7 @@ def concatenate(source: ANIDataset,
                           create=True,
                           grouping=source.grouping,
                           verbose=False)
+        print(source.num_conformer_groups)
         for k, v in tqdm(source.numpy_items(),
                       desc='Concatenating datasets',
                       total=source.num_conformer_groups,
@@ -76,7 +77,8 @@ def filter_by_high_force(dataset: ANIDataset,
             # conformers are split into pieces of up to max_split to avoid
             # loading large groups into GPU memory at the same time and
             # calculating over them
-            species, coordinates, forces = _fetch_splitted(g, ('species', 'coordinates', 'forces'), max_split)
+            species, coordinates, forces = _fetch_splitted(g, ('species', 'coordinates', 'NOISY-forces'), max_split)
+            inds = []
             for split_idx, (s, c, f) in enumerate(zip(species, coordinates, forces)):
                 s, c, f = s.to(device), c.to(device), f.to(device)
                 if criteria == 'components':
@@ -85,11 +87,13 @@ def filter_by_high_force(dataset: ANIDataset,
                 elif criteria == 'magnitude':
                     # any over atoms
                     bad_idxs = (f.norm(dim=-1) > threshold).any(dim=-1).nonzero().squeeze()
-                if bad_idxs.numel() > 0:
-                    bad_keys_and_idxs.update({key: bad_idxs + split_idx * max_split})
-                del s, c, f
-    if bad_keys_and_idxs:
-        return _fetch_and_delete_conformations(dataset, bad_keys_and_idxs, device, delete_inplace, verbose)
+                    inds.append(bad_idxs)
+            print(torch.cat(tuple(inds)).shape)
+                #if bad_idxs.numel() > 0:
+                #    bad_keys_and_idxs.update({key: bad_idxs + split_idx * max_split})
+                #del s, c, f
+    #if bad_keys_and_idxs:
+    #    return _fetch_and_delete_conformations(dataset, bad_keys_and_idxs, device, delete_inplace, verbose)
     return None
 
 
