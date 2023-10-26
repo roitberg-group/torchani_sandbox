@@ -450,10 +450,10 @@ class AtomicNumberstoChemicalSymbols(torch.nn.Module):
             if len(species.shape) > 1:
                 symbols = [[self.atomics_dict[x] for x in mol if x != -1] for mol in species]
             else:
-                symbols = [[self.atomics_dict[x] for x in species if x != -1]]
+                symbols = [self.atomics_dict[x] for x in species if x != -1]
         else:
-            symbols = [[self.atomics_dict[x] for x in species if x != -1]]
-        return symbols
+            symbols = [self.atomics_dict[x] for x in species if x != -1]
+        return symbols      #type: ignore 
 
 
 class ChemicalSymbolsToInts(torch.nn.Module):
@@ -545,20 +545,18 @@ class IntsToChemicalSymbols(torch.nn.Module):
     def __init__(self, all_species: Sequence[str]):
         super().__init__()
         self.rev_species = {i: s for i, s in enumerate(all_species)}
-        # dummy tensor to hold output device
-        self.register_buffer('_dummy', torch.empty(0), persistent=False)
 
-    def forward(self, species) -> Tensor:
+    def forward(self, species) -> Tensor: 
         r"""Convert species from list or Tensor of integers to list of strings of equal dimension"""
         if torch.is_tensor(species):
             species = species.detach().numpy()
             if len(species.shape) > 1:
                 rev = [[self.rev_species[x] for x in mol if x != -1] for mol in species]
             else:
-                rev = [[self.rev_species[x] for x in species if x != -1]]
+                rev = [self.rev_species[x] for x in species if x != -1]
         else:
-            rev = [[self.rev_species[x] for x in species if x != -1]]
-        return rev
+            rev = [self.rev_species[x] for x in species if x != -1]
+        return rev      #type: ignore
 
     def __len__(self):
         return len(self.rev_species)
