@@ -530,7 +530,7 @@ class IntsToChemicalSymbols(torch.nn.Module):
         species_converter = IntsToChemicalSymbols(elements)
 
         species = torch.Tensor([3, 0, 0, -1, -1, -1])
- 
+
         species_converter(species)
 
         Output:
