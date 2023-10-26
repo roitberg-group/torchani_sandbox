@@ -453,7 +453,7 @@ class AtomicNumberstoChemicalSymbols(torch.nn.Module):
                 symbols = [self.atomics_dict[x] for x in species if x != -1]
         else:
             symbols = [self.atomics_dict[x] for x in species if x != -1]
-        return symbols      #type: ignore 
+        return symbols  #type: ignore[all]
 
 
 class ChemicalSymbolsToInts(torch.nn.Module):
@@ -546,7 +546,7 @@ class IntsToChemicalSymbols(torch.nn.Module):
         super().__init__()
         self.rev_species = {i: s for i, s in enumerate(all_species)}
 
-    def forward(self, species) -> Tensor: 
+    def forward(self, species) -> Tensor:
         r"""Convert species from list or Tensor of integers to list of strings of equal dimension"""
         if torch.is_tensor(species):
             species = species.detach().numpy()
@@ -556,7 +556,7 @@ class IntsToChemicalSymbols(torch.nn.Module):
                 rev = [self.rev_species[x] for x in species if x != -1]
         else:
             rev = [self.rev_species[x] for x in species if x != -1]
-        return rev      #type: ignore
+        return rev  #type: ignore[all]
 
     def __len__(self):
         return len(self.rev_species)
