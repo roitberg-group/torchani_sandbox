@@ -553,7 +553,7 @@ class IntsToChemicalSymbols(torch.nn.Module):
             if len(species.shape) > 1:
                 rev = [[self.rev_species[x] for x in mol if x != -1] for mol in species]
             else:
-                rev = [self.rev_species[x] for x in species if x != -1]  #  type: ignore
+                rev = [self.rev_species[x] for x in species if x != -1]  # type: ignore
         else:
             rev = [self.rev_species[x] for x in species if x != -1]  # type: ignore
         return rev
