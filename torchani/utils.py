@@ -441,7 +441,7 @@ class AtomicNumberstoChemicalSymbols(torch.nn.Module):
         super().__init__()
         if atomic_numbers is None:
             atomic_numbers = ATOMIC_NUMBERS
-        self.atomics_dict = {v: k for k, v in atomic_numbers.items()}
+        self.atomics_dict = {str(v): k for k, v in atomic_numbers.items()}
         # dummy tensor to hold output device
         self.register_buffer('_dummy', torch.empty(0), persistent=False)
 
@@ -450,11 +450,11 @@ class AtomicNumberstoChemicalSymbols(torch.nn.Module):
         if torch.is_tensor(species):
             species = species.detach().numpy()
             if len(species.shape) > 1:
-                symbols = [[self.atomics_dict[x] for x in mol if x != -1] for mol in species]
+                symbols = [[self.atomics_dict[str(x)] for x in mol if x != -1] for mol in species]
             else:
-                symbols = [self.atomics_dict[x] for x in species if x != -1]
+                symbols = [[self.atomics_dict[str(x)] for x in species if x != -1]]
         else:
-            symbols = [self.atomics_dict[x] for x in species if x != -1]
+            symbols = [[self.atomics_dict[str(x)] for x in species if x != -1]]
         return symbols
 
 
@@ -557,9 +557,9 @@ class IntsToChemicalSymbols(torch.nn.Module):
             if len(species.shape) > 1:
                 rev = [[self.rev_species[x] for x in mol if x != -1] for mol in species]
             else:
-                rev = [self.rev_species[x] for x in species if x != -1]
+                rev = [[self.rev_species[x] for x in species if x != -1]]
         else:
-            rev = [self.rev_species[x] for x in species if x != -1]
+            rev = [[self.rev_species[x] for x in species if x != -1]]
         return rev
 
     def __len__(self):
