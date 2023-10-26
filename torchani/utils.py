@@ -409,13 +409,13 @@ class ChemicalSymbolsToAtomicNumbers(torch.nn.Module):
 
 class AtomicNumberstoChemicalSymbols(torch.nn.Module):
     r"""Converts tensor or list of atomic numbers to list of chemical symbol strings.
-    
-    On initialization, it is optional to supply the class with a :class:'dict' 
-    containing custom numbers and symbols. This is not necessary, as the 
+
+    On initialization, it is optional to supply the class with a :class:'dict'
+    containing custom numbers and symbols. This is not necessary, as the
     class is provided ATOMIC_NUMBERS by default. The returned instance is a callable
     object, which can be called an arbituary list or tensor of the supported atomic numbers
     that is converted into a list of strings
-    
+
     Usage example:
     .. code-block:: python
 
@@ -423,8 +423,8 @@ class AtomicNumberstoChemicalSymbols(torch.nn.Module):
        numbers_to_symbols = AtomicNumberstoChemicalSymbols()
 
        # We have atomic numbers which we want to convert to a species list
-       atomic_numbers  = torch.tensor([6, 1, 1, 1]) 
-       
+       atomic_numbers  = torch.tensor([6, 1, 1, 1])
+
        symbols = numbers_to_symbols(atomic_numbers)
 
        Output:
@@ -441,7 +441,7 @@ class AtomicNumberstoChemicalSymbols(torch.nn.Module):
         super().__init__()
         if atomic_numbers is None:
             atomic_numbers = ATOMIC_NUMBERS
-        self.atomics_dict = {v:k for k,v in atomic_numbers.items()}
+        self.atomics_dict = {v: k for k, v in atomic_numbers.items()}
         # dummy tensor to hold output device
         self.register_buffer('_dummy', torch.empty(0), persistent=False)
 
@@ -450,7 +450,7 @@ class AtomicNumberstoChemicalSymbols(torch.nn.Module):
         if torch.is_tensor(species):
             species = species.detach().numpy()
             if len(species.shape) > 1:
-                symbols = [[self.atomics_dict[x] for x in l if x != -1] for l in species]
+                symbols = [[self.atomics_dict[x] for x in mol if x != -1] for mol in species]
             else:
                 symbols = [self.atomics_dict[x] for x in species if x != -1]
         else:
@@ -519,18 +519,18 @@ class IntsToChemicalSymbols(torch.nn.Module):
     On initialization the class should be supplied with a :class:`list` (or in
     general :class:`collections.abc.Sequence`) of :class:`str`. The returned
     instance is a callable object, which can be called with an arbitrary list or tensor
-    of the supported indicies that is converted into a list of strings. 
+    of the supported indicies that is converted into a list of strings.
 
     Usage example:
-    
+
         #species list used for indexing
         elements = ['H','C','N','O','S','F', 'Cl']
-    
+
         # A 1-D Tensor, however the dimension can be larger
         species_converter = IntsToChemicalSymbols(elements)
-        
+
         species = torch.Tensor([3, 0, 0, -1, -1, -1])
-    
+ 
         species_converter(species)
 
         Output:
@@ -555,7 +555,7 @@ class IntsToChemicalSymbols(torch.nn.Module):
         if torch.is_tensor(species):
             species = species.detach().numpy()
             if len(species.shape) > 1:
-                rev = [[self.rev_species[x] for x in l if x != -1] for l in species]
+                rev = [[self.rev_species[x] for x in mol if x != -1] for mol in species]
             else:
                 rev = [self.rev_species[x] for x in species if x != -1]
         else:
