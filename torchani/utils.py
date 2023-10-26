@@ -450,10 +450,10 @@ class AtomicNumberstoChemicalSymbols(torch.nn.Module):
             if len(species.shape) > 1:
                 symbols = [[self.atomics_dict[x] for x in mol if x != -1] for mol in species]
             else:
-                symbols = [self.atomics_dict[x] for x in species if x != -1]
+                symbols = [self.atomics_dict[x] for x in species if x != -1] #type: ignore
         else:
-            symbols = [self.atomics_dict[x] for x in species if x != -1]
-        return symbols  #type: ignore[all]
+            symbols = [self.atomics_dict[x] for x in species if x != -1] #type: ignore
+        return symbols
 
 
 class ChemicalSymbolsToInts(torch.nn.Module):
@@ -551,12 +551,12 @@ class IntsToChemicalSymbols(torch.nn.Module):
         if torch.is_tensor(species):
             species = species.detach().numpy()
             if len(species.shape) > 1:
-                rev = [[self.rev_species[x] for x in mol if x != -1] for mol in species]
+                rev = [[self.rev_species[x] for x in mol if x != -1] for mol in species] #type: ignore
             else:
-                rev = [self.rev_species[x] for x in species if x != -1]
+                rev = [self.rev_species[x] for x in species if x != -1] #type: ignore
         else:
             rev = [self.rev_species[x] for x in species if x != -1]
-        return rev  #type: ignore[all]
+        return rev
 
     def __len__(self):
         return len(self.rev_species)
