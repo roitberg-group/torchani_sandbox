@@ -683,7 +683,7 @@ def timeit(
     # start timer
     if cpu_timing:
         torch.cuda.synchronize()
-        start = time.time()
+        start = time.time()     # type: ignore
     else:
         start_event = torch.cuda.Event(enable_timing=True)
         start_event.record()
@@ -720,7 +720,7 @@ def timeit(
     # stop timer
     if cpu_timing:
         torch.cuda.synchronize()
-        time_ms = ((time.time() - start) / steps) * 1000
+        time_ms = ((time.time() - start) / steps) * 1000    # type: ignore
     else:
         end_event = torch.cuda.Event(enable_timing=True)
         end_event.record()
