@@ -380,7 +380,33 @@ class EnergyShifter(torch.nn.Module):
         return SpeciesEnergies(species, energies + sae)
 
 
-class ChemicalSymbolsToAtomicNumbers(torch.nn.Module):
+class ChemicalSymbols(torch.nn.Module):
+    r""" Base class to initialize conversion helper functions:
+        - ChemicalSymbolsToAtomicNumbers
+        - AtomicNumberstoChemicalSymbols
+        - ChemicalSymbolsToInts
+        - IntsToChemicalSymbols
+    """
+    _dummy: Tensor
+
+    def __init__(self, symbol_dict: dict):
+        super().__init__()
+        self.symbol_dict = symbol_dict
+        self.register_buffer('_dummy', torch.empty(0), persistent=False)
+
+    def forward(self, species) -> Union[Tensor, list]:
+        species = np.array(species)
+        conversion = [[self.symbol_dict[x] for x in np.array(mol) if x != -1] for mol in species] if len(species.shape) > 1 else [self.symbol_dict[x] for x in species if x != -1] 
+        try:
+            return torch.tensor(conversion, dtype=torch.long, device=self._dummy.device)
+        except ValueError:
+            return conversion
+
+    def __len__(self):
+        return len(self.symbol_dict)
+
+
+class ChemicalSymbolsToAtomicNumbers(ChemicalSymbols):
     r"""Converts a sequence of chemical symbols into a tensor of atomic numbers, of :class:`torch.long`
 
     .. code-block:: python
@@ -391,23 +417,14 @@ class ChemicalSymbolsToAtomicNumbers(torch.nn.Module):
 
        # atomic_numbers is now torch.tensor([1, 6, 1, 1, 6, 17, 26])
     """
-    _dummy: Tensor
-    atomics_dict: Dict[str, int]
-
     def __init__(self, atomic_numbers: Optional[Dict[str, int]] = None):
-        super().__init__()
         if atomic_numbers is None:
             atomic_numbers = ATOMIC_NUMBERS
-        self.atomics_dict = atomic_numbers
-        # dummy tensor to hold output device
-        self.register_buffer('_dummy', torch.empty(0), persistent=False)
-
-    def forward(self, symbols: List[str]) -> Tensor:
-        numbers = [self.atomics_dict[s] for s in symbols]
-        return torch.tensor(numbers, dtype=torch.long, device=self._dummy.device)
+        atomics_dict = atomic_numbers
+        super().__init__(atomics_dict)
 
 
-class AtomicNumberstoChemicalSymbols(torch.nn.Module):
+class AtomicNumberstToChemicalSymbols(ChemicalSymbols):
     r"""Converts tensor or list of atomic numbers to list of chemical symbol strings.
 
     On initialization, it is optional to supply the class with a :class:'dict'
@@ -434,29 +451,15 @@ class AtomicNumberstoChemicalSymbols(torch.nn.Module):
         atomic_numbers: list or tensor of atomic number values you wish to convert (list must be 1-D, tensor shape can vary)
 
     """
-    _dummy: Tensor
-    atomics_dict: Dict[int, str]
 
     def __init__(self, atomic_numbers: Optional[Dict[str, int]] = None):
-        super().__init__()
         if atomic_numbers is None:
             atomic_numbers = ATOMIC_NUMBERS
-        self.atomics_dict = {v: k for k, v in atomic_numbers.items()}
-
-    def forward(self, species) -> Tensor:
-        r"""Convert species from list or Tensor of integers to list of strings of equal dimension"""
-        if torch.is_tensor(species):
-            species = species.detach().numpy()
-            if len(species.shape) > 1:
-                symbols = [[self.atomics_dict[x] for x in mol if x != -1] for mol in species]
-            else:
-                symbols = [self.atomics_dict[x] for x in species if x != -1]  # type: ignore
-        else:
-            symbols = [self.atomics_dict[x] for x in species if x != -1]  # type: ignore
-        return symbols
+        atomics_dict = {v: k for k, v in atomic_numbers.items()}
+        super().__init__(atomics_dict)
 
 
-class ChemicalSymbolsToInts(torch.nn.Module):
+class ChemicalSymbolsToInts(ChemicalSymbols):
     r"""Helper that can be called to convert chemical symbol string to integers
 
     On initialization the class should be supplied with a :class:`list` (or in
@@ -493,25 +496,12 @@ class ChemicalSymbolsToInts(torch.nn.Module):
         sequence of all supported species, in order (it is recommended to order
         according to atomic number).
     """
-    _dummy: Tensor
-    rev_species: Dict[str, int]
-
     def __init__(self, all_species: Sequence[str]):
-        super().__init__()
-        self.rev_species = {s: i for i, s in enumerate(all_species)}
-        # dummy tensor to hold output device
-        self.register_buffer('_dummy', torch.empty(0), persistent=False)
-
-    def forward(self, species: List[str]) -> Tensor:
-        r"""Convert species from sequence of strings to 1D tensor"""
-        rev = [self.rev_species[s] for s in species]
-        return torch.tensor(rev, dtype=torch.long, device=self._dummy.device)
-
-    def __len__(self):
-        return len(self.rev_species)
+        int_dict = {s:i for i,s in enumerate(all_species)}
+        super().__init__(int_dict)
 
 
-class IntsToChemicalSymbols(torch.nn.Module):
+class IntsToChemicalSymbols(ChemicalSymbols):
     r"""Helper that can be called to convert tensor or list of integers to list of chemical symbol strings.
 
     On initialization the class should be supplied with a :class:`list` (or in
@@ -539,27 +529,9 @@ class IntsToChemicalSymbols(torch.nn.Module):
         species: list or tensor of species integer values you wish to convert (list must be 1-D, tensor shape can vary)
 
     """
-    _dummy: Tensor
-    rev_species: Dict[int, str]
-
     def __init__(self, all_species: Sequence[str]):
-        super().__init__()
-        self.rev_species = {i: s for i, s in enumerate(all_species)}
-
-    def forward(self, species) -> Tensor:
-        r"""Convert species from list or Tensor of integers to list of strings of equal dimension"""
-        if torch.is_tensor(species):
-            species = species.detach().numpy()
-            if len(species.shape) > 1:
-                rev = [[self.rev_species[x] for x in mol if x != -1] for mol in species]
-            else:
-                rev = [self.rev_species[x] for x in species if x != -1]  # type: ignore
-        else:
-            rev = [self.rev_species[x] for x in species if x != -1]  # type: ignore
-        return rev
-
-    def __len__(self):
-        return len(self.rev_species)
+        int_dict = {i: s for i, s in enumerate(all_species)}
+        super().__init__(int_dict)
 
 
 def _get_derivatives_not_none(x: Tensor, y: Tensor, retain_graph: Optional[bool] = None, create_graph: bool = False) -> Tensor:
