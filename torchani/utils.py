@@ -396,7 +396,7 @@ class ChemicalSymbols(torch.nn.Module):
 
     def forward(self, species) -> Union[Tensor, list]:
         species = np.array(species)
-        conversion = [[self.symbol_dict[x] for x in np.array(mol) if x != -1] for mol in species] if len(species.shape) > 1 else [self.symbol_dict[x] for x in species if x != -1] 
+        conversion = [[self.symbol_dict[x] for x in np.array(mol) if x != -1] for mol in species] if len(species.shape) > 1 else [self.symbol_dict[x] for x in species if x != -1]
         try:
             return torch.tensor(conversion, dtype=torch.long, device=self._dummy.device)
         except ValueError:
@@ -424,7 +424,7 @@ class ChemicalSymbolsToAtomicNumbers(ChemicalSymbols):
         super().__init__(atomics_dict)
 
 
-class AtomicNumberstToChemicalSymbols(ChemicalSymbols):
+class AtomicNumbersToChemicalSymbols(ChemicalSymbols):
     r"""Converts tensor or list of atomic numbers to list of chemical symbol strings.
 
     On initialization, it is optional to supply the class with a :class:'dict'
@@ -497,7 +497,7 @@ class ChemicalSymbolsToInts(ChemicalSymbols):
         according to atomic number).
     """
     def __init__(self, all_species: Sequence[str]):
-        int_dict = {s:i for i,s in enumerate(all_species)}
+        int_dict = {s: i for i, s in enumerate(all_species)}
         super().__init__(int_dict)
 
 
