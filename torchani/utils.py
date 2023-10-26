@@ -435,26 +435,24 @@ class AtomicNumberstoChemicalSymbols(torch.nn.Module):
 
     """
     _dummy: Tensor
-    atomics_dict: Dict[str, int]
+    atomics_dict: Dict[int, str]
 
     def __init__(self, atomic_numbers: Optional[Dict[str, int]] = None):
         super().__init__()
         if atomic_numbers is None:
             atomic_numbers = ATOMIC_NUMBERS
-        self.atomics_dict = {str(v): k for k, v in atomic_numbers.items()}
-        # dummy tensor to hold output device
-        self.register_buffer('_dummy', torch.empty(0), persistent=False)
+        self.atomics_dict = {v: k for k, v in atomic_numbers.items()}
 
     def forward(self, species) -> Tensor:
         r"""Convert species from list or Tensor of integers to list of strings of equal dimension"""
         if torch.is_tensor(species):
             species = species.detach().numpy()
             if len(species.shape) > 1:
-                symbols = [[self.atomics_dict[str(x)] for x in mol if x != -1] for mol in species]
+                symbols = [[self.atomics_dict[x] for x in mol if x != -1] for mol in species]
             else:
-                symbols = [[self.atomics_dict[str(x)] for x in species if x != -1]]
+                symbols = [[self.atomics_dict[x] for x in species if x != -1]]
         else:
-            symbols = [[self.atomics_dict[str(x)] for x in species if x != -1]]
+            symbols = [[self.atomics_dict[x] for x in species if x != -1]]
         return symbols
 
 
