@@ -1013,6 +1013,9 @@ def ANIala(**kwargs) -> BuiltinModel:
         **kwargs,
     )
     sd_dir = ((Path.home() / ".local") / "torchani") / "state_dicts"
+    # Workaround for moria's global install TODO: remove this
+    if not (sd_dir / "ani2x-solvated-nn-state-dict.pt").is_file():
+        sd_dir = Path("/home/ipickering/.local/torchani/state_dicts")
     nn_state_dict = torch.load(str(sd_dir / "ani2x-solvated-nn-state-dict.pt"))
     shifter_state_dict = torch.load(str(sd_dir / "ani2x-solvated-shifter-state-dict.pt"))
     aev_state_dict = torch.load(str(sd_dir / "ani2x-solvated-aev-state-dict.pt"))
