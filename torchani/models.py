@@ -472,7 +472,7 @@ class BuiltinModelCharges(BuiltinModel):
                 neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
             if isinstance(pot, AEVScalars):
-                _energies, atomic_charges = pot(element_idxs, neighbor_data)
+                _energies, atomic_charges = pot(element_idxs, neighbor_data, coordinates=coordinates)
             else:
                 _energies = pot(element_idxs, neighbor_data)
             assert isinstance(_energies, Tensor)  # For the TorchScript interpreter
@@ -543,7 +543,10 @@ class BuiltinModelPairInteractions(BuiltinModel):
             if pot.cutoff < previous_cutoff:
                 neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
-            energies += pot(element_idxs, neighbor_data)
+            if isinstance(pot, AEVPotential):
+                energies += pot(element_idxs, neighbor_data, coordinates=coordinates)
+            else:
+                energies += pot(element_idxs, neighbor_data)
         return self.energy_shifter((element_idxs, energies))
 
     @torch.jit.export
@@ -603,7 +606,8 @@ def _get_component_modules(
     atomic_maker: Optional[Callable[[str], torch.nn.Module]] = None,
     aev_maker: Optional[Callable[..., AEVComputer]] = None,
     elements: Optional[Sequence[str]] = None,
-    self_energies: Optional[Sequence[float]] = None
+    self_energies: Optional[Sequence[float]] = None,
+    index_networks: bool = False,
 ) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
     # Component modules are obtained by default from the name of the state_dict_file,
     # but they can be overriden by passing specific parameters
@@ -629,7 +633,10 @@ def _get_component_modules(
         raise ValueError(f'{name} is not a supported model')
 
     aev_computer = _aev_maker(**aev_computer_kwargs)
-    atomic_networks = OrderedDict([(e, _atomic_maker(e)) for e in _elements])
+    if index_networks:
+        atomic_networks = OrderedDict([(str(j), _atomic_maker(e)) for j, e in enumerate(_elements)])
+    else:
+        atomic_networks = OrderedDict([(e, _atomic_maker(e)) for e in _elements])
     energy_shifter = EnergyShifter(self_energies or [0.0] * len(_elements))
     neural_networks: NN
     if model_index is None:
@@ -696,6 +703,7 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
                     ensemble_size: int = 8,
                     use_experimental_charges: bool = False,
                     charge_nn_state_dict_file: Optional[str] = None,
+                    index_networks: bool = False,
                     **model_kwargs) -> BuiltinModel:
     # Helper function to toggle if the loading is done from an NC file or
     # directly using torchani and state_dicts
@@ -737,7 +745,9 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
             atomic_maker=atomic_maker,
             aev_maker=aev_maker,
             elements=elements,
-            ensemble_size=ensemble_size)
+            ensemble_size=ensemble_size,
+            index_networks=index_networks,
+        )
 
     aev_computer, neural_networks, energy_shifter, elements = components
 
@@ -972,4 +982,47 @@ def ANIdr(
                 private=True,
             )
         )
+    return model
+
+
+def ANIala(**kwargs) -> BuiltinModel:
+    r"""Experimental Model fine tuned to solvated frames of Ala dipeptide"""
+    def ala_atomics(atom: str = 'H'):
+        dims_for_atoms = {
+            'H': (1008, 256, 192, 160),
+            'C': (1008, 224, 196, 160),
+            'N': (1008, 192, 160, 128),
+            'O': (1008, 192, 160, 128),
+            'S': (1008, 160, 128, 96),
+            'F': (1008, 160, 128, 96),
+            'Cl': (1008, 160, 128, 96),
+        }
+        return atomics.standard(
+            dims_for_atoms[atom],
+            activation=torch.nn.CELU(alpha=0.1),
+            bias=True,
+        )
+    model = ANI2x(
+        pretrained=False,
+        cutoff_fn='cosine',
+        atomic_maker=ala_atomics,
+        ensemble_size=1,
+        dispersion=False,
+        repulsion=False,
+        index_networks=True,
+        **kwargs,
+    )
+    sd_dir = ((Path.home() / ".local") / "torchani") / "state_dicts"
+    # Workaround for moria's global install TODO: remove this
+    if not (sd_dir / "ani2x-solvated-nn-state-dict.pt").is_file():
+        sd_dir = Path("/home/ipickering/.local/torchani/state_dicts")
+    nn_state_dict = torch.load(str(sd_dir / "ani2x-solvated-nn-state-dict.pt"))
+    shifter_state_dict = torch.load(str(sd_dir / "ani2x-solvated-shifter-state-dict.pt"))
+    aev_state_dict = torch.load(str(sd_dir / "ani2x-solvated-aev-state-dict.pt"))
+    aev_state_dict.pop("neighborlist.default_cell")
+    aev_state_dict.pop("neighborlist.default_pbc")
+    aev_state_dict.pop("neighborlist.default_shift_values")
+    model.aev_computer.load_state_dict(aev_state_dict)
+    model.neural_networks.load_state_dict(nn_state_dict)
+    model.energy_shifter.load_state_dict(shifter_state_dict)
     return model
