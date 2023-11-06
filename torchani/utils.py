@@ -396,7 +396,7 @@ class ChemicalSymbols(torch.nn.Module):
 
     def forward(self, species) -> Union[Tensor, list]:
         species = np.array(species)
-        conversion = [[self.symbol_dict[x] for x in np.array(mol) if x != -1] for mol in species] if len(species.shape) > 1 else [self.symbol_dict[x] for x in species if x != -1]
+        conversion = [self.symbol_dict[x] for x in species if x != -1]
         try:
             return torch.tensor(conversion, dtype=torch.long, device=self._dummy.device)
         except ValueError:
@@ -448,7 +448,7 @@ class AtomicNumbersToChemicalSymbols(ChemicalSymbols):
         ['C', 'H', 'H', 'H']
 
      Arguments:
-        atomic_numbers: list or tensor of atomic number values you wish to convert (list must be 1-D, tensor shape can vary)
+        atomic_numbers: list or tensor of atomic number values you wish to convert (must be 1-D)
 
     """
 
@@ -526,7 +526,7 @@ class IntsToChemicalSymbols(ChemicalSymbols):
 
     Arguments:
         elements: list of species in your model, used for indexing
-        species: list or tensor of species integer values you wish to convert (list must be 1-D, tensor shape can vary)
+        species: list or tensor of species integer values you wish to convert (must be 1-D)
 
     """
     def __init__(self, all_species: Sequence[str]):
