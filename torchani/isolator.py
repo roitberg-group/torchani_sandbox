@@ -1,6 +1,9 @@
 import torch
 from torchani.neighbors import FullPairwise
+from torchani.tuples import SpeciesCoordinates
+
 import ase
+from ase.io import read
 import openbabel
 from openbabel import pybel
 from rdkit import Chem
@@ -10,32 +13,51 @@ from numpy.typing import NDArray
 import pandas as pd
 import typing as tp
 import tempfile
-from copy import deepcopy                   # NOTE: Needed?
+from copy import deepcopy
 
 
 class Isolator:
-    def __init__(self, input_file: str, cutoff: float = 5.2, threshold: float = 0.5):
+    def __init__(self, cutoff: float = 5.2, threshold: float = 0.5):
         # NOTE: Change 'threshold' to 1.0 or higher, 0.5 is just for testing
-        self.input_file = input_file
         self.cutoff = cutoff
-        self.structure = self.read_structure()
-        self.numbers = self.structure.numbers
-        self.symbols = np.asarray(self.structure.symbols).astype(str)
-        self.positions = self.structure.positions.astype(np.float64)
-        self.molecule = self.np_arrays_to_rdkit_mol(self.numbers, self.positions)
+        self.threshold = threshold
+        self.structure: tp.Optional[tp.Any] = None
+        self.numbers: tp.Optional[np.ndarray] = None
+        self.symbols: tp.Optional[np.ndarray] = None
+        self.positions: tp.Optional[np.ndarray] = None
+        self.molecule: tp.Optional[Chem.Mol] = None
 
-    def read_structure(self):
+    @classmethod
+    def from_file(cls, input_file: str):
+        obj = cls()
+        obj.structure = obj.read_structure(input_file)
+        obj.numbers = obj.structure.numbers
+        obj.symbols = np.asarray(obj.structure.symbols).astype(str)
+        obj.positions = obj.structure.positions.astype(np.float64)
+        obj.molecule = obj.create_rdkit_mol(obj.symbols, obj.positions)
+        return obj
+
+    @classmethod
+    def from_data(cls, data: SpeciesCoordinates):
+        obj = cls()
+        obj.symbols = data[0].squeeze().cpu().numpy().astype(str)
+        obj.positions = data[1].squeeze().detach().cpu().numpy()
+        obj.molecule = obj.create_rdkit_mol
+        return obj
+
+    def read_structure(self, input_file: str) -> ase.Atoms:
         """
         Reads molecular structure rom a file using ase.io, returns ase Atoms object.
           File type is guessed by the ase *filetype* function.
           Works well for .xyz and .pdb, unsure about other file types.
         """
-        return ase.io.read(self.input_file)
+        self.input_file = input_file
+        return read(self.input_file)
     
     @staticmethod
-    def np_arrays_to_rdkit_mol(
-        symbols: NDArray[np.str_],
-        coordinates: NDArray[np.float64],
+    def create_rdkit_mol(
+        self,
+        data: tp.Union[SpeciesCoordinates, tp.Tuple[NDArray[np.str_], NDArray[np.float64]]],
         verbose: bool = True,
         ) -> Chem.rdchem.Mol:
         """
@@ -44,6 +66,13 @@ class Isolator:
         * Reads the temp file with openbabel to create a mol2 object (includes connectivity information)
         * Converts the obabel mol2 object into a rdkit.Chem molecule to print the SMILES return the molecule
         """
+
+        if isinstance(data, SpeciesCoordinates):
+            symbols = data[0].cpu().numpy().astype(str)
+            coordinates = data[1].detach().cpu().numpy()
+        else:
+            symbols, coordinates = data
+
         with tempfile.NamedTemporaryFile("w+") as f:
             f.write(f"{len(symbols)}\n")
             f.write("\n")
@@ -59,32 +88,43 @@ class Isolator:
                 print("SMILES: ", Chem.MolToSmiles(Chem.RemoveHs(molecule), isomericSmiles=False))
         return molecule
 
-    def get_neighbors(self, numbers, positions):
+    def get_neighbors(self):
         """
         Identify neighbor atoms within the specified cutoff (defaults to 5.2 Angstrom).
         """
-        species = torch.tensor(self.numbers).unsqueeze(0)
-        coordinates = torch.tensor(self.positions, requires_grad=True).unsqueeze(0)
+        if isinstance(self.numbers, np.ndarray):
+            species = torch.tensor(self.numbers).unsqueeze(0)
+        else:
+            species = self.numbers.unsqueeze(0)
+
+        if isinstance(self.positions, np.ndarray):
+            coordinates = torch.tensor(self.positions, requires_grad=True).unsqueeze(0)
+        else:
+            coordinates = self.positions.requires_grad_(True).unsqueeze(0)
+
         out = FullPairwise(cutoff=self.cutoff)(species, coordinates)
+
         return torch.cat((out.indices, out.indices.flip(0)), dim=-1).transpose(1, 0)
     
-    def classify_bad_atoms(self, bad_atom_indices):
+    def classify_bad_atoms(self):
         """
         Classify the 'bad atoms' (based on the uncertainty threshold set in the class initialization)
         """
+        # bad_atom_indices = CALL ANI MODEL HERE -- How to do this with model set as a class init parameter? 
+
         internal_bad_atom_indices = []
         leaf_bad_atom_indices = []
         atom_list = list(self.molecule.GetAtoms())
+        bad_atom_set = set(bad_atom_indices)
+
         for idx in bad_atom_indices:
             atom = atom_list[idx]
-            bonds = atom.GetBonds()
-            for bond in bonds:
-                begin = bond.GetBeginAtomIdx()
-                if begin not in bad_atom_indices:
-                    leaf_bad_atom_indices.append(idx)
-                    break
+            bonded_atoms = [bond.GetBeginAtomIdx() for bond in atom.GetBonds()]
+            if any(atom_idx not in bad_atom_set for atom_idx in bonded_atoms):
+                leaf_bad_atom_indices.append(idx)
             else:
                 internal_bad_atom_indices.append(idx)
+
         return internal_bad_atom_indices, leaf_bad_atom_indices
 
     def cap_atoms(self, bad_atom_indices):
@@ -93,7 +133,10 @@ class Isolator:
         """
         capped_indices = deepcopy(bad_atom_indices)
         _, leaf_bad_atom_indices = self.classify_bad_atoms(bad_atom_indices)
+
         atom_list = list(self.molecule.GetAtoms())
+        bad_atom_set = set(bad_atom_indices)
+
         for idx in leaf_bad_atom_indices:
             atom = atom_list[idx]
             bonds = atom.GetBonds()
@@ -105,24 +148,34 @@ class Isolator:
                         # NOTE: Placeholder if statement -- must configure for non-single bond types
                         raise NotImplementedError("Not yet implemented.")
                     else:
-                        self.symbols[begin] = "H"
+                        if isinstance(self.symbols, np.ndarray):
+                            self.symbols[begin] = "H"
+                        elif isinstance(self.symbols, torch.Tensor):    # NOTE: Might need a bit of editing if the tensors aren't nicely organized as GPT suggested they are (i.e., if it is [[1]] rather than [1])
+                            self.symbols[begin] = torch.tensor([1], dtype=torch.int)
                         capped_indices.append(begin)
-        return self.positions[capped_indices], self.symbols[capped_indices]
+        if isinstance(self.positions, torch.Tensor):
+            return self.positions[capped_indices], self.symbols[capped_indices]
+        else:
+            return self.positions[capped_indices].tolist(), self.symbols[capped_indices].tolist()
 
     def process_bad_atom(self, atom_index, all_bad_atoms):
         """
         Create a new "capped" structure for each high-uncertainty atom present in the input
         """
-        all_neighbors = self.get_neighbors(self.numbers, self.positions)
+        all_neighbors = self.get_neighbors()
         neighbors_of_bad_atoms = set(all_neighbors[atom_index].tolist())
         atoms_to_cap = neighbors_of_bad_atoms - set(all_bad_atoms)
         capped_coords, capped_symbols = self.cap_atoms(atoms_to_cap)
         return ase.Atoms(positions=capped_coords, symbols=capped_symbols)
 
-    def process_molecule(self, bad_atom_indices, output_file_prefix="./capped"):
+    def process_molecule(self, bad_atom_indices, output_file_prefix="./capped", output_format='xyz'):
+        """
+        Go through the molecule and create new structures for each of the "bad atoms"
+        """
+        # NOTE: Probably update this based on GPT suggestion in "Restructuring and improving ..."
         for idx, bad_atom in enumerate(bad_atom_indices):
             capped_structure = self.process_bad_atom(bad_atom, bad_atom_indices)
-            output_file = f"{output_file_prefix}_atom{idx}.xyz"
+            output_file = f"{output_file_prefix}_atom{idx}.{output_format}"
             ase.io.write(output_file, capped_structure)
 
 
