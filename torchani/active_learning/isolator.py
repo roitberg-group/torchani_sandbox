@@ -1,4 +1,5 @@
 import torch
+import torchani
 from torchani.neighbors import FullPairwise
 from torchani.tuples import SpeciesCoordinates
 
@@ -21,11 +22,18 @@ class Isolator:
         # NOTE: Change 'threshold' to 1.0 or higher, 0.5 is just for testing
         self.cutoff = cutoff
         self.threshold = threshold
+        
+        self.species: tp.Optional[torch.tensor] = None
+        self.coordinates = tp.Optional[torch.tensor] = None
+
         self.structure: tp.Optional[tp.Any] = None
-        self.numbers: tp.Optional[np.ndarray] = None
+
         self.symbols: tp.Optional[np.ndarray] = None
+        self.numbers: tp.Optional[np.ndarray] = None
         self.positions: tp.Optional[np.ndarray] = None
+        
         self.molecule: tp.Optional[Chem.Mol] = None
+        self.model = torchani.models.ANIdr()
 
     @classmethod
     def from_file(cls, input_file: str):
@@ -34,18 +42,18 @@ class Isolator:
         obj.numbers = obj.structure.numbers
         obj.symbols = np.asarray(obj.structure.symbols).astype(str)
         obj.positions = obj.structure.positions.astype(np.float64)
-        obj.molecule = obj.create_rdkit_mol(obj.symbols, obj.positions)
+        obj.molecule = obj.create_rdkit_mol((obj.symbols, obj.positions))
         return obj
 
     @classmethod
     def from_data(cls, data: SpeciesCoordinates):
         obj = cls()
-        obj.symbols = data[0].squeeze().cpu().numpy().astype(str)
+        obj.numbers = data[0].squeeze().cpu().numpy().astype(str)
         obj.positions = data[1].squeeze().detach().cpu().numpy()
         obj.molecule = obj.create_rdkit_mol
         return obj
 
-    def read_structure(self, input_file: str) -> ase.Atoms:
+    def read_structure(self, input_file: tp.Optional[str]) -> ase.Atoms:
         """
         Reads molecular structure rom a file using ase.io, returns ase Atoms object.
           File type is guessed by the ase *filetype* function.
@@ -53,10 +61,9 @@ class Isolator:
         """
         self.input_file = input_file
         return read(self.input_file)
-    
+
     @staticmethod
     def create_rdkit_mol(
-        self,
         data: tp.Union[SpeciesCoordinates, tp.Tuple[NDArray[np.str_], NDArray[np.float64]]],
         verbose: bool = True,
         ) -> Chem.rdchem.Mol:
@@ -94,8 +101,8 @@ class Isolator:
         """
         if isinstance(self.numbers, np.ndarray):
             species = torch.tensor(self.numbers).unsqueeze(0)
-        else:
-            species = self.numbers.unsqueeze(0)
+        elif isinstance(self.species, torch.tensor):
+            species = self.species.unsqueeze(0)
 
         if isinstance(self.positions, np.ndarray):
             coordinates = torch.tensor(self.positions, requires_grad=True).unsqueeze(0)
@@ -105,7 +112,7 @@ class Isolator:
         out = FullPairwise(cutoff=self.cutoff)(species, coordinates)
 
         return torch.cat((out.indices, out.indices.flip(0)), dim=-1).transpose(1, 0)
-    
+
     def classify_bad_atoms(self):
         """
         Classify the 'bad atoms' (based on the uncertainty threshold set in the class initialization)
@@ -115,6 +122,11 @@ class Isolator:
         internal_bad_atom_indices = []
         leaf_bad_atom_indices = []
         atom_list = list(self.molecule.GetAtoms())
+
+        force_qbc = self.model((self.numbers, self.coordinates))                            # NOTE: This doesn't work 
+
+        bad_atom_indices = [1 if i > self.threshold else 0 for i in force_qbc.squeeze()]    # NOTE: This doesn't work either, but this idea needs implementing
+
         bad_atom_set = set(bad_atom_indices)
 
         for idx in bad_atom_indices:
