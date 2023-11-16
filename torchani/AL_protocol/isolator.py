@@ -61,7 +61,7 @@ class Isolator:
         return obj
 
     def create_rdkit_mol(self,
-        return_smiles: bool = True,
+        return_smiles: bool = False,
         ) -> Chem.rdchem.Mol:
         """
         This function does the following: 
@@ -115,41 +115,38 @@ class Isolator:
         neighbor_indices = torch.cat((neighbors.indices, neighbors.indices.flip(0)), dim=-1).transpose(1, 0)
         neighbors_of_bad_atoms = {}
 
-        for bad_atom in bad_atom_indices:
-            idxs = neighbor_indices[neighbor_indices[:, 0] == bad_atom, 1]
-            neighbors_of_bad_atoms[bad_atom] = idxs.tolist()
+        for bad_atom, is_bad in enumerate(bad_atom_indices):
+            if is_bad:
+                idxs = neighbor_indices[neighbor_indices[:, 0] == bad_atom, 1]
+                neighbors_of_bad_atoms[bad_atom] = idxs.tolist()
         return neighbors_of_bad_atoms
 
-    def cap_atoms(self, bad_atom_indices):
+    def cap_atoms(self, bad_atom_index, all_bad_atoms):
         """
-        Cap 'leaf bad atoms' by replacing them with Hydrogen atoms.
+        Create 'capped' structures, ensuring that valence is satisfied (by adding Hydrogen atoms) for each atom
         """
-        capped_indices = deepcopy(bad_atom_indices)
-        _, leaf_bad_atom_indices = self.classify_bad_atoms(bad_atom_indices)
-
         atom_list = list(self.molecule.GetAtoms())
-        bad_atom_set = set(bad_atom_indices)
+        bad_atom_neighbors = set(self.get_neighbors([bad_atom_index])[bad_atom_index])
+        
+        # Include the bad atom and its neighbors in the new structure
+        involved_atoms = bad_atom_neighbors | {bad_atom_index}
 
-        for idx in leaf_bad_atom_indices:
+        new_symbols = list(self.symbols)
+        new_coords = list(self.coordinates)
+
+        # Iterate over involved atoms to ensure valence satisfaction
+        for idx in involved_atoms:
             atom = atom_list[idx]
-            bonds = atom.GetBonds()
-            for bond in bonds:
-                begin = bond.GetBeginAtomIdx()
-                if begin not in bad_atom_indices:
-                    bond_type = bond.GetBondType()
-                    if bond_type is not Chem.rdchem.BondType.SINGLE:
-                        # NOTE: Placeholder if statement -- must configure for non-single bond types
-                        raise NotImplementedError("Not yet implemented.")
-                    else:
-                        if isinstance(self.symbols, np.ndarray):
-                            self.symbols[begin] = "H"
-                        elif isinstance(self.symbols, torch.Tensor):    # NOTE: Might need a bit of editing if the tensors aren't nicely organized as GPT suggested they are (i.e., if it is [[1]] rather than [1])
-                            self.symbols[begin] = torch.tensor([1], dtype=torch.int)
-                        capped_indices.append(begin)
-        if isinstance(self.coordinates, torch.Tensor):
-            return self.coordinates[capped_indices], self.symbols[capped_indices]
-        else:
-            return self.coordinates[capped_indices].tolist(), self.symbols[capped_indices].tolist()
+            valence = atom.GetTotalValence()
+            bonded_atoms = [bond.GetOtherAtomIdx(idx) for bond in atom.GetBonds()]
+            missing_bonds = valence - len(bonded_atoms)
+
+            # Cap with hydrogens if there are missing bonds
+            for _ in range(missing_bonds):
+                new_symbols.append("H")
+                new_coords.append(self._calculate_hydrogen_position(atom))
+
+        return np.array(new_coords), np.array(new_symbols)
 
     def process_bad_atom(self, atom_index, all_bad_atoms):
         """
@@ -181,15 +178,15 @@ class Isolator:
         self.coordinates = instance.coordinates
         self.species = instance.species
         self.structure = instance.structure
-        
-        self.molecule = self.create_rdkit_mol((self.symbols, self.coordinates))
-
+        self.molecule = self.create_rdkit_mol()
         self.bad_atoms = self.classify_bad_atoms()
-
+        #print("Bad atom indices", self.bad_atoms)
         self.neighbors = self.get_neighbors(self.bad_atoms)
+        #print("Neighbors of bad atoms", self.neighbors)
 
-        print("Bad atom indices", self.bad_atoms)
-        print("Neighbors of bad atoms", self.neighbors)
+
+
+
 
         # Error checking:
         if self.symbols is None:
@@ -202,6 +199,3 @@ class Isolator:
             raise ValueError("ASE Structure improperly initialized")
         if self.molecule is None:
             raise ValueError("RDKit Molecule improperly initialized")
-
-
-        print(Chem.MolToSmiles(self.molecule))
