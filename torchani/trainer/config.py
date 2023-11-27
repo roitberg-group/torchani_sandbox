@@ -3,9 +3,8 @@ from configparser import ConfigParser
 
 class TrainerConfig:
 
-    def __init__(self, config_file, device):
+    def __init__(self, config_file):
         self.config = self.load_config(config_file)
-        self.device = device
         self.inputs = self.parse_config()
 
     def load_config(self, config_file):
