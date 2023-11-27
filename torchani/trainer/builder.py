@@ -31,6 +31,6 @@ class ModelBuilder:
     def standard_model(self):
         nn = torchani.ANIModel(self.modules)
         nn.apply(self.init_params)
-        model = torchani.nn.Sequential(self.aev_computer, nn).to(device)
+        model = torchani.nn.Sequential(self.aev_computer, nn).to(self.device)
         return nn, model
 
