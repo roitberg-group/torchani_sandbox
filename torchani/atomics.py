@@ -27,7 +27,7 @@ def standard(dims: Sequence[int],
     return torch.nn.Sequential(*layers)
 
 
-def like_1x(atom: str = 'H', 
+def like_1x(atom: str = 'H',
             aev_dim: int = 384,
             **kwargs):
     r"""Makes a sequential atomic network like the one used in the ANI-1x model"""
@@ -38,14 +38,14 @@ def like_1x(atom: str = 'H',
     return standard(dims_for_atoms[atom], **kwargs)
 
 
-def like_1ccx(atom: str = 'H', 
+def like_1ccx(atom: str = 'H',
             aev_dim: int = 384,
             **kwargs):
     r"""Makes a sequential atomic network like the one used in the ANI-1ccx model"""
     return like_1x(atom=atom, aev_dim=aev_dim, **kwargs)
 
 
-def like_2x(atom: str = 'H', 
+def like_2x(atom: str = 'H',
             aev_dim: int = 1008,
             **kwargs):
     r"""Makes a sequential atomic network like the one used in the ANI-2x model"""
