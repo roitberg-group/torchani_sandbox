@@ -6,7 +6,7 @@ class TrainerConfig:
     def __init__(self, config_file, device):
         self.config = self.load_config(config_file)
         self.device = device
-        self.model_config = self.parse_config()
+        self.inputs = self.parse_config()
 
     def load_config(self, config_file):
         config = ConfigParser(allow_no_value=True, inline_comment_prefixes="#")
