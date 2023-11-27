@@ -12,7 +12,7 @@ def standard(dims: Sequence[int],
              classifier_out: int = 1):
     r"""Makes a standard ANI style atomic network"""
     if activation is None:
-        activation = torch.nn.CELU(0.1)
+        activation = torch.nn.GELU()
     else:
         activation = activation
 
@@ -27,27 +27,33 @@ def standard(dims: Sequence[int],
     return torch.nn.Sequential(*layers)
 
 
-def like_1x(atom: str = 'H', **kwargs):
+def like_1x(atom: str = 'H', 
+            aev_dim: int = 384,
+            **kwargs):
     r"""Makes a sequential atomic network like the one used in the ANI-1x model"""
-    dims_for_atoms = {'H': (384, 160, 128, 96),
-                      'C': (384, 144, 112, 96),
-                      'N': (384, 128, 112, 96),
-                      'O': (384, 128, 112, 96)}
+    dims_for_atoms = {'H': (aev_dim, 160, 128, 96),
+                      'C': (aev_dim, 144, 112, 96),
+                      'N': (aev_dim, 128, 112, 96),
+                      'O': (aev_dim, 128, 112, 96)}
     return standard(dims_for_atoms[atom], **kwargs)
 
 
-def like_1ccx(atom: str = 'H', **kwargs):
+def like_1ccx(atom: str = 'H', 
+            aev_dim: int = 384,
+            **kwargs):
     r"""Makes a sequential atomic network like the one used in the ANI-1ccx model"""
-    return like_1x(atom=atom, **kwargs)
+    return like_1x(atom=atom, aev_dim=aev_dim, **kwargs)
 
 
-def like_2x(atom: str = 'H', **kwargs):
+def like_2x(atom: str = 'H', 
+            aev_dim: int = 1008,
+            **kwargs):
     r"""Makes a sequential atomic network like the one used in the ANI-2x model"""
-    dims_for_atoms = {'H': (1008, 256, 192, 160),
-                      'C': (1008, 224, 192, 160),
-                      'N': (1008, 192, 160, 128),
-                      'O': (1008, 192, 160, 128),
-                      'S': (1008, 160, 128, 96),
-                      'F': (1008, 160, 128, 96),
-                      'Cl': (1008, 160, 128, 96)}
+    dims_for_atoms = {'H': (aev_dim, 256, 192, 160),
+                      'C': (aev_dim, 224, 192, 160),
+                      'N': (aev_dim, 192, 160, 128),
+                      'O': (aev_dim, 192, 160, 128),
+                      'S': (aev_dim, 160, 128, 96),
+                      'F': (aev_dim, 160, 128, 96),
+                      'Cl': (aev_dim, 160, 128, 96)}
     return standard(dims_for_atoms[atom], **kwargs)
