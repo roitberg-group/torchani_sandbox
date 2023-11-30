@@ -4,6 +4,7 @@ from configparser import ConfigParser
 class TrainerConfig:
 
     def __init__(self, config_file):
+        self.path = config_file
         self.config = self.load_config(config_file)
         self.inputs = self.parse_config()
 
