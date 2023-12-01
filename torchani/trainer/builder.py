@@ -1,7 +1,6 @@
 import torch
 from torch.utils import tensorboard
 import torchani
-#import config
 import datetime
 import os
 import shutil
@@ -23,10 +22,10 @@ class Builder:
         # Method flawed, as either netlike1x or netlike2x must be true. however if user wants to use specific params that are not defaulted in neurochem, they would label both as False. This should be modified or custom params is not allowed in trainer, and further modification by user must be done
         if self.inputs['netlike1x']:
             modules = [torchani.atomics.like_1x(a, bias=self.inputs['bias']) for a in self.inputs['elements']]
-            #modules = [torchani.atomics.like_1x(a, aev_dim=self.aev_computer.aev_length) for a in self.inputs['elements']] #updating atomics to look like this, currently only default
+            # modules = [torchani.atomics.like_1x(a, aev_dim=self.aev_computer.aev_length) for a in self.inputs['elements']] #updating atomics to look like this, currently only default
         if self.inputs['netlike2x']:
             modules = [torchani.atomics.like_2x(a, bias=self.inputs['bias']) for a in self.inputs['elements']]
-            #modules = [torchani.atomics.like_2x(a, aev_dim=self.aev_computer.aev_length) for a in self.inputs['elements']] #updating atomics to look like this, currently only default
+            # modules = [torchani.atomics.like_2x(a, aev_dim=self.aev_computer.aev_length) for a in self.inputs['elements']] #updating atomics to look like this, currently only default
         return modules
 
     def init_params(self, m):
