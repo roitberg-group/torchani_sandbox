@@ -47,10 +47,9 @@ class Builder:
     def log_setup(self): 
         # Return at end to insure copying of all necessary input. Need a clever way of saving the ini file. Maybe it must be called editor? Can save ini path and return to this class as a self variable
         log = '{}{}_{}'.format(self.inputs['logdir'], self.time.strftime("%Y%m%d_%H%M"), self.inputs['projectlabel'])
-        print(log)
         assert os.path.isdir(log)==False, "Oops! This project sub-directory already exists."
         if not os.path.isdir(log):
-            print('Creating your log sub-directory.')
+            print('Creating your log sub-directory. {}'.format(log))
             os.makedirs(log)
         training_writer = tensorboard.SummaryWriter(log_dir='{}/train'.format(log))
         latest_checkpoint = '{}/latest.pt'.format(log)
