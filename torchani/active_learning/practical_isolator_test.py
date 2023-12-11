@@ -1,7 +1,7 @@
 import torch
 import torchani
 from torchani.tuples import SpeciesCoordinates
-from torchani.AL_protocol.isolator import Isolator
+from torchani.active_learning.isolator import Isolator
 from torchani.datasets import ANIDataset
 
 import timeit
@@ -17,7 +17,7 @@ ch4_coord = ds['CH4']['coordinates']
 ch4_species_coord = (ch4_species, ch4_coord)
 
 def run_file(model):
-    isolator = Isolator(model=model)
+    isolator = Isolator(model=model, threshold=0.5)
     isolator.execute(input_file, is_file=True)
 
 def run_data(model):

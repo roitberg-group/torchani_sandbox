@@ -3,7 +3,7 @@ import torchani
 from torchani.neighbors import FullPairwise
 from torchani.tuples import SpeciesCoordinates
 from torchani.utils import PERIODIC_TABLE
-from torchani.AL_protocol.io import read_xyz
+from torchani.active_learning.io import read_xyz
 
 import ase
 from ase.io import read
@@ -30,34 +30,36 @@ class Isolator:
         self.structure = None
         self.symbols = None
         
+        self.numpy_species = None
+        self.numpy_coordinates = None
+
         self.molecule: tp.Optional[Chem.Mol] = None
         self.model = model
-
-    def read_structure(self, input_file: tp.Optional[str]) -> ase.Atoms:
-        """
-        Reads molecular structure rom a file using ase.io, returns ase Atoms object.
-          File type is guessed by the ase *filetype* function.
-          Works well for .xyz and .pdb, unsure about other file types.
-        """
-        return read(input_file)
 
     @classmethod
     def from_file(cls, model, input_file: str):
         instance = cls(model)
-        instance.structure = instance.read_structure(input_file)
-        instance.species = instance.structure.numbers
-        instance.coordinates = instance.structure.positions.astype(np.float64)
+        instance.structure = ase.io.read(input_file)
+        instance.species = torch.tensor(instance.structure.numbers).unsqueeze(0).clone().detach()
+        instance.coordinates = torch.tensor(instance.structure.positions).double().unsqueeze(0).clone().detach()
         instance.symbols = np.asarray(instance.structure.get_chemical_symbols()).astype(str)
         return instance
 
     @classmethod
     def from_data(cls, model, data: SpeciesCoordinates):
-        instance = cls(model)
-        instance.species = data[0].squeeze().cpu().numpy()
-        instance.coordinates = data[1].squeeze().detach().cpu().numpy()
-        instance.structure = ase.Atoms(numbers=instance.species, positions=instance.coordinates)
-        instance.symbols = np.asarray(instance.structure.get_chemical_symbols()).astype(str)
-        return instance
+        instances = []
+        for species, coordinates in zip(data[0], data[1]):
+            instance = cls(model)
+            instance.species = data[0]
+            instance.coordinates = data[1].double()
+            instances.append(instance)
+        return instances
+
+    def tensors_to_numpy(self):
+        if isinstance(self.species, torch.Tensor):
+            self.numpy_species = self.species.squeeze().cpu().numpy()
+        if isinstance(self.coordinates, torch.Tensor):
+            self.numpy_coordinates = self.coordinates.squeeze().detach().cpu().numpy()
 
     def create_rdkit_mol(self,
         return_smiles: bool = True,
@@ -68,11 +70,14 @@ class Isolator:
         * Reads the temp file with openbabel to create a mol2 object (includes connectivity information)
         * Converts the obabel mol2 object into a rdkit.Chem molecule to print the SMILES return the molecule
         """
+        if self.numpy_coordinates is None:
+            self.tensors_to_numpy()
+
         with tempfile.NamedTemporaryFile("w+") as f:
             f.write(f"{len(self.symbols)}\n")
             f.write("\n")
             for idx, symbol in enumerate(self.symbols):
-                f.write(f"{symbol} {self.coordinates[idx][0]:8.3} {self.coordinates[idx][1]:8.3} {self.coordinates[idx][2]:8.3}\n")
+                f.write(f"{symbol} {self.numpy_coordinates[idx][0]:8.3} {self.numpy_coordinates[idx][1]:8.3} {self.numpy_coordinates[idx][2]:8.3}\n")
             f.seek(0)
             obabel_molecule = next(pybel.readfile("xyz", f.name))
             raw_mol2 = obabel_molecule.write(format="mol2")
@@ -88,11 +93,9 @@ class Isolator:
         """
         Classify the 'bad atoms' (based on the uncertainty threshold set in the class initialization)
         """
-        force_qbc = self.model.force_qbc(
-            (
-            torch.tensor(self.species).unsqueeze(0), 
-            torch.tensor(self.coordinates).unsqueeze(0).double()
-            )).relative_stdev
+        species_tensor = self.species
+        coord_tensor = self.coordinates.requires_grad_(True)
+        force_qbc = self.model.force_qbc((species_tensor, coord_tensor)).relative_stdev
         bad_atom_indices = [i for i, x in enumerate(force_qbc.squeeze()) if x > self.threshold]
         return bad_atom_indices
 
@@ -102,10 +105,8 @@ class Isolator:
         """
         if not any(bad_atom_indices):
             return {}
-
-        species_tensor = torch.tensor(self.species).unsqueeze(0)
-        coord_tensor = torch.tensor(self.coordinates, requires_grad=True).unsqueeze(0)
-
+        species_tensor = self.species
+        coord_tensor = self.coordinates.requires_grad_(True)
         neighbors = FullPairwise(cutoff=self.cutoff)(
             species_tensor,
             coord_tensor
@@ -123,9 +124,10 @@ class Isolator:
         Create a unique 'capped' structure for each bad atom, including only the atom and its neighbors.
         """
         bad_atom_neighbors = self.get_neighbors([bad_atom_index])[bad_atom_index]
+        #print('Bad atom neighbors:', bad_atom_neighbors)
         involved_atoms = set(bad_atom_neighbors) | {bad_atom_index}
 
-        modified_coords = [self.coordinates[idx] for idx in involved_atoms]
+        modified_coords = [self.numpy_coordinates[idx] for idx in involved_atoms]
         modified_symbols = [self.symbols[idx] for idx in involved_atoms]
 
         return modified_coords, modified_symbols
@@ -134,6 +136,14 @@ class Isolator:
         """
         Create a new "capped" structure for each high-uncertainty atom present in the input
         """
+        if self.numpy_coordinates is None:
+            self.tensors_to_numpy()
+
+        if self.structure is None:
+            self.structure = ase.Atoms(numbers=self.numpy_species, positions=self.numpy_coordinates)
+            self.symbols = np.asarray(self.structure.get_chemical_symbols()).astype(str)
+
+
         capped_coords, capped_symbols = self.isolate_atoms(atom_index, all_bad_atoms)
         return ase.Atoms(positions=capped_coords, symbols=capped_symbols)
 
@@ -141,7 +151,8 @@ class Isolator:
         """
         Go through the molecule and create new structures for each of the "bad atoms"
         """
-        original_elements = [PERIODIC_TABLE[num] for num in self.species]
+        species_numpy = self.species.squeeze().numpy() if isinstance(self.species, torch.Tensor) else self.species
+        original_elements = [PERIODIC_TABLE[num] for num in species_numpy]
         original_counts = Counter(original_elements)
         original_formula = ''.join(f'{el}{original_counts[el] if original_counts[el] > 1 else ""}' for el in sorted(original_counts))
         counter = 1
@@ -155,19 +166,21 @@ class Isolator:
             ase.io.write(output_file, capped_structure)
 
     def execute(self, input, is_file=False):
+        "Carry out the workflow defined by the functions above"
         if is_file:
-            instance = self.from_file(input_file=input, model=self.model)
+            instances = [self.from_file(input_file=input, model=self.model)]
         else:
-            instance = self.from_data(data=input, model=self.model)
+            instances = self.from_data(data=input, model=self.model)
         
-        self.symbols = instance.symbols
-        self.coordinates = instance.coordinates
-        self.species = instance.species
-        self.structure = instance.structure
-        self.bad_atoms = self.classify_bad_atoms()
-        if not self.bad_atoms:
-            print("No atoms exceeding the uncertainty threshold. Skipping to the next structure.")
-            return
-        self.neighbors = self.get_neighbors(self.bad_atoms)
-        self.process_molecule(self.bad_atoms)
-        self.molecule = self.create_rdkit_mol()
+        for instance in instances:
+            self.symbols = instance.symbols
+            self.coordinates = instance.coordinates
+            self.species = instance.species
+            self.structure = instance.structure
+            self.bad_atoms = self.classify_bad_atoms()
+            if not self.bad_atoms:
+                print("No atoms exceeding the uncertainty threshold. Skipping to the next structure.")
+                return
+            self.neighbors = self.get_neighbors(self.bad_atoms)
+            self.process_molecule(self.bad_atoms)
+            self.molecule = self.create_rdkit_mol()
