@@ -3,6 +3,7 @@ import torchani
 from torchani.neighbors import FullPairwise
 from torchani.tuples import SpeciesCoordinates
 from torchani.utils import PERIODIC_TABLE
+from torchani.AL_protocol.io import read_xyz
 
 import ase
 from ase.io import read
@@ -16,12 +17,10 @@ from numpy.typing import NDArray
 import pandas as pd
 import typing as tp
 import tempfile
-from copy import deepcopy
 from collections import Counter
 
-
 class Isolator:
-    def __init__(self, cutoff: float = 5.2, threshold: float = 0.5):
+    def __init__(self, model, cutoff: float = 5.2, threshold: float = 1.0):
         # NOTE: Change 'threshold' to 1.0 or higher, 0.5 is just for testing
         self.cutoff = cutoff
         self.threshold = threshold
@@ -32,7 +31,7 @@ class Isolator:
         self.symbols = None
         
         self.molecule: tp.Optional[Chem.Mol] = None
-        self.model = torchani.models.ANIdr().double()
+        self.model = model
 
     def read_structure(self, input_file: tp.Optional[str]) -> ase.Atoms:
         """
@@ -40,31 +39,28 @@ class Isolator:
           File type is guessed by the ase *filetype* function.
           Works well for .xyz and .pdb, unsure about other file types.
         """
-        self.input_file = input_file
-        return read(self.input_file)
+        return read(input_file)
 
     @classmethod
-    def from_file(cls, input_file: str):
-        obj = cls()
-        obj.structure = obj.read_structure(input_file)
-        obj.species = obj.structure.numbers
-        obj.coordinates = obj.structure.positions.astype(np.float64)
-        obj.symbols = np.asarray(obj.structure.get_chemical_symbols()).astype(str)
-        obj.molecule = obj.create_rdkit_mol()
-        return obj
+    def from_file(cls, model, input_file: str):
+        instance = cls(model)
+        instance.structure = instance.read_structure(input_file)
+        instance.species = instance.structure.numbers
+        instance.coordinates = instance.structure.positions.astype(np.float64)
+        instance.symbols = np.asarray(instance.structure.get_chemical_symbols()).astype(str)
+        return instance
 
     @classmethod
-    def from_data(cls, data: SpeciesCoordinates):
-        obj = cls()
-        obj.species = data[0].squeeze().cpu().numpy()
-        obj.coordinates = data[1].squeeze().detach().cpu().numpy()
-        obj.structure = ase.Atoms(numbers=obj.species, positions=obj.coordinates)
-        obj.symbols = np.asarray(obj.structure.get_chemical_symbols()).astype(str)
-        obj.molecule = obj.create_rdkit_mol((obj.symbols, obj.coordinates))
-        return obj
+    def from_data(cls, model, data: SpeciesCoordinates):
+        instance = cls(model)
+        instance.species = data[0].squeeze().cpu().numpy()
+        instance.coordinates = data[1].squeeze().detach().cpu().numpy()
+        instance.structure = ase.Atoms(numbers=instance.species, positions=instance.coordinates)
+        instance.symbols = np.asarray(instance.structure.get_chemical_symbols()).astype(str)
+        return instance
 
     def create_rdkit_mol(self,
-        return_smiles: bool = False,
+        return_smiles: bool = True,
         ) -> Chem.rdchem.Mol:
         """
         This function does the following: 
@@ -75,8 +71,8 @@ class Isolator:
         with tempfile.NamedTemporaryFile("w+") as f:
             f.write(f"{len(self.symbols)}\n")
             f.write("\n")
-            for j, el in enumerate(self.symbols):
-                f.write(f"{el} {self.coordinates[j][0]:8.3} {self.coordinates[j][1]:8.3} {self.coordinates[j][2]:8.3}\n")
+            for idx, symbol in enumerate(self.symbols):
+                f.write(f"{symbol} {self.coordinates[idx][0]:8.3} {self.coordinates[idx][1]:8.3} {self.coordinates[idx][2]:8.3}\n")
             f.seek(0)
             obabel_molecule = next(pybel.readfile("xyz", f.name))
             raw_mol2 = obabel_molecule.write(format="mol2")
@@ -122,35 +118,23 @@ class Isolator:
             neighbors_dict[atom_index] = idxs.tolist()
         return neighbors_dict
 
-    def cap_atoms(self, bad_atom_index, all_bad_atoms):
+    def isolate_atoms(self, bad_atom_index, all_bad_atoms):
         """
         Create a unique 'capped' structure for each bad atom, including only the atom and its neighbors.
         """
-        # Get neighbors of the bad atom
         bad_atom_neighbors = self.get_neighbors([bad_atom_index])[bad_atom_index]
-        print('Bad atom neighbors:', bad_atom_neighbors)
-        # Include the bad atom and its neighbors
         involved_atoms = set(bad_atom_neighbors) | {bad_atom_index}
 
-        # Extract the coordinates and symbols of the involved atoms
         modified_coords = [self.coordinates[idx] for idx in involved_atoms]
         modified_symbols = [self.symbols[idx] for idx in involved_atoms]
-        if isinstance(modified_coords, np.ndarray):
-            modified_coords = modified_coords.tolist()
-        if isinstance(modified_symbols, np.ndarray):
-            modified_symbols = modified_symbols.tolist()
-
-        # Cap the bad atom if necessary
-        # Add capping logic here if needed (e.g., replacing certain symbols with 'H' for hydrogen)
 
         return modified_coords, modified_symbols
-
 
     def process_bad_atom(self, atom_index, all_bad_atoms):
         """
         Create a new "capped" structure for each high-uncertainty atom present in the input
         """
-        capped_coords, capped_symbols = self.cap_atoms(atom_index, all_bad_atoms)
+        capped_coords, capped_symbols = self.isolate_atoms(atom_index, all_bad_atoms)
         return ase.Atoms(positions=capped_coords, symbols=capped_symbols)
 
     def process_molecule(self, bad_atom_indices, output_file_prefix="/home/nick/capped_", output_format='xyz'):
@@ -170,19 +154,20 @@ class Isolator:
             counter += 1
             ase.io.write(output_file, capped_structure)
 
-    def run_the_thing(self, input, is_file=False):
+    def execute(self, input, is_file=False):
         if is_file:
-            instance = self.from_file(input)
+            instance = self.from_file(input_file=input, model=self.model)
         else:
-            instance = self.from_data(input)
+            instance = self.from_data(data=input, model=self.model)
         
         self.symbols = instance.symbols
         self.coordinates = instance.coordinates
         self.species = instance.species
         self.structure = instance.structure
-        self.molecule = self.create_rdkit_mol()
-        if self.molecule is None:
-            print("Skipping processing due to RDKit conversion failure.")
         self.bad_atoms = self.classify_bad_atoms()
+        if not self.bad_atoms:
+            print("No atoms exceeding the uncertainty threshold. Skipping to the next structure.")
+            return
         self.neighbors = self.get_neighbors(self.bad_atoms)
         self.process_molecule(self.bad_atoms)
+        self.molecule = self.create_rdkit_mol()
