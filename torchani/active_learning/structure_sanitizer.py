@@ -15,6 +15,8 @@ def read_xyz(file_path):
 
     return atoms, np.array(coordinates)
 
+
+
 def compute_connectivity(coordinates, threshold=1.8):
     dist_matrix = distance_matrix(coordinates, coordinates)
     connectivity = dist_matrix < threshold
@@ -22,6 +24,7 @@ def compute_connectivity(coordinates, threshold=1.8):
     return connectivity
 
 def find_largest_connected_component(connectivity):
+    # I HATE THIS FUNCTION MAKE SOMETHING DIFFERENT -- MAYBE ONE RDKIT OBJECT PER FRAGMENT THEN RECOMBINE OR SOMETHING JUST DO SOMETHING PLEASE GOD
     num_atoms = len(connectivity)
     visited = set()
     largest_component = set()

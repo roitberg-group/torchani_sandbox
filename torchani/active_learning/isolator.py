@@ -1,3 +1,4 @@
+# type: ignore
 import torch
 import torchani
 from torchani.neighbors import FullPairwise
@@ -55,11 +56,17 @@ class Isolator:
             instances.append(instance)
         return instances
 
-    def tensors_to_numpy(self):
-        if isinstance(self.species, torch.Tensor):
-            self.numpy_species = self.species.squeeze().cpu().numpy()
-        if isinstance(self.coordinates, torch.Tensor):
-            self.numpy_coordinates = self.coordinates.squeeze().detach().cpu().numpy()
+    def tensors_to_numpy(self, conformer_idx=None):
+        if conformer_idx is None:
+            if isinstance(self.species, torch.Tensor):
+                self.numpy_species = self.species.cpu().numpy()
+            if isinstance(self.coordinates, torch.Tensor):
+                self.numpy_coordinates = self.coordinates.detach().cpu().numpy()
+        else:
+            if isinstance(self.species, torch.Tensor):
+                self.numpy_species = self.species[conformer_idx].cpu().numpy()
+            if isinstance(self.coordinates, torch.Tensor):
+                self.numpy_coordinates = self.coordinates[conformer_idx].detach().cpu().numpy()
 
     def create_rdkit_mol(self,
         return_smiles: bool = True,
@@ -70,9 +77,6 @@ class Isolator:
         * Reads the temp file with openbabel to create a mol2 object (includes connectivity information)
         * Converts the obabel mol2 object into a rdkit.Chem molecule to print the SMILES return the molecule
         """
-        if self.numpy_coordinates is None:
-            self.tensors_to_numpy()
-
         with tempfile.NamedTemporaryFile("w+") as f:
             f.write(f"{len(self.symbols)}\n")
             f.write("\n")
@@ -93,37 +97,37 @@ class Isolator:
         """
         Classify the 'bad atoms' (based on the uncertainty threshold set in the class initialization)
         """
-        species_tensor = self.species
-        coord_tensor = self.coordinates.requires_grad_(True)
-        force_qbc = self.model.force_qbc((species_tensor, coord_tensor)).relative_stdev
-        bad_atom_indices = [i for i, x in enumerate(force_qbc.squeeze()) if x > self.threshold]
-        return bad_atom_indices
+        force_qbc = self.model.force_qbc((self.species, self.coordinates.requires_grad_(True))).relative_stdev
+        if force_qbc.dim() == 1:
+            force_qbc = force_qbc.unsqueeze(0)
+        bad_atoms_per_conformer = []
+        for conformer_uncertainties in force_qbc:
+            bad_atom_indices = [i for i, uncertainty in enumerate(conformer_uncertainties) if uncertainty > self.threshold]
+            bad_atoms_per_conformer.append(bad_atom_indices)
+        return bad_atoms_per_conformer
 
-    def get_neighbors(self, bad_atom_indices):
+    def get_neighbors(self, bad_atom_idxs):
         """
         Identify neighbors of bad atoms, within the specified cutoff (defaults to 5.2 Angstrom).
         """
-        if not any(bad_atom_indices):
+        if isinstance(bad_atom_idxs, int):
+            bad_atom_idxs = [bad_atom_idxs]
+        if not bad_atom_idxs:
             return {}
-        species_tensor = self.species
-        coord_tensor = self.coordinates.requires_grad_(True)
-        neighbors = FullPairwise(cutoff=self.cutoff)(
-            species_tensor,
-            coord_tensor
-            )
+        neighbors = FullPairwise(cutoff=self.cutoff)(self.species, self.coordinates.requires_grad_(True))
         neighbor_indices = torch.cat((neighbors.indices, neighbors.indices.flip(0)), dim=-1).transpose(1, 0)
         neighbors_dict = {}
 
-        for atom_index in bad_atom_indices:
+        for atom_index in bad_atom_idxs:
             idxs = neighbor_indices[neighbor_indices[:, 0] == atom_index, 1]
             neighbors_dict[atom_index] = idxs.tolist()
         return neighbors_dict
 
-    def isolate_atoms(self, bad_atom_index, all_bad_atoms):
+    def isolate_atoms(self, bad_atom_index):
         """
         Create a unique 'capped' structure for each bad atom, including only the atom and its neighbors.
         """
-        bad_atom_neighbors = self.get_neighbors([bad_atom_index])[bad_atom_index]
+        bad_atom_neighbors = self.get_neighbors(bad_atom_index)[bad_atom_index]
         #print('Bad atom neighbors:', bad_atom_neighbors)
         involved_atoms = set(bad_atom_neighbors) | {bad_atom_index}
 
@@ -132,55 +136,52 @@ class Isolator:
 
         return modified_coords, modified_symbols
 
-    def process_bad_atom(self, atom_index, all_bad_atoms):
+    def process_bad_atom(self, atom_index):
         """
         Create a new "capped" structure for each high-uncertainty atom present in the input
         """
-        if self.numpy_coordinates is None:
-            self.tensors_to_numpy()
-
-        if self.structure is None:
-            self.structure = ase.Atoms(numbers=self.numpy_species, positions=self.numpy_coordinates)
-            self.symbols = np.asarray(self.structure.get_chemical_symbols()).astype(str)
-
-
-        capped_coords, capped_symbols = self.isolate_atoms(atom_index, all_bad_atoms)
+        capped_coords, capped_symbols = self.isolate_atoms(atom_index)
         return ase.Atoms(positions=capped_coords, symbols=capped_symbols)
 
-    def process_molecule(self, bad_atom_indices, output_file_prefix="/home/nick/capped_", output_format='xyz'):
+    def process_molecule(self, bad_atoms, output_file_prefix="/home/nick/capped_", output_format='xyz'):
         """
         Go through the molecule and create new structures for each of the "bad atoms"
         """
-        species_numpy = self.species.squeeze().numpy() if isinstance(self.species, torch.Tensor) else self.species
-        original_elements = [PERIODIC_TABLE[num] for num in species_numpy]
+        if not bad_atoms:
+            return
+        self.structure = ase.Atoms(numbers=self.numpy_species, positions=self.numpy_coordinates)
+        self.symbols = np.asarray(self.structure.get_chemical_symbols()).astype(str)
+
+        original_elements = [PERIODIC_TABLE[num] for num in self.numpy_species]
         original_counts = Counter(original_elements)
         original_formula = ''.join(f'{el}{original_counts[el] if original_counts[el] > 1 else ""}' for el in sorted(original_counts))
         counter = 1
-        for idx in bad_atom_indices:
-            capped_structure = self.process_bad_atom(idx, bad_atom_indices)
+        for bad_atom_idx in bad_atoms:
+            capped_structure = self.process_bad_atom(bad_atom_idx)
             capped_elements = [PERIODIC_TABLE[num] for num in capped_structure.numbers]
             capped_counts = Counter(capped_elements)
+
             capped_formula = ''.join(f'{el}{capped_counts[el] if capped_counts[el] > 1 else ""}' for el in sorted(capped_counts))
-            output_file = f"{output_file_prefix}{original_formula}_{counter}_{capped_formula}_atom{idx}.{output_format}"
+            output_file = f"{output_file_prefix}{original_formula}_{counter}_{capped_formula}_atom{bad_atom_idx}.{output_format}"
             counter += 1
             ase.io.write(output_file, capped_structure)
 
     def execute(self, input, is_file=False):
         "Carry out the workflow defined by the functions above"
         if is_file:
-            instances = [self.from_file(input_file=input, model=self.model)]
+            conformers = [self.from_file(input_file=input, model=self.model)]
         else:
-            instances = self.from_data(data=input, model=self.model)
+            conformers = self.from_data(data=input, model=self.model)
         
-        for instance in instances:
-            self.symbols = instance.symbols
-            self.coordinates = instance.coordinates
-            self.species = instance.species
-            self.structure = instance.structure
-            self.bad_atoms = self.classify_bad_atoms()
-            if not self.bad_atoms:
-                print("No atoms exceeding the uncertainty threshold. Skipping to the next structure.")
-                return
-            self.neighbors = self.get_neighbors(self.bad_atoms)
-            self.process_molecule(self.bad_atoms)
-            self.molecule = self.create_rdkit_mol()
+        for conformer_idx, conformer in enumerate(conformers):
+            self.species = conformer.species
+            self.coordinates = conformer.coordinates
+            self.tensors_to_numpy(conformer_idx=conformer_idx)
+            bad_atoms_per_conformer = self.classify_bad_atoms()
+            for bad_atoms in bad_atoms_per_conformer:
+                if not bad_atoms:
+                    print("No atoms exceeding the uncertainty threshold. Skipping to the next structure.")
+                    continue
+                self.neighbors = self.get_neighbors(bad_atoms)
+                self.process_molecule(bad_atoms)
+                self.molecule = self.create_rdkit_mol()

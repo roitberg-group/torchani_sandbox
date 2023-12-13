@@ -5,6 +5,7 @@ import torchani
 from torchani.active_learning import isolator
 import hashlib
 import os
+import numpy as np
 
 def read_xyz(file_path):
     with open(file_path, 'r') as file:
