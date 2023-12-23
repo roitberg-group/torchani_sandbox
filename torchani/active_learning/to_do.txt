@@ -1,0 +1,10 @@
+For isolator.py:
+
+
+
+For structure_sanitizer.py:
+
+
+
+For io.py:
+* Organize functions in logical format, 

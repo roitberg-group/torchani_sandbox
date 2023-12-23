@@ -167,6 +167,11 @@ class Isolator:
             ase.io.write(output_file, capped_structure)
 
     def execute(self, input, is_file=False):
+        # Add some more arguments to this function to add the following capabilities:
+        #   * output_file_prefix (to overwrite process_molecule, option should be here where we actually run the thing)
+        #   * Make input_file able to iterate over a directory of XYZs
+        #   * Other stuff? Optional arguments should be added here, because this is where the operations in the class
+        #     are actually being executed.
         "Carry out the workflow defined by the functions above"
         if is_file:
             conformers = [self.from_file(input_file=input, model=self.model)]
@@ -176,12 +181,12 @@ class Isolator:
         for conformer_idx, conformer in enumerate(conformers):
             self.species = conformer.species
             self.coordinates = conformer.coordinates
-            self.tensors_to_numpy(conformer_idx=conformer_idx)
             bad_atoms_per_conformer = self.classify_bad_atoms()
             for bad_atoms in bad_atoms_per_conformer:
                 if not bad_atoms:
                     print("No atoms exceeding the uncertainty threshold. Skipping to the next structure.")
                     continue
+                self.tensors_to_numpy(conformer_idx=conformer_idx)
                 self.neighbors = self.get_neighbors(bad_atoms)
                 self.process_molecule(bad_atoms)
                 self.molecule = self.create_rdkit_mol()
