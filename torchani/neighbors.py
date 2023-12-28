@@ -893,12 +893,8 @@ class CellList(BaseNeighborlist):
         # now all that is left is to apply the mask in order to unpad
         assert padded_atom_neighbors.shape == mask.shape
         assert neighbor_translation_types.shape == mask.shape
-        # the following calls are equivalent to masked select but significantly faster,
-        # since masked_select is slow
-        # y = torch.masked_select(x, mask) == y = x.view(-1).index_select(0, mask.view(-1).nonzero().squeeze())
-        lower = padded_atom_neighbors.view(-1).index_select(0, mask.view(-1).nonzero().squeeze())
-        between_pairs_translation_types = neighbor_translation_types.view(-1)\
-                                          .index_select(0, mask.view(-1).nonzero().squeeze())
+        lower = torch.masked_select(padded_atom_neighbors, mask)
+        between_pairs_translation_types = torch.masked_select(neighbor_translation_types, mask)
         return lower, between_pairs_translation_types
 
     def _get_bucket_indices(self, fractional_coordinates: Tensor) -> Tuple[Tensor, Tensor]:
