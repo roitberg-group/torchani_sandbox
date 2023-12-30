@@ -870,7 +870,7 @@ class CellList(BaseNeighborlist):
         num_splits = math.ceil(total_elements / chunk_size)
 
         if num_splits == 1:
-            return tensor.nonzero()
+            return tensor.nonzero().squeeze()
 
         # Split the tensor into chunks and create separate copies
         tensor_chunks = torch.chunk(tensor, num_splits)
