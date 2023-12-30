@@ -221,6 +221,12 @@ class TestCellList(TestCase):
             species = torch.zeros(10).unsqueeze(0).to(torch.long)
             self._check_neighborlists_consistency(coordinates, species)
 
+    def testMaskedSelectInChunks(self):
+        tensor = torch.tensor([1, 0, 0, 1, 5])
+        result = self.clist._nonzero_in_chunks(tensor, chunk_size=2)
+        expected = torch.tensor([0, 3, 4])
+        self.assertEqual(result.tolist(), expected.tolist())
+
 
 class TestCellListEnergies(TestCase):
     def setUp(self):

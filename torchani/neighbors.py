@@ -858,6 +858,35 @@ class CellList(BaseNeighborlist):
         within_image_pairs = padded_pairs.index_select(1, mask.nonzero().squeeze())
         return within_image_pairs
 
+    @staticmethod
+    def _nonzero_in_chunks(tensor, chunk_size=2**31 - 1):
+        """
+        Applies nonzero on a one-dimensional tensor in chunks.
+        This function is a workaround for the limitation in PyTorch's nonzero function,
+        which fails with a RuntimeError when applied to tensors with more than INT_MAX elements.
+        The issue is documented in PyTorch's GitHub repository: https://github.com/pytorch/pytorch/issues/51871
+        """
+        total_elements = tensor.numel()
+        num_splits = math.ceil(total_elements / chunk_size)
+
+        if num_splits == 1:
+            return tensor.nonzero()
+
+        # Split the tensor into chunks and create separate copies
+        tensor_chunks = torch.chunk(tensor, num_splits)
+
+        # Process each chunk to find nonzero elements and collect the results
+        nonzero_chunks = [chunk.nonzero() for chunk in tensor_chunks]
+
+        # Adjust the indices in each chunk to account for their original position in the tensor
+        offset = 0
+        for i, chunk in enumerate(nonzero_chunks):
+            if i > 0:
+                chunk += offset
+            offset += len(tensor_chunks[i])
+
+        return torch.cat(nonzero_chunks).squeeze()
+
     def _get_lower_between_image_pairs(
             self, neighbor_count: Tensor, neighbor_cumcount: Tensor,
             max_in_bucket: Tensor,
@@ -893,8 +922,9 @@ class CellList(BaseNeighborlist):
         # now all that is left is to apply the mask in order to unpad
         assert padded_atom_neighbors.shape == mask.shape
         assert neighbor_translation_types.shape == mask.shape
-        lower = torch.masked_select(padded_atom_neighbors, mask)
-        between_pairs_translation_types = torch.masked_select(neighbor_translation_types, mask)
+        mask_nonzero = self._nonzero_in_chunks(mask.view(-1))
+        lower = padded_atom_neighbors.view(-1).index_select(0, mask_nonzero)
+        between_pairs_translation_types = neighbor_translation_types.view(-1).index_select(0, mask_nonzero)
         return lower, between_pairs_translation_types
 
     def _get_bucket_indices(self, fractional_coordinates: Tensor) -> Tuple[Tensor, Tensor]:
