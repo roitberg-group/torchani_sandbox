@@ -453,7 +453,7 @@ class AEVComputer(torch.nn.Module):
              self.angular_sublength))
         index = central_atom_index * self.num_species_pairs + self.triu_index[
             species12_[0], species12_[1]]
-        angular_aev.index_add_(0, index, angular_terms_)
+        angular_aev.index_add_(0, index.to(dtype=torch.long), angular_terms_)
         angular_aev = angular_aev.reshape(num_molecules, num_atoms,
                                           self.angular_length)
         return angular_aev
