@@ -1,3 +1,4 @@
+import typing_extensions as tpx
 import typing as tp
 import json
 import shutil
@@ -122,6 +123,9 @@ class DataFrameAdaptor:
         if self._df is None:
             raise RuntimeError("Data frame was not opened")
         return self._df[k]
+
+    def __enter__(self) -> tpx.Self:
+        return self
 
     def __setitem__(self, k, v):
         if self._df is None:
