@@ -37,7 +37,7 @@ class _H5TemporaryLocation(tp.ContextManager[StrPath]):
 
 
 class _H5Store(_HierarchicalStoreWrapper["h5py.File"]):
-    def __init__(self, store_location: StrPath, dummy_properties: tp.Dict[str, tp.Any]):
+    def __init__(self, store_location: StrPath, dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None):
         super().__init__(store_location, '.h5', 'file', dummy_properties=dummy_properties)
         self._has_standard_format = True
         self._made_quick_check = False
