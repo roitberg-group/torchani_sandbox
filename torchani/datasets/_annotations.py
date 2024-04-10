@@ -2,7 +2,6 @@ r"""Mypy type aliases"""
 import typing as tp
 import sys
 from os import PathLike
-from collections import OrderedDict
 
 from torch import Tensor
 from numpy import ndarray, dtype
@@ -35,5 +34,5 @@ NumpyConformers = tp.MutableMapping[str, ndarray]
 MixedConformers = tp.MutableMapping[str, tp.Union[Tensor, ndarray]]
 
 # mimic typeshed
-StrPath = tp.Union[str, 'PathLike[str]']
-StrPathODict = tp.Union['OrderedDict[str, str]', 'OrderedDict[str, PathLike[str]]']
+StrPath = tp.Union[str, PathLike[str]]
+StrPathODict = tp.Union[tp.OrderedDict[str, str], tp.OrderedDict[str, PathLike[str]]]

@@ -1,7 +1,6 @@
 import typing as tp
 import tempfile
 from pathlib import Path
-from collections import OrderedDict  # noqa F401
 
 import numpy as np
 

@@ -14,7 +14,7 @@ from torchani.datasets._annotations import NumpyConformers, StrPath, Self
 # Keeps track of variables that must be updated each time the datasets get
 # modified or the first time they are read from disk
 class CacheHolder:
-    group_sizes: 'OrderedDict[str, int]'
+    group_sizes: tp.OrderedDict[str, int]
     properties: tp.Set[str]
 
     def __init__(self) -> None:
@@ -219,7 +219,7 @@ class _StoreWrapper(tp.ContextManager['_StoreWrapper'], tp.MutableMapping[str, '
     @abstractmethod
     def update_cache(self,
                      check_properties: bool = False,
-                     verbose: bool = True) -> tp.Tuple['OrderedDict[str, int]', tp.Set[str]]:
+                     verbose: bool = True) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
         pass
 
     @property
@@ -309,7 +309,7 @@ class _HierarchicalStoreWrapper(_StoreWrapper[_T]):
 
     def update_cache(self,
                      check_properties: bool = False,
-                     verbose: bool = True) -> tp.Tuple['OrderedDict[str, int]', tp.Set[str]]:
+                     verbose: bool = True) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
         cache = CacheHolder()
         for k, g in self._store.items():
             self._update_properties_cache(cache, g, check_properties)

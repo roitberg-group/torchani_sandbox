@@ -162,7 +162,7 @@ class _PqStore(_StoreWrapper[tp.Union["pandas.DataFrame", "cudf.DataFrame"]]):
 
     def update_cache(self,
                      check_properties: bool = False,
-                     verbose: bool = True) -> tp.Tuple['OrderedDict[str, int]', tp.Set[str]]:
+                     verbose: bool = True) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
         cache = CacheHolder()
         try:
             group_sizes_df = self._store['group'].value_counts().sort_index()

@@ -4,7 +4,6 @@ from uuid import uuid4
 import tempfile
 from pathlib import Path
 from functools import partial
-from collections import OrderedDict  # noqa F401
 
 import numpy as np
 
@@ -57,7 +56,7 @@ class _H5Store(_HierarchicalStoreWrapper["h5py.File"]):
 
     def update_cache(self,
                      check_properties: bool = False,
-                     verbose: bool = True) -> tp.Tuple['OrderedDict[str, int]', tp.Set[str]]:
+                     verbose: bool = True) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
         cache = CacheHolder()
         # If the dataset has some semblance of standarization (it is a tree with depth
         # 1, where all groups are directly joined to the root) then it is much faster

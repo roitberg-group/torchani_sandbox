@@ -248,11 +248,11 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
         # change if a property is renamed or deleted. num_conformers and
         # num_conformer_groups are all calculated on the fly to guarantee
         # synchronization with "group_sizes".
-        self._group_sizes: 'OrderedDict[str, int]' = OrderedDict()
+        self._group_sizes: tp.OrderedDict[str, int] = OrderedDict()
         self._properties: tp.Set[str] = set()
 
     @property
-    def group_sizes(self) -> 'OrderedDict[str, int]':
+    def group_sizes(self) -> tp.OrderedDict[str, int]:
         return self._group_sizes.copy()
 
     @property
