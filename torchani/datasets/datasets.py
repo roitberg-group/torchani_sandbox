@@ -7,7 +7,7 @@ import re
 from os import fspath
 from pathlib import Path
 from pprint import pformat
-from functools import partial, wraps
+from functools import wraps
 from contextlib import ExitStack, contextmanager
 from collections import OrderedDict
 
@@ -50,48 +50,46 @@ _ATOMIC_KEYS = (
 )
 
 
-# Helper functions
-def _get_any_element_key(properties: tp.Iterable[str]):
-    properties = {properties} if isinstance(properties, str) else set(properties)
-    if 'species' in properties:
-        return 'species'
-    else:
-        try:
-            return next(iter(_ELEMENT_KEYS & properties))
-        except StopIteration:
-            raise ValueError("Either species or numbers must be present in conformers") from None
+# Helper functions for Conformers and properties
+def _any_element_key(properties: tp.Iterable[str]) -> str:
+    if isinstance(properties, str):
+        properties = {properties}
+    element_keys_in_properties = _ELEMENT_KEYS.intersection(properties)
+    if element_keys_in_properties:
+        return next(iter(element_keys_in_properties))
+    raise RuntimeError("Either species or numbers must be present in conformers")
 
 
-def _get_formulas(conformers: NumpyConformers) -> tp.List[str]:
-    elements = conformers[_get_any_element_key(conformers.keys())]
+def _formulas(conformers: NumpyConformers) -> tp.List[str]:
+    elements = conformers[_any_element_key(conformers.keys())]
     if issubclass(elements.dtype.type, np.integer):
         elements = _numbers_to_symbols(elements)
     return species_to_formula(elements)
 
 
-def _get_dim_size(conformers: NumpyConformers, common_keys: tp.Set[str], dim: int) -> int:
+def _dim_size(conformers: NumpyConformers, common_keys: tp.Set[str], dim: int) -> int:
     # Tries to get dimension size from one of the "common keys" that have the dimension
     present_keys = common_keys.intersection(conformers.keys())
-    try:
-        any_key = present_keys.pop()
-    except KeyError:
+    if not present_keys:
         raise KeyError(f'Could not get size of dim {dim} in properties'
                        f' since {common_keys} are missing from conformers')
-    return conformers[any_key].shape[dim]
+    return conformers[next(iter(present_keys))].shape[dim]
 
 
-# calculates number of atoms / conformers in a conformer group
-_get_num_atoms = partial(_get_dim_size, common_keys={'coordinates', 'coord', 'forces'}, dim=1)
-_get_num_conformers = partial(_get_dim_size, common_keys={'coordinates', 'coord', 'forces', 'energies'}, dim=0)
+def _num_atoms(conformers: NumpyConformers) -> int:
+    return _dim_size(conformers, common_keys={'coordinates', 'coord', 'forces'}, dim=1)
 
 
-def _to_strpath_list(obj: tp.Union[tp.Iterable[StrPath], StrPath]) -> tp.List[StrPath]:
-    try:
-        # This will raise an exception if obj is tp.Iterable[StrPath]
-        list_ = [fspath(obj)]  # type: ignore
-    except TypeError:
-        list_ = [o for o in obj]  # type: ignore
-    return tp.cast(tp.List[StrPath], list_)
+def _num_conformers(conformers: NumpyConformers) -> int:
+    return _dim_size(conformers, common_keys={'coordinates', 'coord', 'forces', 'energies'}, dim=0)
+
+
+def _to_path_list(obj: tp.Union[tp.Iterable[StrPath], StrPath]) -> tp.List[Path]:
+    if isinstance(obj, Path):
+        return [obj]
+    if isinstance(obj, str):
+        return [Path(obj)]
+    return [Path(el) for el in obj]
 
 
 # convert to / from symbols and atomic numbers properties
@@ -522,7 +520,7 @@ class _ANISubdataset(_ANIDatasetBase):
         'species' or 'numbers' properties are present.
         """
         self._check_correct_grouping()
-        element_key = _get_any_element_key(self.properties)
+        element_key = _any_element_key(self.properties)
         present_elements: tp.Set[tp.Union[str, int]] = set()
         for group_name in self.keys():
             conformers = self.get_numpy_conformers(group_name,
@@ -591,7 +589,7 @@ class _ANISubdataset(_ANIDatasetBase):
         if nonbatch_properties:
             tile_shape: tp.Tuple[int, ...]
             if idx_ is None or idx_.ndim == 1:
-                tile_shape = (_get_num_conformers(numpy_conformers), 1)
+                tile_shape = (_num_conformers(numpy_conformers), 1)
             else:
                 tile_shape = (1,)
             numpy_conformers.update({k: np.tile(numpy_conformers[k], tile_shape)
@@ -716,9 +714,9 @@ class _ANISubdataset(_ANIDatasetBase):
                                      fill_value=fill_value, dtype=dtype, num_conformers=self.num_conformers)
             else:
                 for group_name in self.keys():
-                    shape: tp.Tuple[int, ...] = (_get_num_conformers(f[group_name]),)
+                    shape: tp.Tuple[int, ...] = (_num_conformers(f[group_name]),)
                     if is_atomic:
-                        shape += (_get_num_atoms(f[group_name]),)
+                        shape += (_num_atoms(f[group_name]),)
                     f[group_name][dest_key] = np.full(shape + extra_dims_, fill_value, dtype)
         return self
 
@@ -818,7 +816,7 @@ class _ANISubdataset(_ANIDatasetBase):
                     # Get all formulas in the group to discriminate conformers by
                     # formula and then attach conformers with the same formula to the
                     # same groups
-                    formulas = np.asarray(_get_formulas(conformers))
+                    formulas = np.asarray(_formulas(conformers))
                     unique_formulas = np.unique(formulas)
                     formula_idxs = ((formulas == el).nonzero()[0] for el in unique_formulas)
 
@@ -853,7 +851,7 @@ class _ANISubdataset(_ANIDatasetBase):
                                                    desc='Regrouping by number of atoms',
                                                    disable=not verbose):
                     # This is done to accomodate the current group convention
-                    new_name = str(_get_num_atoms(conformers)).zfill(3)
+                    new_name = str(_num_atoms(conformers)).zfill(3)
                     rwds.append_conformers.__wrapped__(rwds, new_name, conformers)  # type: ignore
             meta = self.metadata
             new_ds._attach_dummy_properties(self._dummy_properties)
@@ -951,7 +949,7 @@ class _ANISubdataset(_ANIDatasetBase):
         self._check_unique_element_key(conformers_properties)
         # check that all formulas are the same
         if self.grouping == 'by_formula':
-            if len(set(_get_formulas(conformers))) > 1:
+            if len(set(_formulas(conformers))) > 1:
                 raise ValueError("All appended conformers must have the same formula")
         # If this is the first conformer added update the dataset to support
         # these properties, otherwise check that all properties are present
@@ -1062,26 +1060,25 @@ class ANIDataset(_ANIDatasetBase):
         # "locations" and "names" are collections used to build it
         # First we convert locations / names into lists of strpath / str
         # if no names are provided they are just '0', '1', '2', etc.
-        locations = _to_strpath_list(locations)
+        locations = _to_path_list(locations)
         if names is None:
-            names = (str(j) for j in range(len(locations)))
-        names = [names] if isinstance(names, str) else [n for n in names]
-        if not len(names) == len(locations):
+            names = (str(j) for j, _ in enumerate(locations))
+        names = [names] if isinstance(names, str) else list(names)
+        if len(names) != len(locations):
             raise ValueError("Length of locations and names must be equal")
         self._datasets = OrderedDict((n, _ANISubdataset(loc, **kwargs)) for n, loc in zip(names, locations))
         self._update_cache()
 
     @classmethod
-    def from_dir(cls, dir_: StrPath, only_backend: tp.Optional[str] = 'h5py', **kwargs):
+    def from_dir(cls, dir_: StrPath, only_backend: str = 'h5py', **kwargs):
         r"""Reads all files in a given directory, if there are multiple files
         with the same name only one of them will be considered"""
         dir_ = Path(dir_).resolve()
         if not dir_.is_dir():
             raise ValueError("Input should be a directory")
         locations = sorted([p for p in dir_.iterdir() if p.suffix != '.tar.gz'])
-        if only_backend is not None:
-            suffix = _SUFFIXES[only_backend]
-            locations = [loc for loc in locations if loc.suffix == suffix]
+        suffix = _SUFFIXES[only_backend]
+        locations = [loc for loc in locations if loc.suffix == suffix]
         names = [p.stem for p in locations]
         return cls(locations=locations, names=names, **kwargs)
 
@@ -1149,7 +1146,7 @@ class ANIDataset(_ANIDatasetBase):
             conformers,
             allow_negative_indices=True
         )
-        element_key = _get_any_element_key(numpy_conformers.keys())
+        element_key = _any_element_key(numpy_conformers.keys())
         elements = numpy_conformers[element_key]
         groups: tp.Dict[str, tp.Any] = {}
         for j, znumbers in enumerate(elements):
