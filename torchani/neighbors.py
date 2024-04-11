@@ -541,7 +541,7 @@ class CellList(BaseNeighborlist):
                 mask=(species == -1)
             )
 
-    def _calculate_cell_list(self, coordinates: Tensor, pbc: Tensor) -> tp.Tuple[Tensor, tp.Union[Tensor, None]]:
+    def _calculate_cell_list(self, coordinates: Tensor, pbc: Tensor) -> tp.Tuple[Tensor, tp.Optional[Tensor]]:
         # 1) Fractionalize coordinates
         fractional_coordinates = self._fractionalize_coordinates(coordinates)
 
