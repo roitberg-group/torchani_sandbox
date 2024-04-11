@@ -148,11 +148,11 @@ def get_sqrt_empirical_charge() -> Tensor:
     return sqrt_empirical_charge
 
 
-def get_functional_constants() -> Dict[str, Dict[str, float]]:
+def get_functional_constants() -> tp.Dict[str, tp.Dict[str, float]]:
     # constants for the density functional from psi4 source code, citations:
     #    A. Najib, L. Goerigk, J. Comput. Theory Chem., 14 5725, 2018)
     #    N. Mardirossian, M. Head-Gordon, Phys. Chem. Chem. Phys, 16, 9904, 2014
-    df_constants: Dict[str, Dict[str, float]] = defaultdict(dict)
+    df_constants: tp.Dict[str, tp.Dict[str, float]] = defaultdict(dict)
     # TODO: check where wB97X actually comes from
     df_constants['wb97x'] = {
         's6_bj': 1.000,
