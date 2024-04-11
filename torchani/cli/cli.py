@@ -21,8 +21,11 @@ def build_parser():
                                  help='Optional root directory to save the dataset, default folder is set as datasets/{dataset}-{lot}')
 
     # dataset download parser
-    parser_h5info = subparsers.add_parser('h5info', help='show h5file informations',
-                                            description="Show h5file informations.")
+    parser_h5info = subparsers.add_parser(
+        'h5info',
+        help='show h5file information',
+        description="Show h5file information",
+    )
     parser_h5info.add_argument('path', type=str, help='path to a h5 dataset file or a directory')
 
     parser_h5pack = subparsers.add_parser(

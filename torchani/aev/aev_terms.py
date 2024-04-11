@@ -164,8 +164,16 @@ class StandardAngular(torch.nn.Module):
         return ret.flatten(start_dim=1)
 
     @classmethod
-    def cover_linearly(cls, eta: float, num_shifts: int, zeta: float,
-            num_angle_sections: int, start: float = 0.9, cutoff: float = 5.2, cutoff_fn='cosine'):
+    def cover_linearly(
+        cls,
+        eta: float,
+        num_shifts: int,
+        zeta: float,
+        num_angle_sections: int,
+        start: float = 0.9,
+        cutoff: float = 5.2,
+        cutoff_fn="cosine",
+    ):
         r""" Builds angular terms by linearly subdividing space in the angular
         dimension and in the radial one up to a cutoff
 

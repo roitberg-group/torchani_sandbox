@@ -30,8 +30,12 @@ def enable_timers(model):
     aev_computer = model[0]
     nn = model[1]
     nl = aev_computer.neighborlist
-    fn_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev',
-                             '_compute_aev', '_triple_by_molecule']
+    fn_to_time_aev = [
+        "_compute_radial_aev",
+        "_compute_angular_aev",
+        "_compute_aev",
+        "_triple_by_molecule",
+    ]
 
     fn_to_time_neighborlist = ['forward']
     fn_to_time_nn = ['forward']

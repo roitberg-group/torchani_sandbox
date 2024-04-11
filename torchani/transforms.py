@@ -136,14 +136,16 @@ class Compose(torch.nn.Module):
         return format_string
 
 
-def calculate_saes(dataset: Union[DataLoader, ANIBatchedDataset],
-                         elements: Sequence[str],
-                         mode: str = 'sgd',
-                         fraction: float = 1.0,
-                         fit_intercept: bool = False,
-                         device: str = 'cpu',
-                         max_epochs: int = 1,
-                         lr: float = 0.01) -> Tuple[Tensor, Optional[Tensor]]:
+def calculate_saes(
+    dataset: Union[DataLoader, ANIBatchedDataset],
+    elements: Sequence[str],
+    mode: str = "sgd",
+    fraction: float = 1.0,
+    fit_intercept: bool = False,
+    device: str = "cpu",
+    max_epochs: int = 1,
+    lr: float = 0.01,
+) -> Tuple[Tensor, Optional[Tensor]]:
     if mode == 'exact':
         if lr != 0.01:
             raise ValueError("lr is only used with mode=sgd")

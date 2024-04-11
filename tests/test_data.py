@@ -64,10 +64,15 @@ class TestDatasetUtils(TestCase):
     def testFilterForce(self):
         ds = self.test_ds_single
         ds.create_full_property('forces', is_atomic=True, extra_dims=(3,), dtype=np.float32)
-        ds.append_conformers('H4', {'species': torch.ones((1, 4), dtype=torch.long),
-                              'coordinates': torch.ones((1, 4, 3), dtype=torch.float),
-                              'energies': torch.ones((1,), dtype=torch.double),
-                              'forces': torch.full((1, 4, 3), fill_value=3.0, dtype=torch.float)})
+        ds.append_conformers(
+            'H4',
+            {
+                'species': torch.ones((1, 4), dtype=torch.long),
+                'coordinates': torch.ones((1, 4, 3), dtype=torch.float),
+                'energies': torch.ones((1,), dtype=torch.double),
+                'forces': torch.full((1, 4, 3), fill_value=3.0, dtype=torch.float)
+            }
+        )
         out = torchani.datasets.utils.filter_by_high_force(ds, threshold=0.5, delete_inplace=True)
         self.assertEqual(len(out[0]), 1)
         self.assertEqual(len(out[0][0]['coordinates']), 1)
@@ -215,11 +220,23 @@ class TestFineGrainedShuffle(TestCase):
                 # both validation and test have 3 batches of 60 each
                 h5_dirs = sorted(Path(tmpdir).iterdir())
                 if folds is None:
-                    create_batched_dataset(h5_dirs, dest_path=self.tmp_dir_batched.name, shuffle=True, shuffle_seed=123456789,
-                            splits={'training': 0.5, 'validation': 0.5}, batch_size=60)
+                    create_batched_dataset(
+                        h5_dirs,
+                        dest_path=self.tmp_dir_batched.name,
+                        shuffle=True,
+                        shuffle_seed=123456789,
+                        splits={"training": 0.5, "validation": 0.5},
+                        batch_size=60,
+                    )
                 else:
-                    create_batched_dataset(h5_dirs, dest_path=self.tmp_dir_batched.name, shuffle=True, shuffle_seed=123456789,
-                            folds=folds, batch_size=60)
+                    create_batched_dataset(
+                        h5_dirs,
+                        dest_path=self.tmp_dir_batched.name,
+                        shuffle=True,
+                        shuffle_seed=123456789,
+                        folds=folds,
+                        batch_size=60,
+                    )
 
     def _check_disjoint_and_nonduplicates(self, name1, name2):
         train = ANIBatchedDataset(self.tmp_dir_batched.name, split=name1)
@@ -362,10 +379,21 @@ class TestTransforms(TestCase):
 
         with warnings.catch_warnings():
             ignore_unshuffled_warning()
-            create_batched_dataset(dataset_path, dest_path=self.tmp_dir_batched.name, shuffle=False,
-                    splits={'training': 0.5, 'validation': 0.5}, batch_size=2560, inplace_transform=compose)
-            create_batched_dataset(dataset_path, dest_path=self.tmp_dir_batched2.name, shuffle=False,
-                    splits={'training': 0.5, 'validation': 0.5}, batch_size=2560)
+            create_batched_dataset(
+                dataset_path,
+                dest_path=self.tmp_dir_batched.name,
+                shuffle=False,
+                splits={"training": 0.5, "validation": 0.5},
+                batch_size=2560,
+                inplace_transform=compose,
+            )
+            create_batched_dataset(
+                dataset_path,
+                dest_path=self.tmp_dir_batched2.name,
+                shuffle=False,
+                splits={"training": 0.5, "validation": 0.5},
+                batch_size=2560,
+            )
         train_inplace = ANIBatchedDataset(self.tmp_dir_batched.name, split='training')
         train = ANIBatchedDataset(self.tmp_dir_batched2.name, transform=compose, split='training')
         for b, inplace_b in zip(train, train_inplace):
@@ -433,9 +461,14 @@ class TestANIBatchedDataset(TestCase):
 
     def testShuffle(self):
         # thest that shuffling at creation time mixes up conformers a lot
-        create_batched_dataset(dataset_path, dest_path=self.tmp_dir_batched_shuffled.name, shuffle=True,
-                shuffle_seed=12345,
-                splits={'training': 0.5, 'validation': 0.5}, batch_size=self.batch_size)
+        create_batched_dataset(
+            dataset_path,
+            dest_path=self.tmp_dir_batched_shuffled.name,
+            shuffle=True,
+            shuffle_seed=12345,
+            splits={"training": 0.5, "validation": 0.5},
+            batch_size=self.batch_size,
+        )
         train = ANIBatchedDataset(self.tmp_dir_batched_shuffled.name, split='training')
         valid = ANIBatchedDataset(self.tmp_dir_batched_shuffled.name, split='validation')
         # shuffling mixes the conformers a lot, so all batches have pads with -1
@@ -495,9 +528,13 @@ class TestANIBatchedDataset(TestCase):
             self.tmp_dir_batched2 = tempfile.TemporaryDirectory()
             with warnings.catch_warnings():
                 ignore_unshuffled_warning()
-                create_batched_dataset(dataset_path,
-                        dest_path=self.tmp_dir_batched2.name, shuffle=False,
-                        splits={'training': 0.5, 'validation': 0.5}, batch_size=self.batch_size)
+                create_batched_dataset(
+                    dataset_path,
+                    dest_path=self.tmp_dir_batched2.name,
+                    shuffle=False,
+                    splits={"training": 0.5, "validation": 0.5},
+                    batch_size=self.batch_size,
+                )
             train = ANIBatchedDataset(self.tmp_dir_batched2.name, split='training')
             valid = ANIBatchedDataset(self.tmp_dir_batched2.name, split='validation')
             for batch_ref, batch in zip(self.train, train):
@@ -665,8 +702,10 @@ class TestANIDataset(TestCase):
         # allowed)
         conformers = dict()
         for gn in self.torch_conformers.keys():
-            conformers[gn] = {k: v.detach().cpu().numpy()
-                                  for k, v in self.torch_conformers[gn].items()}
+            conformers[gn] = {
+                k: v.detach().cpu().numpy()
+                for k, v in self.torch_conformers[gn].items()
+            }
 
         # Build the dataset using conformers
         for k, v in conformers.items():

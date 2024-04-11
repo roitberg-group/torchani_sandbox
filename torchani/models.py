@@ -241,11 +241,13 @@ class BuiltinModel(Module):
 
     def __getitem__(self, index: int) -> 'BuiltinModel':
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
-        return BuiltinModel(self.aev_computer,
-                           self.neural_networks[index],
-                           self.energy_shifter,
-                           self.get_chemical_symbols(),
-                           self.periodic_table_index)
+        return BuiltinModel(
+            self.aev_computer,
+            self.neural_networks[index],
+            self.energy_shifter,
+            self.get_chemical_symbols(),
+            self.periodic_table_index,
+        )
 
     @torch.jit.export
     def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
@@ -333,12 +335,15 @@ class BuiltinModel(Module):
         assert qbc_factors.shape == energies.shape
         return SpeciesEnergiesQBC(species, energies, qbc_factors)
 
-    def atomic_stdev(self, species_coordinates: Tuple[Tensor, Tensor],
-                    cell: Optional[Tensor] = None,
-                    pbc: Optional[Tensor] = None,
-                    average: bool = False,
-                    shift_energy: bool = False,
-                    unbiased: bool = True) -> AtomicStdev:
+    def atomic_stdev(
+        self,
+        species_coordinates: Tuple[Tensor, Tensor],
+        cell: Optional[Tensor] = None,
+        pbc: Optional[Tensor] = None,
+        average: bool = False,
+        shift_energy: bool = False,
+        unbiased: bool = True,
+    ) -> AtomicStdev:
         """
         Largely does the same thing as the atomic_energies function, but with a different set of default inputs.
         Returns standard deviation in atomic energy predictions across the ensemble.
@@ -384,11 +389,14 @@ class BuiltinModel(Module):
 
         return ForceMagnitudes(species, magnitudes)
 
-    def force_qbc(self, species_coordinates: Tuple[Tensor, Tensor],
-                   cell: Optional[Tensor] = None,
-                   pbc: Optional[Tensor] = None,
-                   average: bool = False,
-                   unbiased: bool = True) -> ForceStdev:
+    def force_qbc(
+        self,
+        species_coordinates: Tuple[Tensor, Tensor],
+        cell: Optional[Tensor] = None,
+        pbc: Optional[Tensor] = None,
+        average: bool = False,
+        unbiased: bool = True,
+    ) -> ForceStdev:
         """
         Returns the mean force magnitudes and relative range and standard deviation
         of predicted forces across an ensemble of networks.

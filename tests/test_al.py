@@ -88,11 +88,19 @@ class TestALQBC(TestALAtomic):
     def testForceMagnitudes(self):
         # NOTE: This test imperfectly checks that force_magnitudes works as it is intended to;
         #  however, dividing by the mean magnitude in near-equilibrium geometries can lead to issues
-        ch4_coord = torch.tensor([[[4.9725e-04, -2.3656e-02, -4.6554e-02],
-                            [-9.4934e-01, -4.6713e-01, -2.1225e-01],
-                            [-2.1828e-01, 6.4611e-01, 8.7319e-01],
-                            [3.7291e-01, 6.5190e-01, -6.9571e-01],
-                            [7.9173e-01, -6.8895e-01, 3.1410e-01]]], dtype=torch.double, device=self.device)
+        ch4_coord = torch.tensor(
+            [
+                [
+                    [4.9725e-04, -2.3656e-02, -4.6554e-02],
+                    [-9.4934e-01, -4.6713e-01, -2.1225e-01],
+                    [-2.1828e-01, 6.4611e-01, 8.7319e-01],
+                    [3.7291e-01, 6.5190e-01, -6.9571e-01],
+                    [7.9173e-01, -6.8895e-01, 3.1410e-01],
+                ]
+            ],
+            dtype=torch.double,
+            device=self.device,
+        )
         _, magnitudes = self.model.force_magnitudes((self.species, ch4_coord), average=False)
         _, _, _members_forces = self.model.members_forces((self.species, ch4_coord))
         _magnitudes = _members_forces.norm(dim=-1)
@@ -101,11 +109,19 @@ class TestALQBC(TestALAtomic):
     def testForceQBC(self):
         # NOTE: Same as above test case, checks that this works for asymmetrical geometry
         #  Also note that average=False for force_qbc and force_magnitudes
-        ch4_coord = torch.tensor([[[4.9725e-04, -2.3656e-02, -4.6554e-02],
-                            [-9.4934e-01, -4.6713e-01, -2.1225e-01],
-                            [-2.1828e-01, 6.4611e-01, 8.7319e-01],
-                            [3.7291e-01, 6.5190e-01, -6.9571e-01],
-                            [7.9173e-01, -6.8895e-01, 3.1410e-01]]], dtype=torch.double, device=self.device)
+        ch4_coord = torch.tensor(
+            [
+                [
+                    [4.9725e-04, -2.3656e-02, -4.6554e-02],
+                    [-9.4934e-01, -4.6713e-01, -2.1225e-01],
+                    [-2.1828e-01, 6.4611e-01, 8.7319e-01],
+                    [3.7291e-01, 6.5190e-01, -6.9571e-01],
+                    [7.9173e-01, -6.8895e-01, 3.1410e-01],
+                ]
+            ],
+            dtype=torch.double,
+            device=self.device,
+        )
         _, magnitudes, relative_stdev, relative_range = self.model.force_qbc((self.species, ch4_coord))
         _, _magnitudes = self.model.force_magnitudes((self.species, ch4_coord), average=False)
         _max_mag = _magnitudes.max(dim=0).values

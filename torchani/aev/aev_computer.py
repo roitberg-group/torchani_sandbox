@@ -82,22 +82,24 @@ class AEVComputer(torch.nn.Module):
     use_cuaev_interface: Final[bool]
     triu_index: Tensor
 
-    def __init__(self,
-                Rcr: Optional[float] = None,
-                Rca: Optional[float] = None,
-                EtaR: Optional[Tensor] = None,
-                ShfR: Optional[Tensor] = None,
-                EtaA: Optional[Tensor] = None,
-                Zeta: Optional[Tensor] = None,
-                ShfA: Optional[Tensor] = None,
-                ShfZ: Optional[Tensor] = None,
-                num_species: Optional[int] = None,
-                use_cuda_extension=False,
-                use_cuaev_interface=False,
-                cutoff_fn='cosine',
-                neighborlist='full_pairwise',
-                radial_terms='standard',
-                angular_terms='standard'):
+    def __init__(
+        self,
+        Rcr: Optional[float] = None,
+        Rca: Optional[float] = None,
+        EtaR: Optional[Tensor] = None,
+        ShfR: Optional[Tensor] = None,
+        EtaA: Optional[Tensor] = None,
+        Zeta: Optional[Tensor] = None,
+        ShfA: Optional[Tensor] = None,
+        ShfZ: Optional[Tensor] = None,
+        num_species: Optional[int] = None,
+        use_cuda_extension=False,
+        use_cuaev_interface=False,
+        cutoff_fn='cosine',
+        neighborlist='full_pairwise',
+        radial_terms='standard',
+        angular_terms='standard',
+    ):
 
         # due to legacy reasons num_species is a kwarg, but it should always be
         # provided

@@ -411,20 +411,24 @@ class CellList(BaseNeighborlist):
 
         # NOTE: "0" corresponds to [0, 0, 0], but I don't really need that for
         # vector indices only for translation displacements
-        vector_index_displacement = torch.tensor([[-1, 0, 0],  # 1
-                                                  [-1, -1, 0],  # 2
-                                                  [0, -1, 0],  # 3
-                                                  [1, -1, 0],  # 4
-                                                  [-1, 1, -1],  # 5
-                                                  [0, 1, -1],  # 6
-                                                  [1, 1, -1],  # 7
-                                                  [-1, 0, -1],  # 8
-                                                  [0, 0, -1],  # 9
-                                                  [1, 0, -1],  # 10
-                                                  [-1, -1, -1],  # 11
-                                                  [0, -1, -1],  # 12
-                                                  [1, -1, -1]],  # 13
-                                                  dtype=torch.long)
+        vector_index_displacement = torch.tensor(
+            [
+                [-1, 0, 0],  # 1
+                [-1, -1, 0],  # 2
+                [0, -1, 0],  # 3
+                [1, -1, 0],  # 4
+                [-1, 1, -1],  # 5
+                [0, 1, -1],  # 6
+                [1, 1, -1],  # 7
+                [-1, 0, -1],  # 8
+                [0, 0, -1],  # 9
+                [1, 0, -1],  # 10
+                [-1, -1, -1],  # 11
+                [0, -1, -1],  # 12
+                [1, -1, -1]  # 13
+            ],
+            dtype=torch.long,
+        )
         self.vector_index_displacement = vector_index_displacement
         # these are the translation displacement indices, used to displace the
         # image atoms
@@ -592,10 +596,12 @@ class CellList(BaseNeighborlist):
         neighbor_count = flat_bucket_count[neighbor_flat_indices]
         neighbor_cumcount = flat_bucket_cumcount[neighbor_flat_indices]
         neighbor_translation_types = self._get_neighbor_translation_types(neighbor_vector_indices)
-        lower, between_pairs_translation_types = self._get_lower_between_image_pairs(neighbor_count,
-                                                                               neighbor_cumcount,
-                                                                               max_in_bucket,
-                                                                               neighbor_translation_types)
+        lower, between_pairs_translation_types = self._get_lower_between_image_pairs(
+            neighbor_count,
+            neighbor_cumcount,
+            max_in_bucket,
+            neighbor_translation_types,
+        )
         neighborhood_count = neighbor_count.sum(-1).squeeze()
         upper = torch.repeat_interleave(imidx_from_atidx.squeeze(), neighborhood_count)
         assert lower.shape == upper.shape
@@ -609,9 +615,12 @@ class CellList(BaseNeighborlist):
         else:
             between_pairs_shift_indices = self.translation_displacement_indices.index_select(0, between_pairs_translation_types)
             assert between_pairs_shift_indices.shape[-1] == 3
-            within_pairs_shift_indices = torch.zeros(len(within_image_pairs[0]),
-                                                3,
-                                                device=between_pairs_shift_indices.device, dtype=torch.long)
+            within_pairs_shift_indices = torch.zeros(
+                len(within_image_pairs[0]),
+                3,
+                device=between_pairs_shift_indices.device,
+                dtype=torch.long,
+            )
             # -1 is necessary to ensure correct shifts
             shift_indices = -torch.cat((between_pairs_shift_indices, within_pairs_shift_indices), dim=0)
 
@@ -758,14 +767,12 @@ class CellList(BaseNeighborlist):
         fractional_coordinates[fractional_coordinates >= 1.0] += -1.0
         fractional_coordinates[fractional_coordinates < 0.0] += 1.0
 
-        assert not torch.isnan(fractional_coordinates).any(), \
-                "Some fractional coordinates are NaN."
-        assert not torch.isinf(fractional_coordinates).any(), \
-                "Some fractional coordinates are +-Inf."
+        assert not torch.isnan(fractional_coordinates).any(), "NaN in fract coords"
+        assert not torch.isinf(fractional_coordinates).any(), "Inf in fract coords"
         assert (fractional_coordinates < 1.0).all(), \
-            f"Some fractional coordinates are too large {fractional_coordinates[fractional_coordinates >= 1.]}"
+            f"Grater than 1 fract coords {fractional_coordinates[fractional_coordinates >= 1.]}"
         assert (fractional_coordinates >= 0.0).all(), \
-            f"Some coordinates are too small {fractional_coordinates.masked_select(fractional_coordinates < 0.)}"
+            f"Negative fract coords {fractional_coordinates.masked_select(fractional_coordinates < 0.)}"
         return fractional_coordinates
 
     def _fractional_to_vector_bucket_indices(self, fractional: Tensor) -> Tensor:
@@ -897,8 +904,11 @@ class CellList(BaseNeighborlist):
         # since masked_select is slow
         # y = torch.masked_select(x, mask) == y = x.view(-1).index_select(0, mask.view(-1).nonzero().squeeze())
         lower = padded_atom_neighbors.view(-1).index_select(0, mask.view(-1).nonzero().squeeze())
-        between_pairs_translation_types = neighbor_translation_types.view(-1)\
-                                          .index_select(0, mask.view(-1).nonzero().squeeze())
+        between_pairs_translation_types = (
+            neighbor_translation_types
+            .view(-1)
+            .index_select(0, mask.view(-1).nonzero().squeeze())
+        )
         return lower, between_pairs_translation_types
 
     def _get_bucket_indices(self, fractional_coordinates: Tensor) -> Tuple[Tensor, Tensor]:
@@ -947,9 +957,12 @@ class CellList(BaseNeighborlist):
             1, atoms, neighbors)
         return neighbor_translation_types
 
-    def _cache_values(self, atom_pairs: Tensor,
-                            shift_indices: Optional[Tensor],
-                            coordinates: Tensor):
+    def _cache_values(
+        self,
+        atom_pairs: Tensor,
+        shift_indices: Optional[Tensor],
+        coordinates: Tensor,
+    ):
 
         self.old_atom_pairs = atom_pairs.detach()
         if shift_indices is not None:

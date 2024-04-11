@@ -25,8 +25,11 @@ class TestCellList(TestCase):
             [[cut / 2, cut / 2, cut / 2],
              [cut / 2 + 0.1, cut / 2 + 0.1, cut / 2 + 0.1]]).unsqueeze(0)
         species = torch.tensor([0, 0]).unsqueeze(0)
-        species, coordinates, _ = tile_into_tight_cell((species, coordinates),
-                                                     fixed_displacement_size=cut, make_coordinates_positive=False)
+        species, coordinates, _ = tile_into_tight_cell(
+            (species, coordinates),
+            fixed_displacement_size=cut,
+            make_coordinates_positive=False,
+        )
         assert species.shape[1] == 54
         assert coordinates.shape[1] == 54
 
@@ -104,9 +107,11 @@ class TestCellList(TestCase):
         clist = self.clist
         clist._setup_variables(self.cell)
         atoms = vector_bucket_index_compare.shape[1]
-        flat = clist.vector_idx_to_flat[(vector_bucket_index_compare
-            + torch.ones(1, dtype=torch.long)).reshape(-1,
-                3).unbind(1)].reshape(1, atoms)
+        flat = clist.vector_idx_to_flat[
+            (
+                vector_bucket_index_compare + torch.ones(1, dtype=torch.long)
+            ).reshape(-1, 3).unbind(1)
+        ].reshape(1, atoms)
         self.assertTrue(clist.total_buckets == 27)
         flat_compare = torch.repeat_interleave(
             torch.arange(0, 27).to(torch.long), 2)
@@ -207,9 +212,12 @@ class TestCellList(TestCase):
                 [[cut / 2, cut / 2, cut / 2],
                  [cut / 2 + 0.1, cut / 2 + 0.1, cut / 2 + 0.1]]).unsqueeze(0)
             species = torch.tensor([0, 0]).unsqueeze(0)
-            species, coordinates, _ = tile_into_tight_cell((species, coordinates),
-                                                        fixed_displacement_size=cut,
-                                                        noise=0.1, make_coordinates_positive=False)
+            species, coordinates, _ = tile_into_tight_cell(
+                (species, coordinates),
+                fixed_displacement_size=cut,
+                noise=0.1,
+                make_coordinates_positive=False,
+            )
             self._check_neighborlists_consistency(coordinates, species)
 
     def testCellListIsConsistentRandomV2(self):
@@ -397,60 +405,67 @@ class TestCellListEnergiesCuda(TestCellListEnergies):
         self.num_to_test = 100
 
 
-vector_bucket_index_compare = torch.tensor([[[0, 0, 0],
-                                       [0, 0, 0],
-                                       [0, 0, 1],
-                                       [0, 0, 1],
-                                       [0, 0, 2],
-                                       [0, 0, 2],
-                                       [0, 1, 0],
-                                       [0, 1, 0],
-                                       [0, 1, 1],
-                                       [0, 1, 1],
-                                       [0, 1, 2],
-                                       [0, 1, 2],
-                                       [0, 2, 0],
-                                       [0, 2, 0],
-                                       [0, 2, 1],
-                                       [0, 2, 1],
-                                       [0, 2, 2],
-                                       [0, 2, 2],
-                                       [1, 0, 0],
-                                       [1, 0, 0],
-                                       [1, 0, 1],
-                                       [1, 0, 1],
-                                       [1, 0, 2],
-                                       [1, 0, 2],
-                                       [1, 1, 0],
-                                       [1, 1, 0],
-                                       [1, 1, 1],
-                                       [1, 1, 1],
-                                       [1, 1, 2],
-                                       [1, 1, 2],
-                                       [1, 2, 0],
-                                       [1, 2, 0],
-                                       [1, 2, 1],
-                                       [1, 2, 1],
-                                       [1, 2, 2],
-                                       [1, 2, 2],
-                                       [2, 0, 0],
-                                       [2, 0, 0],
-                                       [2, 0, 1],
-                                       [2, 0, 1],
-                                       [2, 0, 2],
-                                       [2, 0, 2],
-                                       [2, 1, 0],
-                                       [2, 1, 0],
-                                       [2, 1, 1],
-                                       [2, 1, 1],
-                                       [2, 1, 2],
-                                       [2, 1, 2],
-                                       [2, 2, 0],
-                                       [2, 2, 0],
-                                       [2, 2, 1],
-                                       [2, 2, 1],
-                                       [2, 2, 2],
-                                       [2, 2, 2]]], dtype=torch.long)
+vector_bucket_index_compare = torch.tensor(
+    [
+        [
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 0, 1],
+            [0, 0, 1],
+            [0, 0, 2],
+            [0, 0, 2],
+            [0, 1, 0],
+            [0, 1, 0],
+            [0, 1, 1],
+            [0, 1, 1],
+            [0, 1, 2],
+            [0, 1, 2],
+            [0, 2, 0],
+            [0, 2, 0],
+            [0, 2, 1],
+            [0, 2, 1],
+            [0, 2, 2],
+            [0, 2, 2],
+            [1, 0, 0],
+            [1, 0, 0],
+            [1, 0, 1],
+            [1, 0, 1],
+            [1, 0, 2],
+            [1, 0, 2],
+            [1, 1, 0],
+            [1, 1, 0],
+            [1, 1, 1],
+            [1, 1, 1],
+            [1, 1, 2],
+            [1, 1, 2],
+            [1, 2, 0],
+            [1, 2, 0],
+            [1, 2, 1],
+            [1, 2, 1],
+            [1, 2, 2],
+            [1, 2, 2],
+            [2, 0, 0],
+            [2, 0, 0],
+            [2, 0, 1],
+            [2, 0, 1],
+            [2, 0, 2],
+            [2, 0, 2],
+            [2, 1, 0],
+            [2, 1, 0],
+            [2, 1, 1],
+            [2, 1, 1],
+            [2, 1, 2],
+            [2, 1, 2],
+            [2, 2, 0],
+            [2, 2, 0],
+            [2, 2, 1],
+            [2, 2, 1],
+            [2, 2, 2],
+            [2, 2, 2],
+        ]
+    ],
+    dtype=torch.long,
+)
 
 
 if __name__ == '__main__':

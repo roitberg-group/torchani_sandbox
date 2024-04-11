@@ -23,8 +23,9 @@ class TestGrad(TestCase):
         self.device = torch.device(
             'cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.model = torchani.models.ANI1x(model_index=0, periodic_table_index=False).to(device=self.device,
-                                                             dtype=torch.double)
+        self.model = torchani.models.ANI1x(model_index=0, periodic_table_index=False).to(
+            device=self.device, dtype=torch.double
+        )
         datafile = os.path.join(path, 'test_data/NIST/all')
 
         # Some small molecules are selected to make the tests faster

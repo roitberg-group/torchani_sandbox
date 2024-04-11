@@ -22,8 +22,12 @@ dyn = ase.md.verlet.VelocityVerlet(molecule, timestep=1 * ase.units.fs)
 dyn.run(1000)  # warm up
 
 # enable timers
-fn_to_time_aev = ['_compute_radial_aev', '_compute_angular_aev',
-                         '_compute_aev', '_triple_by_molecule']
+fn_to_time_aev = [
+    "_compute_radial_aev",
+    "_compute_angular_aev",
+    "_compute_aev",
+    "_triple_by_molecule",
+]
 fn_to_time_neighborlist = ['forward']
 
 aev_computer = model.aev_computer
