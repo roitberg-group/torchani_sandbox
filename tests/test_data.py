@@ -575,7 +575,7 @@ class TestANIDataset(TestCase):
         for k in ('H6', 'O6', 'C6'):
             ds.append_conformers(k, new_groups[k])
         self.assertTrue(ds.present_elements(chem_symbols=True), ['C', 'H', 'O'])
-        with self.assertRaisesRegex(ValueError, 'Either species or numbers'):
+        with self.assertRaisesRegex(RuntimeError, 'Either species or numbers'):
             ds.delete_properties({'species'})
             ds.present_elements()
 
