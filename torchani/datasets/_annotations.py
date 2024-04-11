@@ -13,6 +13,7 @@ if sys.version_info[:2] < (3, 7):
     DTypeLike = dtype
 else:
     from numpy import typing as numpy_typing
+
     DTypeLike = numpy_typing.DTypeLike
 
 # If typing_extensions is supported we can use Self, which is much better for
@@ -21,7 +22,7 @@ try:
 except ImportError:
     Self = tp.Any  # type: ignore
 
-_MutMapSubtype = tp.TypeVar('_MutMapSubtype', bound=tp.MutableMapping[str, Tensor])
+_MutMapSubtype = tp.TypeVar("_MutMapSubtype", bound=tp.MutableMapping[str, Tensor])
 
 # Transform = Callable[[MutableMapping[str, Tensor]], MutableMapping[str, Tensor]]
 Transform = tp.Callable[[_MutMapSubtype], _MutMapSubtype]
