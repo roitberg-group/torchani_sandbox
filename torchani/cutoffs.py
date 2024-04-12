@@ -42,12 +42,12 @@ class CutoffSmooth(Cutoff):
         return torch.exp(e)
 
 
-def _parse_cutoff_fn(cutoff_fn: tp.Union[str, Cutoff]) -> torch.nn.Module:
+def _parse_cutoff_fn(cutoff_fn: tp.Union[str, Cutoff]) -> Cutoff:
     if cutoff_fn == 'dummy':
         cutoff_fn = CutoffDummy()
     elif cutoff_fn == 'cosine':
         cutoff_fn = CutoffCosine()
-    elif cutoff_fn in ['smooth', 'smooth2']:
+    elif cutoff_fn in ('smooth', 'smooth2'):
         cutoff_fn = CutoffSmooth(order=2)
     elif cutoff_fn == 'smooth4':
         cutoff_fn = CutoffSmooth(order=4)
