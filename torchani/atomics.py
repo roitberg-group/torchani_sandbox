@@ -88,7 +88,7 @@ def like_dr(
     r"""Makes an atomic network. The defaults are the ones used in the ANI-dr model"""
     dims_for_atoms = {
         'H': (feat_dim, 256, 192, 160),
-        'C': (feat_dim, 224, 192, 160),
+        'C': (feat_dim, 256, 192, 160),
         'N': (feat_dim, 192, 160, 128),
         'O': (feat_dim, 192, 160, 128),
         'S': (feat_dim, 160, 128, 96),
