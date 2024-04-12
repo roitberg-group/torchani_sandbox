@@ -189,7 +189,9 @@ class BuiltinModel(Module):
                         cell: tp.Optional[Tensor] = None,
                         pbc: tp.Optional[Tensor] = None,
                         average: bool = True,
-                        shift_energy: bool = True) -> SpeciesEnergies:
+                        shift_energy: bool = True,
+                        include_non_aev_potentials: bool = True,
+                        ) -> SpeciesEnergies:
         """Calculates predicted atomic energies of all atoms in a molecule
 
         Args:
@@ -469,7 +471,8 @@ class BuiltinModelPairInteractions(BuiltinModel):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
         average: bool = True,
-        shift_energy: bool = True
+        shift_energy: bool = True,
+        include_non_aev_potentials: bool = True,
     ) -> SpeciesEnergies:
         assert isinstance(self.neural_networks, (Ensemble, ANIModel))
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
@@ -485,6 +488,8 @@ class BuiltinModelPairInteractions(BuiltinModel):
             device=coordinates.device
         )
         for pot in self.potentials:
+            if not isinstance(pot, AEVPotential) and not include_non_aev_potentials:
+                continue
             if pot.cutoff < previous_cutoff:
                 neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
