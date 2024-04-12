@@ -363,23 +363,6 @@ class Assembler:
         )
 
 
-def atomics_like_dr(atom: str = "H"):
-    dims_for_atoms = {
-        "H": (1008, 256, 192, 160),
-        "C": (1008, 256, 192, 160),
-        "N": (1008, 192, 160, 128),
-        "O": (1008, 192, 160, 128),
-        "S": (1008, 160, 128, 96),
-        "F": (1008, 160, 128, 96),
-        "Cl": (1008, 160, 128, 96),
-    }
-    return atomics.standard(
-        dims_for_atoms[atom],
-        activation=torch.nn.GELU(),
-        bias=False,
-    )
-
-
 def ANI1x(
     pretrained: bool = True,
     neighborlist: str = "full_pairwise",
@@ -463,7 +446,7 @@ def ANIdr(
         radial_terms=StandardRadial.like_2x(),
         cuda_ops=cuda_ops,
     )
-    asm.atomic_networks_from_fn(atomics_like_dr)
+    asm.atomic_networks_from_fn(atomics.like_dr)
     asm.add_pairwise_potential(
         RepulsionXTB,
         cutoff=5.3,
@@ -495,7 +478,7 @@ def FlexibleANI(
     neighborlist: str = "full_pairwise",
     dispersion: bool = True,
     repulsion: bool = True,
-    atomic_maker: tp.Callable[[str], torch.nn.Module] = atomics_like_dr,
+    atomic_maker: tp.Callable[[str], torch.nn.Module] = atomics.like_dr,
     cuda_ops: bool = False,
 ) -> BuiltinModel:
     asm = Assembler(ensemble_size=ensemble_size)
