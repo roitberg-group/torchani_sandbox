@@ -1,15 +1,16 @@
+import typing_extensions as tpx
+import typing as tp
 import json
 import shutil
 from os import fspath
 import tempfile
 from pathlib import Path
-from typing import Iterator, Set, Union, Tuple, Dict, Iterable, Any, Optional, List
 from collections import OrderedDict
 
 import numpy as np
 
-from torchani.datasets._annotations import StrPath
-from .interface import _Store, _StoreWrapper, _ConformerGroup, CacheHolder, _FileOrDirLocation
+from torchani.datasets._annotations import StrPath, Self
+from .interface import _StoreWrapper, _ConformerGroup, CacheHolder, _FileOrDirLocation
 from .zarr_impl import _ZarrTemporaryLocation
 
 
@@ -49,8 +50,8 @@ def _to_dict_cudf(df, **kwargs):
 
 class _PqLocation(_FileOrDirLocation):
     def __init__(self, root: StrPath):
-        self._meta_location: Optional[Path] = None
-        self._pq_location: Optional[Path] = None
+        self._meta_location: tp.Optional[Path] = None
+        self._pq_location: tp.Optional[Path] = None
         super().__init__(root, '.pqdir', 'dir')
 
     @property
@@ -106,20 +107,29 @@ class _PqLocation(_FileOrDirLocation):
 
 
 class DataFrameAdaptor:
-    def __init__(self, df=None):
+    def __init__(self, df: tp.Optional[tp.Union["pandas.DataFrame", "cudf.DataFrame"]] = None):
         self._df = df
-        self.attrs = dict()
-        self.mode: Optional[str] = None
+        self.attrs: tp.Dict[str, tp.Any] = dict()
+        self.mode: tp.Optional[str] = None
         self._is_dirty = False
         self._meta_is_dirty = False
 
     def __getattr__(self, k):
+        if self._df is None:
+            raise RuntimeError("Data frame was not opened")
         return getattr(self._df, k)
 
     def __getitem__(self, k):
+        if self._df is None:
+            raise RuntimeError("Data frame was not opened")
         return self._df[k]
 
+    def __enter__(self) -> tpx.Self:
+        return self
+
     def __setitem__(self, k, v):
+        if self._df is None:
+            raise RuntimeError("Data frame was not opened")
         self._df[k] = v
 
 
@@ -128,11 +138,11 @@ class _PqTemporaryLocation(_ZarrTemporaryLocation):
         self._tmp_location = tempfile.TemporaryDirectory(suffix='.pqdir')
 
 
-class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
-    def __init__(self, store_location: StrPath, use_cudf: bool = False, dummy_properties: Dict[str, Any] = None):
+class _PqStore(_StoreWrapper[tp.Union["pandas.DataFrame", "cudf.DataFrame"]]):
+    def __init__(self, store_location: StrPath, use_cudf: bool = False, dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None):
         super().__init__(dummy_properties=dummy_properties)
         self.location = _PqLocation(store_location)
-        self._queued_appends: List[Union["pandas.DataFrame", "cudf.DataFrame"]] = []
+        self._queued_appends: tp.List[tp.Union["pandas.DataFrame", "cudf.DataFrame"]] = []
         if use_cudf:
             self._engine = cudf
             self._to_dict = _to_dict_cudf
@@ -162,7 +172,7 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
 
     def update_cache(self,
                      check_properties: bool = False,
-                     verbose: bool = True) -> Tuple['OrderedDict[str, int]', Set[str]]:
+                     verbose: bool = True) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
         cache = CacheHolder()
         try:
             group_sizes_df = self._store['group'].value_counts().sort_index()
@@ -174,7 +184,7 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
         return cache.group_sizes, cache.properties.union(self._dummy_properties)
 
     @classmethod
-    def make_empty(cls, store_location: StrPath, grouping: str, **kwargs) -> '_Store':
+    def make_empty(cls, store_location: StrPath, grouping: str = "by_formula", **kwargs) -> Self:
         root = Path(store_location).resolve()
         root.mkdir(exist_ok=True)
         assert not list(root.iterdir()), "location is not empty"
@@ -186,7 +196,7 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
         return cls(store_location, **kwargs)
 
     # File-like
-    def open(self, mode: str = 'r', only_meta: bool = False) -> '_Store':
+    def open(self, mode: str = 'r', only_meta: bool = False) -> Self:
         if not only_meta:
             self._store_obj = DataFrameAdaptor(self._engine.read_parquet(self.location.pq))
         else:
@@ -202,7 +212,7 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
         self._store_obj.mode = mode
         return self
 
-    def close(self) -> '_Store':
+    def close(self) -> Self:
         if self._queued_appends:
             self.execute_queued_appends()
         if self._store._is_dirty:
@@ -252,8 +262,8 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
         meta = self._store_obj.attrs
         mode = self._store_obj.mode
         self._store_obj = DataFrameAdaptor(self._engine.concat([self._store._df] + self._queued_appends))
-        self._store.attrs = meta
-        self._store.mode = mode
+        self._store_obj.attrs = meta
+        self._store_obj.mode = mode
         self._store._is_dirty = True
         self._store._meta_is_dirty = True
         self._queued_appends = []
@@ -265,16 +275,16 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
         meta = self._store_obj.attrs
         mode = self._store_obj.mode
         meta_is_dirty = self._store_obj._meta_is_dirty
-        self._store_obj = self._store[self._store['group'] != name]
-        self._store.attrs = meta
-        self._store.mode = mode
+        self._store_obj = DataFrameAdaptor(self._store[self._store['group'] != name])
+        self._store_obj.attrs = meta
+        self._store_obj.mode = mode
         self._store._meta_is_dirty = meta_is_dirty
         self._store._is_dirty = True
 
     def __len__(self) -> int:
         return len(self._store['group'].unique())
 
-    def __iter__(self) -> Iterator[str]:
+    def __iter__(self) -> tp.Iterator[str]:
         keys = self._store['group'].unique().tolist()
         keys.sort()
         return iter(keys)
@@ -292,11 +302,11 @@ class _PqStore(_StoreWrapper[Union["pandas.DataFrame", "cudf.DataFrame"]]):
         self._store._meta_is_dirty = True
         self._store._is_dirty = True
 
-    def rename_direct(self, old_new_dict: Dict[str, str]) -> None:
+    def rename_direct(self, old_new_dict: tp.Dict[str, str]) -> None:
         self._store.rename(columns=old_new_dict, inplace=True)
         self._store._is_dirty = True
 
-    def delete_direct(self, properties: Iterable[str]) -> None:
+    def delete_direct(self, properties: tp.Iterable[str]) -> None:
         self._store.drop(labels=list(properties), inplace=True, axis='columns')
         if self._store.columns.tolist() == ['group']:
             self._store.drop(labels=['group'], inplace=True, axis='columns')

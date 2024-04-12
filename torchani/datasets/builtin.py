@@ -286,9 +286,9 @@ of GDB-10to13 were recalculated using ORCA 5.0 instead of 4.2 so the
 integration grids may be slightly different, but the difference should not be
 significant.
 """
+import typing as tp
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any, List
 from collections import OrderedDict
 
 import yaml
@@ -306,15 +306,15 @@ with open(_DATASETS_YAML_PATH, mode="rt", encoding="utf-8") as f:
     _BUILTIN_DATASETS_SPEC = yaml.safe_load(f)
 
 # Convert csv file with format "file_name, MD5-hash" into a dictionary
-_MD5S: Dict[str, str] = dict()
+_MD5S: tp.Dict[str, str] = dict()
 with open(Path(__file__).resolve().parent / "md5s.csv") as f:
     lines = f.readlines()
     for line in lines[1:]:
         file_, md5 = line.split(',')
         _MD5S[file_.strip()] = md5.strip()
 
-_BUILTIN_DATASETS: List[str] = list(_BUILTIN_DATASETS_SPEC.keys())
-_BUILTIN_DATASETS_LOT: List[str] = list(
+_BUILTIN_DATASETS: tp.List[str] = list(_BUILTIN_DATASETS_SPEC.keys())
+_BUILTIN_DATASETS_LOT: tp.List[str] = list(
     {
         lot for name in _BUILTIN_DATASETS_SPEC.keys()
         for lot in _BUILTIN_DATASETS_SPEC[name]["lot"]
@@ -352,10 +352,11 @@ def download_builtin_dataset(dataset: str, lot: str, root=None):
 
 
 def _check_files_integrity(
-    files_and_md5s: 'OrderedDict[str, str]',
+    files_and_md5s: tp.OrderedDict[str, str],
     root: Path,
     suffix: str = ".h5",
     name: str = "Dataset",
+    skip_hash_check: bool = False,
 ) -> None:
     # Checks that:
     # (1) There are files in the dataset
@@ -373,6 +374,8 @@ def _check_files_integrity(
             f"Wrong files found for dataset {name} in provided path,"
             f" expected {expected_file_names} but found {present_file_names}"
         )
+    if skip_hash_check:
+        return
     for f in tqdm(present_files, desc=f'Checking integrity of dataset {name}'):
         if not _check_integrity(f, files_and_md5s[f.name]):
             raise RuntimeError(
@@ -401,12 +404,13 @@ def _register_dataset_builder(name: str) -> None:
     default_fn, default_basis = _BUILTIN_DATASETS_SPEC[name]["default-lot"].split("-")
 
     def builder(
-        root: Optional[StrPath] = None,
+        root: tp.Optional[StrPath] = None,
         functional: str = default_fn,
         basis_set: str = default_basis,
         verbose: bool = True,
         download: bool = True,
-        dummy_properties: Optional[Dict[str, Any]] = None
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        skip_check: bool = False,
     ) -> ANIDataset:
         lot = f"{functional}-{basis_set}".lower()
         try:
@@ -432,7 +436,7 @@ def _register_dataset_builder(name: str) -> None:
             )
 
         # Check for corruption
-        _check_files_integrity(_files_and_md5s, _root, suffix, name)
+        _check_files_integrity(_files_and_md5s, _root, suffix, name, skip_hash_check=skip_check)
 
         # Order dataset paths using the order given in "files and md5s"
         filenames_order = {
