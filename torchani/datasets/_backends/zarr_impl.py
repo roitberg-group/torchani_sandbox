@@ -1,12 +1,11 @@
+import typing as tp
 import tempfile
 from pathlib import Path
-from typing import ContextManager, Optional, Dict, Any
-from collections import OrderedDict  # noqa F401
 
 import numpy as np
 
-from torchani.datasets._annotations import StrPath
-from .interface import _Store, _ConformerGroup, _ConformerWrapper, _HierarchicalStoreWrapper
+from torchani.datasets._annotations import StrPath, Self
+from .interface import _ConformerGroup, _ConformerWrapper, _HierarchicalStoreWrapper
 
 try:
     import zarr  # noqa
@@ -15,7 +14,7 @@ except ImportError:
     _ZARR_AVAILABLE = False
 
 
-class _ZarrTemporaryLocation(ContextManager[StrPath]):
+class _ZarrTemporaryLocation(tp.ContextManager[StrPath]):
     def __init__(self) -> None:
         self._tmp_location = tempfile.TemporaryDirectory(suffix='.zarr')
 
@@ -28,18 +27,18 @@ class _ZarrTemporaryLocation(ContextManager[StrPath]):
 
 
 class _ZarrStore(_HierarchicalStoreWrapper["zarr.Group"]):
-    def __init__(self, store_location: StrPath, dummy_properties: Dict[str, Any]):
+    def __init__(self, store_location: StrPath, dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None):
         super().__init__(store_location, '.zarr', 'dir', dummy_properties=dummy_properties)
-        self._mode: Optional[str] = None
+        self._mode: tp.Optional[str] = None
 
     @classmethod
-    def make_empty(cls, store_location: StrPath, grouping: str, **kwargs) -> '_Store':
+    def make_empty(cls, store_location: StrPath, grouping: str = "by_formula", **kwargs) -> Self:
         store = zarr.storage.DirectoryStore(store_location)
         with zarr.hierarchy.group(store=store, overwrite=True) as g:
             g.attrs['grouping'] = grouping
         return cls(store_location, **kwargs)
 
-    def open(self, mode: str = 'r', only_meta: bool = False) -> '_Store':
+    def open(self, mode: str = 'r', only_meta: bool = False) -> Self:
         store = zarr.storage.DirectoryStore(self.location.root)
         self._store_obj = zarr.hierarchy.open_group(store, mode)
         setattr(self._store_obj, 'mode', mode)

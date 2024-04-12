@@ -1,5 +1,4 @@
-from typing import (Union, Optional, Dict, Sequence, Iterator, Tuple, List, Set,
-                Mapping, Any, Iterable, Callable, cast)
+import typing as tp
 import inspect
 import pickle
 import warnings
@@ -17,7 +16,7 @@ from torch import Tensor
 import numpy as np
 
 from torchani.utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm, PADDING
-from torchani.datasets._backends import _H5PY_AVAILABLE, _Store, StoreFactory, TemporaryLocation, _ConformerWrapper, _SUFFIXES
+from torchani.datasets._backends import _H5PY_AVAILABLE, _StoreWrapper, StoreFactory, TemporaryLocation, _ConformerWrapper, _SUFFIXES
 from torchani.datasets._annotations import Transform, Conformers, NumpyConformers, MixedConformers, StrPath, DTypeLike, IdxLike
 
 if _H5PY_AVAILABLE:
@@ -38,6 +37,7 @@ _ALWAYS_STRING_PATTERNS = {r"^_id$", r"^smiles_.*", r"^inchis_.*", r"^lot$", r"^
 # correctly. If grouping is "legacy" and these are found we give up and ask the
 # user to delete them in a warning
 _LEGACY_BROKEN_KEYS = {'coordinatesHE', 'energiesHE', 'smiles'}
+# The second dimension of these keys is the number of atoms in the structure
 _ATOMIC_KEYS = (
     "species",
     "numbers",
@@ -51,7 +51,7 @@ _ATOMIC_KEYS = (
 
 
 # Helper functions
-def _get_any_element_key(properties: Iterable[str]):
+def _get_any_element_key(properties: tp.Iterable[str]):
     properties = {properties} if isinstance(properties, str) else set(properties)
     if 'species' in properties:
         return 'species'
@@ -62,14 +62,14 @@ def _get_any_element_key(properties: Iterable[str]):
             raise ValueError("Either species or numbers must be present in conformers") from None
 
 
-def _get_formulas(conformers: NumpyConformers) -> List[str]:
+def _get_formulas(conformers: NumpyConformers) -> tp.List[str]:
     elements = conformers[_get_any_element_key(conformers.keys())]
     if issubclass(elements.dtype.type, np.integer):
         elements = _numbers_to_symbols(elements)
     return species_to_formula(elements)
 
 
-def _get_dim_size(conformers: NumpyConformers, common_keys: Set[str], dim: int) -> int:
+def _get_dim_size(conformers: NumpyConformers, common_keys: tp.Set[str], dim: int) -> int:
     # Tries to get dimension size from one of the "common keys" that have the dimension
     present_keys = common_keys.intersection(conformers.keys())
     try:
@@ -85,13 +85,13 @@ _get_num_atoms = partial(_get_dim_size, common_keys={'coordinates', 'coord', 'fo
 _get_num_conformers = partial(_get_dim_size, common_keys={'coordinates', 'coord', 'forces', 'energies'}, dim=0)
 
 
-def _to_strpath_list(obj: Union[Iterable[StrPath], StrPath]) -> List[StrPath]:
+def _to_strpath_list(obj: tp.Union[tp.Iterable[StrPath], StrPath]) -> tp.List[StrPath]:
     try:
-        # This will raise an exception if obj is Iterable[StrPath]
+        # This will raise an exception if obj is tp.Iterable[StrPath]
         list_ = [fspath(obj)]  # type: ignore
     except TypeError:
         list_ = [o for o in obj]  # type: ignore
-    return cast(List[StrPath], list_)
+    return tp.cast(tp.List[StrPath], list_)
 
 
 # convert to / from symbols and atomic numbers properties
@@ -102,14 +102,14 @@ _numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
 
     _SUFFIXES_AND_FORMATS = {'.npz': 'numpy', '.h5': 'hdf5', '.pkl': 'pickle'}
-    _batch_paths: Optional[List[Path]]
+    _batch_paths: tp.Optional[tp.List[Path]]
 
-    def __init__(self, store_dir: Optional[StrPath] = None,
-                       batches: Optional[List[Conformers]] = None,
-                       file_format: Optional[str] = None,
+    def __init__(self, store_dir: tp.Optional[StrPath] = None,
+                       batches: tp.Optional[tp.List[Conformers]] = None,
+                       file_format: tp.Optional[str] = None,
                        split: str = 'training',
-                       transform: Optional[Transform] = None,
-                       properties: Optional[Sequence[str]] = None,
+                       transform: tp.Optional[Transform] = None,
+                       properties: tp.Optional[tp.Sequence[str]] = None,
                        drop_last: bool = False):
         # (store_dir or file_format or transform) and batches are mutually
         # exclusive options, batches is passed if the dataset directly lives in
@@ -120,7 +120,7 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
         self.split = split
         self.properties = properties
         self.transform = self._identity if transform is None else transform
-        container: Union[List[Path], List[Conformers]]
+        container: tp.Union[tp.List[Path], tp.List[Conformers]]
         if not batches:
             if store_dir is None:
                 raise ValueError("One of batches or store_dir must be specified")
@@ -149,7 +149,7 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
         batch = self[idx]
         return batch[next(iter(batch.keys()))].shape[0]
 
-    def _get_batch_paths(self, batches_dir: Path) -> List[Path]:
+    def _get_batch_paths(self, batches_dir: Path) -> tp.List[Path]:
         # We assume batch names are prefixed by a zero-filled number so that
         # sorting alphabetically sorts batch numbers
         try:
@@ -171,7 +171,7 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
 
     # We use pickle or numpy or hdf5 since saving in
     # pytorch format is extremely slow
-    def _get_batch_extractor(self, suffix: str, file_format: Optional[str] = None) -> Callable[[int], Conformers]:
+    def _get_batch_extractor(self, suffix: str, file_format: tp.Optional[str] = None) -> tp.Callable[[int], Conformers]:
         if file_format is None:
             try:
                 file_format = self._SUFFIXES_AND_FORMATS[suffix]
@@ -242,21 +242,21 @@ class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
 
 
 # Base class for ANIDataset and _ANISubdataset
-class _ANIDatasetBase(Mapping[str, Conformers]):
+class _ANIDatasetBase(tp.Mapping[str, Conformers]):
     def __init__(self, *args, **kwargs) -> None:
         # "properties" is read only, needed for validation of inputs, it may
         # change if a property is renamed or deleted. num_conformers and
         # num_conformer_groups are all calculated on the fly to guarantee
         # synchronization with "group_sizes".
-        self._group_sizes: 'OrderedDict[str, int]' = OrderedDict()
-        self._properties: Set[str] = set()
+        self._group_sizes: tp.OrderedDict[str, int] = OrderedDict()
+        self._properties: tp.Set[str] = set()
 
     @property
-    def group_sizes(self) -> 'OrderedDict[str, int]':
+    def group_sizes(self) -> tp.OrderedDict[str, int]:
         return self._group_sizes.copy()
 
     @property
-    def properties(self) -> Set[str]:
+    def properties(self) -> tp.Set[str]:
         return self._properties
 
     @property
@@ -272,15 +272,15 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
         raise NotImplementedError
 
     def __getitem__(self, key: str) -> Conformers:
-        return cast(Conformers, getattr(self, 'get_conformers')(key))
+        return tp.cast(Conformers, getattr(self, 'get_conformers')(key))
 
     def __len__(self) -> int:
         return self.num_conformer_groups
 
-    def __iter__(self) -> Iterator[str]:
+    def __iter__(self) -> tp.Iterator[str]:
         return iter(self._group_sizes.keys())
 
-    def numpy_items(self, limit: float = math.inf, **kwargs) -> Iterator[Tuple[str, NumpyConformers]]:
+    def numpy_items(self, limit: float = math.inf, **kwargs) -> tp.Iterator[tp.Tuple[str, NumpyConformers]]:
         count = 0
         for group_name in self.keys():
             count += 1
@@ -288,11 +288,11 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
             if count >= limit:
                 return
 
-    def numpy_values(self, **kwargs) -> Iterator[NumpyConformers]:
+    def numpy_values(self, **kwargs) -> tp.Iterator[NumpyConformers]:
         for k, v in self.numpy_items(**kwargs):
             yield v
 
-    def chunked_items(self, max_size: int = 2500, limit: float = math.inf, **kwargs) -> Iterator[Tuple[str, int, MixedConformers]]:
+    def chunked_items(self, max_size: int = 2500, limit: float = math.inf, **kwargs) -> tp.Iterator[tp.Tuple[str, int, MixedConformers]]:
         r"""Sequentially iterate over chunked pieces of the dataset with a maximum size
 
         The iteration is "chunked" into pieces, so instead of yielding groups
@@ -306,10 +306,14 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
 
         "limit" limits the number of output chunks to that number and then stops iteration
         (iteration is still sequential, not random).
+
+        The second element in the yielded tuple is the cumulative conformer count
+        previous to the yielded tuple.
         """
         getter = kwargs.pop('getter', 'get_conformers')
-        count = 0
+        chunk_count = 0
         for group_name in self.keys():
+            cumulative_conformer_count = 0
             conformers = getattr(self, getter)(group_name, **kwargs)
             any_key = next(iter(conformers.keys()))
             keys_copy = list(conformers.keys())
@@ -322,16 +326,18 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
                 splitted_conformers.update({k: splits})
             num_chunks = len(splitted_conformers[any_key])
             for j in range(num_chunks):
-                count += 1
-                yield group_name, j, {k: v[j] for k, v in splitted_conformers.items()}
-                if count >= limit:
+                chunk_count += 1
+                chunk_to_yield = {k: v[j] for k, v in splitted_conformers.items()}
+                yield group_name, cumulative_conformer_count, chunk_to_yield
+                cumulative_conformer_count += len(chunk_to_yield[any_key])
+                if chunk_count >= limit:
                     return
 
-    def chunked_numpy_items(self, **kwargs) -> Iterator[Tuple[str, int, MixedConformers]]:
+    def chunked_numpy_items(self, **kwargs) -> tp.Iterator[tp.Tuple[str, int, MixedConformers]]:
         kwargs.update({'getter': 'get_numpy_conformers'})
         yield from self.chunked_items(**kwargs)
 
-    def iter_key_idx_conformers(self, limit: float = math.inf, **kwargs) -> Iterator[Tuple[str, int, Conformers]]:
+    def iter_key_idx_conformers(self, limit: float = math.inf, **kwargs) -> tp.Iterator[tp.Tuple[str, int, Conformers]]:
         kwargs = kwargs.copy()
         getter = kwargs.pop('getter', 'get_conformers')
         count = 0
@@ -344,15 +350,15 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
                 if count >= limit:
                     return
 
-    def iter_key_idx_numpy_conformers(self, **kwargs) -> Iterator[Tuple[str, int, Conformers]]:
+    def iter_key_idx_numpy_conformers(self, **kwargs) -> tp.Iterator[tp.Tuple[str, int, Conformers]]:
         kwargs.update({'getter': 'get_numpy_conformers'})
         yield from self.iter_key_idx_conformers(**kwargs)
 
-    def iter_conformers(self, **kwargs) -> Iterator[Conformers]:
+    def iter_conformers(self, **kwargs) -> tp.Iterator[Conformers]:
         for _, _, c in self.iter_key_idx_conformers(**kwargs):
             yield c
 
-    def iter_numpy_conformers(self, **kwargs) -> Iterator[Conformers]:
+    def iter_numpy_conformers(self, **kwargs) -> tp.Iterator[Conformers]:
         for _, _, c in self.iter_key_idx_numpy_conformers(**kwargs):
             yield c
 
@@ -360,7 +366,7 @@ class _ANIDatasetBase(Mapping[str, Conformers]):
 # Decorators for ANISubdataset:
 # Decorator that wraps functions that modify the dataset in place. Makes
 # sure that cache updating happens after dataset modification
-def _needs_cache_update(method: Callable[..., '_ANISubdataset']) -> Callable[..., '_ANISubdataset']:
+def _needs_cache_update(method: tp.Callable[..., '_ANISubdataset']) -> tp.Callable[..., '_ANISubdataset']:
     @wraps(method)
     def method_with_cache_update(ds: '_ANISubdataset', *args, **kwargs) -> '_ANISubdataset':
         ds = method(ds, *args, **kwargs)
@@ -395,55 +401,60 @@ def _delegate_with_return(method):
 # used for directories with npz files, or other backends. It should never ever
 # be used directly by user code.
 class _ANISubdataset(_ANIDatasetBase):
-    def __init__(self,
-                 store_location: StrPath,
-                 create: bool = False,
-                 grouping: str = None,
-                 backend: Optional[str] = None,
-                 verbose: bool = True,
-                 dummy_properties: Dict[str, Any] = None,
-                 use_cudf: bool = False):
+    def __init__(
+        self,
+        store_location: StrPath,
+        create: bool = False,
+        grouping: tp.Optional[str] = None,
+        backend: tp.Optional[str] = None,
+        verbose: bool = True,
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        use_cudf: bool = False,
+        _force_overwrite: bool = False,
+    ):
         # dummy_properties must be a dict of the form
         # {'name': {'dtype': dtype, 'is_atomic': is_atomic, 'extra_dims': extra_dims, 'fill_value': fill_value}, ...}
         # with one or more dummy properties. These will be created on the fly only if they are not
         # present in the dataset already.
-        super().__init__()
-        self._store = StoreFactory(store_location, backend, grouping, create, dummy_properties, use_cudf=use_cudf)
-        # we StoreFactory monkey patches all stores with "backend" attribute
-        self._backend = self._store.backend  # type: ignore
-        self._possible_nonbatch_properties: Set[str]
         if create:
-            self._possible_nonbatch_properties = set()
+            warnings.warn(
+                "'create' should not be specified, datasets are automatically created if the underlying file/dir doesn't exist"
+            )
+        super().__init__()
+        self._store = StoreFactory(store_location, backend, grouping, dummy_properties, use_cudf=use_cudf, _force_overwrite=_force_overwrite)
+        # StoreFactory monkey patches all stores with "backend" attribute
+        self._backend = self._store.backend  # type: ignore
+        self._possible_nonbatch_properties: tp.Set[str]
+
+        if self.grouping not in ['by_formula', 'by_num_atoms', 'legacy']:
+            raise RuntimeError(f'Read with unsupported grouping {self.grouping}')
+        if self.grouping == 'legacy':
+            self._possible_nonbatch_properties = _LEGACY_NONBATCH_KEYS
         else:
-            if self.grouping not in ['by_formula', 'by_num_atoms', 'legacy']:
-                raise RuntimeError(f'Read with unsupported grouping {self.grouping}')
-            if self.grouping == 'legacy':
-                self._possible_nonbatch_properties = _LEGACY_NONBATCH_KEYS
-            else:
-                self._possible_nonbatch_properties = set()
-            # In general properties of the dataset should be equal for all
-            # groups, this can be an issue for HDF5. We check this in the first
-            # call of _update_cache, if it isn't we raise an exception
-            self._update_cache(check_properties=True, verbose=verbose)
-            if self.grouping == 'legacy':
-                if self.properties & _LEGACY_BROKEN_KEYS:
-                    warnings.warn(f'Unsupported properties {_LEGACY_BROKEN_KEYS & self.properties}'
-                                   ' found in legacy dataset, this will generate'
-                                   ' unpredictable issues.'
-                                   ' Probably .items() and .values() will work but'
-                                   ' not much else. It is highly  recommended that'
-                                   ' you backup these properties if needed and'
-                                   ' delete them using dataset.delete_properties')
+            self._possible_nonbatch_properties = set()
+        # In general properties of the dataset should be equal for all
+        # groups, this can be an issue for HDF5. We check this in the first
+        # call of _update_cache, if it isn't we raise an exception
+        self._update_cache(check_properties=True, verbose=verbose)
+        if self.grouping == 'legacy':
+            if self.properties & _LEGACY_BROKEN_KEYS:
+                warnings.warn(f'Unsupported properties {_LEGACY_BROKEN_KEYS & self.properties}'
+                               ' found in legacy dataset, this will generate'
+                               ' unpredictable issues.'
+                               ' Probably .items() and .values() will work but'
+                               ' not much else. It is highly  recommended that'
+                               ' you backup these properties if needed and'
+                               ' delete them using dataset.delete_properties')
 
     @property
-    def metadata(self) -> Mapping[str, str]:
+    def metadata(self) -> tp.Mapping[str, str]:
         r"""Get the dataset metadata
         """
         with ExitStack() as stack:
             metadata = self._get_open_store(stack, 'r', only_meta=True).metadata
         return metadata
 
-    def _set_metadata(self, meta: Mapping[str, str]) -> None:
+    def _set_metadata(self, meta: tp.Mapping[str, str]) -> None:
         with ExitStack() as stack:
             self._get_open_store(stack, 'r+', only_meta=True).set_metadata(meta)
 
@@ -454,7 +465,7 @@ class _ANISubdataset(_ANIDatasetBase):
         self._store.close()
 
     @contextmanager
-    def keep_open(self, mode: str = 'r') -> Iterator['_ANISubdataset']:
+    def keep_open(self, mode: str = 'r') -> tp.Iterator['_ANISubdataset']:
         r"""Context manager to keep dataset open while iterating over it
 
         This speeds up access in the context of many operations in a block,
@@ -480,7 +491,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
     # This trick makes methods fetch the open file directly
     # if they are being called from inside a "keep_open" context
-    def _get_open_store(self, stack: ExitStack, mode: str = 'r', only_meta: bool = False) -> '_Store':
+    def _get_open_store(self, stack: ExitStack, mode: str = 'r', only_meta: bool = False) -> '_StoreWrapper':
         if mode not in ['r+', 'r']:
             raise ValueError(f"Unsupported mode {mode}")
 
@@ -498,13 +509,13 @@ class _ANISubdataset(_ANIDatasetBase):
 
     def __str__(self) -> str:
         str_ = f"ANI {self._backend} store:\n"
-        d: Dict[str, Any] = {'Conformers': f'{self.num_conformers:,}'}
+        d: tp.Dict[str, tp.Any] = {'Conformers': f'{self.num_conformers:,}'}
         d.update({'Conformer groups': self.num_conformer_groups})
         d.update({'Properties': sorted(self.properties)})
         d.update({'Store Metadata': self.metadata})
         return str_ + pformat(d)
 
-    def present_elements(self, chem_symbols: bool = False) -> List[Union[str, int]]:
+    def present_elements(self, chem_symbols: bool = False) -> tp.List[tp.Union[str, int]]:
         r"""Get an ordered list with all elements present in the dataset
 
         list is ordered alphabetically. Function raises ValueError if neither
@@ -512,7 +523,7 @@ class _ANISubdataset(_ANIDatasetBase):
         """
         self._check_correct_grouping()
         element_key = _get_any_element_key(self.properties)
-        present_elements: Set[Union[str, int]] = set()
+        present_elements: tp.Set[tp.Union[str, int]] = set()
         for group_name in self.keys():
             conformers = self.get_numpy_conformers(group_name,
                                                    properties=element_key,
@@ -520,7 +531,7 @@ class _ANISubdataset(_ANIDatasetBase):
             present_elements.update(conformers[element_key].ravel())
         return sorted(present_elements)
 
-    def _parse_index(self, idx: IdxLike) -> Optional[np.ndarray]:
+    def _parse_index(self, idx: IdxLike) -> tp.Optional[np.ndarray]:
         # internally, idx_ is always a numpy array or None, idx can be a tensor
         # or a list or other iterable, which is must be castable to a numpy int
         # array of ndim 1
@@ -540,7 +551,7 @@ class _ANISubdataset(_ANIDatasetBase):
     def get_conformers(self,
                        group_name: str,
                        idx: IdxLike = None,
-                       properties: Optional[Iterable[str]] = None) -> Conformers:
+                       properties: tp.Optional[tp.Iterable[str]] = None) -> Conformers:
         r"""Get conformers in a given group in the dataset
 
         Can obtain conformers with specified indices, and including only
@@ -557,7 +568,7 @@ class _ANISubdataset(_ANIDatasetBase):
     def get_numpy_conformers(self,
                              group_name: str,
                              idx: IdxLike = None,
-                             properties: Optional[Iterable[str]] = None,
+                             properties: tp.Optional[tp.Iterable[str]] = None,
                              chem_symbols: bool = False,
                              exclude_dummy: bool = False) -> NumpyConformers:
         r"""Same as get_conformers but conformers are a dict {property: ndarray}"""
@@ -578,7 +589,7 @@ class _ANISubdataset(_ANIDatasetBase):
                                      for k in batch_properties})
         # Nonbatch properties, if present, need tiling in the first dim
         if nonbatch_properties:
-            tile_shape: Tuple[int, ...]
+            tile_shape: tp.Tuple[int, ...]
             if idx_ is None or idx_.ndim == 1:
                 tile_shape = (_get_num_conformers(numpy_conformers), 1)
             else:
@@ -612,7 +623,7 @@ class _ANISubdataset(_ANIDatasetBase):
             try:
                 numpy_conformers[k] = mixed_conformers[k].detach().cpu().numpy()  # type: ignore
             except AttributeError:
-                numpy_conformers[k] = cast(np.ndarray, mixed_conformers[k])
+                numpy_conformers[k] = tp.cast(np.ndarray, mixed_conformers[k])
         for k in properties & _ELEMENT_KEYS:
             # try to interpret as numeric, failure means we should convert to ints
             try:
@@ -678,7 +689,7 @@ class _ANISubdataset(_ANIDatasetBase):
     def create_full_property(self,
                              dest_key: str,
                              is_atomic: bool = False,
-                             extra_dims: Union[int, Tuple[int, ...]] = tuple(),
+                             extra_dims: tp.Union[int, tp.Tuple[int, ...]] = tuple(),
                              fill_value: int = 0,
                              dtype: DTypeLike = np.int64) -> '_ANISubdataset':
         r"""Creates a property for all conformer groups
@@ -705,36 +716,40 @@ class _ANISubdataset(_ANIDatasetBase):
                                      fill_value=fill_value, dtype=dtype, num_conformers=self.num_conformers)
             else:
                 for group_name in self.keys():
-                    shape: Tuple[int, ...] = (_get_num_conformers(f[group_name]),)
+                    shape: tp.Tuple[int, ...] = (_get_num_conformers(f[group_name]),)
                     if is_atomic:
                         shape += (_get_num_atoms(f[group_name]),)
                     f[group_name][dest_key] = np.full(shape + extra_dims_, fill_value, dtype)
         return self
 
-    def _make_empty_copy(self,
-                         location: StrPath,
-                         grouping: Optional[str] = None,
-                         backend: Optional[str] = None) -> '_ANISubdataset':
-        return _ANISubdataset(location,
-                              create=True,
-                              backend=backend if backend is not None else self._backend,
-                              grouping=grouping if grouping is not None else self.grouping,
-                              verbose=False)
+    def _make_empty_copy(
+        self,
+        location: StrPath,
+        grouping: str,
+        backend: str,
+    ) -> '_ANISubdataset':
+        return _ANISubdataset(
+            location,
+            backend=backend,
+            grouping=grouping,
+            verbose=False,
+            _force_overwrite=True,
+        )
 
-    def _attach_dummy_properties(self, dummy_properties: Dict[str, Any]) -> None:
+    def _attach_dummy_properties(self, dummy_properties: tp.Dict[str, tp.Any]) -> None:
         with ExitStack() as stack:
             f = self._get_open_store(stack, 'r+', only_meta=True)
             f._dummy_properties = dummy_properties
 
     @property
-    def _dummy_properties(self) -> Dict[str, Any]:
+    def _dummy_properties(self) -> tp.Dict[str, tp.Any]:
         with ExitStack() as stack:
             dummy = self._get_open_store(stack, 'r+', only_meta=True)._dummy_properties
         return dummy
 
     @_broadcast
     @_needs_cache_update
-    def to_backend(self, backend: str = None, dest_root: StrPath = None, verbose: bool = True, inplace: bool = False) -> '_ANISubdataset':
+    def to_backend(self, backend: tp.Optional[str] = None, dest_root: tp.Optional[StrPath] = None, verbose: bool = True, inplace: bool = False) -> '_ANISubdataset':
         r"""Transforms underlying store into a different format
         """
         if backend is None:
@@ -749,7 +764,7 @@ class _ANISubdataset(_ANIDatasetBase):
         if self._backend == backend and backend != 'h5py':
             return self
         with TemporaryLocation(backend) as location:
-            new_ds = self._make_empty_copy(location, backend=backend)
+            new_ds = self._make_empty_copy(location, grouping=self.grouping, backend=backend)
             with new_ds.keep_open('r+') as rwds:
                 for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
                                                    total=self.num_conformer_groups,
@@ -765,7 +780,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 new_ds._set_metadata(meta)
                 return new_ds
             else:
-                new_parent = Path(cast(StrPath, dest_root)).resolve()
+                new_parent = Path(tp.cast(StrPath, dest_root)).resolve()
                 new_ds._store.location.root = new_parent / self._store.location.root.with_suffix('').name
                 new_ds._set_metadata(meta)
                 return self
@@ -794,7 +809,7 @@ class _ANISubdataset(_ANIDatasetBase):
         """
         self._check_unique_element_key()
         with TemporaryLocation(self._backend) as location:
-            new_ds = self._make_empty_copy(location, grouping='by_formula')
+            new_ds = self._make_empty_copy(location, grouping='by_formula', backend=self._backend)
             with new_ds.keep_open('r+') as rwds:
                 for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
                                                    total=self.num_conformer_groups,
@@ -831,7 +846,7 @@ class _ANISubdataset(_ANIDatasetBase):
         """
         self._check_unique_element_key()
         with TemporaryLocation(self._backend) as location:
-            new_ds = self._make_empty_copy(location, grouping='by_num_atoms')
+            new_ds = self._make_empty_copy(location, grouping='by_num_atoms', backend=self._backend)
             with new_ds.keep_open('r+') as rwds:
                 for group_name, conformers in tqdm(self.numpy_items(exclude_dummy=True),
                                                    total=self.num_conformer_groups,
@@ -851,7 +866,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @_broadcast
     @_needs_cache_update
-    def delete_properties(self, properties: Iterable[str], verbose: bool = True) -> '_ANISubdataset':
+    def delete_properties(self, properties: tp.Iterable[str], verbose: bool = True) -> '_ANISubdataset':
         r"""Delete some properties from the dataset"""
         properties = {properties} if isinstance(properties, str) else set(properties)
         self._check_properties_are_present(properties)
@@ -878,7 +893,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
     @_broadcast
     @_needs_cache_update
-    def rename_properties(self, old_new_dict: Dict[str, str]) -> '_ANISubdataset':
+    def rename_properties(self, old_new_dict: tp.Dict[str, str]) -> '_ANISubdataset':
         r"""Rename some properties from the dataset
 
         Expects a dictionary of the form: {old_name: new_name}
@@ -913,7 +928,7 @@ class _ANISubdataset(_ANIDatasetBase):
             grouping = self._get_open_store(stack, 'r', only_meta=True).grouping
         return grouping
 
-    def _check_unique_element_key(self, properties: Optional[Iterable[str]] = None) -> None:
+    def _check_unique_element_key(self, properties: tp.Optional[tp.Iterable[str]] = None) -> None:
         if properties is None:
             properties = self.properties
         else:
@@ -951,13 +966,13 @@ class _ANISubdataset(_ANIDatasetBase):
         if not all(conformers[k].shape[0] == size for k in self.properties):
             raise ValueError(f"All batch keys {self.properties} must have the same batch dimension")
 
-    def _check_properties_are_present(self, properties: Iterable[str]) -> None:
+    def _check_properties_are_present(self, properties: tp.Iterable[str]) -> None:
         properties = {properties} if isinstance(properties, str) else set(properties)
         if not properties <= self.properties:
             raise ValueError(f"Some of the properties requested {properties} are not"
                              f" in the dataset, which has properties {self.properties}")
 
-    def _check_properties_are_not_present(self, properties: Iterable[str]) -> None:
+    def _check_properties_are_not_present(self, properties: tp.Iterable[str]) -> None:
         properties = {properties} if isinstance(properties, str) else set(properties)
         if properties <= self.properties:
             raise ValueError(f"Some of the properties requested {properties} are"
@@ -1041,7 +1056,7 @@ class ANIDataset(_ANIDatasetBase):
     the batch dimension). Property manipulation (renaming, deleting, adding)
     is also supported.
     """
-    def __init__(self, locations: Union[Iterable[StrPath], StrPath], names: Optional[Union[Iterable[str], str]] = None, **kwargs):
+    def __init__(self, locations: tp.Union[tp.Iterable[StrPath], StrPath], names: tp.Optional[tp.Union[tp.Iterable[str], str]] = None, **kwargs):
         super().__init__()
         # _datasets is an OrderedDict {name: _ANISubdataset}.
         # "locations" and "names" are collections used to build it
@@ -1057,7 +1072,7 @@ class ANIDataset(_ANIDatasetBase):
         self._update_cache()
 
     @classmethod
-    def from_dir(cls, dir_: StrPath, only_backend: Optional[str] = 'h5py', **kwargs):
+    def from_dir(cls, dir_: StrPath, only_backend: tp.Optional[str] = 'h5py', **kwargs):
         r"""Reads all files in a given directory, if there are multiple files
         with the same name only one of them will be considered"""
         dir_ = Path(dir_).resolve()
@@ -1075,7 +1090,7 @@ class ANIDataset(_ANIDatasetBase):
         return self._first_subds.grouping
 
     @property
-    def metadata(self) -> Mapping[str, Mapping[str, str]]:
+    def metadata(self) -> tp.Mapping[str, tp.Mapping[str, str]]:
         """ Get a dataset metadata
 
         returns a mapping of the form
@@ -1087,7 +1102,7 @@ class ANIDataset(_ANIDatasetBase):
             meta[name] = ds.metadata
         return meta
 
-    def set_metadata(self, meta: Mapping[str, Mapping[str, str]]):
+    def set_metadata(self, meta: tp.Mapping[str, tp.Mapping[str, str]]):
         """ Set dataset metadata
 
         Accepts a mapping of the form
@@ -1107,17 +1122,17 @@ class ANIDataset(_ANIDatasetBase):
             ds.close()
 
     @contextmanager
-    def keep_open(self, mode: str = 'r') -> Iterator['ANIDataset']:
+    def keep_open(self, mode: str = 'r') -> tp.Iterator['ANIDataset']:
         with ExitStack() as stack:
             for k in self._datasets.keys():
                 self._datasets[k] = stack.enter_context(self._datasets[k].keep_open(mode))
             yield self
 
-    def present_elements(self, chem_symbols: bool = False) -> List[Union[str, int]]:
+    def present_elements(self, chem_symbols: bool = False) -> tp.List[tp.Union[str, int]]:
         return sorted({s for ds in self._datasets.values() for s in ds.present_elements(chem_symbols)})
 
     @property
-    def store_locations(self) -> List[str]:
+    def store_locations(self) -> tp.List[str]:
         return [fspath(ds._store.location.root) for ds in self._datasets.values()]
 
     @property
@@ -1126,7 +1141,7 @@ class ANIDataset(_ANIDatasetBase):
 
     def auto_append_conformers(self,
             conformers: MixedConformers,
-            atomic_properties: Iterable[str] = _ATOMIC_KEYS,
+            atomic_properties: tp.Iterable[str] = _ATOMIC_KEYS,
             padding: int = int(PADDING["numbers"])) -> "ANIDataset":
         assert self.num_stores == 1, "Can currently only perform auto-appending for single store datasets"
         atomic_properties = set(atomic_properties)
@@ -1136,7 +1151,7 @@ class ANIDataset(_ANIDatasetBase):
         )
         element_key = _get_any_element_key(numpy_conformers.keys())
         elements = numpy_conformers[element_key]
-        groups: Dict[str, Any] = {}
+        groups: tp.Dict[str, tp.Any] = {}
         for j, znumbers in enumerate(elements):
             idxs = np.argsort(znumbers)
             znumbers = znumbers[idxs]
@@ -1166,7 +1181,7 @@ class ANIDataset(_ANIDatasetBase):
     # Functions with a "group_name" argument are delegated to one specific
     # subdataset, other ones are performed in all subdatasets on a loop
     # (broadcasted)
-    def __getattr__(self, method: str) -> Callable:
+    def __getattr__(self, method: str) -> tp.Callable:
         unbound_method = getattr(_ANISubdataset, method)
         mark = unbound_method._mark
         if mark == 'delegate':
@@ -1177,7 +1192,7 @@ class ANIDataset(_ANIDatasetBase):
                 return self._update_cache()
         elif mark == 'delegate_with_return':
             @wraps(unbound_method)
-            def delegated_call(group_name: str, *args, **kwargs) -> Any:
+            def delegated_call(group_name: str, *args, **kwargs) -> tp.Any:
                 name, k = self._parse_key(group_name)
                 return getattr(self._datasets[name], method)(k, *args, **kwargs)
         elif mark == 'broadcast':
@@ -1220,7 +1235,7 @@ class ANIDataset(_ANIDatasetBase):
         self._properties = self._first_subds.properties
         return self
 
-    def _parse_key(self, key: str) -> Tuple[str, str]:
+    def _parse_key(self, key: str) -> tp.Tuple[str, str]:
         tokens = key.split('/')
         if self.num_stores == 1:
             return self._first_name, '/'.join(tokens)
