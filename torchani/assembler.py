@@ -44,35 +44,26 @@ AtomicContainerType = tp.Type[ANIModel]
 ShifterType = tp.Type[EnergyShifter]
 
 
-# None cutoff means the global cutoff_fn will be used
-# Otherwise, a specific cutoff fn can be specified for the wrapper or the
-# Featurizer
+# "global" cutoff means the global cutoff_fn will be used
+# Otherwise, a specific cutoff fn can be specified
 class FeaturizerWrapper:
     def __init__(
         self,
         cls: FeaturizerType,
+        radial_maker: tp.Callable[[Cutoff, float], torch.nn.Module],
+        angular_maker: tp.Callable[[Cutoff, float], torch.nn.Module],
         cutoff_fn: tp.Union[Cutoff, str] = "global",
-        radial_cutoff: float = 5.2,
-        angular_cutoff: float = 3.5,
         lot: str = "",
     ) -> None:
-        if radial_cutoff < 0 or angular_cutoff < 0:
-            raise ValueError("Both the radial and angular cutoffs shold be positive or 0")
-        if radial_cutoff < angular_cutoff:
-            raise ValueError("Radial cutoff must be larger than the angular cutoff")
         self.cls = cls
         self.cutoff_fn = cutoff_fn
-        self.radial_cutoff = radial_cutoff
-        self.angular_cutoff = angular_cutoff
-
-    @property
-    def cutoff(self) -> float:
-        return self.radial_cutoff
+        self.radial_maker = radial_maker
+        self.angular_maker = angular_maker
 
 
 @dataclass
 class PotentialWrapper:
-    cls: PairwisePotential
+    cls: PairwisePotentialType
     cutoff_fn: tp.Union[Cutoff, str] = "global"
     cutoff: float = math.inf
     lot: str = ""
@@ -80,9 +71,8 @@ class PotentialWrapper:
 
 class Assembler:
     def __init__(self) -> None:
-
         self._neighborlist_type: tp.Union[NeighborlistType, str]
-        self._featurizer: FeaturizerWrapper = FeaturizerWrapper(AEVComputer)
+        self._featurizer: FeaturizerWrapper = FeaturizerWrapper(AEVComputer, StandardAngular.like_1x, StandardRadial.like_1x)
         self._pairwise_potentials: tp.List[PotentialWrapper] = []
 
         # This part of the assembler organizes the self-energies, the
@@ -158,7 +148,13 @@ class Assembler:
             )
         self._self_energies = {k: v for k, v in value.items()}
 
-    def set_gsaes_as_self_energies(self, functional: str = "", basis_set: str = "", lot: str = "", symbols: tp.Iterable[str] = ()) -> None:
+    def set_gsaes_as_self_energies(
+        self,
+        functional: str = "",
+        basis_set: str = "",
+        lot: str = "",
+        symbols: tp.Iterable[str] = (),
+    ) -> None:
         if (functional and basis_set) and not lot:
             lot = f'{functional}-{basis_set}'
         elif not (functional or basis_set) and lot:
@@ -174,52 +170,67 @@ class Assembler:
     def set_shifter(self, shifter_type: ShifterType) -> None:
         self._shifter_type = shifter_type
 
-    def set_atomic_container(self, atomic_container_type: AtomicContainerType) -> None:
+    def set_atomic_container(
+        self,
+        atomic_container_type: AtomicContainerType,
+    ) -> None:
         self._atomic_container_type = atomic_container_type
 
     def set_featurizer(
         self,
         featurizer_type: FeaturizerType,
+        angular_terms: torch.nn.Module,
+        radial_terms: torch.nn.Module,
         cutoff_fn: tp.Union[Cutoff, str] = "global",
-        angular_cutoff: float = 3.5,
-        radial_cutoff: float = 5.1,
     ) -> None:
         self._featurizer = FeaturizerWrapper(
             featurizer_type,
             cutoff_fn=cutoff_fn,
-            angular_cutoff=angular_cutoff,
-            radial_cutoff=radial_cutoff,
+            angular_terms=angular_terms,
+            radial_terms=radial_terms,
         )
 
-    def set_neighborlist(self, neighborlist_type: tp.Union[NeighborlistType, str]) -> None:
+    def set_neighborlist(
+        self,
+        neighborlist_type: tp.Union[NeighborlistType, str],
+    ) -> None:
         if isinstance(neighborlist_type, str) and neighborlist_type not in ["full_pairwise", "cell_list"]:
             raise ValueError("Unsupported neighborlist")
         self._neighborlist_type = neighborlist_type
 
-    def set_global_cutoff_fn(self, cutoff_fn: tp.Union[Cutoff, str]) -> None:
-        self._general_cutoff_fn = _parse_cutoff_fn(cutoff_fn)
+    def set_global_cutoff_fn(
+        self,
+        cutoff_fn: tp.Union[Cutoff, str],
+    ) -> None:
+        self._global_cutoff_fn = _parse_cutoff_fn(cutoff_fn)
 
-    def add_pairwise_potential(self, pair_type: PairwisePotentialType, cutoff: float = math.inf, cutoff_fn: tp.Union[Cutoff, str] = "global") -> None:
+    def add_pairwise_potential(
+        self,
+        pair_type: PairwisePotentialType,
+        cutoff: float = math.inf,
+        cutoff_fn: tp.Union[Cutoff, str] = "global",
+    ) -> None:
         if not issubclass(self._model_type, BuiltinModelPairInteractions):
             # Override the model if it is exactly equal to this class
             if self._model_type == BuiltinModel:
                 self._model_type = BuiltinModelPairInteractions
             else:
                 raise ValueError("The model class must support pairwise potentials in order to add potentials")
-        self._pairwise_potentials.append(pair_type)
+        self._pairwise_potentials.append(PotentialWrapper(pair_type, cutoff=cutoff, cutoff_fn=cutoff_fn))
 
     def assemble(self) -> BuiltinModel:
         # Here it is necessary to get the largest cutoff to attach to the neighborlist, right?
         max_cutoff = 0.0
-        neighborlist = _parse_neighborlist(self.neighborlist_type, max_cutoff)
+        neighborlist = _parse_neighborlist(self._neighborlist_type, max_cutoff)
 
         featurizer = self._featurizer.cls(
-            cutoff_fn=self._featurizer.cutoff_fn if self._featurizer,
+            cutoff_fn=_parse_cutoff_fn(self._featurizer.cutoff_fn, self._global_cutoff_fn),
             neighborlist=neighborlist,
-            angular_terms=self.angular,
-            radial_terms=self.radial,
+            angular_terms=angular_terms,
+            radial_terms=radial_terms,
             num_species=self.elements_num,
         )
+        featurizer.neighborlist.cutoff = max_cutoff
         neural_networks: tp.Union[ANIModel, Ensemble]
         if self.ensemble_size > 1:
             containers = []
@@ -230,18 +241,17 @@ class Assembler:
             neural_networks = self._atomic_container_type(self.atomic_networks)
         shifter = self._shifter_type(tuple(self.self_energies.values()))
 
-        potentials = self.pairwise_potential_dict
-        if potentials:
-            pairwise_potentials = []
-            for name, Cls in potentials.items():
-                pairwise_potentials.append(
-                    Cls(
+        if self._pairwise_potentials:
+            potentials = []
+            for pot in self._pairwise_potentials:
+                potentials.append(
+                    pot.cls(
                         symbols=self.symbols,
-                        cutoff=self.cutoffs[name],
-                        cutoff_fn=self.cutoff_fns[name],
+                        cutoff=pot.cutoff,
+                        cutoff_fn=_parse_cutoff_fn(pot.cutoff_fn, self._global_cutoff_fn),
                     )
                 )
-            kwargs = {"pairwise_potentials": pairwise_potentials}
+            kwargs = {"pairwise_potentials": potentials}
         else:
             kwargs = {}
         return self._model_type(
