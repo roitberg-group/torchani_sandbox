@@ -72,6 +72,7 @@ class FeaturizerWrapper:
         angular_terms: torch.nn.Module,
         cutoff_fn: tp.Union[Cutoff, str] = "global",
         cuda_ops: bool = False,
+        extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
         self.cls = cls
         self.cutoff_fn = cutoff_fn
@@ -82,6 +83,7 @@ class FeaturizerWrapper:
         if angular_terms.cutoff <= 0 or radial_terms.cutoff <= 0:  # type: ignore
             raise ValueError("Cutoffs must be strictly positive")
         self.cuda_ops = cuda_ops
+        self.extra = extra
 
     @property
     def angular_cutoff(self) -> float:
@@ -95,7 +97,7 @@ class FeaturizerWrapper:
 @dataclass
 class PotentialWrapper:
     cls: PairwisePotentialType
-    extra: tp.Dict[str, tp.Any]
+    extra: tp.Optional[tp.Dict[str, tp.Any]] = None
     cutoff_fn: tp.Union[Cutoff, str] = "global"
     cutoff: float = math.inf
 
@@ -121,6 +123,9 @@ class Assembler:
         # This part of the assembler organizes the self-energies, the
         # symbols and the atomic networks
         self._self_energies: tp.Dict[str, float] = {}
+        self._fn_for_networks: tp.Optional[
+            tp.Callable[[str, int], torch.nn.Module]
+        ] = None
         self._atomic_networks: tp.Dict[str, torch.nn.Module] = {}
         self._shifter_type: ShifterType = shifter_type
         self._atomic_container_type: AtomicContainerType = atomic_container_type
@@ -162,18 +167,10 @@ class Assembler:
             odict[k] = self._atomic_networks[k]
         return odict
 
-    @atomic_networks.setter
-    def atomic_networks(self, value: tp.Mapping[str, torch.nn.Module]) -> None:
-        if not self.symbols:
-            self.symbols = tuple(sorted(value.keys()))
-        elif set(self.symbols) != set(value.keys()):
-            raise ValueError(
-                f"Atomic networks don't match supported elements {self._symbols}"
-            )
-        self._atomic_networks = {k: v for k, v in value.items()}
-
-    def atomic_networks_from_fn(
-        self, fn: tp.Callable[[str], torch.nn.Module], symbols: tp.Sequence[str] = ()
+    def set_atomic_maker(
+        self,
+        fn: tp.Callable[[str, int], torch.nn.Module],
+        symbols: tp.Sequence[str] = (),
     ) -> None:
         if not self.symbols:
             self.symbols = tuple(sorted(symbols))
@@ -182,7 +179,7 @@ class Assembler:
                 raise ValueError(
                     f"Atomic networks don't match supported elements {self._symbols}"
                 )
-        self._atomic_networks = {s: fn(s) for s in self.symbols}
+        self._fn_for_networks = fn
 
     @property
     def self_energies(self) -> tp.OrderedDict[str, float]:
@@ -281,12 +278,19 @@ class Assembler:
                 )
         self._pairwise_potentials.append(
             PotentialWrapper(
-                pair_type, cutoff=cutoff, cutoff_fn=cutoff_fn, extra=extra or {}
+                pair_type,
+                cutoff=cutoff,
+                cutoff_fn=cutoff_fn,
+                extra=extra,
             )
         )
 
     def assemble(self) -> BuiltinModel:
         # Here it is necessary to get the largest cutoff to attach to the neighborlist, right?
+        if not self.symbols:
+            raise RuntimeError(
+                "At least one symbol is needed, please set `symbols` with a sequence of chemical symbols"
+            )
         if self._featurizer is None:
             raise RuntimeError(
                 "Can't assemble a model without a featurizer, please `set_featurizer` first"
@@ -308,10 +312,12 @@ class Assembler:
         if self._featurizer.cls == AEVComputer:
             feat_kwargs = {
                 "use_cuda_extension": self._featurizer.cuda_ops,
-                "use_cuda_interface": self._featurizer.cuda_ops,
+                "use_cuaev_interface": self._featurizer.cuda_ops,
             }
         else:
             feat_kwargs = {}
+        if self._featurizer.extra is not None:
+            feat_kwargs.update(self._featurizer.extra)
 
         featurizer = self._featurizer.cls(
             neighborlist=self._neighborlist_type,
@@ -324,6 +330,14 @@ class Assembler:
         # This fails because the attribute is marked as final, but it should not be
         featurizer.neighborlist.cutoff = max_cutoff  # type: ignore
         neural_networks: tp.Union[ANIModel, Ensemble]
+        if self._fn_for_networks is not None:
+            self._atomic_networks = {
+                s: self._fn_for_networks(s, featurizer.aev_length) for s in self.symbols
+            }
+        else:
+            raise RuntimeError(
+                "Can't assemble a model without a fn for the atomic networks, please call `set_atomic_maker` first"
+            )
         if self.ensemble_size > 1:
             containers = []
             for j in range(self.ensemble_size):
@@ -336,7 +350,11 @@ class Assembler:
         if self._pairwise_potentials:
             potentials = []
             for pot in self._pairwise_potentials:
-                if hasattr(pot.cls, "from_functional") and "functional" in pot.extra:
+                if pot.extra is not None:
+                    pot_kwargs = pot.extra
+                else:
+                    pot_kwargs = {}
+                if hasattr(pot.cls, "from_functional") and "functional" in pot_kwargs:
                     builder = pot.cls.from_functional
                 else:
                     builder = pot.cls
@@ -347,7 +365,7 @@ class Assembler:
                         cutoff_fn=_parse_cutoff_fn(
                             pot.cutoff_fn, self._global_cutoff_fn
                         ),
-                        **pot.extra,
+                        **pot_kwargs,
                     )
                 )
             kwargs = {"pairwise_potentials": potentials}
@@ -370,7 +388,7 @@ def ANI1x(
 ) -> BuiltinModel:
     asm = Assembler(ensemble_size=8)
     asm.symbols = ELEMENTS_1x
-    asm.atomic_networks_from_fn(atomics.like_1x)
+    asm.set_atomic_maker(atomics.like_1x)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
@@ -400,7 +418,7 @@ def ANI1ccx(
         angular_terms=StandardAngular.like_1ccx(),
         cuda_ops=cuda_ops,
     )
-    asm.atomic_networks_from_fn(atomics.like_1ccx)
+    asm.set_atomic_maker(atomics.like_1ccx)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("ccsd(t)star-cbs")
     model = asm.assemble()
@@ -423,7 +441,7 @@ def ANI2x(
         angular_terms=StandardAngular.like_2x(),
         cuda_ops=cuda_ops,
     )
-    asm.atomic_networks_from_fn(atomics.like_2x)
+    asm.set_atomic_maker(atomics.like_2x)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble()
@@ -446,7 +464,7 @@ def ANIdr(
         radial_terms=StandardRadial.like_2x(),
         cuda_ops=cuda_ops,
     )
-    asm.atomic_networks_from_fn(atomics.like_dr)
+    asm.set_atomic_maker(atomics.like_dr)
     asm.add_pairwise_potential(
         RepulsionXTB,
         cutoff=5.3,
@@ -478,7 +496,7 @@ def FlexibleANI(
     neighborlist: str = "full_pairwise",
     dispersion: bool = True,
     repulsion: bool = True,
-    atomic_maker: tp.Callable[[str], torch.nn.Module] = atomics.like_dr,
+    atomic_maker: tp.Callable[[str, int], torch.nn.Module] = atomics.like_dr,
     cuda_ops: bool = False,
 ) -> BuiltinModel:
     asm = Assembler(ensemble_size=ensemble_size)
@@ -502,7 +520,7 @@ def FlexibleANI(
         ),
         cuda_ops=cuda_ops,
     )
-    asm.atomic_networks_from_fn(atomic_maker)
+    asm.set_atomic_maker(atomic_maker)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies(lot)
     if repulsion:
