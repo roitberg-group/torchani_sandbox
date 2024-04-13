@@ -1,3 +1,10 @@
+r"""
+These classs wrap modules so that they can function directly with an
+input of species_coordinates, cell, pbc. This is useful for testing purposes
+and for some special cases, it is especially useful for pairwise potentials,
+the "repulsion" and "dispersion" computers, and the EnergyAdder
+"""
+
 import typing as tp
 
 import torch
@@ -10,6 +17,11 @@ from torchani.neighbors import FullPairwise, BaseNeighborlist
 
 
 class Wrapper(torch.nn.Module):
+    r"""
+    Base class for wrappers that take a species_coordinates tuple (and
+    optionally a periodic cell and pbc specification), and output a
+    SpeciesEnergies namedtuple
+    """
 
     module: torch.nn.Module
 
@@ -35,10 +47,6 @@ class Wrapper(torch.nn.Module):
         raise NotImplementedError("Must be implemented by subclasses")
 
 
-# This helper classs wrap modules so that they can function directly with
-# an input of species_coordinates, cell, pbc. This is useful for testing
-# purposes and for some special cases, it is especially useful for the
-# "repulsion" and "dispersion" computers, and the EnergyShifter
 class StandaloneWrapper(Wrapper):
     r"""
     Wrapper for modules that need neighbor-data and elements
