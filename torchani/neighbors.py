@@ -3,16 +3,10 @@ import math
 
 import torch
 from torch import Tensor
-from torch.nn import functional, Module
 from torch.jit import Final
 
 from torchani.utils import map_to_central, cumsum_from_zero
-
-
-class NeighborData(tp.NamedTuple):
-    indices: Tensor
-    distances: Tensor
-    diff_vectors: Tensor
+from torchani.tuples import NeighborData
 
 
 def rescreen(
@@ -27,7 +21,7 @@ def rescreen(
     )
 
 
-class BaseNeighborlist(Module):
+class BaseNeighborlist(torch.nn.Module):
 
     cutoff: Final[float]
     default_pbc: Tensor
@@ -343,6 +337,7 @@ class CellList(BaseNeighborlist):
         # right now I will only support this, and the extra neighbors are
         # hardcoded, but full support for arbitrary buckets per cutoff is possible
         assert buckets_per_cutoff == 1, "Cell list currently only supports one bucket per cutoff"
+        assert not verlet, "Verlet cell list has issues and should not be used"
         self.constant_volume = constant_volume
         self.verlet = verlet
         self.register_buffer('spherical_factor', torch.full(size=(3, ), fill_value=1.0), persistent=False)
@@ -685,7 +680,7 @@ class CellList(BaseNeighborlist):
     @staticmethod
     def _pad_circular(x: Tensor) -> Tensor:
         x = x.unsqueeze(0).unsqueeze(0)
-        x = functional.pad(x, (1, 1, 1, 1, 1, 1), mode='circular')
+        x = torch.nn.functional.pad(x, (1, 1, 1, 1, 1, 1), mode='circular')
         return x.squeeze()
 
     def _register_bucket_length_lower_bound(self,

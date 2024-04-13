@@ -28,14 +28,14 @@ class TestDispersion(TestCase):
         # for the purposes of testing we use the exact same conversion factors
         # as the original DFTD3 code
         self.old_angstrom_to_bohr = units.ANGSTROM_TO_BOHR
-        self.old_hartree_to_kcalmol = units.HARTREE_TO_KCALMOL
+        self.old_hartree_to_kcalpermol = units.HARTREE_TO_KCALPERMOL
         units.ANGSTROM_TO_BOHR = 1 / 0.52917726
-        units.HARTREE_TO_KCALMOL = 627.509541
+        units.HARTREE_TO_KCALPERMOL = 627.509541
 
     def tearDown(self):
         # reset conversion factors
         units.ANGSTROM_TO_BOHR = self.old_angstrom_to_bohr
-        units.HARTREE_TO_KCALMOL = self.old_hartree_to_kcalmol
+        units.HARTREE_TO_KCALPERMOL = self.old_hartree_to_kcalpermol
 
     def testConstructor(self):
         disp = TwoBodyDispersionD3.from_functional()
@@ -173,30 +173,30 @@ class TestDispersion(TestCase):
         )
         disp = TwoBodyDispersionD3.from_functional().to(self.device)
         energy = disp(self.species, neighbors)
-        energy = units.hartree2kcalmol(energy)
+        energy = units.hartree2kcalpermol(energy)
         self.assertEqual(
             energy.cpu(), torch.tensor([-1.251336]).double(), rtol=1e-6, atol=1e-6
         )
 
     def testMethaneStandalone(self):
         disp = StandaloneTwoBodyDispersionD3(
-            neighborlist_cutoff=8.0, periodic_table_index=True
+            cutoff=8.0, periodic_table_index=True
         ).to(self.device)
         energy = disp((self.atomic_numbers, self.coordinates)).energies
-        energy = units.hartree2kcalmol(energy)
+        energy = units.hartree2kcalpermol(energy)
         self.assertEqual(
             energy.cpu(), torch.tensor([-1.251336]).double(), rtol=1e-6, atol=1e-6
         )
 
     def testMethaneStandaloneBatch(self):
         disp = StandaloneTwoBodyDispersionD3(
-            neighborlist_cutoff=8.0, periodic_table_index=True
+            cutoff=8.0, periodic_table_index=True
         ).to(self.device)
         r = 2
         coordinates = self.coordinates.repeat(r, 1, 1)
         species = self.atomic_numbers.repeat(r, 1)
         energy = disp((species, coordinates)).energies
-        energy = units.hartree2kcalmol(energy)
+        energy = units.hartree2kcalpermol(energy)
         self.assertEqual(
             energy.cpu(),
             torch.tensor([-1.251336, -1.251336]).double(),
@@ -206,7 +206,7 @@ class TestDispersion(TestCase):
 
     def testDispersionBatches(self):
         rep = StandaloneTwoBodyDispersionD3(
-            neighborlist_cutoff=8.0, periodic_table_index=True
+            cutoff=8.0, periodic_table_index=True
         )
         coordinates1 = torch.tensor(
             [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [3.0, 0.0, 0.0]]

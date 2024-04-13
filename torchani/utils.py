@@ -15,8 +15,9 @@ from torch import Tensor
 import torch.utils.data
 
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
-from torchani.tuples import SpeciesEnergies
+from torchani.tuples import SpeciesEnergies, VibAnalysis
 from torchani.compat import tqdm
+
 
 PADDING = {
     'species': -1,
@@ -270,11 +271,6 @@ def strip_redundant_padding(atomic_properties):
     for k in atomic_properties:
         atomic_properties[k] = atomic_properties[k].index_select(1, non_padding)
     return atomic_properties
-
-
-def map2central(cell: Tensor, coordinates: Tensor, pbc: Tensor) -> Tensor:
-    warnings.warn("map2central is deprecated, use map_to_central instead")
-    return map_to_central(coordinates, cell, pbc)
 
 
 def map_to_central(coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
@@ -558,18 +554,6 @@ def hessian(coordinates: Tensor, energies: tp.Optional[Tensor] = None, forces: t
         _get_derivatives_not_none(coordinates, f, retain_graph=True).flatten(start_dim=1)
         for f in force_components
     ], dim=1)
-
-
-class FreqsModes(tp.NamedTuple):
-    freqs: Tensor
-    modes: Tensor
-
-
-class VibAnalysis(tp.NamedTuple):
-    freqs: Tensor
-    modes: Tensor
-    fconstants: Tensor
-    rmasses: Tensor
 
 
 def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
