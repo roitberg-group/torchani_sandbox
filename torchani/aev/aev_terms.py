@@ -1,8 +1,8 @@
+import torch
 import warnings
 import math
 from pathlib import Path
 
-import torch
 from torch import Tensor
 from torch.jit import Final
 
