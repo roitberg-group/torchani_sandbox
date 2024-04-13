@@ -272,11 +272,6 @@ def strip_redundant_padding(atomic_properties):
     return atomic_properties
 
 
-def map2central(cell: Tensor, coordinates: Tensor, pbc: Tensor) -> Tensor:
-    warnings.warn("map2central is deprecated, use map_to_central instead")
-    return map_to_central(coordinates, cell, pbc)
-
-
 def map_to_central(coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
     """Map atoms outside the unit cell into the cell using PBC.
 

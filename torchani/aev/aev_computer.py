@@ -1,5 +1,4 @@
 import typing as tp
-import math
 import warnings
 import importlib.metadata
 
@@ -207,33 +206,6 @@ class AEVComputer(torch.nn.Module):
         ret[species1, species2] = pair_index
         ret[species2, species1] = pair_index
         return ret
-
-    @classmethod
-    def cover_linearly(cls,
-                       radial_cutoff: float,
-                       angular_cutoff: float,
-                       radial_eta: float,
-                       angular_eta: float,
-                       radial_dist_divisions: int,
-                       angular_dist_divisions: int,
-                       zeta: float,
-                       angle_sections: int,
-                       num_species: int,
-                       angular_start: float = 0.9,
-                       radial_start: float = 0.9, **kwargs):
-        warnings.warn('cover_linearly is deprecated')
-        Rcr = radial_cutoff
-        Rca = angular_cutoff
-        EtaR = torch.tensor([radial_eta], dtype=torch.float)
-        EtaA = torch.tensor([angular_eta], dtype=torch.float)
-        Zeta = torch.tensor([zeta], dtype=torch.float)
-        ShfR = torch.linspace(radial_start, radial_cutoff,
-                              radial_dist_divisions + 1)[:-1].to(torch.float)
-        ShfA = torch.linspace(angular_start, angular_cutoff,
-                              angular_dist_divisions + 1)[:-1].to(torch.float)
-        angle_start = math.pi / (2 * angle_sections)
-        ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) + angle_start)[:-1].to(torch.float)
-        return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, **kwargs)
 
     @classmethod
     def like_1x(cls, **kwargs) -> "AEVComputer":
