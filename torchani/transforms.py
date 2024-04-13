@@ -20,31 +20,45 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from torchani.utils import EnergyShifter, PERIODIC_TABLE, ATOMIC_NUMBERS
+from torchani.utils import EnergyShifter, ATOMIC_NUMBERS
 from torchani.nn import SpeciesConverter
 from torchani.datasets import ANIBatchedDataset
+from torchani.wrappers import Wrapper
 
 
-class SubtractRepulsion(torch.nn.Module):
-
-    def __init__(self, elements: tp.Union[tp.Sequence[str], tp.Sequence[int]]):
+class Transform(torch.nn.Module):
+    atomic_numbers: tp.Optional[Tensor]
+    r"""Base class for transformations that modify conformer properties on the fly"""
+    def __init__(self, *args: tp.Any, **kwargs: tp.Any) -> None:
         super().__init__()
 
     def forward(self, properties: tp.Dict[str, Tensor]) -> tp.Dict[str, Tensor]:
-        raise NotImplementedError("Not yet implemented")
+        raise NotImplementedError("Must be overriden by subclasses")
+
+
+class SubtractEnergy(Transform):
+    r"""Subtract the energy calculated from an arbitrary Wrapper module
+    This can be coupled with, e.g., a pairwise potential in order to subtract
+    analytic energies before training.
+    """
+    def __init__(self, wrapper: Wrapper):
+        super().__init__()
+        if not wrapper.periodic_table_index:
+            raise ValueError("Wrapper module should have periodic_table_index=True")
+        self.wrapper = wrapper
+
+    def forward(self, properties: tp.Dict[str, Tensor]) -> tp.Dict[str, Tensor]:
+        properties['energies'] -= self.wrapper((properties["species"], properties["coordinates"])).energies
         return properties
 
 
-class SubtractSAE(torch.nn.Module):
-
-    atomic_numbers: Tensor
-
-    def __init__(self, elements: tp.Union[tp.Sequence[str], tp.Sequence[int]], self_energies: tp.List[float], intercept: float = 0.0):
+class SubtractSAE(Transform):
+    def __init__(self, symbols: tp.Sequence[str], self_energies: tp.List[float], intercept: float = 0.0):
         super().__init__()
-        symbols, atomic_numbers = _parse_elements(elements)
+        atomic_numbers = [ATOMIC_NUMBERS[s] for s in symbols]
         if len(self_energies) != len(atomic_numbers):
             raise ValueError("There should be one self energy per element")
-        self.register_buffer('supported_atomic_numbers', torch.tensor(atomic_numbers, dtype=torch.long))
+        self.register_buffer('atomic_numbers', torch.tensor(atomic_numbers, dtype=torch.long))
         if intercept != 0.0:
             self_energies.append(intercept)
             # for some reason energy_shifter is defaulted as double, so I make
@@ -58,15 +72,19 @@ class SubtractSAE(torch.nn.Module):
         return properties
 
 
-class AtomicNumbersToIndices(torch.nn.Module):
-
-    atomic_numbers: Tensor
-
-    def __init__(self, elements: tp.Union[tp.Sequence[str], tp.Sequence[int]]):
+class AtomicNumbersToIndices(Transform):
+    r"""
+    This class converts atomic numbers to arbitrary indices, it is very error
+    prone to use it and not recommended, but it is provided for legacy support
+    """
+    def __init__(self, symbols: tp.Sequence[str]):
         super().__init__()
-        symbols, atomic_numbers = _parse_elements(elements)
-
-        self.register_buffer('supported_atomic_numbers', torch.tensor(atomic_numbers, dtype=torch.long))
+        atomic_numbers = [ATOMIC_NUMBERS[s] for s in symbols]
+        warnings.warn(
+            "It is not recommended convert atomic numbers to indices, this is "
+            " very error prone and can generate multiple issues"
+        )
+        self.register_buffer('atomic_numbers', torch.tensor(atomic_numbers, dtype=torch.long))
         self.converter = SpeciesConverter(symbols)
 
     def forward(self, properties: tp.Dict[str, Tensor]) -> tp.Dict[str, Tensor]:
@@ -75,48 +93,26 @@ class AtomicNumbersToIndices(torch.nn.Module):
         return properties
 
 
-def _parse_elements(elements: tp.Union[tp.Sequence[str], tp.Sequence[int]]) -> tp.Tuple[tp.Sequence[str], tp.Sequence[int]]:
-    assert len(elements) == len(set(elements)), 'Elements should not be duplicated'
-    symbols: tp.List[str] = []
-    atomic_numbers: tp.List[int] = []
-    if isinstance(elements[0], int):
-        for e in elements:
-            assert isinstance(e, int) and e > 0, f"Encountered an atomic number that is <= 0 {elements}"
-            symbols.append(PERIODIC_TABLE[e])
-            atomic_numbers.append(e)
-    else:
-        for e in elements:
-            assert isinstance(e, str), "Input sequence must consist of chemical symbols or atomic numbers"
-            symbols.append(e)
-            atomic_numbers.append(ATOMIC_NUMBERS[e])
-    return symbols, atomic_numbers
-
-
-class Compose(torch.nn.Module):
+class Compose(Transform):
     """Composes several transforms together.
 
     Args:
-        transforms (list of ``Transform`` objects): list of transforms to compose.
+        transforms (list of `Transform` objects): list of transforms to compose.
     """
     # This code is mostly copied from torchvision, but made JIT scriptable
-
-    def __init__(self, transforms: tp.Sequence[torch.nn.Module]):
+    def __init__(self, transforms: tp.Sequence[Transform]):
         super().__init__()
-        if not isinstance(transforms[0], AtomicNumbersToIndices):
-            warnings.warn("The first transform in your pipeline is not AtomicNumbersToIndices, make sure that this is your intent")
-        transform_names = [type(t).__name__ for t in transforms]
 
-        if len(transform_names) != len(set(transform_names)):
-            warnings.warn("Your transform pipeline seems to have duplicate transforms, make sure that this is your intent")
-
-        all_atomic_numbers: tp.List[Tensor] = []
-        for t in transforms:
-            if hasattr(t, 'atomic_numbers') and isinstance(t.atomic_numbers, Tensor):
-                all_atomic_numbers.append(t.atomic_numbers)
-
-        for z in all_atomic_numbers:
-            if not z == all_atomic_numbers[0]:
+        # Validate that all transforms use the same atomic numbers
+        atomic_numbers: tp.List[Tensor] = [
+            t.atomic_numbers for t in transforms if t.atomic_numbers is not None
+        ]
+        if atomic_numbers:
+            if not all(a == atomic_numbers[0] for a in atomic_numbers):
                 raise ValueError("Two or more of your transforms use different atomic numbers, this is incorrect")
+            self.register_buffer('atomic_numbers', torch.tensor(atomic_numbers[0], dtype=torch.long))
+        else:
+            self.register_buffer('atomic_numbers', None)
 
         self.transforms = torch.nn.ModuleList(transforms)
 

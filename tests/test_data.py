@@ -10,7 +10,7 @@ import tempfile
 import warnings
 from copy import deepcopy
 from torchani.transforms import AtomicNumbersToIndices, SubtractSAE, Compose, calculate_saes
-from torchani.utils import PERIODIC_TABLE, ATOMIC_NUMBERS
+from torchani.utils import PERIODIC_TABLE, ATOMIC_NUMBERS, EnergyShifter
 from torchani.testing import TestCase
 from torchani.datasets import (
     ANIDataset,
