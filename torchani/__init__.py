@@ -27,6 +27,10 @@ formats of NeuroChem at :attr:`torchani.neurochem`, and more at :attr:`torchani.
 .. _ANI-2x:
     https://doi.org/10.26434/chemrxiv.11819268.v1
 """
+import warnings
+from pkg_resources import get_distribution, DistributionNotFound
+
+import torch
 
 from .utils import EnergyShifter
 from .nn import ANIModel, Ensemble, SpeciesConverter
@@ -43,9 +47,6 @@ from . import geometry
 from . import calc
 from . import neighbors
 from . import cutoffs
-from pkg_resources import get_distribution, DistributionNotFound
-import warnings
-import torch
 
 try:
     __version__ = get_distribution(__name__).version
