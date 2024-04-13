@@ -136,8 +136,7 @@ class SubtractRepulsionXTB(Transform):
         self.atomic_numbers = self._transform.atomic_numbers
 
     def forward(self, properties: tp.Dict[str, Tensor]) -> tp.Dict[str, Tensor]:
-        properties['energies'] -= self._transform(properties['species'])
-        return properties
+        return self._transform(properties)
 
 
 class SubtractTwoBodyDispersionD3(Transform):
@@ -158,8 +157,7 @@ class SubtractTwoBodyDispersionD3(Transform):
         self.atomic_numbers = self._transform.atomic_numbers
 
     def forward(self, properties: tp.Dict[str, Tensor]) -> tp.Dict[str, Tensor]:
-        properties['energies'] -= self._transform(properties['species'])
-        return properties
+        return self._transform(properties)
 
 
 class SubtractSAE(Transform):
@@ -174,8 +172,7 @@ class SubtractSAE(Transform):
         self.atomic_numbers = self._transform.atomic_numbers
 
     def forward(self, properties: tp.Dict[str, Tensor]) -> tp.Dict[str, Tensor]:
-        properties['energies'] -= self._transform(properties['species'])
-        return properties
+        return self._transform(properties)
 
 
 class AtomicNumbersToIndices(Transform):
@@ -217,11 +214,11 @@ class Compose(Transform):
             t.atomic_numbers for t in transforms if t.atomic_numbers is not None
         ]
         if atomic_numbers:
-            if not all(a == atomic_numbers[0] for a in atomic_numbers):
+            if not all((a == atomic_numbers[0]).all() for a in atomic_numbers):
                 raise ValueError(
                     "All composed transforms must support the same atomic numbers"
                 )
-            self.atomic_numbers = torch.tensor(atomic_numbers[0], dtype=torch.long)
+            self.atomic_numbers = atomic_numbers[0]
         else:
             self.atomic_numbers = None
 
