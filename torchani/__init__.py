@@ -32,21 +32,23 @@ from pkg_resources import get_distribution, DistributionNotFound
 
 import torch
 
-from .utils import EnergyShifter
-from .nn import ANIModel, Ensemble, SpeciesConverter
-from .aev import AEVComputer
-from . import assembler
-from . import utils
-from . import neurochem
-from . import models
-from . import units
-from . import datasets
-from . import transforms
-from . import cli
-from . import geometry
-from . import calc
-from . import neighbors
-from . import cutoffs
+from torchani.utils import EnergyShifter
+from torchani.nn import ANIModel, Ensemble, SpeciesConverter
+from torchani.aev import AEVComputer
+from torchani import (
+    assembler,
+    utils,
+    neurochem,
+    models,
+    units,
+    datasets,
+    transforms,
+    cli,
+    geometry,
+    calc,
+    neighbors,
+    cutoffs,
+)
 
 try:
     __version__ = get_distribution(__name__).version
