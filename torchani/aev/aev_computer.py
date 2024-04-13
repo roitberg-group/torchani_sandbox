@@ -6,6 +6,7 @@ import torch
 from torch import Tensor
 from torch.jit import Final
 
+from torchani.tuples import SpeciesAEV
 from torchani.utils import cumsum_from_zero
 from torchani.neighbors import _parse_neighborlist
 from torchani.cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
@@ -27,11 +28,6 @@ if cuaev_is_installed:
     from .. import cuaev  # type: ignore # noqa: F401
 else:
     warnings.warn("cuaev not installed")
-
-
-class SpeciesAEV(tp.NamedTuple):
-    species: Tensor
-    aevs: Tensor
 
 
 def jit_unused_if_no_cuaev(condition=cuaev_is_installed):

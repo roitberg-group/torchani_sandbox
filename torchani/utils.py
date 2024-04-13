@@ -15,8 +15,9 @@ from torch import Tensor
 import torch.utils.data
 
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
-from torchani.tuples import SpeciesEnergies
+from torchani.tuples import SpeciesEnergies, VibAnalysis
 from torchani.compat import tqdm
+
 
 PADDING = {
     'species': -1,
@@ -492,18 +493,6 @@ def hessian(coordinates: Tensor, energies: tp.Optional[Tensor] = None, forces: t
         _get_derivatives_not_none(coordinates, f, retain_graph=True).flatten(start_dim=1)
         for f in force_components
     ], dim=1)
-
-
-class FreqsModes(tp.NamedTuple):
-    freqs: Tensor
-    modes: Tensor
-
-
-class VibAnalysis(tp.NamedTuple):
-    freqs: Tensor
-    modes: Tensor
-    fconstants: Tensor
-    rmasses: Tensor
 
 
 def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
