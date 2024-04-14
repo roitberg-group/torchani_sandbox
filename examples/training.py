@@ -8,7 +8,7 @@ import torch.utils.tensorboard
 
 import torchani
 from torchani.models import BuiltinModel
-from torchani.datasests import ANIDataset, ANIBatchedDataset
+from torchani.datasets import ANIDataset, ANIBatchedDataset
 from torchani.units import hartree2kcalpermol
 from torchani.assembler import FlexibleANI
 
@@ -117,6 +117,8 @@ if latest_training_state_checkpoint_path.exists():
     scheduler.load_state_dict(checkpoint['scheduler'])
     optimizer.load_state_dict(checkpoint['optimizer'])
 
+model = model.to(torch.float)
+model = model.to(device)
 ###############################################################################
 # During training, we need to validate on validation set and if validation error
 # is better than the best, then save the new best model to a checkpoint
@@ -190,22 +192,24 @@ for epoch in range(scheduler.last_epoch, max_epochs + 1):
 
     # Validate
     rmse = validate(model, validation)
-    scheduler.step(rmse)
     print(f"After epoch {epoch}: Validation RMSE (kcal/mol) {rmse}")
 
-    # Log scalars
-    tensorboard.add_scalar('validation_rmse_kcalpermol', rmse, epoch)
-    tensorboard.add_scalar('best_validation_rmse_kcalpermol', scheduler.best, epoch)
-    tensorboard.add_scalar('learning_rate', optimizer.param_groups[0]["lr"], epoch)
-    tensorboard.add_scalar('epoch_loss_square_ha', loss, epoch)
+    # Checkpoint the model if the RMSE; improved
+    if scheduler.is_better(rmse, scheduler.best):
+        torch.save(model.state_dict(), best_model_state_checkpoint_path)
 
-    # Checkpoint the training state every epoch
+    # Step the epoch-scheduler
+    scheduler.step(rmse)
+
+    # Checkpoint the training state
     torch.save({
         'model': model.state_dict(),
         'optimizer': optimizer.state_dict(),
         'scheduler': scheduler.state_dict(),
     }, latest_training_state_checkpoint_path)
 
-    # Checkpoint the best model if the RMSE improved
-    if scheduler.is_better(rmse, scheduler.best):
-        torch.save(model.state_dict(), best_model_state_checkpoint_path)
+    # Log scalars
+    tensorboard.add_scalar('validation_rmse_kcalpermol', rmse, epoch)
+    tensorboard.add_scalar('best_validation_rmse_kcalpermol', scheduler.best, epoch)
+    tensorboard.add_scalar('learning_rate', optimizer.param_groups[0]["lr"], epoch)
+    tensorboard.add_scalar('epoch_loss_square_ha', loss, epoch)
