@@ -158,7 +158,7 @@ tensorboard = torch.utils.tensorboard.SummaryWriter()
 mse = torch.nn.MSELoss(reduction='none')
 
 # Criteria for stopping training
-max_epochs = 10
+max_epochs = 5
 min_learning_rate = 1.0e-10
 
 # Epoch 0 is right before training starts

@@ -65,10 +65,10 @@ dyn = Langevin(
     temperature_K=300,
     friction=0.2,
 )
-dyn.attach(print_energy, interval=50, atoms=atoms)
+dyn.attach(print_energy, interval=5, atoms=atoms)
 
 ###############################################################################
 # Finally we run the dynamics
 print("Running dynamics...")
 print_energy(atoms)
-dyn.run(1000)
+dyn.run(50)
