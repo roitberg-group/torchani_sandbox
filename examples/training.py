@@ -1,3 +1,9 @@
+r"""
+Train An ANI-Style Neural Network Potential
+=======================================
+
+This example shows how to use TorchANI to train a neural network potential.
+"""
 import typing as tp
 import math
 from pathlib import Path
@@ -11,7 +17,6 @@ from torchani.models import BuiltinModel
 from torchani.datasets import ANIDataset, ANIBatchedDataset
 from torchani.units import hartree2kcalpermol
 from torchani.assembler import FlexibleANI
-
 
 # Explanation of how to train an ANI model
 # Device and dataset to run the training
