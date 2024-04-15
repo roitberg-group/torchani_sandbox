@@ -4,10 +4,13 @@ More advanced usage of the ANIDataset class
 
 Example showing more involved conformer and property manipulation.
 """
+# To begin with, let's import the modules we will use:
 import shutil
+from pathlib import Path
+
 import torch
 import numpy as np
-from pathlib import Path
+
 from torchani.datasets import ANIDataset
 
 ###############################################################################

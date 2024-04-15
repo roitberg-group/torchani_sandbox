@@ -1,18 +1,19 @@
 r"""
 Train An ANI-Style Neural Network Potential
-=======================================
+===========================================
 
 This example shows how to use TorchANI to train a neural network potential.
 """
+# To begin with, let's first import the modules and setup devices we will use:
 import typing as tp
 import math
 from pathlib import Path
 
-import tqdm
 import torch
 import torch.utils.tensorboard
 
 import torchani
+from torchani.utils import tqdm
 from torchani.models import BuiltinModel
 from torchani.datasets import ANIDataset, ANIBatchedDataset
 from torchani.units import hartree2kcalpermol
@@ -177,7 +178,7 @@ for epoch in range(scheduler.last_epoch, max_epochs + 1):
         break
 
     # Loop over batches
-    for batch in tqdm.tqdm(
+    for batch in tqdm(
         training,
         total=len(training),
         desc=f"Epoch {epoch}",
