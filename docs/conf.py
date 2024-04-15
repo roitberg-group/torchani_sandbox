@@ -2,7 +2,7 @@ import torchani  # noqa: F401
 import sphinx_rtd_theme
 
 project = 'TorchANI'
-copyright = '2018, Roitberg Group'
+copyright = '2024, Roitberg Group'
 author = 'Xiang Gao'
 
 version = torchani.__version__
@@ -36,7 +36,6 @@ intersphinx_mapping = {
     'python': ('https://docs.python.org/', None),
     'numpy': ('http://docs.scipy.org/doc/numpy/', None),
     'torch': ('https://pytorch.org/docs/master/', None),
-    'ignite': ('https://pytorch.org/ignite/', None),
     'ase': ('https://wiki.fysik.dtu.dk/ase/', None),
 }
 
