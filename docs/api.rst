@@ -10,7 +10,6 @@ TorchANI
 .. autoclass:: torchani.EnergyShifter
     :members:
 
-
 Model Zoo
 =========
 
@@ -22,13 +21,10 @@ Model Zoo
 .. autoclass:: torchani.models.ANI2x
     :members:
 
-
 Datasets
 ========
 
-.. automodule:: torchani.data
-
-
+.. automodule:: torchani.datasets
 
 Utilities
 =========
@@ -44,7 +40,6 @@ Utilities
 .. autofunction:: torchani.utils.vibrational_analysis
 .. autofunction:: torchani.utils.get_atomic_masses
 
-
 NeuroChem
 =========
 
@@ -58,7 +53,6 @@ NeuroChem
 .. autoclass:: torchani.neurochem.Trainer
     :members:
 .. automodule:: torchani.neurochem.trainer
-
 
 ASE Interface
 =============
