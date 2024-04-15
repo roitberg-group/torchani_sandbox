@@ -29,7 +29,8 @@ htmlhelp_basename = 'TorchANIdoc'
 sphinx_gallery_conf = {
     'examples_dirs': '../examples',
     'gallery_dirs': 'examples',
-    'filename_pattern': r'.*\.py'
+    'filename_pattern': r'.*\.py',
+    'ignore_pattern': r'legacy_.*\.py',
 }
 
 intersphinx_mapping = {

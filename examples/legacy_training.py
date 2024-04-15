@@ -12,7 +12,7 @@ specified in `inputtrain.ipt`_
 
 .. note::
     TorchANI provide tools to run NeuroChem training config file `inputtrain.ipt`.
-    See: :ref:`neurochem-training`.
+    See: `neurochem-training`.
 
 .. warning::
     The training setup used in this file is configured to reproduce the original research
@@ -52,7 +52,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # .. note::
 #
 #   Besides defining these hyperparameters programmatically,
-#   :mod:`torchani.neurochem` provide tools to read them from file.
+#   `torchani.neurochem` provide tools to read them from file.
 #
 # .. _rHCNO-5.2R_16-3.5A_a4-8.params:
 #   https://github.com/aiqm/torchani/blob/master/torchani/resources/ani-1x_8x/rHCNO-5.2R_16-3.5A_a4-8.params

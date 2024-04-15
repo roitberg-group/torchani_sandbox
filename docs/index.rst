@@ -21,7 +21,7 @@ Welcome to TorchANI's documentation!
     examples/vibration_analysis
     examples/training
     examples/datasets_simple_usage
-    examples/dataset_advanced_usage
+    examples/datasets_advanced_usage
     examples/modular_aev
     examples/repulsive_potential
     examples/dispersion_potential

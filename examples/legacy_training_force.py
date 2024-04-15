@@ -4,7 +4,7 @@ Training A Neural Network Potential To Both Energies and Forces (Legacy)
 ========================================================================
 
 We have seen how to train a neural network potential by manually writing
-training loop in :ref:`training-example`. This tutorial shows how to modify
+training loop in `training-example`. This tutorial shows how to modify
 that script to train to force.
 """
 
