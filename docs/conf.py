@@ -34,8 +34,8 @@ sphinx_gallery_conf = {
 }
 
 intersphinx_mapping = {
-    'python': ('https://docs.python.org/3/objects.inv', None),
-    'numpy': ('https://numpy.org/doc/stable/objects.inv', None),
+    'python': ('https://docs.python.org/3/', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
     'torch': ('https://pytorch.org/docs/master/', None),
     'ase': ('https://wiki.fysik.dtu.dk/ase/', None),
 }
