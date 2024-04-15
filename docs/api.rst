@@ -1,17 +1,42 @@
 TorchANI
 ========
 
-.. autoclass:: torchani.AEVComputer
+Atomic Environment Vectors
+==========================
+
+.. autoclass:: torchani.aev.AEVComputer
     :members:
-.. autoclass:: torchani.ANIModel
-.. autoclass:: torchani.Ensemble
-.. autoclass:: torchani.SpeciesConverter
+.. autoclass:: torchani.aev.aev_terms.StandardRadial
     :members:
-.. autoclass:: torchani.EnergyShifter
+.. autoclass:: torchani.aev.aev_terms.StandardAngular
     :members:
 
-Model Zoo
-=========
+Cutoff functions
+================
+
+.. autoclass:: torchani.cutoffs.Cutoff
+    :members:
+.. autoclass:: torchani.cutoffs.CutoffSmooth
+    :members:
+.. autoclass:: torchani.cutoffs.CutoffCosine
+    :members:
+
+Neighborlists
+=============
+
+.. automodule:: torchani.neighbors
+.. autoclass:: torchani.neighbors.FullPairwise
+.. autoclass:: torchani.neighbors.CellList
+
+Atomic Networks and containers
+==============================
+
+.. autoclass:: torchani.ANIModel
+.. autoclass:: torchani.Ensemble
+.. automodule:: torchani.atomics
+
+Builtin Models
+==============
 
 .. automodule:: torchani.models
 .. autoclass:: torchani.models.ANI1x
@@ -25,6 +50,11 @@ Datasets
 ========
 
 .. automodule:: torchani.datasets
+.. autoclass:: torchani.datasets.ANIDataset
+    :members:
+.. autoclass:: torchani.datasets.ANIBatchedDataset
+    :members:
+.. autofunction:: torchani.datasets.create_batched_dataset
 
 Utilities
 =========
@@ -39,20 +69,10 @@ Utilities
 .. autofunction:: torchani.utils.hessian
 .. autofunction:: torchani.utils.vibrational_analysis
 .. autofunction:: torchani.utils.get_atomic_masses
-
-NeuroChem
-=========
-
-.. automodule:: torchani.neurochem
-.. autoclass:: torchani.neurochem.Constants
+.. autoclass:: torchani.SpeciesConverter
     :members:
-.. autofunction:: torchani.neurochem.load_sae
-.. autofunction:: torchani.neurochem.load_atomic_network
-.. autofunction:: torchani.neurochem.load_model
-.. autofunction:: torchani.neurochem.load_model_ensemble
-.. autoclass:: torchani.neurochem.Trainer
+.. autoclass:: torchani.EnergyShifter
     :members:
-.. automodule:: torchani.neurochem.trainer
 
 ASE Interface
 =============
