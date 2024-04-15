@@ -15,16 +15,16 @@ Welcome to TorchANI's documentation!
     :maxdepth: 2
     :caption: Examples
 
-    examples/energy_force
+    examples/energy_and_force_calculation
     examples/ase_interface
-    examples/jit
+    examples/just_in_time_compilation
     examples/vibration_analysis
-    examples/load_from_neurochem
-    examples/nnp_training
-    examples/nnp_training_force
-    examples/neurochem_trainer
-    examples/dataset_example_simple
-    examples/dataset_example_advanced
+    examples/training
+    examples/datasets_simple_usage
+    examples/dataset_advanced_usage
+    examples/modular_aev
+    examples/repulsive_potential
+    examples/dispersion_potential
 
 .. toctree::
     :maxdepth: 2
