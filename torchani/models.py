@@ -56,7 +56,6 @@ example usage:
 import typing as tp
 import os
 import warnings
-from copy import deepcopy
 from pathlib import Path
 from collections import OrderedDict
 
@@ -64,7 +63,6 @@ import torch
 from torch import Tensor
 from torch.jit import Final
 
-from torchani import atomics
 from torchani.tuples import (
     SpeciesEnergies,
     SpeciesEnergiesQBC,
@@ -78,10 +76,8 @@ from torchani.utils import ChemicalSymbolsToInts, PERIODIC_TABLE, ATOMIC_NUMBERS
 from torchani.aev import AEVComputer
 from torchani.potentials import (
     AEVPotential,
-    RepulsionXTB,
-    TwoBodyDispersionD3,
     Potential,
-    PairwisePotential,
+    PairPotential,
 )
 from torchani.neighbors import rescreen
 
@@ -419,11 +415,11 @@ class BuiltinModel(torch.nn.Module):
         return self.neural_networks.size
 
 
-class BuiltinModelPairInteractions(BuiltinModel):
+class PairPotentialsModel(BuiltinModel):
     def __init__(
         self,
         *args,
-        pairwise_potentials: tp.Iterable[PairwisePotential] = tuple(),
+        pairwise_potentials: tp.Iterable[PairPotential] = tuple(),
         **kwargs
     ):
         super().__init__(*args, **kwargs)
@@ -514,7 +510,7 @@ class BuiltinModelPairInteractions(BuiltinModel):
     def __getitem__(self, index: int) -> 'BuiltinModel':
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         non_aev_potentials = [p for p in self.potentials if not isinstance(p, AEVPotential)]
-        return BuiltinModelPairInteractions(
+        return PairPotentialsModel(
             aev_computer=self.aev_computer,
             neural_networks=self.neural_networks[index],
             energy_shifter=self.energy_shifter,
@@ -522,51 +518,6 @@ class BuiltinModelPairInteractions(BuiltinModel):
             periodic_table_index=self.periodic_table_index,
             pairwise_potentials=non_aev_potentials,
         )
-
-
-def _get_component_modules(
-    state_dict_file: str,
-    model_index: tp.Optional[int] = None,
-    aev_computer_kwargs: tp.Optional[tp.Dict[str, tp.Any]] = None,
-    ensemble_size: int = 8,
-    atomic_maker: tp.Optional[tp.Callable[[str], torch.nn.Module]] = None,
-    aev_maker: tp.Optional[tp.Callable[..., AEVComputer]] = None,
-    elements: tp.Optional[tp.Sequence[str]] = None,
-    self_energies: tp.Optional[tp.Sequence[float]] = None
-) -> tp.Tuple[AEVComputer, NN, EnergyShifter, tp.Sequence[str]]:
-    # Component modules are obtained by default from the name of the state_dict_file,
-    # but they can be overriden by passing specific parameters
-
-    if aev_computer_kwargs is None:
-        aev_computer_kwargs = dict()
-    # This generates ani-style architectures without neurochem
-    name = state_dict_file.split('_')[0]
-    _elements: tp.Sequence[str]
-    if name == 'ani1x':
-        _aev_maker = aev_maker or AEVComputer.like_1x
-        _atomic_maker = atomic_maker or atomics.like_1x
-        _elements = elements or ('H', 'C', 'N', 'O')
-    elif name == 'ani1ccx':
-        _aev_maker = aev_maker or AEVComputer.like_1ccx
-        _atomic_maker = atomic_maker or atomics.like_1ccx
-        _elements = elements or ('H', 'C', 'N', 'O')
-    elif name == 'ani2x':
-        _aev_maker = aev_maker or AEVComputer.like_2x
-        _atomic_maker = atomic_maker or atomics.like_2x
-        _elements = elements or ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
-    else:
-        raise ValueError(f'{name} is not a supported model')
-
-    aev_computer = _aev_maker(**aev_computer_kwargs)
-    atomic_networks = OrderedDict([(e, _atomic_maker(e)) for e in _elements])
-    energy_shifter = EnergyShifter(self_energies or [0.0] * len(_elements))
-    neural_networks: NN
-    if model_index is None:
-        neural_networks = Ensemble([ANIModel(deepcopy(atomic_networks)) for _ in range(ensemble_size)])
-    else:
-        neural_networks = ANIModel(atomic_networks)
-
-    return aev_computer, neural_networks, energy_shifter, _elements
 
 
 def _fetch_state_dict(state_dict_file: str,
@@ -612,203 +563,129 @@ def _fetch_state_dict(state_dict_file: str,
     return new_state_dict
 
 
-def _load_ani_model(state_dict_file: tp.Optional[str] = None,
-                    info_file: tp.Optional[str] = None,
-                    repulsion_kwargs: tp.Optional[tp.Dict[str, tp.Any]] = None,
-                    repulsion: bool = False,
-                    dispersion_kwargs: tp.Optional[tp.Dict[str, tp.Any]] = None,
-                    dispersion: bool = False,
-                    cutoff_fn: tp.Union[str, torch.nn.Module] = 'cosine',  # for aev
-                    pretrained: bool = True,
-                    model_index: int = None,
-                    use_neurochem_source: bool = False,
-                    ensemble_size: int = 8,
-                    **model_kwargs) -> BuiltinModel:
-    # Helper function to toggle if the loading is done from an NC file or
-    # directly using torchani and state_dicts
-    aev_maker = model_kwargs.pop('aev_maker', None)
-    atomic_maker = model_kwargs.pop('atomic_maker', None)
-    elements = model_kwargs.pop('elements', None)
-
-    if pretrained:
-        assert ensemble_size == 8
-        assert not repulsion, "No pretrained model with those characteristics exists"
-        assert cutoff_fn == 'cosine', "No pretrained model with those characteristics exists"
-
-    # aev computer args
-    cell_list = model_kwargs.pop('cell_list', False)
-    verlet_cell_list = model_kwargs.pop('verlet_cell_list', False)
-    if cell_list:
-        neighborlist = 'cell_list'
-    elif verlet_cell_list:
-        neighborlist = 'verlet_cell_list'
-    else:
-        neighborlist = 'full_pairwise'
-    aev_computer_kwargs = {'neighborlist': neighborlist,
-                           'cutoff_fn': cutoff_fn,
-                           'use_cuda_extension': model_kwargs.pop('use_cuda_extension', False),
-                           'use_cuaev_interface': model_kwargs.pop('use_cuaev_interface', False)}
-
-    if use_neurochem_source:
-        assert info_file is not None, "Info file is needed to load from a neurochem source"
-        assert pretrained, "Non pretrained models not available from neurochem source"
-        # neurochem is legacy and not type-checked
-        from . import neurochem  # noqa
-        components = neurochem.parse_resources._get_component_modules(info_file, model_index, aev_computer_kwargs)  # type: ignore
-    else:
-        assert state_dict_file is not None
-        components = _get_component_modules(
-            state_dict_file,
-            model_index,
-            aev_computer_kwargs,
-            atomic_maker=atomic_maker,
-            aev_maker=aev_maker,
-            elements=elements,
-            ensemble_size=ensemble_size)
-
+def load_from_neurochem(
+    info_file: str,
+    model_index: tp.Optional[int],
+    use_cuda_extension: bool,
+    use_cuaev_interface: bool,
+    periodic_table_index: bool,
+    pretrained: bool,
+) -> BuiltinModel:
+    if not pretrained:
+        raise ValueError("Non pretrained models are not available from neurochem")
+    # neurochem is legacy and not type-checked
+    from . import neurochem  # noqa
+    components = neurochem.parse_resources._get_component_modules(  # type: ignore
+        info_file,
+        model_index,
+        {
+            "use_cuda_extension": use_cuda_extension,
+            "use_cuaev_interface": use_cuaev_interface,
+        }
+    )  # type: ignore
     aev_computer, neural_networks, energy_shifter, elements = components
-
-    model_class: tp.Type[BuiltinModel]
-    if repulsion or dispersion:
-        model_class = BuiltinModelPairInteractions
-        pairwise_potentials: tp.List[torch.nn.Module] = []
-        cutoff = aev_computer.radial_terms.cutoff
-        potential_kwargs = {'symbols': elements, 'cutoff': cutoff}
-        if repulsion:
-            base_repulsion_kwargs = deepcopy(potential_kwargs)
-            base_repulsion_kwargs.update(repulsion_kwargs or {})
-            pairwise_potentials.append(RepulsionXTB(**base_repulsion_kwargs))
-        if dispersion:
-            base_dispersion_kwargs = deepcopy(potential_kwargs)
-            base_dispersion_kwargs.update(dispersion_kwargs or {})
-            pairwise_potentials.append(
-                TwoBodyDispersionD3.from_functional(
-                    **base_dispersion_kwargs,
-                ),
-            )
-        model_kwargs.update({'pairwise_potentials': pairwise_potentials})
-    else:
-        model_class = BuiltinModel
-
-    model = model_class(
+    return BuiltinModel(
         aev_computer,
         neural_networks,
         energy_shifter,
         elements,
-        **model_kwargs,
+        periodic_table_index=periodic_table_index,
     )
 
-    if pretrained and not use_neurochem_source:
-        assert state_dict_file is not None
-        model.load_state_dict(_fetch_state_dict(state_dict_file, model_index))
-    return model
+
+def ANI1x(
+    model_index: tp.Optional[int] = None,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    use_neurochem_source: bool = False,
+    periodic_table_index: bool = True,
+    pretrained: bool = True,
+) -> BuiltinModel:
+    if use_neurochem_source:
+        return load_from_neurochem(
+            info_file="ani-1x_8x.info",
+            model_index=model_index,
+            use_cuda_extension=use_cuda_extension,
+            use_cuaev_interface=use_cuaev_interface,
+            periodic_table_index=periodic_table_index,
+            pretrained=pretrained,
+        )
+    from . import assembler # noqa
+    return assembler.ANI1x(
+            model_index=model_index,
+            use_cuda_extension=use_cuda_extension,
+            use_cuaev_interface=use_cuaev_interface,
+            periodic_table_index=periodic_table_index,
+            pretrained=pretrained,
+    )
 
 
-def ANI1x(**kwargs) -> BuiltinModel:
-    """The ANI-1x model as in `ani-1x_8x on GitHub`_ and `Active Learning Paper`_.
-
-    The ANI-1x model is an ensemble of 8 networks that was trained using
-    active learning on the ANI-1x dataset, the target level of theory is
-    wB97X/6-31G(d). It predicts energies on HCNO elements exclusively, it
-    shouldn't be used with other atom types.
-
-    .. _ani-1x_8x on GitHub:
-        https://github.com/isayev/ASE_ANI/tree/master/ani_models/ani-1x_8x
-
-    .. _Active Learning Paper:
-        https://aip.scitation.org/doi/abs/10.1063/1.5023802
-    """
-    info_file = 'ani-1x_8x.info'
-    state_dict_file = 'ani1x_state_dict.pt'
-    return _load_ani_model(state_dict_file, info_file, **kwargs)
-
-
-def ANI1ccx(**kwargs) -> BuiltinModel:
-    """The ANI-1ccx model as in `ani-1ccx_8x on GitHub`_ and `Transfer Learning Paper`_.
-
-    The ANI-1ccx model is an ensemble of 8 networks that was trained
-    on the ANI-1ccx dataset, using transfer learning. The target accuracy
-    is CCSD(T)*/CBS (CCSD(T) using the DPLNO-CCSD(T) method). It predicts
-    energies on HCNO elements exclusively, it shouldn't be used with other
-    atom types.
-
-    .. _ani-1ccx_8x on GitHub:
-        https://github.com/isayev/ASE_ANI/tree/master/ani_models/ani-1ccx_8x
-
-    .. _Transfer Learning Paper:
-        https://doi.org/10.26434/chemrxiv.6744440.v1
-    """
-    info_file = 'ani-1ccx_8x.info'
-    state_dict_file = 'ani1ccx_state_dict.pt'
-    return _load_ani_model(state_dict_file, info_file, **kwargs)
+def ANI1ccx(
+    model_index: tp.Optional[int] = None,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    use_neurochem_source: bool = False,
+    periodic_table_index: bool = True,
+    pretrained: bool = True,
+) -> BuiltinModel:
+    if use_neurochem_source:
+        return load_from_neurochem(
+            info_file="ani-1ccx_8x.info",
+            model_index=model_index,
+            use_cuda_extension=use_cuda_extension,
+            use_cuaev_interface=use_cuaev_interface,
+            periodic_table_index=periodic_table_index,
+            pretrained=pretrained,
+        )
+    from . import assembler # noqa
+    return assembler.ANI1ccx(
+            model_index=model_index,
+            use_cuda_extension=use_cuda_extension,
+            use_cuaev_interface=use_cuaev_interface,
+            periodic_table_index=periodic_table_index,
+            pretrained=pretrained,
+    )
 
 
-def ANI2x(**kwargs) -> BuiltinModel:
-    """The ANI-2x model as in `ANI2x Paper`_ and `ANI2x Results on GitHub`_.
-
-    The ANI-2x model is an ensemble of 8 networks that was trained on the
-    ANI-2x dataset. The target level of theory is wB97X/6-31G(d). It predicts
-    energies on HCNOFSCl elements exclusively it shouldn't be used with other
-    atom types.
-
-    .. _ANI2x Results on GitHub:
-        https://github.com/cdever01/ani-2x_results
-
-    .. _ANI2x Paper:
-        https://doi.org/10.26434/chemrxiv.11819268.v1
-    """
-    info_file = 'ani-2x_8x.info'
-    state_dict_file = 'ani2x_state_dict.pt'
-    return _load_ani_model(state_dict_file, info_file, **kwargs)
+def ANI2x(
+    model_index: tp.Optional[int] = None,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    use_neurochem_source: bool = False,
+    periodic_table_index: bool = True,
+    pretrained: bool = True,
+) -> BuiltinModel:
+    if use_neurochem_source:
+        return load_from_neurochem(
+            info_file="ani-2x_8x.info",
+            model_index=model_index,
+            use_cuda_extension=use_cuda_extension,
+            use_cuaev_interface=use_cuaev_interface,
+            periodic_table_index=periodic_table_index,
+            pretrained=pretrained,
+        )
+    from . import assembler # noqa
+    return assembler.ANI2x(
+            model_index=model_index,
+            use_cuda_extension=use_cuda_extension,
+            use_cuaev_interface=use_cuaev_interface,
+            periodic_table_index=periodic_table_index,
+            pretrained=pretrained,
+    )
 
 
 def ANIdr(
-    pretrained: bool = True,
     model_index: tp.Optional[int] = None,
-    **kwargs,
-):
-    """ANI model trained with both dispersion and repulsion
-
-    The level of theory is B973c, it is an ensemble of 7 models.
-    It predicts
-    energies on HCNOFSCl elements
-    """
-    # TODO: Fix this
-    if model_index is not None:
-        raise ValueError(
-            "Currently ANIdr only supports model_index=None, "
-            "to get individual models please index the ensemble"
-        )
-
-    # An ani model with dispersion
-    symbols = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
-    model = ANI2x(
-        pretrained=False,
-        cutoff_fn='smooth',
-        atomic_maker=atomics.like_dr,
-        ensemble_size=7,
-        dispersion=True,
-        dispersion_kwargs={
-            'symbols': symbols,
-            'cutoff': 8.5,
-            'cutoff_fn': 'smooth4',
-            'functional': 'B973c'
-        },
-        repulsion=True,
-        repulsion_kwargs={
-            'symbols': symbols,
-            'cutoff': 5.3,
-            'cutoff_fn': 'smooth2'
-        },
-        model_index=model_index,
-        **kwargs,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    periodic_table_index: bool = True,
+    pretrained: bool = True,
+) -> BuiltinModel:
+    from . import assembler # noqa
+    return assembler.ANIdr(
+            model_index=model_index,
+            use_cuda_extension=use_cuda_extension,
+            use_cuaev_interface=use_cuaev_interface,
+            periodic_table_index=periodic_table_index,
+            pretrained=pretrained,
     )
-    if pretrained:
-        model.load_state_dict(
-            _fetch_state_dict(
-                'anidr_state_dict.pt',
-                model_index=model_index,
-                private=True,
-            )
-        )
-    return model

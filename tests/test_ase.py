@@ -12,8 +12,8 @@ from ase.io import read
 from ase.calculators.test import numeric_force
 from torchani.neighbors import CellList
 from torchani.testing import TestCase
-from torchani.models import _fetch_state_dict, ANI1x, BuiltinModelPairInteractions
-from torchani.potentials import DummyPairwisePotential
+from torchani.models import _fetch_state_dict, ANI1x, PairPotentialsModel
+from torchani.potentials import DummyPairPotential
 
 
 path = os.path.dirname(os.path.realpath(__file__))
@@ -45,15 +45,15 @@ class TestASE(TestCase):
         model_cell = model_cell.to(dtype=torch.double, device=self.device)
         model = ANI1x(model_index=0)
         model = model.to(dtype=torch.double, device=self.device)
-        model_pair = BuiltinModelPairInteractions(
+        model_pair = PairPotentialsModel(
             aev_computer=model_cell.aev_computer,
             neural_networks=model_cell.neural_networks,
             energy_shifter=model_cell.energy_shifter,
             elements=model_cell.get_chemical_symbols(),
             pairwise_potentials=[
-                DummyPairwisePotential(cutoff=6.4),
-                DummyPairwisePotential(cutoff=5.2),
-                DummyPairwisePotential(cutoff=3.0),
+                DummyPairPotential(cutoff=6.4),
+                DummyPairPotential(cutoff=5.2),
+                DummyPairPotential(cutoff=3.0),
             ]
         )
         model_pair = model_pair.to(dtype=torch.double, device=self.device)

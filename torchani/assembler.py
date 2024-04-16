@@ -13,7 +13,7 @@ An energy-predicting ANI-style model consists of:
 - Self Energies Dict (In Ha) {"H": -12.0, "C": -75.0, ...}
 - Shifter (typically EnergyShifter, or subclass)
 
-One or more PairwisePotentials (Typically RepulsionXTB, TwoBodyDispersion)
+One or more PairPotentials (Typically RepulsionXTB, TwoBodyDispersion)
 TBA, VDW potential, Coulombic
 
 Each of the potentials will have their own cutoff, and the Featurizer has two
@@ -22,7 +22,7 @@ the angular cutoff, and it is recommended that the angular cutoff is kept
 small, roughly 3.5 Ang or less).
 
 These pieces are assembled into a Model, which is a subclass of BuiltinModel
-(or BuiltinModelPairInteractions if it has PairwisePotentials).
+(or PairPotentialsModel if it has PairPotentials).
 
 Some of the Featurizers support custom made cuda operators that accelerate them
 """
@@ -38,11 +38,11 @@ import torch
 from torch import Tensor
 
 from torchani import atomics
-from torchani.models import BuiltinModel, BuiltinModelPairInteractions
+from torchani.models import BuiltinModel, PairPotentialsModel
 from torchani.neighbors import BaseNeighborlist
 from torchani.cutoffs import _parse_cutoff_fn, Cutoff
 from torchani.potentials import (
-    PairwisePotential,
+    PairPotential,
     RepulsionXTB,
     TwoBodyDispersionD3,
 )
@@ -53,7 +53,7 @@ from torchani.utils import EnergyShifter, GSAES, ATOMIC_NUMBERS
 ModelType = tp.Type[BuiltinModel]
 NeighborlistType = tp.Type[BaseNeighborlist]
 FeaturizerType = tp.Type[AEVComputer]
-PairwisePotentialType = tp.Type[PairwisePotential]
+PairPotentialType = tp.Type[PairPotential]
 AtomicContainerType = tp.Type[ANIModel]
 ShifterType = tp.Type[EnergyShifter]
 
@@ -100,7 +100,7 @@ class FeaturizerWrapper:
 
 @dataclass
 class PotentialWrapper:
-    cls: PairwisePotentialType
+    cls: PairPotentialType
     extra: tp.Optional[tp.Dict[str, tp.Any]] = None
     cutoff_fn: tp.Union[Cutoff, str] = "global"
     cutoff: float = math.inf
@@ -267,15 +267,15 @@ class Assembler:
 
     def add_pairwise_potential(
         self,
-        pair_type: PairwisePotentialType,
+        pair_type: PairPotentialType,
         cutoff: float = math.inf,
         cutoff_fn: tp.Union[Cutoff, str] = "global",
         extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
-        if not issubclass(self._model_type, BuiltinModelPairInteractions):
+        if not issubclass(self._model_type, PairPotentialsModel):
             # Override the model if it is exactly equal to this class
             if self._model_type == BuiltinModel:
-                self._model_type = BuiltinModelPairInteractions
+                self._model_type = PairPotentialsModel
             else:
                 raise ValueError(
                     "The model class must support pairwise potentials in order to add potentials"
@@ -290,7 +290,6 @@ class Assembler:
         )
 
     def assemble(self) -> BuiltinModel:
-        # Here it is necessary to get the largest cutoff to attach to the neighborlist, right?
         if not self.symbols:
             raise RuntimeError(
                 "At least one symbol is needed, please set `symbols` with a sequence of chemical symbols"
@@ -303,6 +302,7 @@ class Assembler:
         if all(e == 0.0 for e in self.self_energies.values()):
             warnings.warn("Assembling model with ZERO self energies!")
 
+        # Here it is necessary to get the largest cutoff to attach to the neighborlist
         cuts = [pot.cutoff for pot in self._pairwise_potentials]
         cuts.extend([self._featurizer.angular_cutoff, self._featurizer.radial_cutoff])
         max_cutoff = max(cuts)
@@ -386,10 +386,24 @@ class Assembler:
 
 
 def ANI1x(
+    model_index: tp.Optional[int] = None,
     pretrained: bool = True,
     neighborlist: str = "full_pairwise",
     cuda_ops: bool = False,
 ) -> BuiltinModel:
+    """The ANI-1x model as in `ani-1x_8x on GitHub`_ and `Active Learning Paper`_.
+
+    The ANI-1x model is an ensemble of 8 networks that was trained using
+    active learning on the ANI-1x dataset, the target level of theory is
+    wB97X/6-31G(d). It predicts energies on HCNO elements exclusively, it
+    shouldn't be used with other atom types.
+
+    .. _ani-1x_8x on GitHub:
+        https://github.com/isayev/ASE_ANI/tree/master/ani_models/ani-1x_8x
+
+    .. _Active Learning Paper:
+        https://aip.scitation.org/doi/abs/10.1063/1.5023802
+    """
     asm = Assembler(ensemble_size=8)
     asm.symbols = ELEMENTS_1X
     asm.set_atomic_maker(atomics.like_1x)
@@ -405,14 +419,29 @@ def ANI1x(
     model = asm.assemble()
     if pretrained:
         model.load_state_dict(fetch_state_dict("ani1x_state_dict.pt", private=False))
-    return model
+    return model if model_index is None else model[model_index]
 
 
 def ANI1ccx(
+    model_index: tp.Optional[int] = None,
     pretrained: bool = True,
     neighborlist: str = "full_pairwise",
     cuda_ops: bool = False,
 ) -> BuiltinModel:
+    """The ANI-1ccx model as in `ani-1ccx_8x on GitHub`_ and `Transfer Learning Paper`_.
+
+    The ANI-1ccx model is an ensemble of 8 networks that was trained
+    on the ANI-1ccx dataset, using transfer learning. The target accuracy
+    is CCSD(T)*/CBS (CCSD(T) using the DPLNO-CCSD(T) method). It predicts
+    energies on HCNO elements exclusively, it shouldn't be used with other
+    atom types.
+
+    .. _ani-1ccx_8x on GitHub:
+        https://github.com/isayev/ASE_ANI/tree/master/ani_models/ani-1ccx_8x
+
+    .. _Transfer Learning Paper:
+        https://doi.org/10.26434/chemrxiv.6744440.v1
+    """
     asm = Assembler(ensemble_size=8)
     asm.symbols = ELEMENTS_1X
     asm.set_global_cutoff_fn("cosine")
@@ -428,14 +457,28 @@ def ANI1ccx(
     model = asm.assemble()
     if pretrained:
         model.load_state_dict(fetch_state_dict("ani1ccx_state_dict.pt", private=False))
-    return model
+    return model if model_index is None else model[model_index]
 
 
 def ANI2x(
+    model_index: tp.Optional[int] = None,
     pretrained: bool = True,
     neighborlist: str = "full_pairwise",
     cuda_ops: bool = False,
 ) -> BuiltinModel:
+    """The ANI-2x model as in `ANI2x Paper`_ and `ANI2x Results on GitHub`_.
+
+    The ANI-2x model is an ensemble of 8 networks that was trained on the
+    ANI-2x dataset. The target level of theory is wB97X/6-31G(d). It predicts
+    energies on HCNOFSCl elements exclusively it shouldn't be used with other
+    atom types.
+
+    .. _ANI2x Results on GitHub:
+        https://github.com/cdever01/ani-2x_results
+
+    .. _ANI2x Paper:
+        https://doi.org/10.26434/chemrxiv.11819268.v1
+    """
     asm = Assembler(ensemble_size=8)
     asm.symbols = ELEMENTS_2X
     asm.set_global_cutoff_fn("cosine")
@@ -451,7 +494,7 @@ def ANI2x(
     model = asm.assemble()
     if pretrained:
         model.load_state_dict(fetch_state_dict("ani2x_state_dict.pt", private=False))
-    return model
+    return model if model_index is None else model[model_index]
 
 
 def ANIala(
@@ -479,10 +522,17 @@ def ANIala(
 
 
 def ANIdr(
+    model_index: tp.Optional[int] = None,
     pretrained: bool = True,
     neighborlist: str = "full_pairwise",
     cuda_ops: bool = False,
 ) -> BuiltinModel:
+    """ANI model trained with both dispersion and repulsion
+
+    The level of theory is B973c, it is an ensemble of 7 models.
+    It predicts
+    energies on HCNOFSCl elements
+    """
     asm = Assembler(ensemble_size=7)
     asm.symbols = ELEMENTS_2X
     asm.set_global_cutoff_fn("smooth2")
@@ -508,7 +558,7 @@ def ANIdr(
     model = asm.assemble()
     if pretrained:
         model.load_state_dict(fetch_state_dict("anidr_state_dict.pt", private=True))
-    return model
+    return model if model_index is None else model[model_index]
 
 
 def FlexibleANI(
