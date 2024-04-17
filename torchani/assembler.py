@@ -1,6 +1,4 @@
 r"""
-WARNING: This module is currently experimental and untested, use under your own risk!
-
 The assembler's responsibility is to build an ANI-style model from the
 different necessary parts, in such a way that all the parts of the model
 interact in the correct way and there are no compatibility issues among them.
@@ -11,7 +9,7 @@ An energy-predicting ANI-style model consists of:
 - Container for atomic networks (typically ANIModel)
 - Atomic Networks Dict {"H": torch.nn.Module(), "C": torch.nn.Module, ...}
 - Self Energies Dict (In Ha) {"H": -12.0, "C": -75.0, ...}
-- Shifter (typically EnergyShifter, or subclass)
+- Shifter (typically EnergyAdder, or subclass)
 
 One or more PairPotentials (Typically RepulsionXTB, TwoBodyDispersion)
 TBA, VDW potential, Coulombic
@@ -48,18 +46,37 @@ from torchani.potentials import (
 )
 from torchani.aev import AEVComputer, StandardAngular, StandardRadial
 from torchani.nn import ANIModel, Ensemble
-from torchani.utils import EnergyShifter, GSAES, ATOMIC_NUMBERS
+from torchani.utils import GSAES, ATOMIC_NUMBERS
+from torchani.potentials import EnergyAdder
 
 ModelType = tp.Type[BuiltinModel]
 NeighborlistType = tp.Type[BaseNeighborlist]
 FeaturizerType = tp.Type[AEVComputer]
 PairPotentialType = tp.Type[PairPotential]
 AtomicContainerType = tp.Type[ANIModel]
-ShifterType = tp.Type[EnergyShifter]
+ShifterType = tp.Type[EnergyAdder]
 
-SFCl = ("S", "F", "Cl")
-ELEMENTS_1X = ("H", "C", "N", "O")
-ELEMENTS_2X = ELEMENTS_1X + SFCl
+SFCl: tp.Tuple[str, ...] = ("S", "F", "Cl")
+ELEMENTS_1X: tp.Tuple[str, ...] = ("H", "C", "N", "O")
+ELEMENTS_2X: tp.Tuple[str, ...] = ELEMENTS_1X + SFCl
+
+
+def _parse_cuda_ops(
+    use_cuda_ops: bool = False,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+) -> tp.Dict[str, bool]:
+    if use_cuda_ops and not (use_cuda_extension or use_cuaev_interface):
+        return {"use_cuda_extension": True, "use_cuaev_interface": True}
+    elif not use_cuda_ops:
+        return {
+            "use_cuda_extension": use_cuaev_interface,
+            "use_cuaev_interface": use_cuaev_interface,
+        }
+    else:
+        raise ValueError(
+            "cuda extension and cuaev interface cant be specified if cuda_ops is specified"
+        )
 
 
 def sort_by_element(it: tp.Iterable[str]) -> tp.Tuple[str, ...]:
@@ -75,7 +92,6 @@ class FeaturizerWrapper:
         radial_terms: torch.nn.Module,
         angular_terms: torch.nn.Module,
         cutoff_fn: tp.Union[Cutoff, str] = "global",
-        cuda_ops: bool = False,
         extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
         self.cls = cls
@@ -86,7 +102,6 @@ class FeaturizerWrapper:
             raise ValueError("Angular cutoff must be smaller or equal to radial cutoff")
         if angular_terms.cutoff <= 0 or radial_terms.cutoff <= 0:  # type: ignore
             raise ValueError("Cutoffs must be strictly positive")
-        self.cuda_ops = cuda_ops
         self.extra = extra
 
     @property
@@ -101,9 +116,9 @@ class FeaturizerWrapper:
 @dataclass
 class PotentialWrapper:
     cls: PairPotentialType
-    extra: tp.Optional[tp.Dict[str, tp.Any]] = None
     cutoff_fn: tp.Union[Cutoff, str] = "global"
     cutoff: float = math.inf
+    extra: tp.Optional[tp.Dict[str, tp.Any]] = None
 
 
 class Assembler:
@@ -112,7 +127,7 @@ class Assembler:
         ensemble_size: int = 1,
         symbols: tp.Sequence[str] = (),
         atomic_container_type: AtomicContainerType = ANIModel,
-        shifter_type: ShifterType = EnergyShifter,
+        shifter_type: ShifterType = EnergyAdder,
         model_type: ModelType = BuiltinModel,
         featurizer: tp.Optional[FeaturizerWrapper] = None,
         neighborlist: tp.Union[NeighborlistType, str] = "full_pairwise",
@@ -142,6 +157,15 @@ class Assembler:
         # This is a deprecated feature, it should probably not be used
         self.periodic_table_index = periodic_table_index
 
+    def _check_symbols(self, symbols: tp.Optional[tp.Iterable[str]] = None) -> None:
+        if not self.symbols:
+            raise ValueError("Please set symbols before setting the gsaes as self energies")
+        if symbols is not None:
+            if set(self.symbols) != set(symbols):
+                raise ValueError(
+                    f"Passed symbols don't match supported elements {self._symbols}"
+                )
+
     @property
     def ensemble_size(self) -> int:
         return self._ensemble_size
@@ -160,9 +184,11 @@ class Assembler:
     def symbols(self) -> tp.Tuple[str, ...]:
         return self._symbols
 
-    @symbols.setter
-    def symbols(self, symbols: tp.Sequence[str]) -> None:
-        self._symbols = sort_by_element(symbols)
+    def set_symbols(self, symbols: tp.Sequence[str], auto_sort: bool = True) -> None:
+        if auto_sort:
+            self._symbols = sort_by_element(symbols)
+        else:
+            self._symbols = tuple(symbols)
 
     @property
     def atomic_networks(self) -> tp.OrderedDict[str, torch.nn.Module]:
@@ -174,32 +200,18 @@ class Assembler:
     def set_atomic_maker(
         self,
         fn: tp.Callable[[str, int], torch.nn.Module],
-        symbols: tp.Sequence[str] = (),
     ) -> None:
-        if not self.symbols:
-            self.symbols = sort_by_element(symbols)
-        elif symbols:
-            if set(self.symbols) != set(symbols):
-                raise ValueError(
-                    f"Atomic networks don't match supported elements {self._symbols}"
-                )
         self._fn_for_networks = fn
 
     @property
-    def self_energies(self) -> tp.OrderedDict[str, float]:
-        odict = OrderedDict()
-        for k in self.symbols:
-            odict[k] = self._self_energies[k]
-        return odict
+    def self_energies(self) -> tp.Dict[str, float]:
+        if not self._self_energies:
+            raise RuntimeError("Self energies have not been set")
+        return self._self_energies
 
     @self_energies.setter
     def self_energies(self, value: tp.Mapping[str, float]) -> None:
-        if not self.symbols:
-            self.symbols = sort_by_element(value.keys())
-        elif set(self.symbols) != set(value.keys()):
-            raise ValueError(
-                f"Self energies don't match supported elements {self._symbols}"
-            )
+        self._check_symbols(value.keys())
         self._self_energies = {k: v for k, v in value.items()}
 
     def set_gsaes_as_self_energies(
@@ -207,8 +219,8 @@ class Assembler:
         lot: str = "",
         functional: str = "",
         basis_set: str = "",
-        symbols: tp.Iterable[str] = (),
     ) -> None:
+        self._check_symbols()
         if (functional and basis_set) and not lot:
             lot = f"{functional}-{basis_set}"
         elif not (functional or basis_set) and lot:
@@ -217,11 +229,8 @@ class Assembler:
             raise ValueError(
                 "Incorrect specification, either specify only lot, or both functional and basis set"
             )
-
-        if not symbols:
-            symbols = self.symbols
         gsaes = GSAES[lot.lower()]
-        self.self_energies = OrderedDict([(s, gsaes[s]) for s in symbols])
+        self.self_energies = {s: gsaes[s] for s in self.symbols}
 
     def set_shifter(self, shifter_type: ShifterType) -> None:
         self._shifter_type = shifter_type
@@ -238,14 +247,14 @@ class Assembler:
         angular_terms: torch.nn.Module,
         radial_terms: torch.nn.Module,
         cutoff_fn: tp.Union[Cutoff, str] = "global",
-        cuda_ops: bool = False,
+        extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
         self._featurizer = FeaturizerWrapper(
             featurizer_type,
             cutoff_fn=cutoff_fn,
             angular_terms=angular_terms,
             radial_terms=radial_terms,
-            cuda_ops=cuda_ops,
+            extra=extra,
         )
 
     def set_neighborlist(
@@ -313,13 +322,7 @@ class Assembler:
 
         self._featurizer.angular_terms.cutoff_fn = feat_cutoff_fn
         self._featurizer.radial_terms.cutoff_fn = feat_cutoff_fn
-        if self._featurizer.cls == AEVComputer:
-            feat_kwargs = {
-                "use_cuda_extension": self._featurizer.cuda_ops,
-                "use_cuaev_interface": self._featurizer.cuda_ops,
-            }
-        else:
-            feat_kwargs = {}
+        feat_kwargs = {}
         if self._featurizer.extra is not None:
             feat_kwargs.update(self._featurizer.extra)
 
@@ -349,7 +352,8 @@ class Assembler:
             neural_networks = Ensemble(containers)
         else:
             neural_networks = self._atomic_container_type(self.atomic_networks)
-        shifter = self._shifter_type(tuple(self.self_energies.values()))
+        self_energies = self.self_energies
+        shifter = self._shifter_type(symbols=self.symbols, self_energies=tuple(self_energies[k] for k in self.symbols))
 
         if self._pairwise_potentials:
             potentials = []
@@ -385,11 +389,45 @@ class Assembler:
         )
 
 
+def load_from_neurochem(
+    info_file: str,
+    model_index: tp.Optional[int],
+    use_cuda_extension: bool,
+    use_cuaev_interface: bool,
+    periodic_table_index: bool,
+    pretrained: bool,
+) -> BuiltinModel:
+    if not pretrained:
+        raise ValueError("Non pretrained models are not available from neurochem")
+    # neurochem is legacy and not type-checked
+    from . import neurochem  # noqa
+    components = neurochem.parse_resources._get_component_modules(  # type: ignore
+        info_file,
+        model_index,
+        {
+            "use_cuda_extension": use_cuda_extension,
+            "use_cuaev_interface": use_cuaev_interface,
+        }
+    )  # type: ignore
+    aev_computer, neural_networks, energy_shifter, elements = components
+    return BuiltinModel(
+        aev_computer,
+        neural_networks,
+        energy_shifter,
+        elements,
+        periodic_table_index=periodic_table_index,
+    )
+
+
 def ANI1x(
     model_index: tp.Optional[int] = None,
     pretrained: bool = True,
     neighborlist: str = "full_pairwise",
-    cuda_ops: bool = False,
+    use_cuda_ops: bool = False,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    periodic_table_index: bool = True,
+    use_neurochem_source: bool = False,
 ) -> BuiltinModel:
     """The ANI-1x model as in `ani-1x_8x on GitHub`_ and `Active Learning Paper`_.
 
@@ -404,15 +442,24 @@ def ANI1x(
     .. _Active Learning Paper:
         https://aip.scitation.org/doi/abs/10.1063/1.5023802
     """
-    asm = Assembler(ensemble_size=8)
-    asm.symbols = ELEMENTS_1X
+    if use_neurochem_source:
+        return load_from_neurochem(
+            info_file="ani-1x_8x.info",
+            model_index=model_index,
+            use_cuda_extension=use_cuda_extension,
+            use_cuaev_interface=use_cuaev_interface,
+            periodic_table_index=periodic_table_index,
+            pretrained=pretrained,
+        )
+    asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
+    asm.set_symbols(ELEMENTS_1X, auto_sort=False)
     asm.set_atomic_maker(atomics.like_1x)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
         angular_terms=StandardAngular.like_1x(),
         radial_terms=StandardRadial.like_1x(),
-        cuda_ops=cuda_ops,
+        extra=_parse_cuda_ops(use_cuda_ops, use_cuda_extension, use_cuaev_interface),
     )
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
@@ -426,7 +473,11 @@ def ANI1ccx(
     model_index: tp.Optional[int] = None,
     pretrained: bool = True,
     neighborlist: str = "full_pairwise",
-    cuda_ops: bool = False,
+    use_cuda_ops: bool = False,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    periodic_table_index: bool = True,
+    use_neurochem_source: bool = False,
 ) -> BuiltinModel:
     """The ANI-1ccx model as in `ani-1ccx_8x on GitHub`_ and `Transfer Learning Paper`_.
 
@@ -442,14 +493,23 @@ def ANI1ccx(
     .. _Transfer Learning Paper:
         https://doi.org/10.26434/chemrxiv.6744440.v1
     """
-    asm = Assembler(ensemble_size=8)
-    asm.symbols = ELEMENTS_1X
+    if use_neurochem_source:
+        return load_from_neurochem(
+            info_file="ani-1ccx_8x.info",
+            model_index=model_index,
+            use_cuda_extension=use_cuda_extension,
+            use_cuaev_interface=use_cuaev_interface,
+            periodic_table_index=periodic_table_index,
+            pretrained=pretrained,
+        )
+    asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
+    asm.set_symbols(ELEMENTS_1X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
         radial_terms=StandardRadial.like_1ccx(),
         angular_terms=StandardAngular.like_1ccx(),
-        cuda_ops=cuda_ops,
+        extra=_parse_cuda_ops(use_cuda_ops, use_cuda_extension, use_cuaev_interface),
     )
     asm.set_atomic_maker(atomics.like_1ccx)
     asm.set_neighborlist(neighborlist)
@@ -464,7 +524,11 @@ def ANI2x(
     model_index: tp.Optional[int] = None,
     pretrained: bool = True,
     neighborlist: str = "full_pairwise",
-    cuda_ops: bool = False,
+    use_cuda_ops: bool = False,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    periodic_table_index: bool = True,
+    use_neurochem_source: bool = False,
 ) -> BuiltinModel:
     """The ANI-2x model as in `ANI2x Paper`_ and `ANI2x Results on GitHub`_.
 
@@ -479,14 +543,23 @@ def ANI2x(
     .. _ANI2x Paper:
         https://doi.org/10.26434/chemrxiv.11819268.v1
     """
-    asm = Assembler(ensemble_size=8)
-    asm.symbols = ELEMENTS_2X
+    if use_neurochem_source:
+        return load_from_neurochem(
+            info_file="ani-2x_8x.info",
+            model_index=model_index,
+            use_cuda_extension=use_cuda_extension,
+            use_cuaev_interface=use_cuaev_interface,
+            periodic_table_index=periodic_table_index,
+            pretrained=pretrained,
+        )
+    asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
+    asm.set_symbols(ELEMENTS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
         radial_terms=StandardRadial.like_2x(),
         angular_terms=StandardAngular.like_2x(),
-        cuda_ops=cuda_ops,
+        extra=_parse_cuda_ops(use_cuda_ops, use_cuda_extension, use_cuaev_interface),
     )
     asm.set_atomic_maker(atomics.like_2x)
     asm.set_neighborlist(neighborlist)
@@ -498,19 +571,25 @@ def ANI2x(
 
 
 def ANIala(
+    model_index: tp.Optional[int] = None,
     pretrained: bool = True,
     neighborlist: str = "full_pairwise",
-    cuda_ops: bool = False,
+    use_cuda_ops: bool = False,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    periodic_table_index: bool = True,
 ) -> BuiltinModel:
     r"""Experimental Model fine tuned to solvated frames of Ala dipeptide"""
-    asm = Assembler(ensemble_size=1)
-    asm.symbols = ELEMENTS_2X
+    if model_index is not None:
+        raise ValueError("Model index is not supported for ANIala")
+    asm = Assembler(ensemble_size=1, periodic_table_index=periodic_table_index)
+    asm.set_symbols(ELEMENTS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
         radial_terms=StandardRadial.like_2x(),
         angular_terms=StandardAngular.like_2x(),
-        cuda_ops=cuda_ops,
+        extra=_parse_cuda_ops(use_cuda_ops, use_cuda_extension, use_cuaev_interface),
     )
     asm.set_atomic_maker(atomics.like_ala)
     asm.set_neighborlist(neighborlist)
@@ -525,7 +604,8 @@ def ANIdr(
     model_index: tp.Optional[int] = None,
     pretrained: bool = True,
     neighborlist: str = "full_pairwise",
-    cuda_ops: bool = False,
+    use_cuda_ops: bool = False,
+    periodic_table_index: bool = True,
 ) -> BuiltinModel:
     """ANI model trained with both dispersion and repulsion
 
@@ -533,14 +613,14 @@ def ANIdr(
     It predicts
     energies on HCNOFSCl elements
     """
-    asm = Assembler(ensemble_size=7)
-    asm.symbols = ELEMENTS_2X
+    asm = Assembler(ensemble_size=7, periodic_table_index=periodic_table_index)
+    asm.set_symbols(ELEMENTS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("smooth2")
     asm.set_featurizer(
         AEVComputer,
         angular_terms=StandardAngular.like_2x(),
         radial_terms=StandardRadial.like_2x(),
-        cuda_ops=cuda_ops,
+        extra=_parse_cuda_ops(use_cuda_ops),
     )
     asm.set_atomic_maker(atomics.like_dr)
     asm.add_pairwise_potential(
@@ -575,10 +655,11 @@ def FlexibleANI(
     dispersion: bool = True,
     repulsion: bool = True,
     atomic_maker: tp.Callable[[str, int], torch.nn.Module] = atomics.like_dr,
-    cuda_ops: bool = False,
+    use_cuda_ops: bool = False,
+    periodic_table_index: bool = True,
 ) -> BuiltinModel:
-    asm = Assembler(ensemble_size=ensemble_size)
-    asm.symbols = tuple(symbols)
+    asm = Assembler(ensemble_size=ensemble_size, periodic_table_index=periodic_table_index)
+    asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
     asm.set_featurizer(
         AEVComputer,
@@ -596,7 +677,7 @@ def FlexibleANI(
             num_angle_sections=angle_sections,
             cutoff=angular_cutoff,
         ),
-        cuda_ops=cuda_ops,
+        extra=_parse_cuda_ops(use_cuda_ops),
     )
     asm.set_atomic_maker(atomic_maker)
     asm.set_neighborlist(neighborlist)
@@ -638,4 +719,6 @@ def fetch_state_dict(
         model_dir=str(model_dir),
         map_location=torch.device("cpu"),
     )
+    if "energy_shifter.atomic_numbers" not in dict_:
+        dict_["energy_shifter.atomic_numbers"] = deepcopy(dict_["atomic_numbers"])
     return OrderedDict(dict_)

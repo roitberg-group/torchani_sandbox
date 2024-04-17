@@ -54,10 +54,7 @@ example usage:
     _, energies = model0((species, coordinates))
 """
 import typing as tp
-import os
 import warnings
-from pathlib import Path
-from collections import OrderedDict
 
 import torch
 from torch import Tensor
@@ -72,17 +69,19 @@ from torchani.tuples import (
     ForceMagnitudes
 )
 from torchani.nn import SpeciesConverter, Ensemble, ANIModel
-from torchani.utils import ChemicalSymbolsToInts, PERIODIC_TABLE, ATOMIC_NUMBERS, EnergyShifter, path_is_writable
+from torchani.utils import ChemicalSymbolsToInts, PERIODIC_TABLE, ATOMIC_NUMBERS, EnergyShifter
 from torchani.aev import AEVComputer
 from torchani.potentials import (
     AEVPotential,
     Potential,
     PairPotential,
+    EnergyAdder,
 )
 from torchani.neighbors import rescreen
 
 
 NN = tp.Union[ANIModel, Ensemble]
+Shifter = tp.Union[EnergyShifter, EnergyAdder]
 
 
 class BuiltinModel(torch.nn.Module):
@@ -94,7 +93,7 @@ class BuiltinModel(torch.nn.Module):
     def __init__(self,
                  aev_computer: AEVComputer,
                  neural_networks: NN,
-                 energy_shifter: EnergyShifter,
+                 energy_shifter: Shifter,
                  elements: tp.Sequence[str],
                  periodic_table_index: bool = True):
 
@@ -106,11 +105,19 @@ class BuiltinModel(torch.nn.Module):
                           " do not set periodic_table_index=True."
                           " if you need to accept raw indices set periodic_table_index=False")
 
+        shifter: EnergyAdder
+        if isinstance(energy_shifter, EnergyShifter):
+            if energy_shifter.fit_intercept:
+                raise ValueError("Intercept in energy shifter not supported")
+            shifter = EnergyAdder(symbols=elements, self_energies=energy_shifter.self_energies.tolist())
+        else:
+            shifter = energy_shifter
+
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
-        self.energy_shifter = energy_shifter
+        self.energy_shifter = shifter
         self.species_to_tensor = ChemicalSymbolsToInts(elements)
-        device = energy_shifter.self_energies.device
+        device = self.energy_shifter.self_energies.device
         self.species_converter = SpeciesConverter(elements).to(device)
 
         self.periodic_table_index = periodic_table_index
@@ -120,11 +127,8 @@ class BuiltinModel(torch.nn.Module):
 
         # checks are performed to make sure all modules passed support the
         # correct number of species
-        if energy_shifter.fit_intercept:
-            assert len(energy_shifter.self_energies) == len(self.atomic_numbers) + 1
-        else:
-            assert len(energy_shifter.self_energies) == len(self.atomic_numbers)
 
+        assert len(self.energy_shifter.self_energies) == len(self.atomic_numbers)
         assert len(self.atomic_numbers) == self.aev_computer.num_species
 
         if isinstance(self.neural_networks, Ensemble):
@@ -168,8 +172,9 @@ class BuiltinModel(torch.nn.Module):
         """
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
-        species_energies = self.neural_networks(species_aevs)
-        return self.energy_shifter(species_energies)
+        species, energies = self.neural_networks(species_aevs)
+        energies += self.energy_shifter(species)
+        return SpeciesEnergies(species, energies)
 
     @torch.jit.export
     def _maybe_convert_species(self, species_coordinates: tp.Tuple[Tensor, Tensor]) -> tp.Tuple[Tensor, Tensor]:
@@ -457,7 +462,8 @@ class PairPotentialsModel(BuiltinModel):
                 neighbor_data = rescreen(pot.cutoff, neighbor_data)
                 previous_cutoff = pot.cutoff
             energies += pot(element_idxs, neighbor_data)
-        return self.energy_shifter((element_idxs, energies))
+        energies += self.energy_shifter(element_idxs)
+        return SpeciesEnergies(element_idxs, energies)
 
     @torch.jit.export
     def atomic_energies(
@@ -520,172 +526,26 @@ class PairPotentialsModel(BuiltinModel):
         )
 
 
-def _fetch_state_dict(state_dict_file: str,
-                      model_index: tp.Optional[int] = None,
-                      local: bool = False,
-                      private: bool = False) -> tp.OrderedDict[str, Tensor]:
-    # if we want a pretrained model then we load the state dict from a
-    # remote url or a local path
-    # NOTE: torch.hub caches remote state_dicts after they have been downloaded
-    if local:
-        return torch.load(state_dict_file)
-
-    model_dir = Path(__file__).parent.joinpath('resources/state_dicts').as_posix()
-    if not path_is_writable(model_dir):
-        model_dir = os.path.expanduser('~/.local/torchani/')
-    if private:
-        url = f'http://moria.chem.ufl.edu/animodel/private/{state_dict_file}'
-    else:
-        tag = 'v0.1'
-        url = f'https://github.com/roitberg-group/torchani_model_zoo/releases/download/{tag}/{state_dict_file}'
-
-    # for now for simplicity we load a state dict for the ensemble directly and
-    # then parse if needed
-    # The argument to map_location is OK but the function is incorrectly typed
-    # in the pytorch stubs
-    state_dict = torch.hub.load_state_dict_from_url(url, model_dir=model_dir, map_location=torch.device('cpu'))  # type: ignore
-    if model_index is not None:
-        new_state_dict = OrderedDict()
-        # Parse the state dict and rename/select only useful keys to build
-        # the individual model
-        for k, v in state_dict.items():
-            tkns = k.split('.')
-            if tkns[0] == 'neural_networks':
-                # rename or discard the key
-                if int(tkns[1]) == model_index:
-                    tkns.pop(1)
-                    k = '.'.join(tkns)
-                else:
-                    continue
-            new_state_dict[k] = v
-    else:
-        new_state_dict = OrderedDict(state_dict)
-    return new_state_dict
-
-
-def load_from_neurochem(
-    info_file: str,
-    model_index: tp.Optional[int],
-    use_cuda_extension: bool,
-    use_cuaev_interface: bool,
-    periodic_table_index: bool,
-    pretrained: bool,
-) -> BuiltinModel:
-    if not pretrained:
-        raise ValueError("Non pretrained models are not available from neurochem")
-    # neurochem is legacy and not type-checked
-    from . import neurochem  # noqa
-    components = neurochem.parse_resources._get_component_modules(  # type: ignore
-        info_file,
-        model_index,
-        {
-            "use_cuda_extension": use_cuda_extension,
-            "use_cuaev_interface": use_cuaev_interface,
-        }
-    )  # type: ignore
-    aev_computer, neural_networks, energy_shifter, elements = components
-    return BuiltinModel(
-        aev_computer,
-        neural_networks,
-        energy_shifter,
-        elements,
-        periodic_table_index=periodic_table_index,
-    )
-
-
-def ANI1x(
-    model_index: tp.Optional[int] = None,
-    use_cuda_extension: bool = False,
-    use_cuaev_interface: bool = False,
-    use_neurochem_source: bool = False,
-    periodic_table_index: bool = True,
-    pretrained: bool = True,
-) -> BuiltinModel:
-    if use_neurochem_source:
-        return load_from_neurochem(
-            info_file="ani-1x_8x.info",
-            model_index=model_index,
-            use_cuda_extension=use_cuda_extension,
-            use_cuaev_interface=use_cuaev_interface,
-            periodic_table_index=periodic_table_index,
-            pretrained=pretrained,
-        )
+def ANI1x(**kwargs) -> BuiltinModel:
     from . import assembler # noqa
-    return assembler.ANI1x(
-            model_index=model_index,
-            use_cuda_extension=use_cuda_extension,
-            use_cuaev_interface=use_cuaev_interface,
-            periodic_table_index=periodic_table_index,
-            pretrained=pretrained,
-    )
+    return assembler.ANI1x(**kwargs)
 
 
-def ANI1ccx(
-    model_index: tp.Optional[int] = None,
-    use_cuda_extension: bool = False,
-    use_cuaev_interface: bool = False,
-    use_neurochem_source: bool = False,
-    periodic_table_index: bool = True,
-    pretrained: bool = True,
-) -> BuiltinModel:
-    if use_neurochem_source:
-        return load_from_neurochem(
-            info_file="ani-1ccx_8x.info",
-            model_index=model_index,
-            use_cuda_extension=use_cuda_extension,
-            use_cuaev_interface=use_cuaev_interface,
-            periodic_table_index=periodic_table_index,
-            pretrained=pretrained,
-        )
+def ANI1ccx(**kwargs) -> BuiltinModel:
     from . import assembler # noqa
-    return assembler.ANI1ccx(
-            model_index=model_index,
-            use_cuda_extension=use_cuda_extension,
-            use_cuaev_interface=use_cuaev_interface,
-            periodic_table_index=periodic_table_index,
-            pretrained=pretrained,
-    )
+    return assembler.ANI1ccx(**kwargs)
 
 
-def ANI2x(
-    model_index: tp.Optional[int] = None,
-    use_cuda_extension: bool = False,
-    use_cuaev_interface: bool = False,
-    use_neurochem_source: bool = False,
-    periodic_table_index: bool = True,
-    pretrained: bool = True,
-) -> BuiltinModel:
-    if use_neurochem_source:
-        return load_from_neurochem(
-            info_file="ani-2x_8x.info",
-            model_index=model_index,
-            use_cuda_extension=use_cuda_extension,
-            use_cuaev_interface=use_cuaev_interface,
-            periodic_table_index=periodic_table_index,
-            pretrained=pretrained,
-        )
+def ANI2x(**kwargs) -> BuiltinModel:
     from . import assembler # noqa
-    return assembler.ANI2x(
-            model_index=model_index,
-            use_cuda_extension=use_cuda_extension,
-            use_cuaev_interface=use_cuaev_interface,
-            periodic_table_index=periodic_table_index,
-            pretrained=pretrained,
-    )
+    return assembler.ANI2x(**kwargs)
 
 
-def ANIdr(
-    model_index: tp.Optional[int] = None,
-    use_cuda_extension: bool = False,
-    use_cuaev_interface: bool = False,
-    periodic_table_index: bool = True,
-    pretrained: bool = True,
-) -> BuiltinModel:
+def ANIala(**kwargs) -> BuiltinModel:
     from . import assembler # noqa
-    return assembler.ANIdr(
-            model_index=model_index,
-            use_cuda_extension=use_cuda_extension,
-            use_cuaev_interface=use_cuaev_interface,
-            periodic_table_index=periodic_table_index,
-            pretrained=pretrained,
-    )
+    return assembler.ANIala(**kwargs)
+
+
+def ANIdr(**kwargs) -> BuiltinModel:
+    from . import assembler # noqa
+    return assembler.ANIdr(**kwargs)

@@ -28,7 +28,7 @@ class TestASE(TestCase):
         # Run a Langevin thermostat dynamic for 100 steps and after the dynamic
         # check once that the numerical and analytical force agree to a given
         # relative tolerance
-        model_cell = ANI1x(model_index=0, cell_list=True)
+        model_cell = ANI1x(model_index=0, neighborlist="cell_list")
         model_cell = model_cell.to(dtype=torch.double, device=self.device)
         model = ANI1x(model_index=0)
         model = model.to(dtype=torch.double, device=self.device)
