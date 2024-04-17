@@ -475,7 +475,6 @@ class PairPotentialsModel(BuiltinModel):
         shift_energy: bool = True,
         include_non_aev_potentials: bool = True,
     ) -> SpeciesEnergies:
-        assert isinstance(self.neural_networks, (Ensemble, ANIModel))
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
         previous_cutoff = self.aev_computer.neighborlist.cutoff
