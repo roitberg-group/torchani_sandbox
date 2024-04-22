@@ -7,7 +7,7 @@ from torch.jit import Final
 from torchani.tuples import SpeciesAEV
 from torchani.utils import cumsum_from_zero
 from torchani.neighbors import _parse_neighborlist
-from torchani.cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
+from torchani.cutoffs import _parse_cutoff_fn
 from torchani.aev.aev_terms import (
     _parse_angular_terms,
     _parse_radial_terms,
@@ -26,20 +26,23 @@ class AEVComputer(torch.nn.Module):
 
     triu_index: Tensor
 
-    def __init__(self,
-                Rcr: tp.Optional[float] = None,
-                Rca: tp.Optional[float] = None,
-                EtaR: tp.Optional[Tensor] = None,
-                ShfR: tp.Optional[Tensor] = None,
-                EtaA: tp.Optional[Tensor] = None,
-                Zeta: tp.Optional[Tensor] = None,
-                ShfA: tp.Optional[Tensor] = None,
-                ShfZ: tp.Optional[Tensor] = None,
-                num_species: tp.Optional[int] = None,
-                cutoff_fn='cosine',
-                neighborlist='full_pairwise',
-                radial_terms='standard',
-                angular_terms='standard'):
+    def __init__(
+        self,
+        Rcr: tp.Optional[float] = None,
+        Rca: tp.Optional[float] = None,
+        EtaR: tp.Optional[Tensor] = None,
+        ShfR: tp.Optional[Tensor] = None,
+        EtaA: tp.Optional[Tensor] = None,
+        Zeta: tp.Optional[Tensor] = None,
+        ShfA: tp.Optional[Tensor] = None,
+        ShfZ: tp.Optional[Tensor] = None,
+        # New init:
+        num_species: tp.Optional[int] = None,
+        cutoff_fn='cosine',
+        neighborlist='full_pairwise',
+        radial_terms='standard',
+        angular_terms='standard',
+    ):
 
         # due to legacy reasons num_species is a kwarg, but it should always be
         # provided
@@ -58,16 +61,8 @@ class AEVComputer(torch.nn.Module):
         self.angular_terms = _parse_angular_terms(angular_terms, cutoff_fn, EtaA, Zeta, ShfA, ShfZ, Rca)
         self.radial_terms = _parse_radial_terms(radial_terms, cutoff_fn, EtaR, ShfR, Rcr)
         self.neighborlist = _parse_neighborlist(neighborlist, self.radial_terms.cutoff)
+
         self._validate_cutoffs_init()
-        if isinstance(cutoff_fn, CutoffCosine):
-            self.cutoff_fn_type = 'cosine'
-        elif isinstance(cutoff_fn, CutoffSmooth):
-            if cutoff_fn.order == 2 and cutoff_fn.eps == 1e-10:
-                self.cutoff_fn_type = 'smooth'
-            else:
-                self.cutoff_fn_type = 'smooth_modified'
-        else:
-            self.cutoff_fn_type = 'others'
 
         self.register_buffer('triu_index',
                              self._calculate_triu_index(num_species).to(device=self.radial_terms.EtaR.device))
@@ -110,66 +105,19 @@ class AEVComputer(torch.nn.Module):
         ret[species2, species1] = pair_index
         return ret
 
-    @classmethod
-    def like_1x(cls, **kwargs) -> "AEVComputer":
-        return cls(angular_terms='ani1x', radial_terms='ani1x', num_species=4, **kwargs)
-
-    @classmethod
-    def like_2x(cls, **kwargs) -> "AEVComputer":
-        return cls(angular_terms='ani2x', radial_terms='ani2x', num_species=7, **kwargs)
-
-    @classmethod
-    def like_1ccx(cls, **kwargs) -> "AEVComputer":
-        # just a synonym
-        return cls.like_1x(**kwargs)
-
-    def forward(self,
-                input_: tp.Tuple[Tensor, Tensor],
-                cell: tp.Optional[Tensor] = None,
-                pbc: tp.Optional[Tensor] = None) -> SpeciesAEV:
-        """Compute AEVs
-
-        Arguments:
-            input_ (tuple): Can be one of the following two cases:
-
-                If you don't care about periodic boundary conditions at all,
-                then input can be a tuple of two tensors: species, coordinates.
-                species must have shape ``(N, A)``, coordinates must have shape
-                ``(N, A, 3)`` where ``N`` is the number of molecules in a batch,
-                and ``A`` is the number of atoms.
-
-                .. warning::
-
-                    The species must be indexed in 0, 1, 2, 3, ..., not the element
-                    index in periodic table. Check :class:`torchani.SpeciesConverter`
-                    if you want periodic table indexing.
-
-                .. note:: The coordinates, and cell are in Angstrom.
-
-                If you want to apply periodic boundary conditions, then the input
-                would be a tuple of two tensors (species, coordinates) and two keyword
-                arguments `cell=...` , and `pbc=...` where species and coordinates are
-                the same as described above, cell is a tensor of shape (3, 3) of the
-                three vectors defining unit cell:
-
-                .. code-block:: python
-
-                    tensor([[x1, y1, z1],
-                            [x2, y2, z2],
-                            [x3, y3, z3]])
-
-                and pbc is boolean vector of size 3 storing if pbc is enabled
-                for that direction.
-
-        Returns:
-            NamedTuple: Species and AEVs. species are the species from the input
-            unchanged, and AEVs is a tensor of shape ``(N, A, self.aev_length)``
-        """
+    def forward(
+        self,
+        input_: tp.Tuple[Tensor, Tensor],  # species, coordinates
+        coefficients: Tensor,
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None,
+    ) -> SpeciesAEV:
         species, coordinates = input_
         # check shapes for correctness
         assert species.dim() == 2
         assert coordinates.dim() == 3
         assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
+        # TODO: check that coefficients have the correct shape
 
         # validate cutoffs
         assert self.neighborlist.cutoff >= self.radial_terms.cutoff
@@ -179,6 +127,10 @@ class AEVComputer(torch.nn.Module):
         # mapped into the central cell for pbc calculations,
         # and **in general are not**
         neighbor_data = self.neighborlist(species, coordinates, cell, pbc)
+        # Neighborlist data has:
+        # data.neighbors  shape (2, pares)
+        # data.distances  (pares,)
+        # data.diff_vectors (pares, 3)
         aev = self._compute_aev(
             element_idxs=species,
             neighbor_idxs=neighbor_data.indices,
@@ -189,10 +141,12 @@ class AEVComputer(torch.nn.Module):
 
     def _compute_aev(
         self,
-        element_idxs: Tensor,
-        neighbor_idxs: Tensor,
+        element_idxs: Tensor,  # for H -> 0, for C -> 1, for O -> 2
+        # this corresponds to atoms
+        neighbor_idxs: Tensor,  # all with all but there are issues with s orbitals =S
         distances: Tensor,
         diff_vectors: Tensor
+        # You would need smth like this but for the "AOV"
     ) -> Tensor:
         num_molecules = element_idxs.shape[0]
         num_atoms = element_idxs.shape[1]
@@ -221,10 +175,42 @@ class AEVComputer(torch.nn.Module):
             neighbor_idxs=neighbor_idxs,
             diff_vectors=diff_vectors
         )
-
+        # Your featurizer should spit this + coeff-features
+        # return torch.cat([radial_aev, angular_aev, coeff_aev_radial, coeff_aev_angular], dim=-1)
+        # coords shape is (conformer, atoms, 3)
+        # aev shape is (conformer, atoms, aev-dim)
+        # coeff_aev shape is the same (conformer, atoms, coeff-aev-dim)
         return torch.cat([radial_aev, angular_aev], dim=-1)
 
-    def _compute_angular_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, neighbor_idxs: Tensor, diff_vectors: Tensor) -> Tensor:
+    def _compute_radial_aev(
+        self,
+        num_molecules: int,
+        num_atoms: int,
+        species12: Tensor,
+        neighbor_idxs: Tensor,
+        distances: Tensor,
+    ) -> Tensor:
+        #  pairs: all pairs in all the molecules in the batch
+        radial_terms_ = self.radial_terms(distances)  # shape (pairs, radial-aev-dim)
+        radial_aev = radial_terms_.new_zeros(
+            (num_molecules * num_atoms * self.num_species,
+             self.radial_sublength))
+
+        # Assembly of the radial aev is different
+        index12 = neighbor_idxs * self.num_species + species12.flip(0)
+        radial_aev.index_add_(0, index12[0], radial_terms_)
+        radial_aev.index_add_(0, index12[1], radial_terms_)
+        radial_aev = radial_aev.reshape(num_molecules, num_atoms, self.radial_length)
+        return radial_aev
+
+    def _compute_angular_aev(
+        self,
+        num_molecules: int,
+        num_atoms: int,
+        species12: Tensor,
+        neighbor_idxs: Tensor,
+        diff_vectors: Tensor,
+    ) -> Tensor:
 
         central_atom_index, pair_index12, sign12 = self._triple_by_molecule(
             neighbor_idxs)
@@ -244,17 +230,6 @@ class AEVComputer(torch.nn.Module):
         angular_aev = angular_aev.reshape(num_molecules, num_atoms,
                                           self.angular_length)
         return angular_aev
-
-    def _compute_radial_aev(self, num_molecules: int, num_atoms: int, species12: Tensor, neighbor_idxs: Tensor, distances: Tensor) -> Tensor:
-        radial_terms_ = self.radial_terms(distances)
-        radial_aev = radial_terms_.new_zeros(
-            (num_molecules * num_atoms * self.num_species,
-             self.radial_sublength))
-        index12 = neighbor_idxs * self.num_species + species12.flip(0)
-        radial_aev.index_add_(0, index12[0], radial_terms_)
-        radial_aev.index_add_(0, index12[1], radial_terms_)
-        radial_aev = radial_aev.reshape(num_molecules, num_atoms, self.radial_length)
-        return radial_aev
 
     def _triple_by_molecule(
             self, atom_index12: Tensor) -> tp.Tuple[Tensor, Tensor, Tensor]:
