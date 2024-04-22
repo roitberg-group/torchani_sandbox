@@ -14,7 +14,7 @@ from torchani.aev.aev_terms import (
 )
 
 
-class AEVComputer(torch.nn.Module):
+class ExCorrAEVComputer(torch.nn.Module):
     num_species: Final[int]
     num_species_pairs: Final[int]
 

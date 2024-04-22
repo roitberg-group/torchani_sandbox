@@ -48,10 +48,12 @@ from torchani.aev import AEVComputer, StandardAngular, StandardRadial
 from torchani.nn import ANIModel, Ensemble
 from torchani.utils import GSAES, ATOMIC_NUMBERS
 from torchani.potentials import EnergyAdder
+from torchani.orbitalfeatures.container import ExCorrModel
+from torchani.orbitalfeatures.featurizer import ExCorrAEVComputer
 
 ModelType = tp.Type[BuiltinModel]
 NeighborlistType = tp.Type[BaseNeighborlist]
-FeaturizerType = tp.Type[AEVComputer]
+FeaturizerType = tp.Union[tp.Type[AEVComputer], tp.Type[ExCorrAEVComputer]]
 PairPotentialType = tp.Type[PairPotential]
 AtomicContainerType = tp.Type[ANIModel]
 ShifterType = tp.Type[EnergyAdder]
@@ -274,6 +276,9 @@ class Assembler:
     ) -> None:
         self._global_cutoff_fn = _parse_cutoff_fn(cutoff_fn)
 
+    def set_as_excorr_model(self) -> None:
+        self._model_type = ExCorrModel
+
     def add_pairwise_potential(
         self,
         pair_type: PairPotentialType,
@@ -380,7 +385,7 @@ class Assembler:
         else:
             kwargs = {}
         return self._model_type(
-            aev_computer=featurizer,
+            aev_computer=featurizer,  # type: ignore
             energy_shifter=shifter,
             elements=self.symbols,
             neural_networks=neural_networks,
@@ -639,6 +644,45 @@ def ANIdr(
     if pretrained:
         model.load_state_dict(fetch_state_dict("anidr_state_dict.pt", private=True))
     return model if model_index is None else model[model_index]
+
+
+def ExCorrANI(
+    symbols: tp.Sequence[str],
+    ensemble_size: int = 1,
+    radial_cutoff: float = 5.2,
+    angular_cutoff: float = 3.5,
+    radial_shifts: int = 16,
+    angular_shifts: int = 8,
+    angle_sections: int = 4,
+    cutoff_fn: tp.Union[Cutoff, str] = "smooth2",
+    neighborlist: str = "full_pairwise",
+    atomic_maker: tp.Callable[[str, int], torch.nn.Module] = atomics.like_dr,
+) -> BuiltinModel:
+    asm = Assembler(ensemble_size=ensemble_size)
+    asm.set_symbols(symbols)
+    asm.set_global_cutoff_fn(cutoff_fn)
+    asm.set_featurizer(
+        ExCorrAEVComputer,
+        radial_terms=StandardRadial.cover_linearly(
+            start=0.9,
+            cutoff=radial_cutoff,
+            eta=19.7,
+            num_shifts=radial_shifts,
+        ),
+        angular_terms=StandardAngular.cover_linearly(
+            start=0.9,
+            eta=12.5,
+            zeta=14.1,
+            num_shifts=angular_shifts,
+            num_angle_sections=angle_sections,
+            cutoff=angular_cutoff,
+        ),
+    )
+    asm.set_atomic_maker(atomic_maker)
+    asm.set_neighborlist(neighborlist)
+    asm.set_as_excorr_model()
+    asm.self_energies = {k: 0.0 for k in symbols}
+    return asm.assemble()
 
 
 def FlexibleANI(
