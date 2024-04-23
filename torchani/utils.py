@@ -516,7 +516,7 @@ class ChemicalSymbolsToInts(ChemicalSymbolsConvert):
 
     .. code-block:: python
 
-       from torchani.utils import ChemicalSymbolsToInts
+    from torchani.utils import ChemicalSymbolsToInts
 
 
        # We initialize ChemicalSymbolsToInts with the supported species
@@ -535,7 +535,7 @@ class ChemicalSymbolsToInts(ChemicalSymbolsConvert):
         species_convert: list of chemical symbols to convert to atomic numbers
     """
 
-    def __init__(self, species: Sequence[str]):
+    def __init__(self, species: tp.Sequence[str]):
         int_dict = {s: i for i, s in enumerate(species)}
         super().__init__(int_dict)
 
