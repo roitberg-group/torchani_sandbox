@@ -380,58 +380,31 @@ class EnergyShifter(torch.nn.Module):
         return SpeciesEnergies(species, energies + sae)
 
 
-class ChemicalSymbols(torch.nn.Module):
+class NumbersConvert(torch.nn.Module):
     r""" Base class to initialize conversion helper functions:
-        - ChemicalSymbolsToAtomicNumbers
         - AtomicNumberstoChemicalSymbols
-        - ChemicalSymbolsToInts
         - IntsToChemicalSymbols
     """
-    _dummy: Tensor
 
     def __init__(self, symbol_dict: dict):
         super().__init__()
         self.symbol_dict = symbol_dict
-        self.register_buffer('_dummy', torch.empty(0), persistent=False)
 
-    def forward(self, species) -> Union[Tensor, list]:
-        species = np.array(species)
-        conversion = [self.symbol_dict[x] for x in species if x != -1]
-        try:
-            return torch.tensor(conversion, dtype=torch.long, device=self._dummy.device)
-        except ValueError:
-            return conversion
+    def forward(self, species) -> list:
+        return [self.symbol_dict[x.item()] for x in species if x != -1]
 
     def __len__(self):
         return len(self.symbol_dict)
-
-
-class ChemicalSymbolsToAtomicNumbers(ChemicalSymbols):
-    r"""Converts a sequence of chemical symbols into a tensor of atomic numbers, of :class:`torch.long`
-
-    .. code-block:: python
-
-       # We have a species list which we want to convert to atomic numbers
-       symbols_to_numbers = ChemicalSymbolsToAtomicNumbers()
-       atomic_numbers = symbols_to_numbers(['H', 'C', 'H', 'H', 'C', 'Cl', 'Fe'])
-
-       # atomic_numbers is now torch.tensor([1, 6, 1, 1, 6, 17, 26])
-    """
-    def __init__(self, atomic_numbers: Optional[Dict[str, int]] = None):
-        if atomic_numbers is None:
-            atomic_numbers = ATOMIC_NUMBERS
-        atomics_dict = atomic_numbers
-        super().__init__(atomics_dict)
-
-
-class AtomicNumbersToChemicalSymbols(ChemicalSymbols):
-    r"""Converts tensor or list of atomic numbers to list of chemical symbol strings.
+    
+class AtomicNumbersToChemicalSymbols(NumbersConvert):
+    r"""Converts tensor of atomic numbers to list of chemical symbol strings.
 
     On initialization, it is optional to supply the class with a :class:'dict'
     containing custom numbers and symbols. This is not necessary, as the
-    class is provided ATOMIC_NUMBERS by default. The returned instance is a callable
-    object, which can be called an arbituary list or tensor of the supported atomic numbers
-    that is converted into a list of strings
+    class is provided ATOMIC_NUMBERS by default. Otherwise, the class should be supplied with a 
+    :class:`list` (or in general :class:`collections.abc.Sequence`) of :class:`str`.The returned 
+    instance is a callable object, which can be called an arbituary tensor of the 
+    supported atomic numbers that is converted into a list of strings.
 
     Usage example:
     .. code-block:: python
@@ -448,7 +421,7 @@ class AtomicNumbersToChemicalSymbols(ChemicalSymbols):
         ['C', 'H', 'H', 'H']
 
      Arguments:
-        atomic_numbers: list or tensor of atomic number values you wish to convert (must be 1-D)
+        atomic_numbers: tensor of atomic number values you wish to convert (must be 1-D)
 
     """
 
@@ -458,54 +431,14 @@ class AtomicNumbersToChemicalSymbols(ChemicalSymbols):
         atomics_dict = {v: k for k, v in atomic_numbers.items()}
         super().__init__(atomics_dict)
 
-
-class ChemicalSymbolsToInts(ChemicalSymbols):
-    r"""Helper that can be called to convert chemical symbol string to integers
-
-    On initialization the class should be supplied with a :class:`list` (or in
-    general :class:`collections.abc.Sequence`) of :class:`str`. The returned
-    instance is a callable object, which can be called with an arbitrary list
-    of the supported species that is converted into a tensor of dtype
-    :class:`torch.long`. Usage example:
-
-    .. code-block:: python
-
-       from torchani.utils import ChemicalSymbolsToInts
-
-
-       # We initialize ChemicalSymbolsToInts with the supported species
-       species_to_tensor = ChemicalSymbolsToInts(['H', 'C', 'Fe', 'Cl'])
-
-       # We have a species list which we want to convert to an index tensor
-       index_tensor = species_to_tensor(['H', 'C', 'H', 'H', 'C', 'Cl', 'Fe'])
-
-       # index_tensor is now [0 1 0 0 1 3 2]
-
-
-    .. warning::
-
-        If the input is a string python will iterate over
-        characters, this means that a string such as 'CHClFe' will be
-        intepreted as 'C' 'H' 'C' 'l' 'F' 'e'. It is recommended that you
-        input either a :class:`list` or a :class:`numpy.ndarray` ['C', 'H', 'Cl', 'Fe'],
-        and not a string. The output of a call does NOT correspond to a
-        tensor of atomic numbers.
-
-    Arguments:
-        all_species (:class:`collections.abc.Sequence` of :class:`str`):
-        sequence of all supported species, in order (it is recommended to order
-        according to atomic number).
-    """
-    def __init__(self, all_species: Sequence[str]):
-        int_dict = {s: i for i, s in enumerate(all_species)}
-        super().__init__(int_dict)
-
-
-class IntsToChemicalSymbols(ChemicalSymbols):
+        
+class IntsToChemicalSymbols(NumbersConvert):
     r"""Helper that can be called to convert tensor or list of integers to list of chemical symbol strings.
 
-    On initialization the class should be supplied with a :class:`list` (or in
-    general :class:`collections.abc.Sequence`) of :class:`str`. The returned
+    On initialization, it is optional to supply the class with a :class:'dict'
+    containing custom numbers and symbols. This is not necessary, as the
+    class is provided ATOMIC_NUMBERS by default. Otherwise, the class should be supplied with a 
+    :class:`list` (or in general :class:`collections.abc.Sequence`) of :class:`str`. The returned
     instance is a callable object, which can be called with an arbitrary list or tensor
     of the supported indicies that is converted into a list of strings.
 
@@ -514,7 +447,6 @@ class IntsToChemicalSymbols(ChemicalSymbols):
         #species list used for indexing
         elements = ['H','C','N','O','S','F', 'Cl']
 
-        # A 1-D Tensor, however the dimension can be larger
         species_converter = IntsToChemicalSymbols(elements)
 
         species = torch.Tensor([3, 0, 0, -1, -1, -1])
@@ -533,6 +465,81 @@ class IntsToChemicalSymbols(ChemicalSymbols):
         int_dict = {i: s for i, s in enumerate(all_species)}
         super().__init__(int_dict)
 
+class ChemicalSymbolsConvert(torch.nn.Module):
+    r""" Base class to initialize conversion helper functions:
+        - ChemicalSymbolsToAtomicNumbers
+        - ChemicalSymbolsToInts
+    """
+    _dummy: Tensor
+
+    def __init__(self, symbol_dict: dict):
+        super().__init__()
+        self.symbol_dict = symbol_dict
+        self.register_buffer('_dummy', torch.empty(0), persistent=False)
+
+    def forward(self, species) -> Tensor:
+        return torch.tensor([self.symbol_dict[x] for x in species if x != -1], dtype=torch.long, device=self._dummy.device)
+        
+    def __len__(self):
+        return len(self.symbol_dict)
+
+
+class ChemicalSymbolsToAtomicNumbers(ChemicalSymbolsConvert):
+    r"""Converts a sequence of chemical symbols into a tensor of atomic numbers, of :class:`torch.long`
+        
+        On initialization, it is optional to supply the class with a :class:'dict'
+        containing custom numbers and symbols. This is not necessary, as the
+        class is provided ATOMIC_NUMBERS by default.
+
+       # We have a species list which we want to convert to atomic numbers
+       symbols_to_numbers = ChemicalSymbolsToAtomicNumbers()
+       species_convert = ['C', 'S', 'O', 'F', 'H', 'H']
+       atomic_numbers = symbols_to_numbers(species_convert)
+
+       # atomic_numbers is now torch.tensor([ 6, 16,  8,  9,  1,  1])
+       
+       Arguments:
+           species_convert: list of chemical symbols to convert to atomic numbers
+    """
+
+    def __init__(self, atomic_numbers: Optional[Dict[str, int]] = None):
+        if atomic_numbers is None:
+            atomic_numbers = ATOMIC_NUMBERS
+        atomics_dict = atomic_numbers
+        super().__init__(atomics_dict)
+
+class ChemicalSymbolsToInts(ChemicalSymbolsConvert):
+    r"""Helper that can be called to convert chemical symbol string to integers
+
+    On initialization the class should be supplied with a :class:`list` of :class:`str`. 
+    The returned instance is a callable object, which can be called with an arbitrary list
+    of the supported species that is converted into a tensor of dtype
+    :class:`torch.long`. Usage example:
+
+    .. code-block:: python
+
+       from torchani.utils import ChemicalSymbolsToInts
+
+
+       # We initialize ChemicalSymbolsToInts with the supported species
+       elements = ['H', 'C', 'N', 'O', 'S', 'F', 'Cl']
+       species_to_tensor = ChemicalSymbolsToInts(elements)
+       
+       species_convert = ['C', 'S', 'O', 'F', 'H', 'H']
+
+       # We have a species list which we want to convert to an index tensor
+       index_tensor = species_to_tensor(species_convert)
+
+       # index_tensor is now [1, 4, 3, 5, 0, 0]
+
+    Arguments:
+        elements: list of species in your model, used for indexing
+        species_convert: list of chemical symbols to convert to atomic numbers
+    """
+
+    def __init__(self, species: Sequence[str]):
+        int_dict = {s: i for i, s in enumerate(species)}
+        super().__init__(int_dict)
 
 def _get_derivatives_not_none(x: Tensor, y: Tensor, retain_graph: Optional[bool] = None, create_graph: bool = False) -> Tensor:
     ret = torch.autograd.grad([y.sum()], [x], retain_graph=retain_graph, create_graph=create_graph)[0]
