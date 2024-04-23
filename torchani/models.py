@@ -53,16 +53,15 @@ example usage:
     model0 = ani1x[0]
     _, energies = model0((species, coordinates))
 """
+import typing as tp
 import os
 import warnings
-from typing import Tuple, Optional, Sequence, Union, Dict, Any, Type, Callable, List, Iterable
 from copy import deepcopy
 from pathlib import Path
 from collections import OrderedDict
 
 import torch
 from torch import Tensor
-from torch.nn import Module
 from torch.jit import Final
 
 from torchani import atomics
@@ -75,7 +74,7 @@ from torchani.tuples import (
     ForceMagnitudes
 )
 from torchani.nn import SpeciesConverter, Ensemble, ANIModel
-from torchani.utils import ChemicalSymbolsToInts, PERIODIC_TABLE, EnergyShifter, path_is_writable
+from torchani.utils import ChemicalSymbolsToInts, PERIODIC_TABLE, ATOMIC_NUMBERS, EnergyShifter, path_is_writable
 from torchani.aev import AEVComputer
 from torchani.potentials import (
     AEVPotential,
@@ -87,10 +86,10 @@ from torchani.potentials import (
 from torchani.neighbors import rescreen
 
 
-NN = Union[ANIModel, Ensemble]
+NN = tp.Union[ANIModel, Ensemble]
 
 
-class BuiltinModel(Module):
+class BuiltinModel(torch.nn.Module):
     r"""Private template for the builtin ANI models """
 
     atomic_numbers: Tensor
@@ -100,7 +99,7 @@ class BuiltinModel(Module):
                  aev_computer: AEVComputer,
                  neural_networks: NN,
                  energy_shifter: EnergyShifter,
-                 elements: Sequence[str],
+                 elements: tp.Sequence[str],
                  periodic_table_index: bool = True):
 
         super().__init__()
@@ -119,7 +118,7 @@ class BuiltinModel(Module):
         self.species_converter = SpeciesConverter(elements).to(device)
 
         self.periodic_table_index = periodic_table_index
-        numbers = torch.tensor([PERIODIC_TABLE.index(e) for e in elements], dtype=torch.long)
+        numbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
         self.register_buffer('atomic_numbers', numbers)
         self._register_types_for_jit()
 
@@ -155,12 +154,12 @@ class BuiltinModel(Module):
         return self
 
     @torch.jit.unused
-    def get_chemical_symbols(self) -> Tuple[str, ...]:
+    def get_chemical_symbols(self) -> tp.Tuple[str, ...]:
         return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)
 
-    def forward(self, species_coordinates: Tuple[Tensor, Tensor],
-                cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+    def forward(self, species_coordinates: tp.Tuple[Tensor, Tensor],
+                cell: tp.Optional[Tensor] = None,
+                pbc: tp.Optional[Tensor] = None) -> SpeciesEnergies:
         """Calculates predicted energies for minibatch of configurations
 
         Args:
@@ -177,7 +176,7 @@ class BuiltinModel(Module):
         return self.energy_shifter(species_energies)
 
     @torch.jit.export
-    def _maybe_convert_species(self, species_coordinates: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tensor]:
+    def _maybe_convert_species(self, species_coordinates: tp.Tuple[Tensor, Tensor]) -> tp.Tuple[Tensor, Tensor]:
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
         if (species_coordinates[0] >= self.aev_computer.num_species).any():
@@ -185,11 +184,13 @@ class BuiltinModel(Module):
         return species_coordinates
 
     @torch.jit.export
-    def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
-                        cell: Optional[Tensor] = None,
-                        pbc: Optional[Tensor] = None,
+    def atomic_energies(self, species_coordinates: tp.Tuple[Tensor, Tensor],
+                        cell: tp.Optional[Tensor] = None,
+                        pbc: tp.Optional[Tensor] = None,
                         average: bool = True,
-                        shift_energy: bool = True) -> SpeciesEnergies:
+                        shift_energy: bool = True,
+                        include_non_aev_potentials: bool = True,
+                        ) -> SpeciesEnergies:
         """Calculates predicted atomic energies of all atoms in a molecule
 
         Args:
@@ -248,9 +249,9 @@ class BuiltinModel(Module):
                            self.periodic_table_index)
 
     @torch.jit.export
-    def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
-                         cell: Optional[Tensor] = None,
-                         pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+    def members_energies(self, species_coordinates: tp.Tuple[Tensor, Tensor],
+                         cell: tp.Optional[Tensor] = None,
+                         pbc: tp.Optional[Tensor] = None) -> SpeciesEnergies:
         """Calculates predicted energies of all member modules
 
         Args:
@@ -264,12 +265,12 @@ class BuiltinModel(Module):
         """
         assert isinstance(self.neural_networks, Ensemble), "Your model doesn't have an ensemble of networks"
         species, members_energies = self.atomic_energies(species_coordinates, cell=cell, pbc=pbc,
-                                                         shift_energy=True, average=False)
+                                                         shift_energy=True, average=False, include_non_aev_potentials=True)
         return SpeciesEnergies(species, members_energies.sum(-1))
 
-    def members_forces(self, species_coordinates: Tuple[Tensor, Tensor],
-                       cell: Optional[Tensor] = None,
-                       pbc: Optional[Tensor] = None,
+    def members_forces(self, species_coordinates: tp.Tuple[Tensor, Tensor],
+                       cell: tp.Optional[Tensor] = None,
+                       pbc: tp.Optional[Tensor] = None,
                        average: bool = False) -> SpeciesForces:
         """Calculates predicted forces from ensemble members, can return the average prediction
 
@@ -296,9 +297,9 @@ class BuiltinModel(Module):
         return SpeciesForces(species_coordinates[0], members_energies, forces)
 
     @torch.jit.export
-    def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
-                      cell: Optional[Tensor] = None,
-                      pbc: Optional[Tensor] = None, unbiased: bool = True) -> SpeciesEnergiesQBC:
+    def energies_qbcs(self, species_coordinates: tp.Tuple[Tensor, Tensor],
+                      cell: tp.Optional[Tensor] = None,
+                      pbc: tp.Optional[Tensor] = None, unbiased: bool = True) -> SpeciesEnergiesQBC:
         """Calculates predicted predicted energies and qbc factors
 
         QBC factors are used for query-by-committee (QBC) based active learning
@@ -333,9 +334,9 @@ class BuiltinModel(Module):
         assert qbc_factors.shape == energies.shape
         return SpeciesEnergiesQBC(species, energies, qbc_factors)
 
-    def atomic_stdev(self, species_coordinates: Tuple[Tensor, Tensor],
-                    cell: Optional[Tensor] = None,
-                    pbc: Optional[Tensor] = None,
+    def atomic_stdev(self, species_coordinates: tp.Tuple[Tensor, Tensor],
+                    cell: tp.Optional[Tensor] = None,
+                    pbc: tp.Optional[Tensor] = None,
                     average: bool = False,
                     shift_energy: bool = False,
                     unbiased: bool = True) -> AtomicStdev:
@@ -363,9 +364,9 @@ class BuiltinModel(Module):
 
         return AtomicStdev(species_coordinates[0], atomic_energies, stdev_atomic_energies)
 
-    def force_magnitudes(self, species_coordinates: Tuple[Tensor, Tensor],
-                         cell: Optional[Tensor] = None,
-                         pbc: Optional[Tensor] = None,
+    def force_magnitudes(self, species_coordinates: tp.Tuple[Tensor, Tensor],
+                         cell: tp.Optional[Tensor] = None,
+                         pbc: tp.Optional[Tensor] = None,
                          average: bool = True) -> ForceMagnitudes:
         '''
         Computes the L2 norm of predicted atomic force vectors, returning magnitudes,
@@ -384,9 +385,9 @@ class BuiltinModel(Module):
 
         return ForceMagnitudes(species, magnitudes)
 
-    def force_qbc(self, species_coordinates: Tuple[Tensor, Tensor],
-                   cell: Optional[Tensor] = None,
-                   pbc: Optional[Tensor] = None,
+    def force_qbc(self, species_coordinates: tp.Tuple[Tensor, Tensor],
+                   cell: tp.Optional[Tensor] = None,
+                   pbc: tp.Optional[Tensor] = None,
                    average: bool = False,
                    unbiased: bool = True) -> ForceStdev:
         """
@@ -422,11 +423,11 @@ class BuiltinModelPairInteractions(BuiltinModel):
     def __init__(
         self,
         *args,
-        pairwise_potentials: Iterable[PairwisePotential] = tuple(),
+        pairwise_potentials: tp.Iterable[PairwisePotential] = tuple(),
         **kwargs
     ):
         super().__init__(*args, **kwargs)
-        potentials: List[Potential] = list(pairwise_potentials)
+        potentials: tp.List[Potential] = list(pairwise_potentials)
         aev_potential = AEVPotential(self.aev_computer, self.neural_networks)
         self.size = aev_potential.size
         potentials.append(aev_potential)
@@ -443,13 +444,13 @@ class BuiltinModelPairInteractions(BuiltinModel):
         self.potentials = torch.nn.ModuleList(potentials)
 
         # Override the neighborlist cutoff with the largest cutoff in existence
-        self.aev_computer.neighborlist.cutoff = self.potentials[0].cutoff
+        self.aev_computer.neighborlist.cutoff = self.potentials[0].cutoff  # type: ignore
 
     def forward(
         self,
-        species_coordinates: Tuple[Tensor, Tensor],
-        cell: Optional[Tensor] = None,
-        pbc: Optional[Tensor] = None
+        species_coordinates: tp.Tuple[Tensor, Tensor],
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None
     ) -> SpeciesEnergies:
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, cell, pbc)
@@ -465,11 +466,12 @@ class BuiltinModelPairInteractions(BuiltinModel):
     @torch.jit.export
     def atomic_energies(
         self,
-        species_coordinates: Tuple[Tensor, Tensor],
-        cell: Optional[Tensor] = None,
-        pbc: Optional[Tensor] = None,
+        species_coordinates: tp.Tuple[Tensor, Tensor],
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None,
         average: bool = True,
-        shift_energy: bool = True
+        shift_energy: bool = True,
+        include_non_aev_potentials: bool = True,
     ) -> SpeciesEnergies:
         assert isinstance(self.neural_networks, (Ensemble, ANIModel))
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
@@ -484,11 +486,21 @@ class BuiltinModelPairInteractions(BuiltinModel):
             dtype=coordinates.dtype,
             device=coordinates.device
         )
-        for pot in self.potentials:
-            if pot.cutoff < previous_cutoff:
-                neighbor_data = rescreen(pot.cutoff, neighbor_data)
-                previous_cutoff = pot.cutoff
-            atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
+        if torch.jit.is_scripting():
+            assert include_non_aev_potentials, "Scripted models must include non aev potentials in atomic energies"
+            for pot in self.potentials:
+                if pot.cutoff < previous_cutoff:
+                    neighbor_data = rescreen(pot.cutoff, neighbor_data)
+                    previous_cutoff = pot.cutoff
+                atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
+        else:
+            for pot in self.potentials:
+                if not isinstance(pot, AEVPotential) and not include_non_aev_potentials:
+                    continue
+                if pot.cutoff < previous_cutoff:
+                    neighbor_data = rescreen(pot.cutoff, neighbor_data)
+                    previous_cutoff = pot.cutoff
+                atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
 
         if shift_energy:
             atomic_energies += self.energy_shifter._atomic_saes(element_idxs).unsqueeze(0)
@@ -514,14 +526,14 @@ class BuiltinModelPairInteractions(BuiltinModel):
 
 def _get_component_modules(
     state_dict_file: str,
-    model_index: Optional[int] = None,
-    aev_computer_kwargs: Optional[Dict[str, Any]] = None,
+    model_index: tp.Optional[int] = None,
+    aev_computer_kwargs: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ensemble_size: int = 8,
-    atomic_maker: Optional[Callable[[str], torch.nn.Module]] = None,
-    aev_maker: Optional[Callable[..., AEVComputer]] = None,
-    elements: Optional[Sequence[str]] = None,
-    self_energies: Optional[Sequence[float]] = None
-) -> Tuple[AEVComputer, NN, EnergyShifter, Sequence[str]]:
+    atomic_maker: tp.Optional[tp.Callable[[str], torch.nn.Module]] = None,
+    aev_maker: tp.Optional[tp.Callable[..., AEVComputer]] = None,
+    elements: tp.Optional[tp.Sequence[str]] = None,
+    self_energies: tp.Optional[tp.Sequence[float]] = None
+) -> tp.Tuple[AEVComputer, NN, EnergyShifter, tp.Sequence[str]]:
     # Component modules are obtained by default from the name of the state_dict_file,
     # but they can be overriden by passing specific parameters
 
@@ -529,7 +541,7 @@ def _get_component_modules(
         aev_computer_kwargs = dict()
     # This generates ani-style architectures without neurochem
     name = state_dict_file.split('_')[0]
-    _elements: Sequence[str]
+    _elements: tp.Sequence[str]
     if name == 'ani1x':
         _aev_maker = aev_maker or AEVComputer.like_1x
         _atomic_maker = atomic_maker or atomics.like_1x
@@ -558,9 +570,9 @@ def _get_component_modules(
 
 
 def _fetch_state_dict(state_dict_file: str,
-                      model_index: Optional[int] = None,
+                      model_index: tp.Optional[int] = None,
                       local: bool = False,
-                      private: bool = False) -> 'OrderedDict[str, Tensor]':
+                      private: bool = False) -> tp.OrderedDict[str, Tensor]:
     # if we want a pretrained model then we load the state dict from a
     # remote url or a local path
     # NOTE: torch.hub caches remote state_dicts after they have been downloaded
@@ -600,13 +612,13 @@ def _fetch_state_dict(state_dict_file: str,
     return new_state_dict
 
 
-def _load_ani_model(state_dict_file: Optional[str] = None,
-                    info_file: Optional[str] = None,
-                    repulsion_kwargs: Optional[Dict[str, Any]] = None,
+def _load_ani_model(state_dict_file: tp.Optional[str] = None,
+                    info_file: tp.Optional[str] = None,
+                    repulsion_kwargs: tp.Optional[tp.Dict[str, tp.Any]] = None,
                     repulsion: bool = False,
-                    dispersion_kwargs: Optional[Dict[str, Any]] = None,
+                    dispersion_kwargs: tp.Optional[tp.Dict[str, tp.Any]] = None,
                     dispersion: bool = False,
-                    cutoff_fn: Union[str, torch.nn.Module] = 'cosine',  # for aev
+                    cutoff_fn: tp.Union[str, torch.nn.Module] = 'cosine',  # for aev
                     pretrained: bool = True,
                     model_index: int = None,
                     use_neurochem_source: bool = False,
@@ -656,10 +668,10 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
 
     aev_computer, neural_networks, energy_shifter, elements = components
 
-    model_class: Type[BuiltinModel]
+    model_class: tp.Type[BuiltinModel]
     if repulsion or dispersion:
         model_class = BuiltinModelPairInteractions
-        pairwise_potentials: List[torch.nn.Module] = []
+        pairwise_potentials: tp.List[torch.nn.Module] = []
         cutoff = aev_computer.radial_terms.cutoff
         potential_kwargs = {'symbols': elements, 'cutoff': cutoff}
         if repulsion:
@@ -752,7 +764,7 @@ def ANI2x(**kwargs) -> BuiltinModel:
 
 def ANIdr(
     pretrained: bool = True,
-    model_index: Optional[int] = None,
+    model_index: tp.Optional[int] = None,
     **kwargs,
 ):
     """ANI model trained with both dispersion and repulsion
@@ -764,30 +776,16 @@ def ANIdr(
     # TODO: Fix this
     if model_index is not None:
         raise ValueError(
-            "Currently ANIdr only supports model_index=None, to get individual models please index the ensemble"
+            "Currently ANIdr only supports model_index=None, "
+            "to get individual models please index the ensemble"
         )
 
     # An ani model with dispersion
-    def dispersion_atomics(atom: str = 'H'):
-        dims_for_atoms = {
-            'H': (1008, 256, 192, 160),
-            'C': (1008, 256, 192, 160),
-            'N': (1008, 192, 160, 128),
-            'O': (1008, 192, 160, 128),
-            'S': (1008, 160, 128, 96),
-            'F': (1008, 160, 128, 96),
-            'Cl': (1008, 160, 128, 96)
-        }
-        return atomics.standard(
-            dims_for_atoms[atom],
-            activation=torch.nn.GELU(),
-            bias=False,
-        )
     symbols = ('H', 'C', 'N', 'O', 'S', 'F', 'Cl')
     model = ANI2x(
         pretrained=False,
         cutoff_fn='smooth',
-        atomic_maker=dispersion_atomics,
+        atomic_maker=atomics.like_dr,
         ensemble_size=7,
         dispersion=True,
         dispersion_kwargs={

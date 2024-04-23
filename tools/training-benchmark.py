@@ -1,12 +1,12 @@
+import typing as tp
 import time
 import argparse
-from typing import Dict
 
 import torch
 import pkbar
 
 import torchani
-from torchani.units import hartree2kcalmol
+from torchani.units import hartree2kcalpermol
 from tool_utils import time_functions_in_model
 
 H_network = torch.nn.Sequential(
@@ -88,7 +88,7 @@ if __name__ == "__main__":
     mse = torch.nn.MSELoss(reduction='none')
 
     # enable timers
-    timers: Dict[str, int] = dict()
+    timers: tp.Dict[str, int] = dict()
 
     # time these functions
 
@@ -124,7 +124,7 @@ if __name__ == "__main__":
             num_atoms = (species >= 0).sum(dim=1, dtype=true_energies.dtype)
             _, predicted_energies = model((species, coordinates))
             loss = (mse(predicted_energies, true_energies) / num_atoms.sqrt()).mean()
-            rmse = hartree2kcalmol((mse(predicted_energies, true_energies)).mean()).detach().cpu().numpy()
+            rmse = hartree2kcalpermol((mse(predicted_energies, true_energies)).mean()).detach().cpu().numpy()
             loss.backward()
             optimizer.step()
 

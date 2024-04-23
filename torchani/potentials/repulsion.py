@@ -1,4 +1,4 @@
-from typing import Sequence, Union, Optional
+import typing as tp
 
 import torch
 from torch import Tensor
@@ -7,7 +7,7 @@ from torch.jit import Final
 from torchani.units import ANGSTROM_TO_BOHR
 from torchani.utils import ATOMIC_NUMBERS
 from torchani.wrappers import StandaloneWrapper
-from torchani.neighbors import NeighborData
+from torchani.neighbors import NeighborData, BaseNeighborlist, FullPairwise
 from torchani.cutoffs import Cutoff
 from torchani.potentials.core import PairwisePotential
 from torchani.potentials._repulsion_constants import alpha_constants, y_eff_constants
@@ -30,10 +30,10 @@ class RepulsionXTB(PairwisePotential):
 
     def __init__(
         self,
-        alpha: Sequence[float] = None,
-        y_eff: Sequence[float] = None,
-        k_rep_ab: Optional[Tensor] = None,
-        cutoff_fn: Union[str, Cutoff] = "smooth",
+        alpha: tp.Sequence[float] = None,
+        y_eff: tp.Sequence[float] = None,
+        k_rep_ab: tp.Optional[Tensor] = None,
+        cutoff_fn: tp.Union[str, Cutoff] = "smooth",
         **pairwise_kwargs,
     ):
         super().__init__(cutoff_fn=cutoff_fn, **pairwise_kwargs)
@@ -94,12 +94,13 @@ class RepulsionXTB(PairwisePotential):
 
 def StandaloneRepulsionXTB(
     cutoff: float = 5.2,
-    alpha: Sequence[float] = None,
-    y_eff: Sequence[float] = None,
-    k_rep_ab: Optional[Tensor] = None,
-    symbols: Sequence[str] = ('H', 'C', 'N', 'O'),
-    cutoff_fn: Union[str, Cutoff] = 'smooth',
-    **standalone_kwargs,
+    alpha: tp.Sequence[float] = None,
+    y_eff: tp.Sequence[float] = None,
+    k_rep_ab: tp.Optional[Tensor] = None,
+    symbols: tp.Sequence[str] = ('H', 'C', 'N', 'O'),
+    cutoff_fn: tp.Union[str, Cutoff] = 'smooth',
+    periodic_table_index: bool = True,
+    neighborlist: tp.Type[BaseNeighborlist] = FullPairwise,
 ) -> StandaloneWrapper:
     module = RepulsionXTB(
         alpha=alpha,
@@ -109,4 +110,9 @@ def StandaloneRepulsionXTB(
         symbols=symbols,
         cutoff_fn=cutoff_fn
     )
-    return StandaloneWrapper(module, **standalone_kwargs)
+    return StandaloneWrapper(
+        module,
+        periodic_table_index,
+        neighborlist=neighborlist,
+        neighborlist_cutoff=cutoff
+    )

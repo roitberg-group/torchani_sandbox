@@ -1,16 +1,15 @@
+import typing as tp
 import warnings
 from uuid import uuid4
 import tempfile
 from pathlib import Path
 from functools import partial
-from typing import ContextManager, Any, Set, Union, Tuple, Dict
-from collections import OrderedDict  # noqa F401
 
 import numpy as np
 
 from torchani.utils import tqdm
-from torchani.datasets._annotations import StrPath
-from .interface import _Store, _ConformerGroup, _ConformerWrapper, CacheHolder, _HierarchicalStoreWrapper
+from torchani.datasets._annotations import StrPath, Self
+from torchani.datasets._backends.interface import _ConformerGroup, _ConformerWrapper, CacheHolder, _HierarchicalStoreWrapper
 
 
 try:
@@ -25,7 +24,7 @@ except ImportError:
     _H5PY_AVAILABLE = False
 
 
-class _H5TemporaryLocation(ContextManager[StrPath]):
+class _H5TemporaryLocation(tp.ContextManager[StrPath]):
     def __init__(self) -> None:
         self._tmp_location = tempfile.TemporaryDirectory()
         self._tmp_filename = Path(self._tmp_location.name).resolve() / f'{uuid4()}.h5'
@@ -38,26 +37,26 @@ class _H5TemporaryLocation(ContextManager[StrPath]):
 
 
 class _H5Store(_HierarchicalStoreWrapper["h5py.File"]):
-    def __init__(self, store_location: StrPath, dummy_properties: Dict[str, Any]):
+    def __init__(self, store_location: StrPath, dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None):
         super().__init__(store_location, '.h5', 'file', dummy_properties=dummy_properties)
         self._has_standard_format = True
         self._made_quick_check = False
 
     @classmethod
-    def make_empty(cls, store_location: StrPath, grouping: str, **kwargs) -> '_Store':
+    def make_empty(cls, store_location: StrPath, grouping: str = "by_formula", **kwargs) -> Self:
         with h5py.File(store_location, 'x') as f:
             f.attrs['grouping'] = grouping
         obj = cls(store_location, **kwargs)
         obj._has_standard_format = True
         return obj
 
-    def open(self, mode: str = 'r', only_meta: bool = False) -> '_Store':
+    def open(self, mode: str = 'r', only_meta: bool = False) -> Self:
         self._store_obj = h5py.File(self.location.root, mode)
         return self
 
     def update_cache(self,
                      check_properties: bool = False,
-                     verbose: bool = True) -> Tuple['OrderedDict[str, int]', Set[str]]:
+                     verbose: bool = True) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
         cache = CacheHolder()
         # If the dataset has some semblance of standarization (it is a tree with depth
         # 1, where all groups are directly joined to the root) then it is much faster
@@ -88,11 +87,11 @@ class _H5Store(_HierarchicalStoreWrapper["h5py.File"]):
 
     def _update_cache_nonstandard(self, cache: CacheHolder, check_properties: bool, verbose: bool) -> bool:
         def visitor_fn(name: str,
-                       object_: Union["h5py.Dataset", "h5py.Group"],
+                       object_: tp.Union["h5py.Dataset", "h5py.Group"],
                        store: '_H5Store',
                        cache: CacheHolder,
                        check_properties: bool,
-                       pbar: Any) -> None:
+                       pbar: tp.Any) -> None:
             pbar.update()
             # We make sure the node is a Dataset, and we avoid Datasets
             # called _meta or _created since if present these store units

@@ -1,5 +1,4 @@
-import math
-from typing import Tuple, Optional, NamedTuple
+import typing as tp
 import warnings
 import importlib.metadata
 
@@ -7,6 +6,7 @@ import torch
 from torch import Tensor
 from torch.jit import Final
 
+from torchani.tuples import SpeciesAEV
 from torchani.utils import cumsum_from_zero
 from torchani.neighbors import _parse_neighborlist
 from torchani.cutoffs import _parse_cutoff_fn, CutoffCosine, CutoffSmooth
@@ -28,11 +28,6 @@ if cuaev_is_installed:
     from .. import cuaev  # type: ignore # noqa: F401
 else:
     warnings.warn("cuaev not installed")
-
-
-class SpeciesAEV(NamedTuple):
-    species: Tensor
-    aevs: Tensor
 
 
 def jit_unused_if_no_cuaev(condition=cuaev_is_installed):
@@ -83,15 +78,15 @@ class AEVComputer(torch.nn.Module):
     triu_index: Tensor
 
     def __init__(self,
-                Rcr: Optional[float] = None,
-                Rca: Optional[float] = None,
-                EtaR: Optional[Tensor] = None,
-                ShfR: Optional[Tensor] = None,
-                EtaA: Optional[Tensor] = None,
-                Zeta: Optional[Tensor] = None,
-                ShfA: Optional[Tensor] = None,
-                ShfZ: Optional[Tensor] = None,
-                num_species: Optional[int] = None,
+                Rcr: tp.Optional[float] = None,
+                Rca: tp.Optional[float] = None,
+                EtaR: tp.Optional[Tensor] = None,
+                ShfR: tp.Optional[Tensor] = None,
+                EtaA: tp.Optional[Tensor] = None,
+                Zeta: tp.Optional[Tensor] = None,
+                ShfA: tp.Optional[Tensor] = None,
+                ShfZ: tp.Optional[Tensor] = None,
+                num_species: tp.Optional[int] = None,
                 use_cuda_extension=False,
                 use_cuaev_interface=False,
                 cutoff_fn='cosine',
@@ -209,33 +204,6 @@ class AEVComputer(torch.nn.Module):
         return ret
 
     @classmethod
-    def cover_linearly(cls,
-                       radial_cutoff: float,
-                       angular_cutoff: float,
-                       radial_eta: float,
-                       angular_eta: float,
-                       radial_dist_divisions: int,
-                       angular_dist_divisions: int,
-                       zeta: float,
-                       angle_sections: int,
-                       num_species: int,
-                       angular_start: float = 0.9,
-                       radial_start: float = 0.9, **kwargs):
-        warnings.warn('cover_linearly is deprecated')
-        Rcr = radial_cutoff
-        Rca = angular_cutoff
-        EtaR = torch.tensor([radial_eta], dtype=torch.float)
-        EtaA = torch.tensor([angular_eta], dtype=torch.float)
-        Zeta = torch.tensor([zeta], dtype=torch.float)
-        ShfR = torch.linspace(radial_start, radial_cutoff,
-                              radial_dist_divisions + 1)[:-1].to(torch.float)
-        ShfA = torch.linspace(angular_start, angular_cutoff,
-                              angular_dist_divisions + 1)[:-1].to(torch.float)
-        angle_start = math.pi / (2 * angle_sections)
-        ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) + angle_start)[:-1].to(torch.float)
-        return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, **kwargs)
-
-    @classmethod
     def like_1x(cls, **kwargs) -> "AEVComputer":
         return cls(angular_terms='ani1x', radial_terms='ani1x', num_species=4, **kwargs)
 
@@ -249,9 +217,9 @@ class AEVComputer(torch.nn.Module):
         return cls.like_1x(**kwargs)
 
     def forward(self,
-                input_: Tuple[Tensor, Tensor],
-                cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> SpeciesAEV:
+                input_: tp.Tuple[Tensor, Tensor],
+                cell: tp.Optional[Tensor] = None,
+                pbc: tp.Optional[Tensor] = None) -> SpeciesAEV:
         """Compute AEVs
 
         Arguments:
@@ -470,7 +438,7 @@ class AEVComputer(torch.nn.Module):
         return radial_aev
 
     def _triple_by_molecule(
-            self, atom_index12: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+            self, atom_index12: Tensor) -> tp.Tuple[Tensor, Tensor, Tensor]:
         """Input: indices for pairs of atoms that are close to each other.
         each pair only appear once, i.e. only one of the pairs (1, 2) and
         (2, 1) exists.

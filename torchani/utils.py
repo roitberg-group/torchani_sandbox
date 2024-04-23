@@ -1,3 +1,4 @@
+import typing as tp
 import time
 import tempfile
 import os
@@ -6,17 +7,17 @@ import itertools
 import math
 from pathlib import Path
 from collections import Counter
-from torch.profiler import record_function, ProfilerActivity
-from typing import Tuple, NamedTuple, Optional, Sequence, List, Dict, Union, Mapping
 
-import torch
 import numpy as np
+import torch
+from torch.profiler import record_function, ProfilerActivity
 from torch import Tensor
 import torch.utils.data
 
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
-from torchani.tuples import SpeciesEnergies
+from torchani.tuples import SpeciesEnergies, VibAnalysis
 from torchani.compat import tqdm
+
 
 PADDING = {
     'species': -1,
@@ -123,7 +124,7 @@ GSAES = {
 }
 
 
-def sorted_gsaes(elements: Sequence[str], functional: str, basis_set: str, ):
+def sorted_gsaes(elements: tp.Sequence[str], functional: str, basis_set: str, ):
     r"""Return sorted GSAES by element
 
     Example usage:
@@ -146,7 +147,7 @@ def check_openmp_threads():
         print(f"OMP_NUM_THREADS is set as {num_threads}")
 
 
-def species_to_formula(species: np.ndarray) -> List[str]:
+def species_to_formula(species: np.ndarray) -> tp.List[str]:
     r"""Transforms an array of strings into the corresponding formula.  This
     function expects an array of shape (M, A) and returns a list of
     formulas of len M.
@@ -157,13 +158,13 @@ def species_to_formula(species: np.ndarray) -> List[str]:
         raise ValueError("Species needs to have two dims/axes")
     formulas = []
     for s in species:
-        symbol_counts: List[Tuple[str, int]] = sorted(Counter(s).items())
+        symbol_counts: tp.List[tp.Tuple[str, int]] = sorted(Counter(s).items())
         iterable = (str(i) if str(i) != '1' else '' for i in itertools.chain.from_iterable(symbol_counts))
         formulas.append(''.join(iterable))
     return formulas
 
 
-def path_is_writable(path: Union[str, Path]) -> bool:
+def path_is_writable(path: tp.Union[str, Path]) -> bool:
     # check if a path is writeable, adapted from:
     # https://stackoverflow.com/questions/2113427/determining-whether-a-directory-is-writeable
     try:
@@ -199,8 +200,8 @@ def broadcast_first_dim(properties):
     return properties
 
 
-def pad_atomic_properties(properties: Sequence[Mapping[str, Tensor]],
-                          padding_values: Optional[Dict[str, float]] = None) -> Dict[str, Tensor]:
+def pad_atomic_properties(properties: tp.Sequence[tp.Mapping[str, Tensor]],
+                          padding_values: tp.Optional[tp.Dict[str, float]] = None) -> tp.Dict[str, Tensor]:
     """Put a sequence of atomic properties together into single tensor.
 
     Inputs are `[{'species': ..., ...}, {'species': ..., ...}, ...]` and the outputs
@@ -272,11 +273,6 @@ def strip_redundant_padding(atomic_properties):
     return atomic_properties
 
 
-def map2central(cell: Tensor, coordinates: Tensor, pbc: Tensor) -> Tensor:
-    warnings.warn("map2central is deprecated, use map_to_central instead")
-    return map_to_central(coordinates, cell, pbc)
-
-
 def map_to_central(coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
     """Map atoms outside the unit cell into the cell using PBC.
 
@@ -336,7 +332,7 @@ class EnergyShifter(torch.nn.Module):
         self.register_buffer('self_energies', self_energies)
 
     @classmethod
-    def with_gsaes(cls, elements: Sequence[str], functional: str, basis_set: str):
+    def with_gsaes(cls, elements: tp.Sequence[str], functional: str, basis_set: str):
         r"""Instantiate an EnergyShifter with a given set of precomputed atomic self energies"""
         obj = cls(sorted_gsaes(elements, functional, basis_set), fit_intercept=False)
         return obj
@@ -367,9 +363,9 @@ class EnergyShifter(torch.nn.Module):
             sae += self.self_energies[-1]
         return sae
 
-    def forward(self, species_energies: Tuple[Tensor, Tensor],
-                cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+    def forward(self, species_energies: tp.Tuple[Tensor, Tensor],
+                cell: tp.Optional[Tensor] = None,
+                pbc: tp.Optional[Tensor] = None) -> SpeciesEnergies:
         """(species, molecular energies)->(species, molecular energies + sae)
         """
         species, energies = species_energies
@@ -380,16 +376,27 @@ class EnergyShifter(torch.nn.Module):
         return SpeciesEnergies(species, energies + sae)
 
 
+<<<<<<< HEAD
 class NumbersConvert(torch.nn.Module):
     r""" Base class to initialize conversion helper functions:
         - AtomicNumberstoChemicalSymbols
         - IntsToChemicalSymbols
     """
+=======
+# Base class to initialize conversion helper functions:
+# - ChemicalSymbolsToAtomicNumbers
+# - AtomicNumberstoChemicalSymbols
+# - ChemicalSymbolsToInts
+# - IntsToChemicalSymbols
+class _ChemicalSymbolsConverter(torch.nn.Module):
+    _dummy: Tensor
+>>>>>>> a70658c86b99bdb43affc97de7abbe83cffd1604
 
     def __init__(self, symbol_dict: dict):
         super().__init__()
         self.symbol_dict = symbol_dict
 
+<<<<<<< HEAD
     def forward(self, species) -> list:
         return [self.symbol_dict[x.item()] for x in species if x != -1]
 
@@ -398,6 +405,39 @@ class NumbersConvert(torch.nn.Module):
     
 class AtomicNumbersToChemicalSymbols(NumbersConvert):
     r"""Converts tensor of atomic numbers to list of chemical symbol strings.
+=======
+    def forward(self, species) -> tp.Union[Tensor, tp.List[str]]:
+        species = np.array(species)
+        conversion = [self.symbol_dict[x] for x in species if x != -1]
+        try:
+            return torch.tensor(conversion, dtype=torch.long, device=self._dummy.device)
+        except ValueError:
+            return conversion
+
+    def __len__(self):
+        return len(self.symbol_dict)
+
+
+class ChemicalSymbolsToAtomicNumbers(_ChemicalSymbolsConverter):
+    r"""Converts a sequence of chemical symbols into a tensor of atomic numbers, of :class:`torch.long`
+
+    .. code-block:: python
+
+       # We have a species list which we want to convert to atomic numbers
+       symbols_to_numbers = ChemicalSymbolsToAtomicNumbers()
+       atomic_numbers = symbols_to_numbers(['H', 'C', 'H', 'H', 'C', 'Cl', 'Fe'])
+
+       # atomic_numbers is now torch.tensor([1, 6, 1, 1, 6, 17, 26])
+    """
+    def __init__(self, atomic_numbers: tp.Optional[tp.Dict[str, int]] = None):
+        if atomic_numbers is None:
+            atomic_numbers = ATOMIC_NUMBERS
+        super().__init__(atomic_numbers)
+
+
+class AtomicNumbersToChemicalSymbols(_ChemicalSymbolsConverter):
+    r"""Converts tensor or list of atomic numbers to list of chemical symbol strings.
+>>>>>>> a70658c86b99bdb43affc97de7abbe83cffd1604
 
     On initialization, it is optional to supply the class with a :class:'dict'
     containing custom numbers and symbols. This is not necessary, as the
@@ -425,14 +465,51 @@ class AtomicNumbersToChemicalSymbols(NumbersConvert):
 
     """
 
-    def __init__(self, atomic_numbers: Optional[Dict[str, int]] = None):
+    def __init__(self, atomic_numbers: tp.Optional[tp.Dict[str, int]] = None):
         if atomic_numbers is None:
             atomic_numbers = ATOMIC_NUMBERS
-        atomics_dict = {v: k for k, v in atomic_numbers.items()}
-        super().__init__(atomics_dict)
+        super().__init__({v: k for k, v in atomic_numbers.items()})
 
+<<<<<<< HEAD
         
 class IntsToChemicalSymbols(NumbersConvert):
+=======
+
+class ChemicalSymbolsToInts(_ChemicalSymbolsConverter):
+    r"""Helper that can be called to convert chemical symbol string to integers
+
+    On initialization the class should be supplied with a :class:`list` (or in
+    general :class:`collections.abc.Sequence`) of :class:`str`. The returned
+    instance is a callable object, which can be called with an arbitrary list
+    of the supported species that is converted into a tensor of dtype
+    :class:`torch.long`. Usage example:
+
+    .. code-block:: python
+
+       from torchani.utils import ChemicalSymbolsToInts
+
+
+       # We initialize ChemicalSymbolsToInts with the supported species
+       species_to_tensor = ChemicalSymbolsToInts(['H', 'C', 'Fe', 'Cl'])
+
+       # We have a species list which we want to convert to an index tensor
+       index_tensor = species_to_tensor(['H', 'C', 'H', 'H', 'C', 'Cl', 'Fe'])
+
+       # index_tensor is now [0 1 0 0 1 3 2]
+
+    Arguments:
+        all_species (:class:`collections.abc.Sequence` of :class:`str`):
+        sequence of all supported species, in order (it is recommended to order
+        according to atomic number).
+    """
+    def __init__(self, all_species: tp.Sequence[str]):
+        if isinstance(all_species, str):
+            raise TypeError("Input should be a sequence of strings")
+        super().__init__({s: i for i, s in enumerate(all_species)})
+
+
+class IntsToChemicalSymbols(_ChemicalSymbolsConverter):
+>>>>>>> a70658c86b99bdb43affc97de7abbe83cffd1604
     r"""Helper that can be called to convert tensor or list of integers to list of chemical symbol strings.
 
     On initialization, it is optional to supply the class with a :class:'dict'
@@ -461,9 +538,10 @@ class IntsToChemicalSymbols(NumbersConvert):
         species: list or tensor of species integer values you wish to convert (must be 1-D)
 
     """
-    def __init__(self, all_species: Sequence[str]):
-        int_dict = {i: s for i, s in enumerate(all_species)}
-        super().__init__(int_dict)
+    def __init__(self, all_species: tp.Sequence[str]):
+        if isinstance(all_species, str):
+            raise TypeError("Input should be a sequence of strings")
+        super().__init__({i: s for i, s in enumerate(all_species)})
 
 class ChemicalSymbolsConvert(torch.nn.Module):
     r""" Base class to initialize conversion helper functions:
@@ -541,13 +619,13 @@ class ChemicalSymbolsToInts(ChemicalSymbolsConvert):
         int_dict = {s: i for i, s in enumerate(species)}
         super().__init__(int_dict)
 
-def _get_derivatives_not_none(x: Tensor, y: Tensor, retain_graph: Optional[bool] = None, create_graph: bool = False) -> Tensor:
+def _get_derivatives_not_none(x: Tensor, y: Tensor, retain_graph: tp.Optional[bool] = None, create_graph: bool = False) -> Tensor:
     ret = torch.autograd.grad([y.sum()], [x], retain_graph=retain_graph, create_graph=create_graph)[0]
     assert ret is not None
     return ret
 
 
-def hessian(coordinates: Tensor, energies: Optional[Tensor] = None, forces: Optional[Tensor] = None) -> Tensor:
+def hessian(coordinates: Tensor, energies: tp.Optional[Tensor] = None, forces: tp.Optional[Tensor] = None) -> Tensor:
     """Compute analytical hessian from the energy graph or force graph.
 
     Arguments:
@@ -576,18 +654,6 @@ def hessian(coordinates: Tensor, energies: Optional[Tensor] = None, forces: Opti
         _get_derivatives_not_none(coordinates, f, retain_graph=True).flatten(start_dim=1)
         for f in force_components
     ], dim=1)
-
-
-class FreqsModes(NamedTuple):
-    freqs: Tensor
-    modes: Tensor
-
-
-class VibAnalysis(NamedTuple):
-    freqs: Tensor
-    modes: Tensor
-    fconstants: Tensor
-    rmasses: Tensor
 
 
 def vibrational_analysis(masses, hessian, mode_type='MDU', unit='cm^-1'):
