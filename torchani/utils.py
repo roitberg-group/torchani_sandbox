@@ -183,7 +183,6 @@ def cumsum_from_zero(input_: Tensor) -> Tensor:
     torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
     return cumsum
 
-
 def broadcast_first_dim(properties):
     num_molecule = 1
     for k, v in properties.items():
@@ -391,15 +390,16 @@ class NumbersConvert(torch.nn.Module):
 
     def __len__(self):
         return len(self.symbol_dict)
-    
+
+
 class AtomicNumbersToChemicalSymbols(NumbersConvert):
     r"""Converts tensor of atomic numbers to list of chemical symbol strings.
 
     On initialization, it is optional to supply the class with a :class:'dict'
     containing custom numbers and symbols. This is not necessary, as the
-    class is provided ATOMIC_NUMBERS by default. Otherwise, the class should be supplied with a 
-    :class:`list` (or in general :class:`collections.abc.Sequence`) of :class:`str`.The returned 
-    instance is a callable object, which can be called an arbituary tensor of the 
+    class is provided ATOMIC_NUMBERS by default. Otherwise, the class should be supplied with a
+    :class:`list` (or in general :class:`collections.abc.Sequence`) of :class:`str`.The returned
+    instance is a callable object, which can be called an arbituary tensor of the
     supported atomic numbers that is converted into a list of strings.
 
     Usage example:
@@ -421,19 +421,19 @@ class AtomicNumbersToChemicalSymbols(NumbersConvert):
 
     """
 
-    def __init__(self, atomic_numbers: Optional[Dict[str, int]] = None):
+    def __init__(self, atomic_numbers: tp.Optional[tp.Dict[str, int]] = None):
         if atomic_numbers is None:
             atomic_numbers = ATOMIC_NUMBERS
         atomics_dict = {v: k for k, v in atomic_numbers.items()}
         super().__init__(atomics_dict)
 
-        
+
 class IntsToChemicalSymbols(NumbersConvert):
     r"""Helper that can be called to convert tensor or list of integers to list of chemical symbol strings.
 
     On initialization, it is optional to supply the class with a :class:'dict'
     containing custom numbers and symbols. This is not necessary, as the
-    class is provided ATOMIC_NUMBERS by default. Otherwise, the class should be supplied with a 
+    class is provided ATOMIC_NUMBERS by default. Otherwise, the class should be supplied with a
     :class:`list` (or in general :class:`collections.abc.Sequence`) of :class:`str`. The returned
     instance is a callable object, which can be called with an arbitrary list or tensor
     of the supported indicies that is converted into a list of strings.
@@ -457,9 +457,10 @@ class IntsToChemicalSymbols(NumbersConvert):
         species: list or tensor of species integer values you wish to convert (must be 1-D)
 
     """
-    def __init__(self, all_species: Sequence[str]):
+    def __init__(self, all_species: tp.Sequence[str]):
         int_dict = {i: s for i, s in enumerate(all_species)}
         super().__init__(int_dict)
+
 
 class ChemicalSymbolsConvert(torch.nn.Module):
     r""" Base class to initialize conversion helper functions:
@@ -475,14 +476,14 @@ class ChemicalSymbolsConvert(torch.nn.Module):
 
     def forward(self, species) -> Tensor:
         return torch.tensor([self.symbol_dict[x] for x in species if x != -1], dtype=torch.long, device=self._dummy.device)
-        
+
     def __len__(self):
         return len(self.symbol_dict)
 
 
 class ChemicalSymbolsToAtomicNumbers(ChemicalSymbolsConvert):
     r"""Converts a sequence of chemical symbols into a tensor of atomic numbers, of :class:`torch.long`
-        
+
         On initialization, it is optional to supply the class with a :class:'dict'
         containing custom numbers and symbols. This is not necessary, as the
         class is provided ATOMIC_NUMBERS by default.
@@ -493,16 +494,17 @@ class ChemicalSymbolsToAtomicNumbers(ChemicalSymbolsConvert):
        atomic_numbers = symbols_to_numbers(species_convert)
 
        # atomic_numbers is now torch.tensor([ 6, 16,  8,  9,  1,  1])
-       
+
        Arguments:
            species_convert: list of chemical symbols to convert to atomic numbers
     """
 
-    def __init__(self, atomic_numbers: Optional[Dict[str, int]] = None):
+    def __init__(self, atomic_numbers: tp.Optional[tp.Dict[str, int]] = None):
         if atomic_numbers is None:
             atomic_numbers = ATOMIC_NUMBERS
         atomics_dict = atomic_numbers
         super().__init__(atomics_dict)
+
 
 class ChemicalSymbolsToInts(ChemicalSymbolsConvert):
     r"""Helper that can be called to convert chemical symbol string to integers
@@ -536,6 +538,7 @@ class ChemicalSymbolsToInts(ChemicalSymbolsConvert):
     def __init__(self, species: Sequence[str]):
         int_dict = {s: i for i, s in enumerate(species)}
         super().__init__(int_dict)
+
 
 def _get_derivatives_not_none(x: Tensor, y: Tensor, retain_graph: tp.Optional[bool] = None, create_graph: bool = False) -> Tensor:
     ret = torch.autograd.grad([y.sum()], [x], retain_graph=retain_graph, create_graph=create_graph)[0]
