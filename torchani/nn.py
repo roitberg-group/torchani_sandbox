@@ -186,7 +186,7 @@ class SpeciesConverter(torch.nn.Module):
                 cell: tp.Optional[Tensor] = None,
                 pbc: tp.Optional[Tensor] = None):
         """Convert species from periodic table element index to 0, 1, 2, 3, ... indexing"""
-        species, coordinates = input_ 
+        species, coordinates = input_
         converted_species = self.conv_tensor[species]
 
         # check if unknown species are included
