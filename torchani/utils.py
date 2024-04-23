@@ -184,6 +184,7 @@ def cumsum_from_zero(input_: Tensor) -> Tensor:
     return cumsum
 
 def broadcast_first_dim(properties):
+    #
     num_molecule = 1
     for k, v in properties.items():
         shape = list(v.shape)
@@ -475,7 +476,8 @@ class ChemicalSymbolsConvert(torch.nn.Module):
         self.register_buffer('_dummy', torch.empty(0), persistent=False)
 
     def forward(self, species) -> Tensor:
-        return torch.tensor([self.symbol_dict[x] for x in species if x != -1], dtype=torch.long, device=self._dummy.device)
+        numbers_list = [self.symbol_dict[x] for x in species if x != -1]
+        return torch.tensor(numbers_list).to(torch.long).to(self._dummy.device)
 
     def __len__(self):
         return len(self.symbol_dict)
@@ -522,7 +524,7 @@ class ChemicalSymbolsToInts(ChemicalSymbolsConvert):
        # We initialize ChemicalSymbolsToInts with the supported species
        elements = ['H', 'C', 'N', 'O', 'S', 'F', 'Cl']
        species_to_tensor = ChemicalSymbolsToInts(elements)
-       
+
        species_convert = ['C', 'S', 'O', 'F', 'H', 'H']
 
        # We have a species list which we want to convert to an index tensor
