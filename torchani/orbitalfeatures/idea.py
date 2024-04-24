@@ -32,8 +32,8 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         """
         nconformers, natoms, _ = coefficients.shape
 
-        s_core_coeffs = coefficients[:,:,:5]   # Shape: (nconformers, natoms, 4)
-        s_valence_coeffs = coefficients[:,:,5:9] # Shape (nconformers, natoms, 5)
+        s_core_coeffs = coefficients[:,:,:5]   # Shape: (nconformers, natoms, 5)
+        s_valence_coeffs = coefficients[:,:,5:9] # Shape (nconformers, natoms, 4)
         p_coeffs = coefficients[:,:,9:21] # Shape: (nconformers, natoms, 12)
         d_coeffs = coefficients[:,:,21:]  # Shape: (nconformers, natoms, 24)
 
@@ -46,12 +46,11 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         # which maps to indices [0, 2, 5, 4, 3, 1] respectively
         d_coeffs_reshaped = d_coeffs.view(nconformers, natoms, 4, 6)  # Shape: (nconformers, natoms, 4, 6) 
         d_coeffs_reshaped_reordered = d_coeffs_reshaped[:, :, :, [0, 2, 5, 4, 3, 1]]
-        d_coeffs_reshaped_reordered = d_coeffs_reshaped.view(nconformers, natoms, 8, 3)  # Shape: (nconformers, natoms, 8, 3)        
+        d_coeffs_reshaped_reordered = d_coeffs_reshaped_reordered.view(nconformers, natoms, 8, 3)  # Shape: (nconformers, natoms, 8, 3)        
 
         # Splitting into two groups: diagonal [Dxx, Dyy, Dzz] and off-diagonal [Dyz, Dxz, Dxy]
         d_diagonal = d_coeffs_reshaped_reordered[:, :, :3]
         d_off_diagonal = d_coeffs_reshaped_reordered[:, :, 3:]
-
 
         if combine:
             # Expand s_to_combine to make it compatible for element-wise addition
@@ -63,7 +62,7 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
             s_core_coeffs = torch.cat((s_core_coeffs, s_valence_coeffs), dim=2) 
         
         # Concatenate modified p and d coefficients to form the desired "matrix"
-        orbital_matrix = torch.cat([p_coeffs_reshaped, d_coeffs_reshaped], dim=2)  # Shape (nconformers, natoms, 12, 3)
+        orbital_matrix = torch.cat([p_coeffs_reshaped, d_diagonal, d_off_diagonal], dim=2)  # Shape (nconformers, natoms, 12, 3)
 
         return s_core_coeffs, orbital_matrix
 
