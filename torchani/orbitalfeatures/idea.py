@@ -68,7 +68,6 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
 
         return s_coeffs, orbital_matrix
 
-
     def _get_orbital_dists_and_idx(
         self,
         orbital_matrix: Tensor,
@@ -100,5 +99,11 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         distances = torch.sqrt((orbital_matrix ** 2).sum(dim=-1))       
 
         return neighbor_idxs, distances
+
+
+    def _get_orbital_dists_and_idx(
+        self,
+        orbital_matrix: Tensor,
+    ) -> tp.Tuple[Tensor, Tensor, Tensor]:
 
 
