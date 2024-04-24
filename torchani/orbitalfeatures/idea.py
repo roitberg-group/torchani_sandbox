@@ -8,43 +8,50 @@ from torch import Tensor
 
 class ExCorrAEVComputerVariation(torch.nn.Module):
     def __init__(self) -> None:
+
         super().__init__()
 
     def forward(
         self,
-        species_coords: tp.Tuple[Tensor, Tensor],
+        species: Tensor,
         coefficients: Tensor,
-    ) -> tp.Tuple[Tensor, Tensor]:
-        
-        return species, torch.tensor(0)
+    ) -> tp.Tuple[Tensor, Tensor, Tensor, Tensor]:
+        s_coeffs, orbital_matrix = self._reshape_coefficients(coefficients)
+
+        neighbor_idxs, distances = self._get_orbital_dists_and_idx(orbital_matrix)
+
+        return s_coeffs, orbital_matrix, neighbor_idxs, distances
 
     def _reshape_coefficients(
         self,
-        species: Tensor,
         coefficients: Tensor,
-        combine: bool,
     ) -> tp.Tuple[Tensor, Tensor]: 
         """ Output: A tuple containing 2 tensors: one with the s-type coefficients,
-        and another with the p and d-type coefficients. The s and p-type coefficients 
-        with associated functions of equal exponent. This is done by default to reduce
-        the number of "orbital types" in next steps, unless combine is set to False.
+        and another with the p and d-type coefficients in the form of a matrix. 
+
+        The obtained orbital matrix will look like:
+
+        [p0x  p0y  p0z]
+        ...
+        [p3x  p3y  p3z]
+        [d0xx d0yy d0zz]
+        [d0zy d0zx d0xy]
+        ...
+        [d3xx d3yy d3zz]
+        [d3zy d3zx d3xy]
+
+        Where each row of this matrix is an Atomic Orbital Vector (AOV)
         """
         nconformers, natoms, _ = coefficients.shape
 
-        # We need to split the s-type coefficients in the s_core and s_valence groups
-        # Only the s_valence coefficients are combined with the p-type coefficients
-
-        # TODO: Right spliting like this in core ande valence now only works with C
-        s_core_coeffs = coefficients[:,:,:4]   # Shape: (nconformers, natoms, 5)
-        s_valence_coeffs = coefficients[:,:,4:8] # Shape (nconformers, natoms, 4)
-
+        s_coeffs = coefficients[:,:,:9]   # Shape: (nconformers, natoms, 9)
         p_coeffs = coefficients[:,:,9:21] # Shape: (nconformers, natoms, 12)
         d_coeffs = coefficients[:,:,21:]  # Shape: (nconformers, natoms, 24)
 
         # Reshape p_coeffs to make it easier to handle individual components
         p_coeffs_reshaped = p_coeffs.view(nconformers, natoms, 4, 3)  # Shape: (nconformers, natoms, 4, 3)
 
-        # Reshape p_coeffs to make it easier to handle individual components
+        # Reshape d_coeffs to make it easier to handle individual components
         # Correcting the reordering of d_coeffs
         # Transformation [Dxx, Dxy, Dyy, Dzx, Dzy, Dzz] -> [Dxx, Dyy, Dzz, Dzy, Dzx, Dxy]
         # which maps to indices [0, 2, 5, 4, 3, 1] respectively
@@ -56,17 +63,42 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         d_diagonal = d_coeffs_reshaped_reordered[:, :, :3]
         d_off_diagonal = d_coeffs_reshaped_reordered[:, :, 3:]
 
-        if combine:
-            # Expand s_to_combine to make it compatible for element-wise addition
-            s_valence_coeffs_expanded = s_valence_coeffs.unsqueeze(-1).expand_as(p_coeffs_reshaped)  # Shape: (nconformers, natoms, 4, 3)
-            # Add (1/3) of the corresponding s term to each p coefficient
-            p_coeffs_reshaped = p_coeffs_reshaped + (1/3) * s_valence_coeffs_expanded
-        else: 
-            # If we are not combinng s and p coefficients, all s cofficients are consided "core"
-            s_core_coeffs = torch.cat((s_core_coeffs, s_valence_coeffs), dim=2) 
-        
         # Concatenate modified p and d coefficients to form the desired "matrix"
         orbital_matrix = torch.cat([p_coeffs_reshaped, d_diagonal, d_off_diagonal], dim=2)  # Shape (nconformers, natoms, 12, 3)
 
-        return s_core_coeffs, orbital_matrix
+        return s_coeffs, orbital_matrix
+
+
+    def _get_orbital_dists_and_idx(
+        self,
+        orbital_matrix: Tensor,
+    ) -> tp.Tuple[Tensor, Tensor, Tensor]:
+        """ Output: A tuple containing 3 tensors resembling the neighbor_idxs,
+        and distances tensors from the geometric AEVs.The neighor_idxs tensor,
+        for each atom of each conformer, looks like:
+         
+          [ 0  0  0  ... 0 ]
+          [ 1  2  3  ... 12]
+          
+        Note the number of pairs is 12 just like the number of AOVs forming the orbital matrix
+        Here 0 represents the actual atom, and the numbers from 1 to 12 represent the
+        surroinding AOVs. Of course that the AOVs could be zeros depending on the atom species,
+        but that will be taken care off later.
+
+        The distances tensor simply involves evaluating the module of the AOVs. In other words,
+        the only distances we are worried about are the distances between the actual atom and a
+        12 "fake" atoms in the coordinates of the AOVs.
+          
+        """
+        nconformers, natoms, _ , _ = orbital_matrix.shape
+
+        # Create a new tensor of zeros with the desired shape (nconformers, natoms, 2, 12)
+        neighbor_idxs = torch.zeros((nconformers, natoms, 2, 12), dtype=torch.int)
+        # Assigning the sequence to each position in the third dimension slice 2
+        neighbor_idxs[:, :, 1, :] = torch.arange(1, 13, dtype=torch.int)
+        # Calculate modules of the AOVs
+        distances = torch.sqrt((orbital_matrix ** 2).sum(dim=-1))       
+
+        return neighbor_idxs, distances
+
 
