@@ -25,15 +25,19 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         combine: bool,
     ) -> tp.Tuple[Tensor, Tensor]: 
         """ Output: A tuple containing 2 tensors: one with the s-type coefficients,
-        and another with the sp, p and d-type coefficients. The sp-type coefficients 
-        are calculated combining the s and p-type coefficiens that share exponents in
-        their associated functions. This is done by default to reduce the number of
-        "orbital types" in next steps, unless combine is set to False.
+        and another with the p and d-type coefficients. The s and p-type coefficients 
+        with associated functions of equal exponent. This is done by default to reduce
+        the number of "orbital types" in next steps, unless combine is set to False.
         """
         nconformers, natoms, _ = coefficients.shape
 
-        s_core_coeffs = coefficients[:,:,:5]   # Shape: (nconformers, natoms, 5)
-        s_valence_coeffs = coefficients[:,:,5:9] # Shape (nconformers, natoms, 4)
+        # We need to split the s-type coefficients in the s_core and s_valence groups
+        # Only the s_valence coefficients are combined with the p-type coefficients
+
+        # TODO: Right spliting like this in core ande valence now only works with C
+        s_core_coeffs = coefficients[:,:,:4]   # Shape: (nconformers, natoms, 5)
+        s_valence_coeffs = coefficients[:,:,4:8] # Shape (nconformers, natoms, 4)
+
         p_coeffs = coefficients[:,:,9:21] # Shape: (nconformers, natoms, 12)
         d_coeffs = coefficients[:,:,21:]  # Shape: (nconformers, natoms, 24)
 
@@ -48,7 +52,7 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         d_coeffs_reshaped_reordered = d_coeffs_reshaped[:, :, :, [0, 2, 5, 4, 3, 1]]
         d_coeffs_reshaped_reordered = d_coeffs_reshaped_reordered.view(nconformers, natoms, 8, 3)  # Shape: (nconformers, natoms, 8, 3)        
 
-        # Splitting into two groups: diagonal [Dxx, Dyy, Dzz] and off-diagonal [Dyz, Dxz, Dxy]
+        # Splitting into two groups: diagonal [Dxx, Dyy, Dzz] and off-diagonal [Dzy, Dzx, Dxy]
         d_diagonal = d_coeffs_reshaped_reordered[:, :, :3]
         d_off_diagonal = d_coeffs_reshaped_reordered[:, :, 3:]
 
