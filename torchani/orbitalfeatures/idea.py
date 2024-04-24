@@ -41,8 +41,18 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         p_coeffs_reshaped = p_coeffs.view(nconformers, natoms, 4, 3)  # Shape: (nconformers, natoms, 4, 3)
 
         # Reshape p_coeffs to make it easier to handle individual components
-        d_coeffs_reshaped = d_coeffs.view(nconformers, natoms, 8, 3)  # Shape: (nconformers, natoms, 8, 3)
-        
+        # Correcting the reordering of d_coeffs
+        # Transformation [Dxx, Dxy, Dyy, Dzx, Dzy, Dzz] -> [Dxx, Dyy, Dzz, Dzy, Dzx, Dxy]
+        # which maps to indices [0, 2, 5, 4, 3, 1] respectively
+        d_coeffs_reshaped = d_coeffs.view(nconformers, natoms, 4, 6)  # Shape: (nconformers, natoms, 4, 6) 
+        d_coeffs_reshaped_reordered = d_coeffs_reshaped[:, :, :, [0, 2, 5, 4, 3, 1]]
+        d_coeffs_reshaped_reordered = d_coeffs_reshaped.view(nconformers, natoms, 8, 3)  # Shape: (nconformers, natoms, 8, 3)        
+
+        # Splitting into two groups: diagonal [Dxx, Dyy, Dzz] and off-diagonal [Dyz, Dxz, Dxy]
+        d_diagonal = d_coeffs_reshaped_reordered[:, :, :3]
+        d_off_diagonal = d_coeffs_reshaped_reordered[:, :, 3:]
+
+
         if combine:
             # Expand s_to_combine to make it compatible for element-wise addition
             s_valence_coeffs_expanded = s_valence_coeffs.unsqueeze(-1).expand_as(p_coeffs_reshaped)  # Shape: (nconformers, natoms, 4, 3)
@@ -52,15 +62,6 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
             # If we are not combinng s and p coefficients, all s cofficients are consided "core"
             s_core_coeffs = torch.cat((s_core_coeffs, s_valence_coeffs), dim=2) 
         
-        # Correcting the reordering of d_coeffs
-        # Transformation [Dxx, Dxy, Dxz, Dyy, Dyz, Dzz] -> [Dxx, Dyy, Dzz, Dyz, Dxz, Dxy]
-        # which maps to indices [0, 3, 5, 4, 2, 1] respectively
-        d_coeffs_reshaped_reordered = d_coeffs_reshaped[:, :, [0, 3, 5, 4, 2, 1]]
-
-        # Splitting into two groups: diagonal [Dxx, Dyy, Dzz] and off-diagonal [Dyz, Dxz, Dxy]
-        d_diagonal = d_coeffs_reshaped_reordered[:, :, :3]
-        d_off_diagonal = d_coeffs_reshaped_reordered[:, :, 3:]
-
         # Concatenate modified p and d coefficients to form the desired "matrix"
         orbital_matrix = torch.cat([p_coeffs_reshaped, d_coeffs_reshaped], dim=2)  # Shape (nconformers, natoms, 12, 3)
 
