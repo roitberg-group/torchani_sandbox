@@ -124,6 +124,17 @@ GSAES = {
     },
 }
 
+XC_GSAES = {
+    'pbe-dzvp': {
+        'H': -0.313244,
+        'C': -5.145161,
+        'N': -6.692481,
+        'O': -8.358737,
+        'F': -10.241716,
+        'S': -25.390943,
+        'Cl': -27.945238
+    }
+}
 
 def sorted_gsaes(elements: tp.Sequence[str], functional: str, basis_set: str, ):
     r"""Return sorted GSAES by element
