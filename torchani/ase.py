@@ -29,7 +29,7 @@ class Calculator(ase.calculators.calculator.Calculator):
 
     implemented_properties = ['energy', 'forces', 'stress', 'free_energy', 'charges', "polarizabilities"]
 
-    def __init__(self, model, overwrite: bool = False, stress_partial_fdotr: bool = False):
+    def __init__(self, model, overwrite: bool = False, stress_partial_fdotr: bool = False, stress_numerical: bool = False):
         super().__init__()
         self.model = model
         # Since ANI is used in inference mode, no gradients on model parameters are required here
@@ -37,6 +37,7 @@ class Calculator(ase.calculators.calculator.Calculator):
             p.requires_grad_(False)
         self.overwrite = overwrite
         self.stress_partial_fdotr = stress_partial_fdotr
+        self.stress_numerical = stress_numerical
 
         a_parameter = next(self.model.parameters())
         self.device = a_parameter.device
@@ -71,13 +72,13 @@ class Calculator(ase.calculators.calculator.Calculator):
             coordinates = utils.map_to_central(coordinates, cell, pbc)
             atoms.set_positions(coordinates.detach().cpu().reshape(-1, 3).numpy())
 
-        if 'stress' in properties and not self.stress_partial_fdotr:
+        if 'stress' in properties and not (self.stress_partial_fdotr or self.stress_numerical):
             scaling = torch.eye(3, requires_grad=True, dtype=self.dtype, device=self.device)
             coordinates = coordinates @ scaling
         coordinates = coordinates.unsqueeze(0)
 
         if pbc_enabled:
-            if 'stress' in properties and not self.stress_partial_fdotr:
+            if 'stress' in properties and not (self.stress_partial_fdotr or self.stress_numerical):
                 cell = cell @ scaling
             output = self.model((species, coordinates), cell=cell, pbc=pbc)
         else:
@@ -110,9 +111,12 @@ class Calculator(ase.calculators.calculator.Calculator):
             if self.stress_partial_fdotr:
                 diff_vectors = self.model.aev_computer.neighborlist.get_diff_vectors()
                 stress = self._get_stress_partial_fdotr(diff_vectors, energy, volume)
+                self.results["stress"] = stress.detach().cpu().numpy()
+            elif self.stress_numerical:
+                self.results["stress"] = self.calculate_numerical_stress(atoms if atoms is not None else self.atoms)
             else:
                 stress = torch.autograd.grad(energy.squeeze(), scaling)[0] / volume
-            self.results['stress'] = stress.detach().cpu().numpy()
+                self.results["stress"] = stress.detach().cpu().numpy()
 
     def _get_ani_forces(self, coordinates, energy, properties):
         return -torch.autograd.grad(energy.squeeze(), coordinates, retain_graph='stress' in properties)[0]
