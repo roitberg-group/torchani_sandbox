@@ -119,5 +119,7 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         # Calculate modules of the AOVs
         distances = torch.sqrt((orbital_matrix ** 2).sum(dim=-1))       
 
+
+        # For now it only works 
         return neighbor_idxs, distances
 
