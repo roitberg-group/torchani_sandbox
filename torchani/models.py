@@ -702,7 +702,6 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
                     use_neurochem_source: bool = False,
                     ensemble_size: int = 8,
                     use_experimental_charges: bool = False,
-                    charge_nn_state_dict_file: Optional[str] = None,
                     index_networks: bool = False,
                     **model_kwargs) -> BuiltinModel:
     # Helper function to toggle if the loading is done from an NC file or
@@ -823,12 +822,17 @@ def _load_ani_model(state_dict_file: Optional[str] = None,
         if use_experimental_charges:
             # TODO: This is super dirty and horrible
             assert isinstance(model, BuiltinModelCharges)
-            assert charge_nn_state_dict_file is not None
 
             raw_state_dict = _fetch_state_dict(state_dict_file, model_index)
 
             energy_nn_state_dict = {k.replace("neural_networks.", ""): v for k, v in raw_state_dict.items() if k.endswith("weight") or k.endswith("bias")}
-            charge_nn_state_dict = _fetch_state_dict(charge_nn_state_dict_file, local=True)
+            try:
+                model_dir = os.path.expanduser('~/.local/torchani/state_dicts')
+                url = f'http://moria.chem.ufl.edu/animodel/private/charge_nn_state_dict.pt'
+                charge_nn_state_dict = torch.hub.load_state_dict_from_url(url, model_dir=model_dir, map_location=torch.device('cpu'))  # type: ignore
+            except Exception:
+                raise ValueError("charge_nn_state_dict.pt could not be found")
+
             aev_state_dict = {k.replace("aev_computer.", ""): v for k, v in raw_state_dict.items() if k.startswith("aev_computer")}
 
             model.aev_computer.load_state_dict(aev_state_dict)
@@ -902,19 +906,13 @@ def ANI2x(**kwargs) -> BuiltinModel:
 def ANI2xCharges(**kwargs) -> BuiltinModel:
     r"""
     Experimental 2x Model that also outputs atomic charges
-
-    state dict file ``charge_nn_state_dict.pt`` must be present in ~/.local/torchani/state_dicts/ for this to work
     """
     info_file = 'ani-2x_8x.info'
     state_dict_file = 'ani2x_state_dict.pt'
-    charge_nn_state_dict_file = Path.home().joinpath('.local/torchani/state_dicts/charge_nn_state_dict.pt')
-    if not charge_nn_state_dict_file.is_file():
-        raise ValueError(f"The file {str(charge_nn_state_dict_file)} could not be found")
     return _load_ani_model(
         state_dict_file,
         info_file,
         use_experimental_charges=True,
-        charge_nn_state_dict_file=str(charge_nn_state_dict_file),
         **kwargs
     )
 
