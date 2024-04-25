@@ -16,9 +16,16 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         species: Tensor,
         coefficients: Tensor,
     ) -> tp.Tuple[Tensor, Tensor, Tensor, Tensor]:
+        # We first need to reshape the coefficients for their manipulation
+        # The s-type coefficients are processed with a custom radial AEV computer
+        # The p and d-type coefficientes form an orbital matrix that basically
+        # Describes the coordinates in the "space of coefficients" of fake atoms
+        # Around each actual atom.
         s_coeffs, orbital_matrix = self._reshape_coefficients(coefficients)
 
-        neighbor_idxs, distances = self._get_orbital_dists_and_idx(orbital_matrix)
+        # In order to use the AEV computer function from the geometric AEVs, we need
+        # to generate arrays that can serve as input for such function
+        neighbor_idxs, distances = self._get_aev_inputs(orbital_matrix)
 
         return s_coeffs, orbital_matrix, neighbor_idxs, distances
 
@@ -40,7 +47,8 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         [d3xx d3yy d3zz]
         [d3zy d3zx d3xy]
 
-        Where each row of this matrix is an Atomic Orbital Vector (AOV)
+        Where each row of this matrix is an Atomic Orbital Vector (AOV). This resembles the
+        diff_vec tensor (for a single atom) fron the geometric AEVs.
         """
         nconformers, natoms, _ = coefficients.shape
 
@@ -68,25 +76,38 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
 
         return s_coeffs, orbital_matrix
 
-    def _get_orbital_dists_and_idx(
+    def _get_aev_inputs(
         self,
         orbital_matrix: Tensor,
     ) -> tp.Tuple[Tensor, Tensor, Tensor]:
         """ Output: A tuple containing 3 tensors resembling the neighbor_idxs,
-        and distances tensors from the geometric AEVs.The neighor_idxs tensor,
-        for each atom of each conformer, looks like:
-         
-          [ 0  0  0  ... 0 ]
-          [ 1  2  3  ... 12]
-          
-        Note the number of pairs is 12 just like the number of AOVs forming the orbital matrix
-        Here 0 represents the actual atom, and the numbers from 1 to 12 represent the
-        surroinding AOVs. Of course that the AOVs could be zeros depending on the atom species,
-        but that will be taken care off later.
+        distances and diff_vectors tensors from the geometric AEVs. 
+        
+        To construct the neighbor_idxs tensor, a set of 12 (4 p + 8 d) fake atoms
+        is "attached" to each conformer. The coordinates of these fake atoms are
+        given in the "coefficients" space, and are those of the corresponding AOVs.
+        
+        This way, if a given confomer has natoms the indexes 0:natoms belong to 
+        actual atoms, while the indexes natoms:natoms+12 represent the fake atoms.
 
-        The distances tensor simply involves evaluating the module of the AOVs. In other words,
-        the only distances we are worried about are the distances between the actual atom and a
-        12 "fake" atoms in the coordinates of the AOVs.
+        For example, let's consider the case in which we only have two corformers:
+        A water molecule (H2O, H H O) and carbon monoxide (C O)
+        This way, the neighbor_idxs tensor would look like:
+
+        [ 2  2  2  ... 2   0  0  0 ... 0   1  1  1 ... 1  ]
+        [ 3  4  5  ... 14  2  3  4 ... 13  2  3  4 ... 13 ]
+          
+        Here the first row correspond to actual atoms indexes, while the second one 
+        corresponds to fake atoms.
+
+        The distances tensor simply involves evaluating the module of the AOVs. 
+        In other words, the only distances we are worried about are the distances 
+        between the actual atom and a 12 "fake" atoms in the coordinates of the AOVs.
+
+        In the example from above, the distances tensor would look like:
+        [ d2-3  d2-4  d2-5  ... d2-14  d0-2  d0-3  d0-4 ... d0-13  d1-2  d1-3  d1-4 ... d1-13 ]
+
+        The diff_vectors tesor follows the same idea. 
           
         """
         nconformers, natoms, _ , _ = orbital_matrix.shape
@@ -99,11 +120,4 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         distances = torch.sqrt((orbital_matrix ** 2).sum(dim=-1))       
 
         return neighbor_idxs, distances
-
-
-    def _get_orbital_dists_and_idx(
-        self,
-        orbital_matrix: Tensor,
-    ) -> tp.Tuple[Tensor, Tensor, Tensor]:
-
 
