@@ -95,17 +95,18 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         This way, the neighbor_idxs tensor would look like:
 
         [ 2  2  2  ... 2   0  0  0 ... 0   1  1  1 ... 1  ]
-        [ 3  4  5  ... 14  2  3  4 ... 13  2  3  4 ... 13 ]
+        [ 3  4  5  ... 14  3  4  5 ... 14  3  4  5 ... 14 ]
           
         Here the first row correspond to actual atoms indexes, while the second one 
-        corresponds to fake atoms.
+        corresponds to fake atoms. Note that natoms is 3, that is the size of the 
+        larger molecule.
 
         The distances tensor simply involves evaluating the module of the AOVs. 
         In other words, the only distances we are worried about are the distances 
         between the actual atom and a 12 "fake" atoms in the coordinates of the AOVs.
 
         In the example from above, the distances tensor would look like:
-        [ d2-3  d2-4  d2-5  ... d2-14  d0-2  d0-3  d0-4 ... d0-13  d1-2  d1-3  d1-4 ... d1-13 ]
+        [ d2-3  d2-4  d2-5  ... d2-14  d0-3  d0-4  d0-5 ... d0-14  d1-3  d1-4  d1-5 ... d1-14 ]
 
         The diff_vectors tesor follows the same idea. 
           
@@ -115,10 +116,13 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         # Create a new tensor of zeros with the desired shape (nconformers, natoms, 2, 12)
         neighbor_idxs = torch.zeros((nconformers, natoms, 2, 12), dtype=torch.int)
         # Assigning the sequence to each position in the third dimension slice 2
-        neighbor_idxs[:, :, 1, :] = torch.arange(1, 13, dtype=torch.int)
+        neighbor_idxs[:, :, 1, :] = torch.arange(natoms, natoms+12, dtype=torch.int)
         # Calculate modules of the AOVs
         distances = torch.sqrt((orbital_matrix ** 2).sum(dim=-1))       
-
+        # Permute the tensor to rearrange the dimensions to (2, nconformers, natoms, 12)
+        distances = distances.permute(2, 0, 1, 3) 
+        # Flatten all dimensions except the first into one dimension
+        distances = distances.reshape(2, -1)  # Now shape (2, npairs), where npairs = 12*natoms*nconformers
 
         # For now it only works 
         return neighbor_idxs, distances
