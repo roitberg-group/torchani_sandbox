@@ -121,7 +121,6 @@ def create_batched_dataset(
     if not direct_cache:
         creation_log = {
             "datetime_created": str(datetime.datetime.now()),
-            "source_store_locations": dataset.store_locations,
             "splits": splits,
             "folds": folds,
             "padding": padding,
@@ -129,7 +128,9 @@ def create_batched_dataset(
             "shuffle_seed": shuffle_seed,
             "properties": properties,
             "batch_size": batch_size,
-            "total_num_conformers": dataset.num_conformers,
+            "store_locations": dataset.store_locations,
+            "symbols": dataset.symbols,
+            "num_conformers": dataset.num_conformers,
         }
         with open(dest_path.joinpath("creation_log.json"), "w") as logfile:
             json.dump(creation_log, logfile, indent=1)
