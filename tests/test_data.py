@@ -391,7 +391,7 @@ class TestEstimationSAE(TestCase):
             splits={"training": 1.0},
             batch_size=self.batch_size,
             shuffle_seed=12345,
-            include_properties=("energies", "species", "coordinates"),
+            properties=("energies", "species", "coordinates"),
         )
         self.direct_cache = create_batched_dataset(
             dataset_path_gdb,
@@ -399,7 +399,7 @@ class TestEstimationSAE(TestCase):
             splits={"training": 1.0},
             batch_size=self.batch_size,
             shuffle_seed=12345,
-            include_properties=("energies", "species", "coordinates"),
+            properties=("energies", "species", "coordinates"),
             direct_cache=True,
         )
         self.train = ANIBatchedDataset(self.tmp_dir_batched.name, split="training")
@@ -555,7 +555,7 @@ class TestANIBatchedDataset(TestCase):
                 shuffle=False,
                 splits={"training": 0.5, "validation": 0.5},
                 batch_size=self.batch_size,
-                include_properties=("species", "coordinates", "energies"),
+                properties=("species", "coordinates", "energies"),
             )
         self.train = ANIBatchedDataset(self.tmp_dir_batched.name, split="training")
         self.valid = ANIBatchedDataset(self.tmp_dir_batched.name, split="validation")
@@ -779,7 +779,7 @@ class TestANIDataset(TestCase):
         new_groups = deepcopy(self.torch_conformers)
         for k in ("H6", "O6", "C6"):
             ds.append_conformers(k, new_groups[k])
-        self.assertTrue(ds.symbols, ("C", "H", "O"))
+        self.assertTrue(ds.symbols, ("H", "C", "O"))
         with self.assertRaisesRegex(ValueError, "Either species or numbers"):
             ds.delete_properties({"species"})
             ds.symbols

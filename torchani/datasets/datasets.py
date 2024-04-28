@@ -15,7 +15,7 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from torchani.utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm, PADDING
+from torchani.utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm, PADDING, sort_by_element
 from torchani.datasets._backends import _H5PY_AVAILABLE, _StoreWrapper, StoreFactory, TemporaryLocation, _ConformerWrapper, _SUFFIXES
 from torchani.datasets._annotations import Transform, Conformers, NumpyConformers, MixedConformers, StrPath, DTypeLike, IdxLike
 
@@ -529,7 +529,7 @@ class _ANISubdataset(_ANIDatasetBase):
                                                    properties=element_key,
                                                    chem_symbols=True)
             present.update(conformers[element_key].ravel())
-        return tuple(sorted(present))
+        return sort_by_element(present)
 
     @property
     def znumbers(self) -> tp.Tuple[int, ...]:
@@ -1146,7 +1146,7 @@ class ANIDataset(_ANIDatasetBase):
 
     @property
     def symbols(self) -> tp.Tuple[str, ...]:
-        return tuple(sorted({s for ds in self._datasets.values() for s in ds.symbols}))
+        return sort_by_element({s for ds in self._datasets.values() for s in ds.symbols})
 
     @property
     def znumbers(self) -> tp.Tuple[int, ...]:
