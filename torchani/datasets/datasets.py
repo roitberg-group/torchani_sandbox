@@ -260,6 +260,10 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
         return self._properties
 
     @property
+    def tensor_properties(self) -> tp.Set[str]:
+        return {p for p in self._properties if not any(re.match(pattern, p) for pattern in _ALWAYS_STRING_PATTERNS)}
+
+    @property
     def num_conformers(self) -> int:
         return sum(self._group_sizes.values())
 
