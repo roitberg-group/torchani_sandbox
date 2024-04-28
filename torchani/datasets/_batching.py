@@ -119,6 +119,10 @@ def create_batched_dataset(
     )
     # log creation data
     if not direct_cache:
+        try:
+            symbols = dataset.symbols
+        except ValueError:
+            symbols = ("?",)  # legacy grouping, symbols can't be determined
         creation_log = {
             "datetime_created": str(datetime.datetime.now()),
             "splits": splits,
@@ -129,7 +133,7 @@ def create_batched_dataset(
             "properties": properties,
             "batch_size": batch_size,
             "store_locations": dataset.store_locations,
-            "symbols": dataset.symbols,
+            "symbols": symbols,
             "num_conformers": dataset.num_conformers,
         }
         with open(dest_path.joinpath("creation_log.json"), "w") as logfile:
