@@ -25,7 +25,7 @@ def create_batched_dataset(
     dest_path: tp.Optional[StrPath] = None,
     shuffle: bool = True,
     shuffle_seed: tp.Optional[int] = None,
-    include_properties: tp.Iterable[str] = (),
+    properties: tp.Iterable[str] = (),
     batch_size: int = 2560,
     max_batches_per_packet: int = 350,
     padding: tp.Optional[tp.Dict[str, float]] = None,
@@ -53,11 +53,13 @@ def create_batched_dataset(
     else:
         dataset = ANIDataset(locations)
 
-    if isinstance(include_properties, str):
-        include_properties = (include_properties,)
-    if not include_properties:
-        include_properties = tuple(dataset.tensor_properties)
-    include_properties = tuple(sorted(include_properties))
+    if isinstance(properties, str):
+        properties = (properties,)
+    if not properties:
+        properties = tuple(dataset.tensor_properties)
+    properties = tuple(sorted(properties))
+    padding = PADDING if padding is None else padding
+    assert padding is not None  # mypy
 
     # (1) Get all indices and shuffle them if needed
     #
@@ -107,7 +109,7 @@ def create_batched_dataset(
         split_paths,
         conformer_splits,
         inplace_transform,
-        include_properties,
+        properties,
         dataset,
         padding,
         batch_size,
@@ -122,15 +124,12 @@ def create_batched_dataset(
             "source_store_locations": dataset.store_locations,
             "splits": splits,
             "folds": folds,
-            "padding": PADDING if padding is None else padding,
+            "padding": padding,
             "shuffle": shuffle,
             "shuffle_seed": shuffle_seed,
-            "include_properties": sorted(include_properties)
-            if include_properties is not None
-            else "all",
+            "properties": properties,
             "batch_size": batch_size,
             "total_num_conformers": dataset.num_conformers,
-            "total_conformer_groups": dataset.num_conformer_groups,
         }
         with open(dest_path.joinpath("creation_log.json"), "w") as logfile:
             json.dump(creation_log, logfile, indent=1)
@@ -254,9 +253,9 @@ def _save_splits_into_batches(
     split_paths: tp.OrderedDict[str, Path],
     conformer_splits: tp.List[Tensor],
     inplace_transform: tp.Optional[Transform],
-    include_properties: tp.Sequence[str],
+    properties: tp.Sequence[str],
     dataset: ANIDataset,
-    padding: tp.Optional[tp.Dict[str, float]],
+    padding: tp.Dict[str, float],
     batch_size: int,
     max_batches_per_packet: int,
     direct_cache: bool,
@@ -365,7 +364,7 @@ def _save_splits_into_batches(
                     conformers = ro_dataset.get_conformers(
                         key_list[group_idx.item()],
                         selected_indices,
-                        properties=include_properties,
+                        properties=properties,
                     )
                     all_conformers.append(conformers)
                 batches_cat = pad_atomic_properties(all_conformers, padding)

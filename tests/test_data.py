@@ -774,15 +774,15 @@ class TestANIDataset(TestCase):
         self.tmp_store_one_group.close()
         self.tmp_store_three_groups.close()
 
-    def testPresentElements(self):
+    def testSymbols(self):
         ds = self._make_new_dataset()
         new_groups = deepcopy(self.torch_conformers)
         for k in ("H6", "O6", "C6"):
             ds.append_conformers(k, new_groups[k])
-        self.assertTrue(ds.present_elements(chem_symbols=True), ["C", "H", "O"])
+        self.assertTrue(ds.symbols, ("C", "H", "O"))
         with self.assertRaisesRegex(ValueError, "Either species or numbers"):
             ds.delete_properties({"species"})
-            ds.present_elements()
+            ds.symbols
 
     def testGetConformers(self):
         ds = ANIDataset(self.tmp_store_three_groups.name)

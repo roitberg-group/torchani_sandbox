@@ -519,21 +519,33 @@ class _ANISubdataset(_ANIDatasetBase):
         d.update({'Store Metadata': self.metadata})
         return str_ + pformat(d)
 
-    def present_elements(self, chem_symbols: bool = False) -> tp.List[tp.Union[str, int]]:
-        r"""Get an ordered list with all elements present in the dataset
+    @property
+    def symbols(self) -> tp.Tuple[str, ...]:
+        self._check_correct_grouping()
+        element_key = _get_any_element_key(self.properties)
+        present: tp.Set[str] = set()
+        for group_name in self.keys():
+            conformers = self.get_numpy_conformers(group_name,
+                                                   properties=element_key,
+                                                   chem_symbols=True)
+            present.update(conformers[element_key].ravel())
+        return tuple(sorted(present))
 
+    @property
+    def znumbers(self) -> tp.Tuple[int, ...]:
+        r"""Get an ordered list with all elements present in the dataset
         list is ordered alphabetically. Function raises ValueError if neither
         'species' or 'numbers' properties are present.
         """
         self._check_correct_grouping()
         element_key = _get_any_element_key(self.properties)
-        present_elements: tp.Set[tp.Union[str, int]] = set()
+        present: tp.Set[int] = set()
         for group_name in self.keys():
             conformers = self.get_numpy_conformers(group_name,
                                                    properties=element_key,
-                                                   chem_symbols=chem_symbols)
-            present_elements.update(conformers[element_key].ravel())
-        return sorted(present_elements)
+                                                   chem_symbols=False)
+            present.update(conformers[element_key].ravel())
+        return tuple(sorted(present))
 
     def _parse_index(self, idx: IdxLike) -> tp.Optional[np.ndarray]:
         # internally, idx_ is always a numpy array or None, idx can be a tensor
@@ -1132,8 +1144,13 @@ class ANIDataset(_ANIDatasetBase):
                 self._datasets[k] = stack.enter_context(self._datasets[k].keep_open(mode))
             yield self
 
-    def present_elements(self, chem_symbols: bool = False) -> tp.List[tp.Union[str, int]]:
-        return sorted({s for ds in self._datasets.values() for s in ds.present_elements(chem_symbols)})
+    @property
+    def symbols(self) -> tp.Tuple[str, ...]:
+        return tuple(sorted({s for ds in self._datasets.values() for s in ds.symbols}))
+
+    @property
+    def znumbers(self) -> tp.Tuple[int, ...]:
+        return tuple(sorted({s for ds in self._datasets.values() for s in ds.znumbers}))
 
     @property
     def store_locations(self) -> tp.List[str]:
