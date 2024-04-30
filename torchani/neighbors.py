@@ -610,7 +610,7 @@ class CellList(Neighborlist):
         # note that this is not actually the bucket length used in the grid,
         # it is only a lower bound used to calculate the grid size
         spherical_factor = self.spherical_factor
-        bucket_length_lower_bound = (spherical_factor * self.cutoff / self.buckets_per_cutoff) + extra_space
+        bucket_length_lower_bound = (spherical_factor * cutoff / self.buckets_per_cutoff) + extra_space
 
         current_device = cell.device
         # 1) Update the cell diagonal and translation displacements
