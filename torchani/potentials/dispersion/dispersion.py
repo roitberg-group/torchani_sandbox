@@ -6,8 +6,8 @@ from torch import Tensor
 from torch.jit import Final
 
 from torchani.units import ANGSTROM_TO_BOHR
-from torchani.cutoffs import Cutoff
-from torchani.neighbors import NeighborData, Neighborlist
+from torchani.cutoffs import CutoffArg
+from torchani.neighbors import NeighborData, NeighborlistArg
 from torchani.potentials.core import PairPotential
 from torchani.potentials.wrapper import PotentialWrapper
 from torchani.potentials.dispersion import constants
@@ -43,7 +43,7 @@ class TwoBodyDispersionD3(PairPotential):
         damp_fn_8: Damp,
         s6: float,
         s8: float,
-        cutoff_fn: tp.Union[str, Cutoff] = "dummy",
+        cutoff_fn: CutoffArg = "dummy",
         cutoff=math.inf,
         **kwargs,
     ):
@@ -211,11 +211,11 @@ class TwoBodyDispersionD3(PairPotential):
 def StandaloneTwoBodyDispersionD3(
     functional: str = "wB97X",
     symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
-    cutoff_fn: tp.Union[str, Cutoff] = "dummy",
+    cutoff_fn: CutoffArg = "dummy",
     damp_fn: str = "bj",
     cutoff: float = math.inf,
     periodic_table_index: bool = True,
-    neighborlist: tp.Union[Neighborlist, str] = "full_pairwise",
+    neighborlist: NeighborlistArg = "full_pairwise",
 ) -> PotentialWrapper:
     module = TwoBodyDispersionD3.from_functional(
         functional=functional,

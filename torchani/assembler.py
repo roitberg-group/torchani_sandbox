@@ -38,8 +38,8 @@ from torch import Tensor
 
 from torchani import atomics
 from torchani.models import BuiltinModel, PairPotentialsModel
-from torchani.neighbors import Neighborlist
-from torchani.cutoffs import _parse_cutoff_fn, Cutoff
+from torchani.neighbors import _parse_neighborlist, NeighborlistArg
+from torchani.cutoffs import _parse_cutoff_fn, Cutoff, CutoffArg
 from torchani.potentials import (
     PairPotential,
     RepulsionXTB,
@@ -89,7 +89,7 @@ class FeaturizerWrapper:
         cls: FeaturizerType,
         radial_terms: torch.nn.Module,
         angular_terms: torch.nn.Module,
-        cutoff_fn: tp.Union[Cutoff, str] = "global",
+        cutoff_fn: CutoffArg = "global",
         extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
         self.cls = cls
@@ -112,9 +112,9 @@ class FeaturizerWrapper:
 
 
 @dataclass
-class PotentialWrapper:
+class PairPotentialWrapper:
     cls: PairPotentialType
-    cutoff_fn: tp.Union[Cutoff, str] = "global"
+    cutoff_fn: CutoffArg = "global"
     cutoff: float = math.inf
     extra: tp.Optional[tp.Dict[str, tp.Any]] = None
 
@@ -128,14 +128,14 @@ class Assembler:
         shifter_type: ShifterType = EnergyAdder,
         model_type: ModelType = BuiltinModel,
         featurizer: tp.Optional[FeaturizerWrapper] = None,
-        neighborlist: tp.Union[Neighborlist, str] = "full_pairwise",
+        neighborlist: NeighborlistArg = "full_pairwise",
         periodic_table_index: bool = True,
     ) -> None:
         self._global_cutoff_fn: tp.Optional[Cutoff] = None
 
-        self._neighborlist = neighborlist
+        self._neighborlist = _parse_neighborlist(neighborlist)
         self._featurizer = featurizer
-        self._pairwise_potentials: tp.List[PotentialWrapper] = []
+        self._pairwise_potentials: tp.List[PairPotentialWrapper] = []
 
         # This part of the assembler organizes the self-energies, the
         # symbols and the atomic networks
@@ -244,7 +244,7 @@ class Assembler:
         featurizer_type: FeaturizerType,
         angular_terms: torch.nn.Module,
         radial_terms: torch.nn.Module,
-        cutoff_fn: tp.Union[Cutoff, str] = "global",
+        cutoff_fn: CutoffArg = "global",
         extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
         self._featurizer = FeaturizerWrapper(
@@ -257,18 +257,13 @@ class Assembler:
 
     def set_neighborlist(
         self,
-        neighborlist: tp.Union[Neighborlist, str],
+        neighborlist: NeighborlistArg,
     ) -> None:
-        if isinstance(neighborlist, str) and neighborlist not in [
-            "full_pairwise",
-            "cell_list",
-        ]:
-            raise ValueError("Unsupported neighborlist")
-        self._neighborlist = neighborlist
+        self._neighborlist = _parse_neighborlist(neighborlist)
 
     def set_global_cutoff_fn(
         self,
-        cutoff_fn: tp.Union[Cutoff, str],
+        cutoff_fn: CutoffArg,
     ) -> None:
         self._global_cutoff_fn = _parse_cutoff_fn(cutoff_fn)
 
@@ -276,7 +271,7 @@ class Assembler:
         self,
         pair_type: PairPotentialType,
         cutoff: float = math.inf,
-        cutoff_fn: tp.Union[Cutoff, str] = "global",
+        cutoff_fn: CutoffArg = "global",
         extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
         if not issubclass(self._model_type, PairPotentialsModel):
@@ -288,7 +283,7 @@ class Assembler:
                     "The model class must support pairwise potentials in order to add potentials"
                 )
         self._pairwise_potentials.append(
-            PotentialWrapper(
+            PairPotentialWrapper(
                 pair_type,
                 cutoff=cutoff,
                 cutoff_fn=cutoff_fn,
@@ -645,7 +640,7 @@ def FlexANI(
     angular_precision: float,
     radial_precision: float,
     angular_zeta: float,
-    cutoff_fn: tp.Union[Cutoff, str],
+    cutoff_fn: CutoffArg,
     neighborlist: str,
     dispersion_2body_d3: bool,
     repulsion_xtb: bool,
@@ -713,8 +708,8 @@ def FlexANI1(
     radial_precision: float = 16.0,
     angular_precision: float = 8.0,
     angular_zeta: float = 32.0,
-    cutoff_fn: tp.Union[Cutoff, str] = "smooth2",
-    neighborlist: str = "full_pairwise",
+    cutoff_fn: CutoffArg = "smooth2",
+    neighborlist: NeighborlistArg = "full_pairwise",
     dispersion_2body_d3: bool = False,
     repulsion_xtb: bool = True,
     atomic_maker: tp.Union[str, tp.Callable[[str, int], torch.nn.Module]] = "ani2x",
@@ -762,8 +757,8 @@ def FlexANI2(
     angular_precision: float = 12.5,
     radial_precision: float = 19.7,
     angular_zeta: float = 14.1,
-    cutoff_fn: tp.Union[Cutoff, str] = "smooth2",
-    neighborlist: str = "full_pairwise",
+    cutoff_fn: CutoffArg = "smooth2",
+    neighborlist: NeighborlistArg = "full_pairwise",
     dispersion_2body_d3: bool = False,
     repulsion_xtb: bool = True,
     atomic_maker: tp.Union[str, tp.Callable[[str, int], torch.nn.Module]] = "ani2x",

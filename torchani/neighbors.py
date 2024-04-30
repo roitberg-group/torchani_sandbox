@@ -954,7 +954,10 @@ class CellList(Neighborlist):
         return bool(need_new_list)
 
 
-def _parse_neighborlist(neighborlist: tp.Union[Neighborlist, str] = "base") -> Neighborlist:
+NeighborlistArg = tp.Union[Neighborlist, str]
+
+
+def _parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
     _neighborlist: Neighborlist
     if neighborlist == 'full_pairwise':
         _neighborlist = FullPairwise()

@@ -11,7 +11,7 @@ from torch import Tensor
 
 from torchani.nn import SpeciesConverter
 from torchani.tuples import SpeciesEnergies
-from torchani.neighbors import Neighborlist, _parse_neighborlist
+from torchani.neighbors import _parse_neighborlist, NeighborlistArg
 from torchani.potentials.core import Potential
 
 
@@ -20,7 +20,7 @@ class PotentialWrapper(torch.nn.Module):
         self,
         potential: Potential,
         periodic_table_index: bool = True,
-        neighborlist: tp.Union[str, Neighborlist] = "full_pairwise",
+        neighborlist: NeighborlistArg = "full_pairwise",
     ):
         super().__init__()
         self.periodic_table_index = periodic_table_index
