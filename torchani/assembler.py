@@ -38,7 +38,7 @@ from torch import Tensor
 
 from torchani import atomics
 from torchani.models import BuiltinModel, PairPotentialsModel
-from torchani.neighbors import BaseNeighborlist
+from torchani.neighbors import Neighborlist
 from torchani.cutoffs import _parse_cutoff_fn, Cutoff
 from torchani.potentials import (
     PairPotential,
@@ -51,7 +51,7 @@ from torchani.utils import GSAES, sort_by_element
 from torchani.potentials import EnergyAdder
 
 ModelType = tp.Type[BuiltinModel]
-NeighborlistType = tp.Type[BaseNeighborlist]
+NeighborlistType = tp.Type[Neighborlist]
 FeaturizerType = tp.Type[AEVComputer]
 PairPotentialType = tp.Type[PairPotential]
 AtomicContainerType = tp.Type[ANIModel]

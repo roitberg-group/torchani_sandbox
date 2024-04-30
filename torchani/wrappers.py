@@ -13,7 +13,7 @@ from torch.jit import Final
 
 from torchani.nn import SpeciesConverter
 from torchani.tuples import SpeciesEnergies
-from torchani.neighbors import FullPairwise, BaseNeighborlist
+from torchani.neighbors import FullPairwise, Neighborlist
 
 
 class Wrapper(torch.nn.Module):
@@ -57,7 +57,7 @@ class StandaloneWrapper(Wrapper):
         self,
         module: torch.nn.Module,
         periodic_table_index: bool = True,
-        neighborlist: tp.Type[BaseNeighborlist] = FullPairwise,
+        neighborlist: tp.Type[Neighborlist] = FullPairwise,
         neighborlist_cutoff: float = 5.2,
     ):
         super().__init__()

@@ -21,7 +21,7 @@ def rescreen(
     )
 
 
-class BaseNeighborlist(torch.nn.Module):
+class Neighborlist(torch.nn.Module):
 
     cutoff: Final[float]
     default_pbc: Tensor
@@ -172,7 +172,7 @@ class BaseNeighborlist(torch.nn.Module):
         pass
 
 
-class FullPairwise(BaseNeighborlist):
+class FullPairwise(Neighborlist):
 
     default_shift_values: Tensor
 
@@ -309,7 +309,7 @@ class FullPairwise(BaseNeighborlist):
         ])
 
 
-class CellList(BaseNeighborlist):
+class CellList(Neighborlist):
 
     verlet: Final[bool]
     constant_volume: Final[bool]
@@ -960,8 +960,8 @@ class CellList(BaseNeighborlist):
         return bool(need_new_list)
 
 
-def _parse_neighborlist(neighborlist: tp.Optional[tp.Union[tp.Type[BaseNeighborlist], str]], cutoff: float) -> BaseNeighborlist:
-    _neighborlist: BaseNeighborlist
+def _parse_neighborlist(neighborlist: tp.Optional[tp.Union[tp.Type[Neighborlist], str]], cutoff: float) -> Neighborlist:
+    _neighborlist: Neighborlist
     if neighborlist == 'full_pairwise':
         _neighborlist = FullPairwise(cutoff)
     elif neighborlist == 'cell_list':
@@ -969,9 +969,9 @@ def _parse_neighborlist(neighborlist: tp.Optional[tp.Union[tp.Type[BaseNeighborl
     elif neighborlist == 'verlet_cell_list':
         _neighborlist = CellList(cutoff=cutoff, verlet=True)
     elif neighborlist is None:
-        _neighborlist = BaseNeighborlist(cutoff)
+        _neighborlist = Neighborlist(cutoff)
     else:
         assert not isinstance(neighborlist, str)
-        assert issubclass(neighborlist, BaseNeighborlist)
+        assert issubclass(neighborlist, Neighborlist)
         _neighborlist = neighborlist(cutoff)
     return _neighborlist

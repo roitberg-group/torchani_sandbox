@@ -7,7 +7,7 @@ from torch.jit import Final
 from torchani.units import ANGSTROM_TO_BOHR
 from torchani.utils import ATOMIC_NUMBERS
 from torchani.wrappers import StandaloneWrapper
-from torchani.neighbors import NeighborData, BaseNeighborlist, FullPairwise
+from torchani.neighbors import NeighborData, Neighborlist, FullPairwise
 from torchani.cutoffs import Cutoff
 from torchani.potentials.core import PairPotential
 from torchani.potentials._repulsion_constants import alpha_constants, y_eff_constants
@@ -100,7 +100,7 @@ def StandaloneRepulsionXTB(
     symbols: tp.Sequence[str] = ('H', 'C', 'N', 'O'),
     cutoff_fn: tp.Union[str, Cutoff] = 'smooth',
     periodic_table_index: bool = True,
-    neighborlist: tp.Type[BaseNeighborlist] = FullPairwise,
+    neighborlist: tp.Type[Neighborlist] = FullPairwise,
 ) -> StandaloneWrapper:
     module = RepulsionXTB(
         alpha=alpha,

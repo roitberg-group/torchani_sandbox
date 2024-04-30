@@ -8,7 +8,7 @@ from torch.jit import Final
 from torchani.wrappers import StandaloneWrapper
 from torchani.units import ANGSTROM_TO_BOHR
 from torchani.cutoffs import Cutoff
-from torchani.neighbors import NeighborData, BaseNeighborlist, FullPairwise
+from torchani.neighbors import NeighborData, Neighborlist, FullPairwise
 from torchani.potentials.core import PairPotential
 from torchani.potentials.dispersion import constants
 from torchani.potentials.dispersion.damping import (
@@ -215,7 +215,7 @@ def StandaloneTwoBodyDispersionD3(
     damp_fn: str = "bj",
     cutoff: float = math.inf,
     periodic_table_index: bool = True,
-    neighborlist: tp.Type[BaseNeighborlist] = FullPairwise,
+    neighborlist: tp.Type[Neighborlist] = FullPairwise,
 ) -> StandaloneWrapper:
     module = TwoBodyDispersionD3.from_functional(
         functional=functional,
