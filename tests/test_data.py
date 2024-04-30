@@ -13,8 +13,8 @@ from torchani.transforms import (
     AtomicNumbersToIndices,
     SubtractSAE,
     Compose,
-    calculate_saes,
 )
+from torchani.sae import calculate_saes
 from torchani.utils import PERIODIC_TABLE, ATOMIC_NUMBERS
 from torchani.testing import TestCase
 from torchani.datasets import (
@@ -513,7 +513,7 @@ class TestTransforms(TestCase):
                 shuffle=False,
                 splits={"training": 0.5, "validation": 0.5},
                 batch_size=2560,
-                inplace_transform=compose,
+                transform=compose,
             )
             create_batched_dataset(
                 dataset_path,
