@@ -969,4 +969,5 @@ def _parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
         _neighborlist = Neighborlist()
     else:
         assert isinstance(neighborlist, Neighborlist)
+        _neighborlist = neighborlist
     return _neighborlist
