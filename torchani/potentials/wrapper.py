@@ -11,7 +11,7 @@ from torch import Tensor
 
 from torchani.nn import SpeciesConverter
 from torchani.tuples import SpeciesEnergies
-from torchani.neighbors import _parse_neighborlist, NeighborlistArg
+from torchani.neighbors import _parse_neighborlist, NeighborlistArg, NeighborData
 from torchani.potentials.core import Potential
 
 
@@ -54,5 +54,6 @@ class PotentialWrapper(torch.nn.Module):
             element_idxs = species
         if self.potential.cutoff > 0.0:
             neighbors = self.neighborlist(element_idxs, coordinates, self.potential.cutoff, cell, pbc)
-            return SpeciesEnergies(species, self.potential(element_idxs, neighbors))
-        return SpeciesEnergies(species, self.potential(element_idxs))
+        else:
+            neighbors = NeighborData(torch.empty(0), torch.empty(0), torch.empty(0))
+        return SpeciesEnergies(species, self.potential(element_idxs, neighbors))

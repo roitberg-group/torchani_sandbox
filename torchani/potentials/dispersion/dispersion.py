@@ -225,7 +225,7 @@ def StandaloneTwoBodyDispersionD3(
         symbols=symbols,
     )
     return PotentialWrapper(
-        module,
-        periodic_table_index,
-        neighborlist,
+        potential=module,
+        periodic_table_index=periodic_table_index,
+        neighborlist=neighborlist,
     )

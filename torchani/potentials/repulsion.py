@@ -98,7 +98,7 @@ def StandaloneRepulsionXTB(
     y_eff: tp.Sequence[float] = None,
     k_rep_ab: tp.Optional[Tensor] = None,
     symbols: tp.Sequence[str] = ('H', 'C', 'N', 'O'),
-    cutoff_fn: CutoffArg = 'smooth2',
+    cutoff_fn: CutoffArg = 'smooth',
     neighborlist: NeighborlistArg = "full_pairwise",
     periodic_table_index: bool = True,
 ) -> PotentialWrapper:
@@ -111,7 +111,7 @@ def StandaloneRepulsionXTB(
         cutoff_fn=cutoff_fn
     )
     return PotentialWrapper(
-        module,
-        periodic_table_index,
+        potential=module,
         neighborlist=neighborlist,
+        periodic_table_index=periodic_table_index,
     )
