@@ -355,10 +355,10 @@ class BuiltinModel(torch.nn.Module):
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
 
-        stdev_atomic_energies = atomic_energies.std(0, unbiased=unbiased)
-
         if shift_energy:
             atomic_energies += self.energy_shifter.atomic_energies(species_coordinates[0])
+
+        stdev_atomic_energies = atomic_energies.std(0, unbiased=unbiased)
 
         if average:
             atomic_energies = atomic_energies.mean(0)
@@ -501,7 +501,7 @@ class PairPotentialsModel(BuiltinModel):
                 atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
 
         if shift_energy:
-            atomic_energies += self.energy_shifter.atomic_energies(element_idxs).unsqueeze(0)
+            atomic_energies += self.energy_shifter.atomic_energies(element_idxs)
 
         if average:
             atomic_energies = atomic_energies.mean(dim=0)

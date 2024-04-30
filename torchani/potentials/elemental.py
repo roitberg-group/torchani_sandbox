@@ -51,8 +51,8 @@ class EnergyAdder(Potential):
         # Compute atomic self energies for a set of species.
         self_atomic_energies = self.self_energies[element_idxs]
         self_atomic_energies = self_atomic_energies.masked_fill(element_idxs == -1, 0.0)
-        if average:
-            self_atomic_energies = self_atomic_energies.sum(dim=1)
+        if not average:
+            return self_atomic_energies.unsqueeze(0)
         return self_atomic_energies
 
     def forward(
@@ -63,7 +63,7 @@ class EnergyAdder(Potential):
         ),
         ghost_flags: tp.Optional[Tensor] = None,
     ) -> Tensor:
-        return self.atomic_energies(element_idxs, neighbors, ghost_flags, average=True)
+        return self.atomic_energies(element_idxs, neighbors, ghost_flags, average=True).sum(dim=-1)
 
 
 def StandaloneEnergyAdder(
