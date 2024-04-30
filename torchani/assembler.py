@@ -44,16 +44,16 @@ from torchani.potentials import (
     PairPotential,
     RepulsionXTB,
     TwoBodyDispersionD3,
+    EnergyAdder,
 )
 from torchani.aev import AEVComputer, StandardAngular, StandardRadial
 from torchani.nn import ANIModel, Ensemble
 from torchani.utils import GSAES, sort_by_element
-from torchani.potentials import EnergyAdder
 
 ModelType = tp.Type[BuiltinModel]
 FeaturizerType = tp.Type[AEVComputer]
 PairPotentialType = tp.Type[PairPotential]
-AtomicContainerType = tp.Type[ANIModel]
+ContainerType = tp.Type[ANIModel]
 ShifterType = tp.Type[EnergyAdder]
 
 SFCl: tp.Tuple[str, ...] = ("S", "F", "Cl")
@@ -124,7 +124,7 @@ class Assembler:
         self,
         ensemble_size: int = 1,
         symbols: tp.Sequence[str] = (),
-        atomic_container_type: AtomicContainerType = ANIModel,
+        container_type: ContainerType = ANIModel,
         shifter_type: ShifterType = EnergyAdder,
         model_type: ModelType = BuiltinModel,
         featurizer: tp.Optional[FeaturizerWrapper] = None,
@@ -145,7 +145,7 @@ class Assembler:
         ] = None
         self._atomic_networks: tp.Dict[str, torch.nn.Module] = {}
         self._shifter_type: ShifterType = shifter_type
-        self._atomic_container_type: AtomicContainerType = atomic_container_type
+        self._container_type: ContainerType = container_type
         self._symbols: tp.Tuple[str, ...] = tuple(symbols)
         self._ensemble_size: int = ensemble_size
 
@@ -233,11 +233,11 @@ class Assembler:
     def set_shifter(self, shifter_type: ShifterType) -> None:
         self._shifter_type = shifter_type
 
-    def set_atomic_container(
+    def set_container(
         self,
-        atomic_container_type: AtomicContainerType,
+        container_type: ContainerType,
     ) -> None:
-        self._atomic_container_type = atomic_container_type
+        self._container_type = container_type
 
     def set_featurizer(
         self,
@@ -335,10 +335,10 @@ class Assembler:
         if self.ensemble_size > 1:
             containers = []
             for j in range(self.ensemble_size):
-                containers.append(self._atomic_container_type(self.atomic_networks))
+                containers.append(self._container_type(self.atomic_networks))
             neural_networks = Ensemble(containers)
         else:
-            neural_networks = self._atomic_container_type(self.atomic_networks)
+            neural_networks = self._container_type(self.atomic_networks)
         self_energies = self.self_energies
         shifter = self._shifter_type(symbols=self.symbols, self_energies=tuple(self_energies[k] for k in self.symbols))
 
@@ -641,7 +641,7 @@ def FlexANI(
     radial_precision: float,
     angular_zeta: float,
     cutoff_fn: CutoffArg,
-    neighborlist: str,
+    neighborlist: NeighborlistArg,
     dispersion_2body_d3: bool,
     repulsion_xtb: bool,
     atomic_maker: tp.Union[str, tp.Callable[[str, int], torch.nn.Module]],
@@ -815,6 +815,6 @@ def fetch_state_dict(
         model_dir=str(STATE_DICTS_PATH),
         map_location=torch.device("cpu"),
     )
-    if "energy_shifter.atomic_numbers" not in dict_:
-        dict_["energy_shifter.atomic_numbers"] = deepcopy(dict_["atomic_numbers"])
+    # if "energy_shifter.atomic_numbers" not in dict_:
+    # dict_["energy_shifter.atomic_numbers"] = deepcopy(dict_["atomic_numbers"])
     return OrderedDict(dict_)

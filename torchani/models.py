@@ -447,7 +447,7 @@ class PairPotentialsModel(BuiltinModel):
         pbc: tp.Optional[Tensor] = None
     ) -> SpeciesEnergies:
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
-        previous_cutoff = self.potentials[0]
+        previous_cutoff = self.potentials[0].cutoff
         neighbor_data = self.aev_computer.neighborlist(element_idxs, coordinates, previous_cutoff, cell, pbc)
         energies = torch.zeros(element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype)
         for pot in self.potentials:
