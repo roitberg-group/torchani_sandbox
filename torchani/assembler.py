@@ -51,7 +51,6 @@ from torchani.utils import GSAES, sort_by_element
 from torchani.potentials import EnergyAdder
 
 ModelType = tp.Type[BuiltinModel]
-NeighborlistType = tp.Type[Neighborlist]
 FeaturizerType = tp.Type[AEVComputer]
 PairPotentialType = tp.Type[PairPotential]
 AtomicContainerType = tp.Type[ANIModel]
@@ -129,12 +128,12 @@ class Assembler:
         shifter_type: ShifterType = EnergyAdder,
         model_type: ModelType = BuiltinModel,
         featurizer: tp.Optional[FeaturizerWrapper] = None,
-        neighborlist: tp.Union[NeighborlistType, str] = "full_pairwise",
+        neighborlist: tp.Union[Neighborlist, str] = "full_pairwise",
         periodic_table_index: bool = True,
     ) -> None:
         self._global_cutoff_fn: tp.Optional[Cutoff] = None
 
-        self._neighborlist_type = neighborlist
+        self._neighborlist = neighborlist
         self._featurizer = featurizer
         self._pairwise_potentials: tp.List[PotentialWrapper] = []
 
@@ -258,14 +257,14 @@ class Assembler:
 
     def set_neighborlist(
         self,
-        neighborlist_type: tp.Union[NeighborlistType, str],
+        neighborlist: tp.Union[Neighborlist, str],
     ) -> None:
-        if isinstance(neighborlist_type, str) and neighborlist_type not in [
+        if isinstance(neighborlist, str) and neighborlist not in [
             "full_pairwise",
             "cell_list",
         ]:
             raise ValueError("Unsupported neighborlist")
-        self._neighborlist_type = neighborlist_type
+        self._neighborlist = neighborlist
 
     def set_global_cutoff_fn(
         self,
@@ -310,11 +309,6 @@ class Assembler:
         if all(e == 0.0 for e in self.self_energies.values()):
             warnings.warn("Assembling model with ZERO self energies!")
 
-        # Here it is necessary to get the largest cutoff to attach to the neighborlist
-        cuts = [pot.cutoff for pot in self._pairwise_potentials]
-        cuts.extend([self._featurizer.angular_cutoff, self._featurizer.radial_cutoff])
-        max_cutoff = max(cuts)
-
         feat_cutoff_fn = _parse_cutoff_fn(
             self._featurizer.cutoff_fn, self._global_cutoff_fn
         )
@@ -326,7 +320,7 @@ class Assembler:
             feat_kwargs.update(self._featurizer.extra)
 
         featurizer = self._featurizer.cls(
-            neighborlist=self._neighborlist_type,
+            neighborlist=self._neighborlist,
             cutoff_fn=feat_cutoff_fn,
             angular_terms=self._featurizer.angular_terms,
             radial_terms=self._featurizer.radial_terms,
@@ -334,7 +328,6 @@ class Assembler:
             **feat_kwargs,  # type: ignore
         )
         # This fails because the attribute is marked as final, but it should not be
-        featurizer.neighborlist.cutoff = max_cutoff  # type: ignore
         neural_networks: tp.Union[ANIModel, Ensemble]
         if self._fn_for_networks is not None:
             self._atomic_networks = {

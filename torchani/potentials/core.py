@@ -2,7 +2,6 @@ import typing as tp
 
 import torch
 from torch import Tensor
-from torch.jit import Final
 
 from torchani.utils import ATOMIC_NUMBERS, PERIODIC_TABLE
 from torchani.cutoffs import _parse_cutoff_fn, Cutoff
@@ -16,7 +15,7 @@ class Potential(torch.nn.Module):
     Subclasses must override 'forward' and 'atomic_energies'
     """
 
-    cutoff: Final[float]
+    cutoff: float
     atomic_numbers: Tensor
 
     def __init__(self,

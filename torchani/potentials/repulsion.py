@@ -6,9 +6,9 @@ from torch.jit import Final
 
 from torchani.units import ANGSTROM_TO_BOHR
 from torchani.utils import ATOMIC_NUMBERS
-from torchani.wrappers import StandaloneWrapper
-from torchani.neighbors import NeighborData, Neighborlist, FullPairwise
+from torchani.neighbors import NeighborData, Neighborlist
 from torchani.cutoffs import Cutoff
+from torchani.potentials.wrapper import PotentialWrapper
 from torchani.potentials.core import PairPotential
 from torchani.potentials._repulsion_constants import alpha_constants, y_eff_constants
 
@@ -98,10 +98,10 @@ def StandaloneRepulsionXTB(
     y_eff: tp.Sequence[float] = None,
     k_rep_ab: tp.Optional[Tensor] = None,
     symbols: tp.Sequence[str] = ('H', 'C', 'N', 'O'),
-    cutoff_fn: tp.Union[str, Cutoff] = 'smooth',
+    cutoff_fn: tp.Union[Cutoff, str] = 'smooth2',
+    neighborlist: tp.Union[Neighborlist, str] = "full_pairwise",
     periodic_table_index: bool = True,
-    neighborlist: tp.Type[Neighborlist] = FullPairwise,
-) -> StandaloneWrapper:
+) -> PotentialWrapper:
     module = RepulsionXTB(
         alpha=alpha,
         y_eff=y_eff,
@@ -110,9 +110,8 @@ def StandaloneRepulsionXTB(
         symbols=symbols,
         cutoff_fn=cutoff_fn
     )
-    return StandaloneWrapper(
+    return PotentialWrapper(
         module,
         periodic_table_index,
         neighborlist=neighborlist,
-        neighborlist_cutoff=cutoff
     )
