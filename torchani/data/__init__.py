@@ -107,8 +107,8 @@ import numpy
 import torch
 from tqdm import tqdm
 
-from torchani.data._pyanitools import anidataloader
 from torchani import utils
+from torchani.data._pyanitools import anidataloader
 
 verbose = True
 
