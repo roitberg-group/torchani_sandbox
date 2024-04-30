@@ -84,10 +84,7 @@ class SubtractEnergy(Transform):
         if not wrapper.periodic_table_index:
             raise ValueError("Wrapper module should have periodic_table_index=True")
         self.wrapper = wrapper
-        if hasattr(self.wrapper.module, "atomic_numbers"):
-            self.atomic_numbers = tp.cast(Tensor, self.wrapper.module.atomic_numbers)
-        else:
-            self.atomic_numbers = None
+        self.atomic_numbers = self.wrapper.potential.atomic_numbers
 
     def forward(self, properties: tp.Dict[str, Tensor]) -> tp.Dict[str, Tensor]:
         properties['energies'] -= self.wrapper(
@@ -107,10 +104,7 @@ class SubtractForce(Transform):
         if not wrapper.periodic_table_index:
             raise ValueError("Wrapper module should have periodic_table_index=True")
         self.wrapper = wrapper
-        if hasattr(self.wrapper.module, "atomic_numbers"):
-            self.atomic_numbers = tp.cast(Tensor, self.wrapper.module.atomic_numbers)
-        else:
-            self.atomic_numbers = None
+        self.atomic_numbers = self.wrapper.potential.atomic_numbers
 
     def forward(self, properties: tp.Dict[str, Tensor]) -> tp.Dict[str, Tensor]:
         coords = properties["coordinates"]
