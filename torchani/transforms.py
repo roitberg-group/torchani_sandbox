@@ -40,8 +40,8 @@ from torch import Tensor
 
 from torchani.utils import ATOMIC_NUMBERS
 from torchani.nn import SpeciesConverter
-from torchani.wrappers import Wrapper
 from torchani.potentials import (
+    PotentialWrapper,
     StandaloneEnergyAdder,
     StandaloneTwoBodyDispersionD3,
     StandaloneRepulsionXTB,
@@ -79,7 +79,7 @@ class SubtractEnergy(Transform):
     can be coupled with, e.g., an arbitrary pairwise potential in order to
     subtract analytic energies before training.
     """
-    def __init__(self, wrapper: Wrapper):
+    def __init__(self, wrapper: PotentialWrapper):
         super().__init__()
         if not wrapper.periodic_table_index:
             raise ValueError("Wrapper module should have periodic_table_index=True")
@@ -102,7 +102,7 @@ class SubtractForce(Transform):
     can be coupled with, e.g., an arbitrary pairwise potential in order to
     subtract analytic forces before training.
     """
-    def __init__(self, wrapper: Wrapper):
+    def __init__(self, wrapper: PotentialWrapper):
         super().__init__()
         if not wrapper.periodic_table_index:
             raise ValueError("Wrapper module should have periodic_table_index=True")
