@@ -1,19 +1,21 @@
 # type: ignore
 # This file is legacy, it should not be type-checked
-import torch
-import os
-import bz2
-import lark
 import struct
+import bz2
 import itertools
 import math
 import timeit
 import collections.abc
-from ..nn import ANIModel, Ensemble, Sequential
-from ..utils import EnergyShifter, ChemicalSymbolsToInts
-from ..aev import AEVComputer
-from torch.optim import AdamW
+import os
 from collections import OrderedDict
+
+import torch
+import lark
+from torch.optim import AdamW
+
+from torchani.nn import ANIModel, Ensemble, Sequential
+from torchani.utils import EnergyShifter, ChemicalSymbolsToInts
+from torchani.aev import AEVComputer
 from torchani.units import hartree2kcalpermol
 
 
