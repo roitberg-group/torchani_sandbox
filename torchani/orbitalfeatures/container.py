@@ -10,6 +10,8 @@ class ExCorrModel(BuiltinModel):
     #  It is necessary to pass "the coeff aev computer"  to init instead of the normal aev computer
     # typing may not like this, we can fix it later
     # typing also wont like overloading forward, again, fix it later
+
+    # Init doesn't need anything else for now
     def forward(  # type: ignore
         self,
         species_coordinates: tp.Tuple[Tensor, Tensor],

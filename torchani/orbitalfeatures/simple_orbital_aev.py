@@ -2,18 +2,11 @@ import typing as tp
 import torch
 from torch import Tensor
 
-# from torchani.aev import AEVComputer
-# from torchani.aev.aev_terms import StandardAngular, StandardRadial
-# from torchani.orbitalfeatures.orb_utils import AtomicNumsToInts
 
-# SimpleOrbitalAEVCalculator
-class ExCorrAEVComputerVariation(torch.nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-
+# This calculates ONLY the coefficients part of the AEV
+class SimpleOrbitalAEVComputer(torch.nn.Module):
     def forward(
         self,
-        species: Tensor,
         coefficients: Tensor,
     ) -> Tensor:
         # ) -> tp.Tuple[Tensor, Tensor, Tensor, Tensor]:
@@ -27,12 +20,9 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         # In order to use the AEV computer function from the geometric AEVs, we need
         # to generate arrays that can serve as input for such function
         # neighbor_idxs, distances = self._get_aev_inputs(orbital_matrix)
-
         distances = torch.linalg.norm(orbital_matrix, dim=-1)
         simple_orbital_aevs = torch.cat((s_coeffs, distances), dim=-1)
         return simple_orbital_aevs  # shape (nconf, natoms, 21)
-
-        # return s_coeffs, orbital_matrix, neighbor_idxs, distances
 
     def _reshape_coefficients(
         self,
@@ -84,7 +74,7 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
     def _get_aev_inputs(
         self,
         orbital_matrix: Tensor,
-    ) -> tp.Tuple[Tensor, Tensor, Tensor]:
+    ) -> tp.Tuple[Tensor, Tensor]:
         """ Output: A tuple containing 3 tensors resembling the neighbor_idxs,
         distances and diff_vectors tensors from the geometric AEVs.
 
@@ -141,6 +131,5 @@ class ExCorrAEVComputerVariation(torch.nn.Module):
         # distances = distances.permute(2, 0, 1, 3)
         # # Flatten all dimensions except the first into one dimension
         # distances = distances.reshape(2, -1)  # Now shape (2, npairs), where npairs = 12*natoms*nconformers
-
         # For now it only works
         return neighbor_idxs, distances
