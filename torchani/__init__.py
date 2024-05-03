@@ -38,7 +38,6 @@ from torchani.aev import AEVComputer
 from torchani import (
     assembler,
     utils,
-    neurochem,
     models,
     units,
     datasets,
@@ -48,6 +47,9 @@ from torchani import (
     calc,
     neighbors,
     cutoffs,
+    sae,
+    neurochem,  # TODO: Get rid of this
+    data,  # TODO: Get rid of this
 )
 
 try:
@@ -63,7 +65,6 @@ __all__ = [
     'Ensemble',
     'SpeciesConverter',
     'utils',
-    'neurochem',  # TODO: Get rid of this
     'models',
     'units',
     'potentials',
@@ -75,6 +76,9 @@ __all__ = [
     'geometry',
     'calc',
     'assembler',
+    "sae",
+    'neurochem',  # TODO: Get rid of this
+    'data',  # TODO: Get rid of this
 ]
 
 # disable tf32
@@ -93,9 +97,3 @@ try:
     __all__.append('ase')
 except ImportError:
     warnings.warn("Dependency not satisfied, torchani.ase will not be available")
-
-try:
-    from . import data  # noqa: F401
-    __all__.append('data')
-except ImportError:
-    warnings.warn("Dependency not satisfied, torchani.data will not be available")

@@ -17,7 +17,6 @@ import torch.utils.data
 
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from torchani.tuples import SpeciesEnergies, VibAnalysis
-from torchani.compat import tqdm
 
 
 PADDING = {
@@ -645,6 +644,15 @@ PERIODIC_TABLE = ['Dummy'] + """
 ATOMIC_NUMBERS = {symbol: z for z, symbol in enumerate(PERIODIC_TABLE)}
 
 
+def sort_by_element(it: tp.Iterable[str]) -> tp.Tuple[str, ...]:
+    r"""
+    Sort an iterable of chemical symbols by element
+    """
+    if isinstance(it, str):
+        it = (it,)
+    return tuple(sorted(it, key=lambda x: ATOMIC_NUMBERS[x]))
+
+
 def merge_state_dicts(paths: tp.Iterable[Path]) -> tp.OrderedDict[str, Tensor]:
     r"""
     Merge multiple single-model state dicts into a state dict for an ensemble of models
@@ -654,6 +662,9 @@ def merge_state_dicts(paths: tp.Iterable[Path]) -> tp.OrderedDict[str, Tensor]:
     merged_dict: tp.Dict[str, Tensor] = {}
     for j, path in enumerate(sorted(paths)):
         state_dict = torch.load(path, map_location=torch.device("cpu"))
+        # Compatibility with lightning state dicts
+        if "state_dict" in state_dict:
+            state_dict = {k.replace("model.", ""): v for k, v in state_dict["state_dict"].items() if k.startswith("model")}
         keys = tuple(state_dict.keys())
         for k in keys:
             if "neural_networks" not in k:
@@ -666,7 +677,7 @@ def merge_state_dicts(paths: tp.Iterable[Path]) -> tp.OrderedDict[str, Tensor]:
             if "neural_networks" not in k:
                 if k not in state_dict:
                     raise ValueError(f"Missing key in state dict: {k}")
-                if v != state_dict[k]:
+                if (v != state_dict[k]).any():
                     raise ValueError(f"Incompatible values for key {k}")
         merged_dict.update(state_dict)
     return OrderedDict(merged_dict)
@@ -755,4 +766,4 @@ def timeit(
 
 __all__ = ['pad_atomic_properties', 'present_species', 'hessian',
            'vibrational_analysis', 'strip_redundant_padding',
-           'ChemicalSymbolsToInts', 'get_atomic_masses', 'tqdm', 'GSAES', 'PERIODIC_TABLE', 'ATOMIC_NUMBERS', 'timeit']
+           'ChemicalSymbolsToInts', 'get_atomic_masses', 'GSAES', 'PERIODIC_TABLE', 'ATOMIC_NUMBERS', 'timeit']

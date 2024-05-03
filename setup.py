@@ -187,6 +187,9 @@ setup(
         'torch',
         'lark-parser',
         'requests',
+        'h5py',
+        'pyyaml',
+        'tqdm',
     ],
     entry_points={
         'console_scripts': ['torchani = torchani.cli:main'],

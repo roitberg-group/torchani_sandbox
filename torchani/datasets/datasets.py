@@ -1,6 +1,5 @@
 import typing as tp
 import inspect
-import pickle
 import warnings
 import math
 import re
@@ -14,13 +13,11 @@ from collections import OrderedDict
 import torch
 from torch import Tensor
 import numpy as np
+from tqdm import tqdm
 
-from torchani.utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, tqdm, PADDING
-from torchani.datasets._backends import _H5PY_AVAILABLE, _StoreWrapper, StoreFactory, TemporaryLocation, _ConformerWrapper, _SUFFIXES
-from torchani.datasets._annotations import Transform, Conformers, NumpyConformers, MixedConformers, StrPath, DTypeLike, IdxLike
-
-if _H5PY_AVAILABLE:
-    import h5py
+from torchani.utils import species_to_formula, PERIODIC_TABLE, ATOMIC_NUMBERS, PADDING, sort_by_element
+from torchani.datasets._backends import _StoreWrapper, StoreFactory, TemporaryLocation, _ConformerWrapper, _SUFFIXES
+from torchani.datasets._annotations import Conformers, NumpyConformers, MixedConformers, StrPath, DTypeLike, IdxLike
 
 # About _ELEMENT_KEYS:
 # Datasets are assumed to have a "numbers" or "species" property, which has
@@ -44,6 +41,7 @@ _ATOMIC_KEYS = (
     "atomic_numbers",
     "coordinates",
     "forces",
+    "coefficients",  # atomic density coefficients
     "atomic_charges",
     "atomic_dipoles",
     "atomic_polarizabilities",
@@ -99,148 +97,6 @@ _symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
 _numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
 
-class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
-
-    _SUFFIXES_AND_FORMATS = {'.npz': 'numpy', '.h5': 'hdf5', '.pkl': 'pickle'}
-    _batch_paths: tp.Optional[tp.List[Path]]
-
-    def __init__(self, store_dir: tp.Optional[StrPath] = None,
-                       batches: tp.Optional[tp.List[Conformers]] = None,
-                       file_format: tp.Optional[str] = None,
-                       split: str = 'training',
-                       transform: tp.Optional[Transform] = None,
-                       properties: tp.Optional[tp.Sequence[str]] = None,
-                       drop_last: bool = False):
-        # (store_dir or file_format or transform) and batches are mutually
-        # exclusive options, batches is passed if the dataset directly lives in
-        # memory and has no backing store, otherwise there should be a backing
-        # store in store_dir/split
-        if batches is not None and any(v is not None for v in (file_format, store_dir, transform)):
-            raise ValueError('Batches is mutually exclusive with file_format/store_dir/transform')
-        self.split = split
-        self.properties = properties
-        self.transform = self._identity if transform is None else transform
-        container: tp.Union[tp.List[Path], tp.List[Conformers]]
-        if not batches:
-            if store_dir is None:
-                raise ValueError("One of batches or store_dir must be specified")
-            store_dir = Path(store_dir).resolve()
-            self._batch_paths = self._get_batch_paths(store_dir / split)
-            self._extractor = self._get_batch_extractor(self._batch_paths[0].suffix, file_format)
-            container = self._batch_paths
-        else:
-            self._data = batches
-            self._batch_paths = None
-            self._extractor = self._memory_extractor
-            container = self._data
-        # Drops last batch only if requested and if its smaller than the rest
-        if drop_last and self.batch_size(-1) < self.batch_size(0):
-            container.pop()
-        self._len = len(container)
-
-    @staticmethod
-    def _identity(x: Conformers) -> Conformers:
-        return x
-
-    def _memory_extractor(self, idx: int) -> Conformers:
-        return self._data[idx]
-
-    def batch_size(self, idx: int) -> int:
-        batch = self[idx]
-        return batch[next(iter(batch.keys()))].shape[0]
-
-    def _get_batch_paths(self, batches_dir: Path) -> tp.List[Path]:
-        # We assume batch names are prefixed by a zero-filled number so that
-        # sorting alphabetically sorts batch numbers
-        try:
-            batch_paths = sorted(batches_dir.iterdir())
-            first_batch = batch_paths[0]
-            # notadirectory error is handled
-        except FileNotFoundError:
-            raise FileNotFoundError(f'The dir {batches_dir.parent.as_posix()} exists,'
-                                    f' but the split {batches_dir.as_posix()} does not') from None
-        except IndexError:
-            raise FileNotFoundError(f'The dir {batches_dir.as_posix()} has no files') from None
-
-        if any(f.suffix != first_batch.suffix for f in batch_paths):
-            raise RuntimeError(f'Files with different extensions found in {batches_dir.as_posix()}')
-
-        if any(f.is_dir() for f in batch_paths):
-            raise RuntimeError(f'Subdirectories found in {batches_dir.as_posix()}')
-        return batch_paths
-
-    # We use pickle or numpy or hdf5 since saving in
-    # pytorch format is extremely slow
-    def _get_batch_extractor(self, suffix: str, file_format: tp.Optional[str] = None) -> tp.Callable[[int], Conformers]:
-        if file_format is None:
-            try:
-                file_format = self._SUFFIXES_AND_FORMATS[suffix]
-            except KeyError:
-                raise ValueError(f"The file format {file_format} is not one of the"
-                                 f"supported formats {self._SUFFIXES_AND_FORMATS.values()}")
-        if file_format == 'hdf5' and not _H5PY_AVAILABLE:
-            raise ValueError("File format hdf5 was specified but h5py could not"
-                             " be found, please install h5py or specify a "
-                             " different file format")
-        return {'numpy': self._numpy_extractor,
-                'pickle': self._pickle_extractor,
-                'hdf5': self._hdf5_extractor}[file_format]
-
-    def _numpy_extractor(self, idx: int) -> Conformers:
-        return {k: torch.as_tensor(v)
-                for k, v in np.load(self._batch_paths[idx]).items()  # type: ignore
-                if self.properties is None or k in self.properties}
-
-    def _pickle_extractor(self, idx: int) -> Conformers:
-        with open(self._batch_paths[idx], 'rb') as f:  # type: ignore
-            return {k: torch.as_tensor(v)
-                    for k, v in pickle.load(f).items()
-                    if self.properties is None or k in self.properties}
-
-    def _hdf5_extractor(self, idx: int) -> Conformers:
-        with h5py.File(self._batch_paths[idx], 'r') as f:  # type: ignore
-            return {k: torch.as_tensor(v[()])
-                    for k, v in f['/'].items()
-                    if self.properties is None or k in self.properties}
-
-    def cache(self, pin_memory: bool = True,
-              verbose: bool = True) -> 'ANIBatchedDataset':
-        r"""Saves the full dataset into RAM"""
-        desc = f'Cacheing {self.split}, Warning: this may use a lot of RAM!'
-        self._data = [self._extractor(idx) for idx in tqdm(range(len(self)),
-                                                          total=len(self),
-                                                          disable=not verbose,
-                                                          desc=desc)]
-        desc = "Applying transforms once and discarding"
-        with torch.no_grad():
-            self._data = [self.transform(p) for p in tqdm(self._data,
-                                                          total=len(self),
-                                                          disable=not verbose,
-                                                          desc=desc)]
-            self.transform = self._identity
-        if pin_memory:
-            desc = 'Pinning memory; dont pin memory in torch DataLoader!'
-            self._data = [{k: v.pin_memory()
-                           for k, v in batch.items()}
-                           for batch in tqdm(self._data,
-                                             total=len(self),
-                                             disable=not verbose,
-                                             desc=desc)]
-        self._extractor = self._memory_extractor
-        return self
-
-    def __getitem__(self, idx: int) -> Conformers:
-        # integral indices must be provided for compatibility with pytorch
-        # DataLoader API
-        batch = self._extractor(idx)
-        with torch.no_grad():
-            batch = self.transform(batch)
-        return batch
-
-    def __len__(self) -> int:
-        return self._len
-
-
 # Base class for ANIDataset and _ANISubdataset
 class _ANIDatasetBase(tp.Mapping[str, Conformers]):
     def __init__(self, *args, **kwargs) -> None:
@@ -258,6 +114,10 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
     @property
     def properties(self) -> tp.Set[str]:
         return self._properties
+
+    @property
+    def tensor_properties(self) -> tp.Set[str]:
+        return {p for p in self._properties if not any(re.match(pattern, p) for pattern in _ALWAYS_STRING_PATTERNS)}
 
     @property
     def num_conformers(self) -> int:
@@ -446,18 +306,6 @@ class _ANISubdataset(_ANIDatasetBase):
                                ' you backup these properties if needed and'
                                ' delete them using dataset.delete_properties')
 
-    @property
-    def metadata(self) -> tp.Mapping[str, str]:
-        r"""Get the dataset metadata
-        """
-        with ExitStack() as stack:
-            metadata = self._get_open_store(stack, 'r', only_meta=True).metadata
-        return metadata
-
-    def _set_metadata(self, meta: tp.Mapping[str, str]) -> None:
-        with ExitStack() as stack:
-            self._get_open_store(stack, 'r+', only_meta=True).set_metadata(meta)
-
     def open(self, mode: str = "r") -> None:
         self._store.open(mode)
 
@@ -491,7 +339,7 @@ class _ANISubdataset(_ANIDatasetBase):
 
     # This trick makes methods fetch the open file directly
     # if they are being called from inside a "keep_open" context
-    def _get_open_store(self, stack: ExitStack, mode: str = 'r', only_meta: bool = False) -> '_StoreWrapper':
+    def _get_open_store(self, stack: ExitStack, mode: str = 'r', only_attrs: bool = False) -> '_StoreWrapper':
         if mode not in ['r+', 'r']:
             raise ValueError(f"Unsupported mode {mode}")
 
@@ -500,7 +348,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 raise RuntimeError('Tried to open a store with mode "r+" but'
                                    ' the store open with mode "r"')
             return self._store
-        return stack.enter_context(self._store.open(mode, only_meta))
+        return stack.enter_context(self._store.open(mode, only_attrs))
 
     def _update_cache(self, check_properties: bool = False, verbose: bool = True) -> None:
         with ExitStack() as stack:
@@ -512,24 +360,35 @@ class _ANISubdataset(_ANIDatasetBase):
         d: tp.Dict[str, tp.Any] = {'Conformers': f'{self.num_conformers:,}'}
         d.update({'Conformer groups': self.num_conformer_groups})
         d.update({'Properties': sorted(self.properties)})
-        d.update({'Store Metadata': self.metadata})
         return str_ + pformat(d)
 
-    def present_elements(self, chem_symbols: bool = False) -> tp.List[tp.Union[str, int]]:
-        r"""Get an ordered list with all elements present in the dataset
+    @property
+    def symbols(self) -> tp.Tuple[str, ...]:
+        self._check_correct_grouping()
+        element_key = _get_any_element_key(self.properties)
+        present: tp.Set[str] = set()
+        for group_name in self.keys():
+            conformers = self.get_numpy_conformers(group_name,
+                                                   properties=element_key,
+                                                   chem_symbols=True)
+            present.update(conformers[element_key].ravel())
+        return sort_by_element(present)
 
+    @property
+    def znumbers(self) -> tp.Tuple[int, ...]:
+        r"""Get an ordered list with all elements present in the dataset
         list is ordered alphabetically. Function raises ValueError if neither
         'species' or 'numbers' properties are present.
         """
         self._check_correct_grouping()
         element_key = _get_any_element_key(self.properties)
-        present_elements: tp.Set[tp.Union[str, int]] = set()
+        present: tp.Set[int] = set()
         for group_name in self.keys():
             conformers = self.get_numpy_conformers(group_name,
                                                    properties=element_key,
-                                                   chem_symbols=chem_symbols)
-            present_elements.update(conformers[element_key].ravel())
-        return sorted(present_elements)
+                                                   chem_symbols=False)
+            present.update(conformers[element_key].ravel())
+        return tuple(sorted(present))
 
     def _parse_index(self, idx: IdxLike) -> tp.Optional[np.ndarray]:
         # internally, idx_ is always a numpy array or None, idx can be a tensor
@@ -738,13 +597,13 @@ class _ANISubdataset(_ANIDatasetBase):
 
     def _attach_dummy_properties(self, dummy_properties: tp.Dict[str, tp.Any]) -> None:
         with ExitStack() as stack:
-            f = self._get_open_store(stack, 'r+', only_meta=True)
+            f = self._get_open_store(stack, 'r+', only_attrs=True)
             f._dummy_properties = dummy_properties
 
     @property
     def _dummy_properties(self) -> tp.Dict[str, tp.Any]:
         with ExitStack() as stack:
-            dummy = self._get_open_store(stack, 'r+', only_meta=True)._dummy_properties
+            dummy = self._get_open_store(stack, 'r+', only_attrs=True)._dummy_properties
         return dummy
 
     @_broadcast
@@ -773,16 +632,13 @@ class _ANISubdataset(_ANIDatasetBase):
                     # mypy doesn't know that @wrap'ed functions have __wrapped__
                     # attribute, and fixing this is ugly
                     rwds.append_conformers.__wrapped__(rwds, group_name, conformers)  # type: ignore
-            meta = self.metadata
             new_ds._attach_dummy_properties(self._dummy_properties)
             if inplace:
                 self._store.location.transfer_to(new_ds._store)
-                new_ds._set_metadata(meta)
                 return new_ds
             else:
                 new_parent = Path(tp.cast(StrPath, dest_root)).resolve()
                 new_ds._store.location.root = new_parent / self._store.location.root.with_suffix('').name
-                new_ds._set_metadata(meta)
                 return self
 
     @_broadcast
@@ -825,10 +681,8 @@ class _ANISubdataset(_ANIDatasetBase):
                     for formula, idx in zip(unique_formulas, formula_idxs):
                         selected_conformers = {k: v[idx] for k, v in conformers.items()}
                         rwds.append_conformers.__wrapped__(rwds, formula, selected_conformers)  # type: ignore
-            meta = self.metadata
             new_ds._attach_dummy_properties(self._dummy_properties)
             self._store.location.transfer_to(new_ds._store)
-            new_ds._set_metadata(meta)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
@@ -855,10 +709,8 @@ class _ANISubdataset(_ANIDatasetBase):
                     # This is done to accomodate the current group convention
                     new_name = str(_get_num_atoms(conformers)).zfill(3)
                     rwds.append_conformers.__wrapped__(rwds, new_name, conformers)  # type: ignore
-            meta = self.metadata
             new_ds._attach_dummy_properties(self._dummy_properties)
             self._store.location.transfer_to(new_ds._store)
-            new_ds._set_metadata(meta)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
@@ -925,7 +777,7 @@ class _ANISubdataset(_ANIDatasetBase):
         hierarchical datasets. Can be one of 'by_formula', 'by_num_atoms', 'legacy'.
         """
         with ExitStack() as stack:
-            grouping = self._get_open_store(stack, 'r', only_meta=True).grouping
+            grouping = self._get_open_store(stack, 'r', only_attrs=True).grouping
         return grouping
 
     def _check_unique_element_key(self, properties: tp.Optional[tp.Iterable[str]] = None) -> None:
@@ -1089,30 +941,6 @@ class ANIDataset(_ANIDatasetBase):
     def grouping(self) -> str:
         return self._first_subds.grouping
 
-    @property
-    def metadata(self) -> tp.Mapping[str, tp.Mapping[str, str]]:
-        """ Get a dataset metadata
-
-        returns a mapping of the form
-        {subdataset_name: {'key': 'value'}}
-        with an arbitrary number of string key-value pairs
-        """
-        meta = dict()
-        for name, ds in self._datasets.items():
-            meta[name] = ds.metadata
-        return meta
-
-    def set_metadata(self, meta: tp.Mapping[str, tp.Mapping[str, str]]):
-        """ Set dataset metadata
-
-        Accepts a mapping of the form
-        {subdataset_name: {'key': 'value'}}
-        with an arbitrary number of string key-value pairs
-        """
-        for k, v in meta.items():
-            self._datasets[k]._set_metadata(v)
-        return self
-
     def open(self, mode: str = "r") -> None:
         for ds in self._datasets.values():
             ds.open(mode)
@@ -1128,8 +956,13 @@ class ANIDataset(_ANIDatasetBase):
                 self._datasets[k] = stack.enter_context(self._datasets[k].keep_open(mode))
             yield self
 
-    def present_elements(self, chem_symbols: bool = False) -> tp.List[tp.Union[str, int]]:
-        return sorted({s for ds in self._datasets.values() for s in ds.present_elements(chem_symbols)})
+    @property
+    def symbols(self) -> tp.Tuple[str, ...]:
+        return sort_by_element({s for ds in self._datasets.values() for s in ds.symbols})
+
+    @property
+    def znumbers(self) -> tp.Tuple[int, ...]:
+        return tuple(sorted({s for ds in self._datasets.values() for s in ds.znumbers}))
 
     @property
     def store_locations(self) -> tp.List[str]:
@@ -1153,13 +986,7 @@ class ANIDataset(_ANIDatasetBase):
         elements = numpy_conformers[element_key]
         groups: tp.Dict[str, tp.Any] = {}
         for j, znumbers in enumerate(elements):
-            idxs = np.argsort(znumbers)
-            znumbers = znumbers[idxs]
             mask = (znumbers != padding)
-            # sort atomic properties along second axis
-            for property_ in numpy_conformers:
-                if property_ in atomic_properties:
-                    numpy_conformers[property_][j] = numpy_conformers[property_][j, idxs]
             if self.grouping == "by_formula":
                 group_key = species_to_formula(_numbers_to_symbols(znumbers[mask]))[0]
             elif self.grouping == "by_num_atoms":
