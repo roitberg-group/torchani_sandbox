@@ -29,8 +29,8 @@ class ExCorrAEVComputer(AEVComputer):
         use_geometric_aev: bool = True,
     ) -> None:
         # forbid cuaev for now
-        assert not self.use_cuda_extension
-        assert not self.cudaev_is_initialized
+        assert not use_cuda_extension
+        assert not use_cuaev_interface
         super().__init__(
             Rcr,
             Rca,
@@ -50,6 +50,10 @@ class ExCorrAEVComputer(AEVComputer):
         )
         self.use_geometric_aev = use_geometric_aev
         self.simple_orbital_aev_computer = SimpleOrbitalAEVComputer()
+        if use_geometric_aev:
+            self.aev_length = self.radial_length + self.angular_length + 21
+        else:
+            self.aev_length = 21
 
     def forward(  # type: ignore
         self,
@@ -62,6 +66,8 @@ class ExCorrAEVComputer(AEVComputer):
         # check shapes for correctness
         assert species.dim() == 2
         assert coordinates.dim() == 3
+        assert coefficients.dim() == 3
+        assert coefficients.shape[-1] == 45
         assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
 
         # validate cutoffs

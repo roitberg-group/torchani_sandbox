@@ -51,10 +51,10 @@ from torchani.nn import ANIModel, Ensemble
 from torchani.orbitalfeatures.container import ExCorrModel
 
 from torchani.orbitalfeatures.featurizer import ExCorrAEVComputer
-from torchani.utils import GSAES, sort_by_element
+from torchani.utils import XC_GSAES, GSAES, sort_by_element
 
 ModelType = tp.Type[BuiltinModel]
-FeaturizerType = tp.Union[tp.Type[AEVComputer], tp.Type[ExCorrAEVComputer]]
+FeaturizerType = tp.Type[AEVComputer]
 PairPotentialType = tp.Type[PairPotential]
 ContainerType = tp.Type[ANIModel]
 ShifterType = tp.Type[EnergyAdder]
@@ -202,6 +202,7 @@ class Assembler:
         lot: str = "",
         functional: str = "",
         basis_set: str = "",
+        use_xc_gsaes: bool = False,
     ) -> None:
         self._check_symbols()
         if (functional and basis_set) and not lot:
@@ -212,7 +213,10 @@ class Assembler:
             raise ValueError(
                 "Incorrect specification, either specify only lot, or both functional and basis set"
             )
-        gsaes = GSAES[lot.lower()]
+        if use_xc_gsaes:
+            gsaes = XC_GSAES[lot.lower()]
+        else:
+            gsaes = GSAES[lot.lower()]
         self.self_energies = {s: gsaes[s] for s in self.symbols}
 
     def set_shifter(self, shifter_type: ShifterType) -> None:
@@ -614,6 +618,7 @@ def ANIdr(
 
 def ExCorrANI(
     symbols: tp.Sequence[str],
+    lot: str = "pbe-dzvp",
     ensemble_size: int = 1,
     radial_cutoff: float = 5.2,
     angular_cutoff: float = 3.5,
@@ -622,11 +627,14 @@ def ExCorrANI(
     angle_sections: int = 4,
     cutoff_fn: tp.Union[Cutoff, str] = "smooth2",
     neighborlist: str = "full_pairwise",
-    atomic_maker: tp.Callable[[str, int], torch.nn.Module] = atomics.like_dr,
+    atomic_maker: tp.Union[tp.Callable[[str, int], torch.nn.Module], str] = "ani2x",
+    use_geometric_aev: bool = False,
 ) -> BuiltinModel:
     asm = Assembler(ensemble_size=ensemble_size)
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
+    # To use different featurizer you can add some flag that instead of
+    # ExCorrAEVComputer puts smth else here
     asm.set_featurizer(
         ExCorrAEVComputer,
         radial_terms=StandardRadial.cover_linearly(
@@ -643,11 +651,12 @@ def ExCorrANI(
             num_angle_sections=angle_sections,
             cutoff=angular_cutoff,
         ),
+        extra={"use_geometric_aev": use_geometric_aev},
     )
-    asm.set_atomic_maker(atomic_maker)
+    asm.set_atomic_maker(atomics._parse_atomics(atomic_maker))
     asm.set_neighborlist(neighborlist)
     asm.set_as_excorr_model()
-    asm.self_energies = {k: 0.0 for k in symbols}
+    asm.set_gsaes_as_self_energies(lot, use_xc_gsaes=True)
     return asm.assemble()
 
 
