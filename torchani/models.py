@@ -430,7 +430,6 @@ class PairPotentialsModel(BuiltinModel):
         super().__init__(*args, **kwargs)
         potentials: tp.List[Potential] = list(pairwise_potentials)
         aev_potential = AEVPotential(self.aev_computer, self.neural_networks)
-        self.size = aev_potential.size
         potentials.append(aev_potential)
 
         # We want to check the cutoffs of the potentials, and sort them
@@ -477,7 +476,7 @@ class PairPotentialsModel(BuiltinModel):
         # some potentials output atomic energies with shape (M, N, A), where
         # M is all models in the ensemble
         atomic_energies = torch.zeros(
-            (self.size, element_idxs.shape[0], element_idxs.shape[1]),
+            (self.neural_networks.size, element_idxs.shape[0], element_idxs.shape[1]),
             dtype=coordinates.dtype,
             device=coordinates.device
         )

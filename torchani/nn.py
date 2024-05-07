@@ -38,6 +38,8 @@ class ANIModel(torch.nn.ModuleDict):
             module by putting the same reference in :attr:`modules`.
     """
 
+    size: Final[int]
+
     @staticmethod
     def ensureOrderedDict(modules):
         if isinstance(modules, OrderedDict):
@@ -49,6 +51,7 @@ class ANIModel(torch.nn.ModuleDict):
 
     def __init__(self, modules):
         super().__init__(self.ensureOrderedDict(modules))
+        self.size = 1
 
     def forward(self, species_aev: tp.Tuple[Tensor, Tensor],  # type: ignore
                 cell: tp.Optional[Tensor] = None,
