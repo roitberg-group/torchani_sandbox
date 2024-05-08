@@ -109,7 +109,7 @@ def modules_from_info(
             raise ValueError(
                 f"The ensemble size is only {info.ensemble_size}, model {model_index} can't be loaded"
             )
-        network_path = info.ensemble_prefix.with_suffix(str(model_index)) / "networks"
+        network_path = (info.ensemble_prefix.parent / f"{info.ensemble_prefix.name}{model_index}") / "networks"
         neural_networks = load_model(symbols, str(network_path))
     return aev_computer, neural_networks, shifter, symbols
 
