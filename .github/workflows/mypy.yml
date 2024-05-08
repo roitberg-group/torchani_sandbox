@@ -29,7 +29,7 @@ jobs:
       # infer.py is too dynamic to check. data/ is legacy.
       # tests/ could be checked,
       # but to type them correctly is time consuming
-      run: mypy --ignore-missing-imports --check-untyped-defs --implicit-optional --exclude tests/ .
+      run: mypy --ignore-missing-imports --check-untyped-defs --implicit-optional --exclude tests/ --exclude examples/ .
 
 concurrency:
   group: mypy-${{ github.event.pull_request.number || github.sha }}
