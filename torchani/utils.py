@@ -136,7 +136,7 @@ def sorted_gsaes(elements: tp.Sequence[str], functional: str, basis_set: str, ):
     return [gsaes[e] for e in elements]
 
 
-def check_openmp_threads():
+def check_openmp_threads() -> None:
     if "OMP_NUM_THREADS" not in os.environ:
         warnings.warn("""OMP_NUM_THREADS is not set, mnp works best if OMP_NUM_THREADS >= 2.
               You can set it by `export OMP_NUM_THREADS=4` or `export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK` if using slurm""")
@@ -161,18 +161,6 @@ def species_to_formula(species: np.ndarray) -> tp.List[str]:
         iterable = (str(i) if str(i) != '1' else '' for i in itertools.chain.from_iterable(symbol_counts))
         formulas.append(''.join(iterable))
     return formulas
-
-
-def path_is_writable(path: tp.Union[str, Path]) -> bool:
-    # check if a path is writeable, adapted from:
-    # https://stackoverflow.com/questions/2113427/determining-whether-a-directory-is-writeable
-    try:
-        testfile = tempfile.TemporaryFile(dir=path)
-        testfile.close()
-    except (OSError, IOError):
-        testfile.close()
-        return False
-    return True
 
 
 def cumsum_from_zero(input_: Tensor) -> Tensor:
