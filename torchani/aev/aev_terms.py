@@ -1,9 +1,11 @@
-import torch
-import warnings
 import math
+import warnings
 from pathlib import Path
+
+import torch
 from torch import Tensor
 from torch.jit import Final
+import typing_extensions as tpx
 
 from torchani.cutoffs import parse_cutoff_fn, CutoffArg
 
@@ -83,7 +85,7 @@ class StandardRadial(torch.nn.Module):
         return cls(EtaR, ShfR, cutoff, cutoff_fn)
 
     @classmethod
-    def like_1x(cls, **kwargs):
+    def like_1x(cls, **kwargs) -> tpx.Self:
         exact = kwargs.pop("exact", True)
         m = cls.cover_linearly(cutoff=5.2, eta=16.0, num_shifts=16, **kwargs)
         if exact:
@@ -96,7 +98,7 @@ class StandardRadial(torch.nn.Module):
         return m
 
     @classmethod
-    def like_2x(cls, **kwargs):
+    def like_2x(cls, **kwargs) -> tpx.Self:
         exact = kwargs.pop("exact", True)
         m = cls.cover_linearly(cutoff=5.1, eta=19.7, num_shifts=16, start=0.8, **kwargs)
         # note that this term is different in the last decimal in 2x,
@@ -113,7 +115,7 @@ class StandardRadial(torch.nn.Module):
         return m
 
     @classmethod
-    def like_1ccx(cls, **kwargs):
+    def like_1ccx(cls, **kwargs) -> tpx.Self:
         return cls.like_1x(**kwargs)
 
 
@@ -215,7 +217,7 @@ class StandardAngular(torch.nn.Module):
         return cls(EtaA, Zeta, ShfA, ShfZ, cutoff, cutoff_fn)
 
     @classmethod
-    def like_1x(cls, **kwargs):
+    def like_1x(cls, **kwargs) -> tpx.Self:
         exact = kwargs.pop("exact", True)
         m = cls.cover_linearly(
             cutoff=3.5, eta=8.0, zeta=32.0, num_shifts=4, num_angle_sections=8, **kwargs
@@ -230,7 +232,7 @@ class StandardAngular(torch.nn.Module):
         return m
 
     @classmethod
-    def like_2x(cls, **kwargs):
+    def like_2x(cls, **kwargs) -> tpx.Self:
         exact = kwargs.pop("exact", True)
         m = cls.cover_linearly(
             cutoff=3.5,
@@ -251,7 +253,7 @@ class StandardAngular(torch.nn.Module):
         return m
 
     @classmethod
-    def like_1ccx(cls, **kwargs):
+    def like_1ccx(cls, **kwargs) -> tpx.Self:
         return cls.like_1x(**kwargs)
 
 

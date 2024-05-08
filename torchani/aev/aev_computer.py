@@ -1,4 +1,3 @@
-import typing_extensions as tpx
 import typing as tp
 import warnings
 import importlib.metadata
@@ -6,6 +5,7 @@ import importlib.metadata
 import torch
 from torch import Tensor
 from torch.jit import Final
+import typing_extensions as tpx
 
 from torchani.tuples import SpeciesAEV
 from torchani.utils import cumsum_from_zero
