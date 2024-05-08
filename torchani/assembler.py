@@ -26,7 +26,6 @@ Some of the Featurizers support custom made cuda operators that accelerate them
 """
 import functools
 from copy import deepcopy
-from pathlib import Path
 import warnings
 import math
 from dataclasses import dataclass
@@ -49,6 +48,7 @@ from torchani.potentials import (
 from torchani.aev import AEVComputer, StandardAngular, StandardRadial
 from torchani.nn import ANIModel, Ensemble
 from torchani.utils import GSAES, sort_by_element
+from torchani.storage import STATE_DICTS_DIR
 
 ModelType = tp.Type[BuiltinModel]
 FeaturizerType = tp.Type[AEVComputer]
@@ -59,8 +59,6 @@ ShifterType = tp.Type[EnergyAdder]
 SFCl: tp.Tuple[str, ...] = ("S", "F", "Cl")
 ELEMENTS_1X: tp.Tuple[str, ...] = ("H", "C", "N", "O")
 ELEMENTS_2X: tp.Tuple[str, ...] = ELEMENTS_1X + SFCl
-
-STATE_DICTS_PATH = (Path.home() / ".local") / "torchani"
 
 
 # "global" cutoff means the global cutoff_fn will be used
@@ -790,7 +788,7 @@ def fetch_state_dict(
         url = "https://github.com/roitberg-group/torchani_model_zoo/releases/download/v0.1/"
     dict_ = torch.hub.load_state_dict_from_url(
         f"{url}/{state_dict_file}",
-        model_dir=str(STATE_DICTS_PATH),
+        model_dir=str(STATE_DICTS_DIR),
         map_location=torch.device("cpu"),
     )
     # if "energy_shifter.atomic_numbers" not in dict_:
