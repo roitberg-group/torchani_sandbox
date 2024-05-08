@@ -15,6 +15,10 @@ from torchani.utils import EnergyShifter, ChemicalSymbolsToInts
 from torchani.neurochem.utils import model_dir_from_prefix
 
 
+class NeurochemParseError(RuntimeError):
+    pass
+
+
 class Constants(collections.abc.Mapping):
     """NeuroChem constants. Objects of this class can be used as arguments
     to :class:`torchani.AEVComputer`, like ``torchani.AEVComputer(**consts)``.
@@ -44,7 +48,7 @@ class Constants(collections.abc.Mapping):
                             '[', '').replace(']', '').split(',')]
                         self.species = str_values
                 except Exception:
-                    raise ValueError('unable to parse const file')
+                    raise NeurochemParseError(f'Unable to parse const file {filename}') from None
         self.num_species = len(self.species)
         self.species_to_tensor = ChemicalSymbolsToInts(self.species)
 
@@ -94,13 +98,13 @@ def _get_activation(activation_index: int) -> tp.Optional[torch.nn.Module]:
     elif activation_index == 9:  # CELU
         return torch.nn.CELU(alpha=0.1)
     elif activation_index == 5:  # Gaussian
-        raise ValueError("Activation index 5 corresponds to a Gaussian which is not supported")
-    raise ValueError(f"Unsupported activation index {activation_index}")
+        raise NeurochemParseError("Activation index 5 corresponds to a Gaussian which is not supported")
+    raise NeurochemParseError(f"Unsupported activation index {activation_index}")
 
 
-def load_atomic_network(filename: tp.Union[Path, str]):
+def load_atomic_network(filename: tp.Union[Path, str]) -> torch.nn.Sequential:
     """Returns an instance of :class:`torch.nn.Sequential` with hyperparameters
-    and parameters loaded NeuroChem's .nnf, .wparam and .bparam files."""
+    and parameters loaded from NeuroChem's .nnf, .wparam and .bparam files."""
     filename = Path(filename).resolve()
 
     def decompress_nnf(buffer_):
@@ -167,11 +171,11 @@ def load_atomic_network(filename: tp.Union[Path, str]):
                     elif v.type == 'SIGNED_FLOAT' or v.type == 'FLOAT':
                         v = float(v.value)
                     else:
-                        raise ValueError('unexpected type')
+                        raise NeurochemParseError(f'Type should be one of [SIGNED]_INT, [SIGNED]_FLOAT or FILENAME but found {v.type} in file {nnf_file}')
                 elif len(v) == 2:
                     v = self.value([v[0]]), self.value([v[1]])
                 else:
-                    raise ValueError('length of value can only be 1 or 2')
+                    raise NeurochemParseError(f'len(value) should be 1 or 2 but found {len(v)} in {nnf_file}')
                 return v
 
             def assign(self, v):
@@ -220,8 +224,14 @@ def load_atomic_network(filename: tp.Union[Path, str]):
             out_size = s['nodes']
             wfn, wsz = s['weights']
             bfn, bsz = s['biases']
-            if in_size * out_size != wsz or out_size != bsz:
-                raise ValueError('bad parameter shape')
+            if in_size * out_size != wsz:
+                raise NeurochemParseError(
+                    f'Bad parameter shape in {filename}: in_size * out_size=({in_size} * {out_size}) should be equal to wsz={wsz}'
+                )
+            if out_size != bsz:
+                raise NeurochemParseError(
+                    f'Bad parameter shape in {filename}: out_size={out_size} should be equal to bsz={bsz}'
+                )
             layer = torch.nn.Linear(in_size, out_size)
             wfn = os.path.join(networ_dir, wfn)
             bfn = os.path.join(networ_dir, bfn)
@@ -234,8 +244,8 @@ def load_atomic_network(filename: tp.Union[Path, str]):
         return torch.nn.Sequential(*layers)
 
 
-def load_model(species: tp.Sequence[str], model_dir: tp.Union[Path, str]):
-    """Returns an instance of :class:`torchani.ANIModel` loaded from
+def load_model(species: tp.Sequence[str], model_dir: tp.Union[Path, str]) -> ANIModel:
+    """Returns an instance of :class:`torchani.nn.ANIModel` loaded from
     NeuroChem's network directory.
 
     Arguments:
@@ -250,8 +260,8 @@ def load_model(species: tp.Sequence[str], model_dir: tp.Union[Path, str]):
     return ANIModel(models)
 
 
-def load_model_ensemble(species: tp.Sequence[str], prefix: tp.Union[Path, str], count: int):
-    """Returns an instance of :class:`torchani.Ensemble` loaded from
+def load_model_ensemble(species: tp.Sequence[str], prefix: tp.Union[Path, str], count: int) -> Ensemble:
+    """Returns an instance of :class:`torchani.nn.Ensemble` loaded from
     NeuroChem's network directories beginning with the given prefix.
 
     Arguments:

@@ -101,6 +101,7 @@ def modules_from_info(
     )
     shifter = load_sae(info.sae)
 
+    neural_networks: NN
     if model_index is None:
         neural_networks = load_model_ensemble(
             symbols, info.ensemble_prefix, info.ensemble_size
