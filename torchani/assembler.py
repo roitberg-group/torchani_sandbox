@@ -357,7 +357,7 @@ class Assembler:
 
 
 def load_from_neurochem(
-    info_file: str,
+    model_name: str,
     model_index: tp.Optional[int],
     use_cuda_extension: bool,
     use_cuaev_interface: bool,
@@ -366,16 +366,13 @@ def load_from_neurochem(
 ) -> BuiltinModel:
     if not pretrained:
         raise ValueError("Non pretrained models are not available from neurochem")
-    # neurochem is legacy and not type-checked
-    from . import neurochem  # noqa
-    components = neurochem.parse_resources._get_component_modules(  # type: ignore
-        info_file,
+    from torchani.neurochem import modules_from_builtin_name
+    components = modules_from_builtin_name(
+        model_name,
         model_index,
-        {
-            "use_cuda_extension": use_cuda_extension,
-            "use_cuaev_interface": use_cuaev_interface,
-        }
-    )  # type: ignore
+        use_cuda_extension,
+        use_cuaev_interface,
+    )
     aev_computer, neural_networks, energy_shifter, elements = components
     return BuiltinModel(
         aev_computer,
@@ -410,7 +407,7 @@ def ANI1x(
     """
     if use_neurochem_source:
         return load_from_neurochem(
-            info_file="ani-1x_8x.info",
+            model_name="ani1x",
             model_index=model_index,
             use_cuda_extension=use_cuda_extension,
             use_cuaev_interface=use_cuaev_interface,
@@ -460,7 +457,7 @@ def ANI1ccx(
     """
     if use_neurochem_source:
         return load_from_neurochem(
-            info_file="ani-1ccx_8x.info",
+            model_name="ani1ccx",
             model_index=model_index,
             use_cuda_extension=use_cuda_extension,
             use_cuaev_interface=use_cuaev_interface,
@@ -509,7 +506,7 @@ def ANI2x(
     """
     if use_neurochem_source:
         return load_from_neurochem(
-            info_file="ani-2x_8x.info",
+            model_name="ani2x",
             model_index=model_index,
             use_cuda_extension=use_cuda_extension,
             use_cuaev_interface=use_cuaev_interface,
