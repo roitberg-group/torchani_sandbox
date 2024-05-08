@@ -13,6 +13,7 @@ from torchani.aev import AEVComputer
 from torchani.utils import EnergyShifter
 from torchani.nn import Ensemble, ANIModel
 from torchani.storage import NEUROCHEM_DIR
+from torchani.neurochem.utils import model_dir_from_prefix
 from torchani.neurochem.neurochem import (
     Constants,
     load_model_ensemble,
@@ -109,8 +110,7 @@ def modules_from_info(
             raise ValueError(
                 f"The ensemble size is only {info.ensemble_size}, model {model_index} can't be loaded"
             )
-        network_path = (info.ensemble_prefix.parent / f"{info.ensemble_prefix.name}{model_index}") / "networks"
-        neural_networks = load_model(symbols, str(network_path))
+        neural_networks = load_model(symbols, model_dir_from_prefix(info.ensemble_prefix, model_index))
     return aev_computer, neural_networks, shifter, symbols
 
 

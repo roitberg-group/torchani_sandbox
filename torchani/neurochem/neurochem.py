@@ -1,3 +1,5 @@
+from pathlib import Path
+import typing as tp
 import struct
 import bz2
 import math
@@ -10,6 +12,7 @@ import lark
 
 from torchani.nn import ANIModel, Ensemble
 from torchani.utils import EnergyShifter, ChemicalSymbolsToInts
+from torchani.neurochem.utils import model_dir_from_prefix
 
 
 class Constants(collections.abc.Mapping):
@@ -63,11 +66,12 @@ class Constants(collections.abc.Mapping):
         return getattr(self, item)
 
 
-def load_sae(filename, return_dict=False):
+def load_sae(filename: tp.Union[Path, str], return_dict: bool = False):
     """Returns an object of :class:`EnergyShifter` with self energies from
     NeuroChem sae file"""
     _self_energies = []
     d = {}
+    filename = Path(filename).resolve()
     with open(filename) as f:
         for i in f:
             line = [x.strip() for x in i.split('=')]
@@ -82,23 +86,22 @@ def load_sae(filename, return_dict=False):
     return EnergyShifter(self_energies)
 
 
-def _get_activation(activation_index):
+def _get_activation(activation_index: int) -> tp.Optional[torch.nn.Module]:
     # Activation defined in:
     # https://github.com/Jussmith01/NeuroChem/blob/stable1/src-atomicnnplib/cunetwork/cuannlayer_t.cu#L920
     if activation_index == 6:
         return None
-    elif activation_index == 5:  # Gaussian
-        raise NotImplementedError("Gaussian activations should not be used in NN models")
     elif activation_index == 9:  # CELU
         return torch.nn.CELU(alpha=0.1)
-    else:
-        raise NotImplementedError(
-            'Unexpected activation {}'.format(activation_index))
+    elif activation_index == 5:  # Gaussian
+        raise ValueError("Activation index 5 corresponds to a Gaussian which is not supported")
+    raise ValueError(f"Unsupported activation index {activation_index}")
 
 
-def load_atomic_network(filename):
+def load_atomic_network(filename: tp.Union[Path, str]):
     """Returns an instance of :class:`torch.nn.Sequential` with hyperparameters
     and parameters loaded NeuroChem's .nnf, .wparam and .bparam files."""
+    filename = Path(filename).resolve()
 
     def decompress_nnf(buffer_):
         while buffer_[0] != b'='[0]:
@@ -203,14 +206,14 @@ def load_atomic_network(filename):
         linear.bias.data = b
         fb.close()
 
-    networ_dir = os.path.dirname(filename)
+    networ_dir = str(filename.parent)
 
     with open(filename, 'rb') as f:
         buffer_ = f.read()
         buffer_ = decompress_nnf(buffer_)
         layer_setups = parse_nnf(buffer_)
 
-        layers = []
+        layers: tp.List[torch.nn.Module] = []
         for s in layer_setups:
             # construct linear layer and load parameters
             in_size = s['blocksize']
@@ -231,23 +234,23 @@ def load_atomic_network(filename):
         return torch.nn.Sequential(*layers)
 
 
-def load_model(species, dir_):
+def load_model(species: tp.Sequence[str], model_dir: tp.Union[Path, str]):
     """Returns an instance of :class:`torchani.ANIModel` loaded from
     NeuroChem's network directory.
 
     Arguments:
         species (:class:`collections.abc.Sequence`): Sequence of strings for
             chemical symbols of each supported atom type in correct order.
-        dir_ (str): String for directory storing network configurations.
+        model_dir (str): String for directory storing network configurations.
     """
+    model_dir = Path(model_dir).resolve()
     models = OrderedDict()
     for i in species:
-        filename = os.path.join(dir_, 'ANN-{}.nnf'.format(i))
-        models[i] = load_atomic_network(filename)
+        models[i] = load_atomic_network(model_dir / f"ANN-{i}.nnf")
     return ANIModel(models)
 
 
-def load_model_ensemble(species, prefix, count):
+def load_model_ensemble(species: tp.Sequence[str], prefix: tp.Union[Path, str], count: int):
     """Returns an instance of :class:`torchani.Ensemble` loaded from
     NeuroChem's network directories beginning with the given prefix.
 
@@ -258,10 +261,10 @@ def load_model_ensemble(species, prefix, count):
             are stored.
         count (int): Number of models in the ensemble.
     """
+    prefix = Path(prefix)
     models = []
     for i in range(count):
-        network_dir = os.path.join('{}{}'.format(prefix, i), 'networks')
-        models.append(load_model(species, network_dir))
+        models.append(load_model(species, model_dir_from_prefix(prefix, i)))
     return Ensemble(models)
 
 
