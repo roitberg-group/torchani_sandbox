@@ -15,7 +15,7 @@ from torchani.nn import Ensemble, ANIModel
 from torchani.storage import NEUROCHEM_DIR
 from torchani.neurochem.utils import model_dir_from_prefix
 from torchani.neurochem.neurochem import (
-    Constants,
+    load_aev_computer_and_symbols,
     load_model_ensemble,
     load_model,
     load_sae,
@@ -90,12 +90,8 @@ def modules_from_info(
     use_cuda_extension: bool = False,
     use_cuaev_interface: bool = False,
 ) -> tp.Tuple[AEVComputer, NN, EnergyShifter, tp.Sequence[str]]:
-    # C,reates the necessary modules to generate a pretrained model from a legacy
-    # NeurochemInfo object and optional arguments to modify some modules
-    consts = Constants(info.const)
-    symbols = consts.species
-    aev_computer = AEVComputer(
-        **consts,
+    aev_computer, symbols = load_aev_computer_and_symbols(
+        info.const,
         use_cuda_extension=use_cuda_extension,
         use_cuaev_interface=use_cuaev_interface,
     )

@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 import typing as tp
 import struct
@@ -11,7 +12,10 @@ import torch
 from torch import Tensor
 import lark
 
+from torchani.aev import AEVComputer
 from torchani.nn import ANIModel, Ensemble
+from torchani.cutoffs import CutoffArg
+from torchani.neighbors import NeighborlistArg
 from torchani.utils import EnergyShifter, ChemicalSymbolsToInts
 from torchani.neurochem.utils import model_dir_from_prefix
 
@@ -21,6 +25,23 @@ class NeurochemParseError(RuntimeError):
 
 
 class Constants(collections.abc.Mapping):
+    def __init__(self, filename: tp.Union[Path, str]):
+        warnings.warn(
+            "torchani.neurochem.Constants is deprecated, "
+            "please use torchani.neurochem.load_constants or "
+            "torchani.neurochem.load_aev_computer_and_symbols instead"
+        )
+        self.filename = str(filename)
+        aev_constants, aev_cutoffs, species = load_constants(filename)
+        for k, t in aev_constants.items():
+            setattr(self, k, t)
+
+        for k, v in aev_cutoffs.items():
+            setattr(self, k, v)
+
+        self.species = list(species)
+        self.num_species = len(species)
+        self.species_to_tensor = ChemicalSymbolsToInts(species)
 
     def __iter__(self):
         yield 'Rcr'
@@ -40,10 +61,33 @@ class Constants(collections.abc.Mapping):
         return getattr(self, item)
 
 
-def load_constants(filename: tp.Union[Path, str]) -> tp.Tuple[tp.Dict[str, Tensor], tp.Dict[str, float], tp.Tuple[str, ...]]:
-    aev_constants: tp.Dict[str, Tensor] = {}
+def load_aev_computer_and_symbols(
+    consts_file: tp.Union[str, Path],
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    neighborlist: NeighborlistArg = "full_pairwise",
+    cutoff_fn: CutoffArg = "cosine",
+) -> tp.Tuple[AEVComputer, tp.Tuple[str, ...]]:
+    aev_consts, aev_cutoffs, symbols = load_constants(consts_file)
+    aev_computer = AEVComputer(
+        Rcr=aev_cutoffs["Rcr"],
+        Rca=aev_cutoffs["Rca"],
+        num_species=len(symbols),
+        cutoff_fn=cutoff_fn,
+        neighborlist=neighborlist,
+        use_cuda_extension=use_cuda_extension,
+        use_cuaev_interface=use_cuaev_interface,
+        radial_terms="standard",
+        angular_terms="standard",
+        **aev_consts,
+    )
+    return aev_computer, symbols
+
+
+def load_constants(consts_file: tp.Union[Path, str]) -> tp.Tuple[tp.Dict[str, Tensor], tp.Dict[str, float], tp.Tuple[str, ...]]:
+    aev_consts: tp.Dict[str, Tensor] = {}
     aev_cutoffs: tp.Dict[str, float] = {}
-    with open(filename) as f:
+    with open(consts_file) as f:
         for i in f:
             try:
                 line = [x.strip() for x in i.split('=')]
@@ -54,13 +98,13 @@ def load_constants(filename: tp.Union[Path, str]) -> tp.Tuple[tp.Dict[str, Tenso
                 elif name in ['EtaR', 'ShfR', 'Zeta', 'ShfZ', 'EtaA', 'ShfA']:
                     float_values = [float(x.strip()) for x in value.replace(
                         '[', '').replace(']', '').split(',')]
-                    aev_constants[name] = torch.tensor(float_values)
+                    aev_consts[name] = torch.tensor(float_values)
                 elif name == 'Atyp':
                     species = tuple(x.strip() for x in value.replace(
                         '[', '').replace(']', '').split(','))
             except Exception:
-                raise NeurochemParseError(f'Unable to parse const file {filename}') from None
-    return aev_constants, aev_cutoffs, species
+                raise NeurochemParseError(f'Unable to parse const file {consts_file}') from None
+    return aev_consts, aev_cutoffs, species
 
 
 def load_sae(filename: tp.Union[Path, str], return_dict: bool = False):
@@ -271,4 +315,4 @@ def load_model_ensemble(species: tp.Sequence[str], prefix: tp.Union[Path, str], 
     return Ensemble(models)
 
 
-__all__ = ['Constants', 'load_sae', 'load_model', 'load_model_ensemble']
+__all__ = ['load_constants', 'load_aev_computer_and_symbols', 'load_sae', 'load_model', 'load_model_ensemble']
