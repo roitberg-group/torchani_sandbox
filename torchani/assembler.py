@@ -35,7 +35,11 @@ import torch
 from torch import Tensor
 
 from torchani.atomics import (
-    AtomicMaker, AtomicMakerArg, ActivationArg, parse_atomic_maker, parse_activation,
+    AtomicMaker,
+    AtomicMakerArg,
+    ActivationArg,
+    parse_atomic_maker,
+    parse_activation,
 )
 from torchani.models import BuiltinModel, PairPotentialsModel
 from torchani.neighbors import parse_neighborlist, NeighborlistArg
@@ -108,7 +112,9 @@ class AtomicMakerWrapper:
     classifier_out: int = 1
 
     def create(self, symbol: str, feat_dim: int) -> torch.nn.Sequential:
-        return self.fn(symbol, feat_dim, self.activation, self.bias, self.classifier_out)
+        return self.fn(
+            symbol, feat_dim, self.activation, self.bias, self.classifier_out
+        )
 
 
 class Assembler:
@@ -148,7 +154,9 @@ class Assembler:
 
     def _check_symbols(self, symbols: tp.Optional[tp.Iterable[str]] = None) -> None:
         if not self.symbols:
-            raise ValueError("Please set symbols before setting the gsaes as self energies")
+            raise ValueError(
+                "Please set symbols before setting the gsaes as self energies"
+            )
         if symbols is not None:
             if set(self.symbols) != set(symbols):
                 raise ValueError(
@@ -325,7 +333,8 @@ class Assembler:
         neural_networks: tp.Union[ANIModel, Ensemble]
         if self._atomic_maker is not None:
             self._atomic_networks = {
-                s: self._atomic_maker.create(s, featurizer.aev_length) for s in self.symbols
+                s: self._atomic_maker.create(s, featurizer.aev_length)
+                for s in self.symbols
             }
         else:
             raise RuntimeError(
@@ -339,7 +348,10 @@ class Assembler:
         else:
             neural_networks = self._container_type(self.atomic_networks)
         self_energies = self.self_energies
-        shifter = self._shifter_type(symbols=self.symbols, self_energies=tuple(self_energies[k] for k in self.symbols))
+        shifter = self._shifter_type(
+            symbols=self.symbols,
+            self_energies=tuple(self_energies[k] for k in self.symbols),
+        )
 
         if self._pairwise_potentials:
             potentials = []
@@ -386,6 +398,7 @@ def load_from_neurochem(
     if not pretrained:
         raise ValueError("Non pretrained models are not available from neurochem")
     from torchani.neurochem import modules_from_builtin_name
+
     components = modules_from_builtin_name(
         model_name,
         model_index,
@@ -441,7 +454,10 @@ def ANI1x(
         AEVComputer,
         angular_terms=StandardAngular.like_1x(),
         radial_terms=StandardRadial.like_1x(),
-        extra={"use_cuda_extension": use_cuda_extension, "use_cuaev_interface": use_cuaev_interface},
+        extra={
+            "use_cuda_extension": use_cuda_extension,
+            "use_cuaev_interface": use_cuaev_interface,
+        },
     )
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
@@ -490,7 +506,10 @@ def ANI1ccx(
         AEVComputer,
         radial_terms=StandardRadial.like_1ccx(),
         angular_terms=StandardAngular.like_1ccx(),
-        extra={"use_cuda_extension": use_cuda_extension, "use_cuaev_interface": use_cuaev_interface},
+        extra={
+            "use_cuda_extension": use_cuda_extension,
+            "use_cuaev_interface": use_cuaev_interface,
+        },
     )
     asm.set_atomic_maker("ani1ccx", activation="celu", bias=True)
     asm.set_neighborlist(neighborlist)
@@ -539,7 +558,10 @@ def ANI2x(
         AEVComputer,
         radial_terms=StandardRadial.like_2x(),
         angular_terms=StandardAngular.like_2x(),
-        extra={"use_cuda_extension": use_cuda_extension, "use_cuaev_interface": use_cuaev_interface},
+        extra={
+            "use_cuda_extension": use_cuda_extension,
+            "use_cuaev_interface": use_cuaev_interface,
+        },
     )
     asm.set_atomic_maker("ani2x", activation="celu", bias=True)
     asm.set_neighborlist(neighborlist)
@@ -568,7 +590,10 @@ def ANIala(
         AEVComputer,
         radial_terms=StandardRadial.like_2x(),
         angular_terms=StandardAngular.like_2x(),
-        extra={"use_cuda_extension": use_cuda_extension, "use_cuaev_interface": use_cuaev_interface},
+        extra={
+            "use_cuda_extension": use_cuda_extension,
+            "use_cuaev_interface": use_cuaev_interface,
+        },
     )
     asm.set_atomic_maker("aniala", activation="celu", bias=True)
     asm.set_neighborlist(neighborlist)
