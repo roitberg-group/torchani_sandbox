@@ -553,7 +553,6 @@ def ANI2x(
         neighborlist=neighborlist,
         periodic_table_index=periodic_table_index,
     )
-    asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
     asm.set_symbols(ELEMENTS_2X, auto_sort=False)
     asm.set_featurizer(
         AEVComputer,
