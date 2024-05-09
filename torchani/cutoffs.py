@@ -45,10 +45,11 @@ class CutoffSmooth(Cutoff):
 CutoffArg = tp.Union[str, Cutoff]
 
 
-def parse_cutoff_fn(cutoff_fn: CutoffArg, global_cutoff: tp.Optional[Cutoff] = None) -> Cutoff:
-    if cutoff_fn == "global":
-        assert global_cutoff is not None
-        cutoff_fn = global_cutoff
+def parse_cutoff_fn(cutoff_fn: CutoffArg, default_cutoff: CutoffArg = "smooth2") -> Cutoff:
+    if default_cutoff == "default":
+        raise ValueError("default_cutoff must be an actual cutoff, it can't be 'defaut'")
+    if cutoff_fn == "default":
+        cutoff_fn = parse_cutoff_fn(default_cutoff)
     if cutoff_fn == 'dummy':
         cutoff_fn = CutoffDummy()
     elif cutoff_fn == 'cosine':

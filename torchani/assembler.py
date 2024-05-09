@@ -65,7 +65,7 @@ ELEMENTS_1X: tp.Tuple[str, ...] = ("H", "C", "N", "O")
 ELEMENTS_2X: tp.Tuple[str, ...] = ELEMENTS_1X + SFCl
 
 
-# "global" cutoff means the global cutoff_fn will be used
+# "default" cutoff means the default cutoff_fn for the assembler will be used
 # Otherwise, a specific cutoff fn can be specified
 class FeaturizerWrapper:
     def __init__(
@@ -73,7 +73,7 @@ class FeaturizerWrapper:
         cls: FeaturizerType,
         radial_terms: torch.nn.Module,
         angular_terms: torch.nn.Module,
-        cutoff_fn: CutoffArg = "global",
+        cutoff_fn: CutoffArg = "default",
         extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
         self.cls = cls
@@ -98,7 +98,7 @@ class FeaturizerWrapper:
 @dataclass
 class PairPotentialWrapper:
     cls: PairPotentialType
-    cutoff_fn: CutoffArg = "global"
+    cutoff_fn: CutoffArg = "default"
     cutoff: float = math.inf
     extra: tp.Optional[tp.Dict[str, tp.Any]] = None
 
@@ -120,6 +120,7 @@ class Assembler:
     _symbols: tp.Tuple[str, ...]
     _neighborlist: Neighborlist
     _ensemble_size: int
+    _default_cutoff_fn: Cutoff
 
     def __init__(
         self,
@@ -127,17 +128,15 @@ class Assembler:
         container_type: ContainerType = ANIModel,
         model_type: ModelType = BuiltinModel,
         neighborlist: NeighborlistArg = "full_pairwise",
-        global_cutoff_fn: CutoffArg = "smooth2",
+        cutoff_fn: CutoffArg = "smooth2",
         periodic_table_index: bool = True,
     ) -> None:
-
         # These simple attrs and modules can be set here
-        self.set_global_cutoff_fn(global_cutoff_fn)
+        self.set_default_cutoff_fn(cutoff_fn)
         self.set_neighborlist(neighborlist)
         self.ensemble_size = ensemble_size
 
         # These are complex modules that are parsed later
-        self._global_cutoff_fn: tp.Optional[Cutoff] = None
         self._featurizer: tp.Optional[FeaturizerWrapper] = None
         self._atomic_maker: tp.Optional[AtomicMakerWrapper] = None
         self._pairwise_potentials: tp.List[PairPotentialWrapper] = []
@@ -252,7 +251,7 @@ class Assembler:
         featurizer_type: FeaturizerType,
         angular_terms: torch.nn.Module,
         radial_terms: torch.nn.Module,
-        cutoff_fn: CutoffArg = "global",
+        cutoff_fn: CutoffArg = "default",
         extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
         self._featurizer = FeaturizerWrapper(
@@ -269,17 +268,17 @@ class Assembler:
     ) -> None:
         self._neighborlist = parse_neighborlist(neighborlist)
 
-    def set_global_cutoff_fn(
+    def set_default_cutoff_fn(
         self,
         cutoff_fn: CutoffArg,
     ) -> None:
-        self._global_cutoff_fn = parse_cutoff_fn(cutoff_fn)
+        self._default_cutoff_fn = parse_cutoff_fn(cutoff_fn)
 
     def add_pairwise_potential(
         self,
         pair_type: PairPotentialType,
         cutoff: float = math.inf,
-        cutoff_fn: CutoffArg = "global",
+        cutoff_fn: CutoffArg = "default",
         extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
         if not issubclass(self._model_type, PairPotentialsModel):
@@ -313,7 +312,8 @@ class Assembler:
             warnings.warn("Assembling model with ZERO self energies!")
 
         feat_cutoff_fn = parse_cutoff_fn(
-            self._featurizer.cutoff_fn, self._global_cutoff_fn
+            self._featurizer.cutoff_fn,
+            self._default_cutoff_fn,
         )
 
         self._featurizer.angular_terms.cutoff_fn = feat_cutoff_fn
@@ -370,7 +370,8 @@ class Assembler:
                         symbols=self.symbols,
                         cutoff=pot.cutoff,
                         cutoff_fn=parse_cutoff_fn(
-                            pot.cutoff_fn, self._global_cutoff_fn
+                            pot.cutoff_fn,
+                            self._default_cutoff_fn,
                         ),
                         **pot_kwargs,
                     )
@@ -449,7 +450,7 @@ def ANI1x(
         )
     asm = Assembler(
         ensemble_size=8,
-        global_cutoff_fn="cosine",
+        cutoff_fn="cosine",
         neighborlist=neighborlist,
         periodic_table_index=periodic_table_index,
     )
@@ -505,7 +506,7 @@ def ANI1ccx(
         )
     asm = Assembler(
         ensemble_size=8,
-        global_cutoff_fn="cosine",
+        cutoff_fn="cosine",
         neighborlist=neighborlist,
         periodic_table_index=periodic_table_index,
     )
@@ -560,7 +561,7 @@ def ANI2x(
         )
     asm = Assembler(
         ensemble_size=8,
-        global_cutoff_fn="cosine",
+        cutoff_fn="cosine",
         neighborlist=neighborlist,
         periodic_table_index=periodic_table_index,
     )
@@ -596,7 +597,7 @@ def ANIala(
         raise ValueError("Model index is not supported for ANIala")
     asm = Assembler(
         ensemble_size=1,
-        global_cutoff_fn="cosine",
+        cutoff_fn="cosine",
         neighborlist=neighborlist,
         periodic_table_index=periodic_table_index,
     )
@@ -633,7 +634,7 @@ def ANIdr(
     """
     asm = Assembler(
         ensemble_size=7,
-        global_cutoff_fn="smooth2",
+        cutoff_fn="smooth2",
         neighborlist=neighborlist,
         periodic_table_index=periodic_table_index,
     )
@@ -688,7 +689,7 @@ def FlexANI(
     """
     asm = Assembler(
         ensemble_size=ensemble_size,
-        global_cutoff_fn=cutoff_fn,
+        cutoff_fn=cutoff_fn,
         neighborlist=neighborlist,
     )
     asm.set_symbols(symbols)
