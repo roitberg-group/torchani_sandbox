@@ -121,7 +121,7 @@ class Ensemble(torch.nn.ModuleList):
         species, _ = species_input
         return SpeciesEnergies(species, sum_ / self.size)  # type: ignore
 
-    def member(self, idx: int) -> 'ANIModel':
+    def member(self, idx: int) -> ANIModel:
         return self[idx]
 
     @torch.jit.export
