@@ -1,1 +1,3 @@
-from torch.testing._internal.common_utils import TestCase, make_tensor  # noqa: F401
+from torch.testing._internal.common_utils import TestCase, make_tensor
+
+__all__ = ["TestCase", "make_tensor"]
