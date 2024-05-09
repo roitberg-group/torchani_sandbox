@@ -28,6 +28,7 @@ jobs:
             "mkdir -p /torchani_sandbox
             && cd /torchani_sandbox
             && cp -r /examples/. /torchani_sandbox/
+            && pip install 'setuptools>=61' 'setuptools_scm>=8'
             && pip install -r tests_requirements.txt
             && pip uninstall cudf -y
             && ./download.sh
