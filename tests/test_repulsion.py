@@ -83,7 +83,7 @@ class TestRepulsion(TestCase):
         self.assertEqual(_atomic_energies, _energies)
 
     def _makeModel(self):
-        model = torchani.models.ANIdr(model_index=0, pretrained=True)
+        model = torchani.models.ANIdr(model_index=0)
         return model
 
 

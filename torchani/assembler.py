@@ -395,31 +395,26 @@ def load_from_neurochem(
     use_cuda_extension: bool,
     use_cuaev_interface: bool,
     periodic_table_index: bool,
-    pretrained: bool,
 ) -> BuiltinModel:
-    if not pretrained:
-        raise ValueError("Non pretrained models are not available from neurochem")
     from torchani.neurochem import modules_from_builtin_name
-
     components = modules_from_builtin_name(
         model_name,
         model_index,
         use_cuda_extension,
         use_cuaev_interface,
     )
-    aev_computer, neural_networks, energy_shifter, elements = components
+    aev_computer, neural_networks, energy_shifter, symbols = components
     return BuiltinModel(
         aev_computer,
         neural_networks,
         energy_shifter,
-        elements,
+        symbols,
         periodic_table_index=periodic_table_index,
     )
 
 
 def ANI1x(
     model_index: tp.Optional[int] = None,
-    pretrained: bool = True,
     neighborlist: str = "full_pairwise",
     use_cuda_extension: bool = False,
     use_cuaev_interface: bool = False,
@@ -446,7 +441,6 @@ def ANI1x(
             use_cuda_extension=use_cuda_extension,
             use_cuaev_interface=use_cuaev_interface,
             periodic_table_index=periodic_table_index,
-            pretrained=pretrained,
         )
     asm = Assembler(
         ensemble_size=8,
@@ -467,14 +461,12 @@ def ANI1x(
     )
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble()
-    if pretrained:
-        model.load_state_dict(fetch_state_dict("ani1x_state_dict.pt", private=False))
+    model.load_state_dict(fetch_state_dict("ani1x_state_dict.pt", private=False))
     return model if model_index is None else model[model_index]
 
 
 def ANI1ccx(
     model_index: tp.Optional[int] = None,
-    pretrained: bool = True,
     neighborlist: str = "full_pairwise",
     use_cuda_extension: bool = False,
     use_cuaev_interface: bool = False,
@@ -502,7 +494,6 @@ def ANI1ccx(
             use_cuda_extension=use_cuda_extension,
             use_cuaev_interface=use_cuaev_interface,
             periodic_table_index=periodic_table_index,
-            pretrained=pretrained,
         )
     asm = Assembler(
         ensemble_size=8,
@@ -523,14 +514,12 @@ def ANI1ccx(
     asm.set_atomic_maker("ani1ccx", activation="celu", bias=True)
     asm.set_gsaes_as_self_energies("ccsd(t)star-cbs")
     model = asm.assemble()
-    if pretrained:
-        model.load_state_dict(fetch_state_dict("ani1ccx_state_dict.pt", private=False))
+    model.load_state_dict(fetch_state_dict("ani1ccx_state_dict.pt", private=False))
     return model if model_index is None else model[model_index]
 
 
 def ANI2x(
     model_index: tp.Optional[int] = None,
-    pretrained: bool = True,
     neighborlist: str = "full_pairwise",
     use_cuda_extension: bool = False,
     use_cuaev_interface: bool = False,
@@ -557,7 +546,6 @@ def ANI2x(
             use_cuda_extension=use_cuda_extension,
             use_cuaev_interface=use_cuaev_interface,
             periodic_table_index=periodic_table_index,
-            pretrained=pretrained,
         )
     asm = Assembler(
         ensemble_size=8,
@@ -579,14 +567,12 @@ def ANI2x(
     asm.set_atomic_maker("ani2x", activation="celu", bias=True)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble()
-    if pretrained:
-        model.load_state_dict(fetch_state_dict("ani2x_state_dict.pt", private=False))
+    model.load_state_dict(fetch_state_dict("ani2x_state_dict.pt", private=False))
     return model if model_index is None else model[model_index]
 
 
 def ANIala(
     model_index: tp.Optional[int] = None,
-    pretrained: bool = True,
     neighborlist: str = "full_pairwise",
     use_cuda_extension: bool = False,
     use_cuaev_interface: bool = False,
@@ -614,14 +600,12 @@ def ANIala(
     asm.set_atomic_maker("aniala", activation="celu", bias=True)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble()
-    if pretrained:
-        model.load_state_dict(fetch_state_dict("aniala_state_dict.pt", private=True))
+    model.load_state_dict(fetch_state_dict("aniala_state_dict.pt", private=True))
     return model
 
 
 def ANIdr(
     model_index: tp.Optional[int] = None,
-    pretrained: bool = True,
     neighborlist: str = "full_pairwise",
     use_cuda_ops: bool = False,
     periodic_table_index: bool = True,
@@ -658,8 +642,7 @@ def ANIdr(
     )
     asm.set_gsaes_as_self_energies("b973c-def2mtzvp")
     model = asm.assemble()
-    if pretrained:
-        model.load_state_dict(fetch_state_dict("anidr_state_dict.pt", private=True))
+    model.load_state_dict(fetch_state_dict("anidr_state_dict.pt", private=True))
     return model if model_index is None else model[model_index]
 
 
