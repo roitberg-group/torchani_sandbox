@@ -1,7 +1,6 @@
 import os
 import subprocess
 import sys
-import warnings
 import logging
 
 from setuptools import setup, find_packages
@@ -10,43 +9,29 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("setup")
 
 
-def alert(text):
-    return ('\033[91m{}\33[0m'.format(text))  # red
-
-
-BUILD_EXT_ALL_SM = '--cuaev-all-sms' in sys.argv
-if BUILD_EXT_ALL_SM:
-    warnings.warn(alert("--cuaev-all-sms flag is deprecated, please use --ext-all-sms instead."))
-    sys.argv.remove('--cuaev-all-sms')
-
-FAST_BUILD_EXT = '--cuaev' in sys.argv
-if FAST_BUILD_EXT:
-    warnings.warn(alert("--cuaev flag is deprecated, please use --ext instead."))
-    sys.argv.remove('--cuaev')
-
-BUILD_EXT_ALL_SM = BUILD_EXT_ALL_SM or '--ext-all-sms' in sys.argv
 if '--ext-all-sms' in sys.argv:
+    BUILD_EXT_ALL_SM = True
     sys.argv.remove('--ext-all-sms')
 
-FAST_BUILD_EXT = FAST_BUILD_EXT or '--ext' in sys.argv
 if '--ext' in sys.argv:
+    FAST_BUILD_EXT = True
     sys.argv.remove('--ext')
 
-# Use along with --cuaev for CI test to reduce compilation time on Non-GPUs system
-ONLY_BUILD_SM80 = '--only-sm80' in sys.argv
-if ONLY_BUILD_SM80:
+# Use along with --ext for CI test to reduce compilation time on Non-GPUs system
+if '--only-sm80' in sys.argv:
+    ONLY_BUILD_SM80 = True
     sys.argv.remove('--only-sm80')
 
 # compile cuaev with DEBUG infomation
-CUAEV_DEBUG = '--cuaev-debug' in sys.argv
-if CUAEV_DEBUG:
+if "--cuaev-debug" in sys.argv:
+    CUAEV_DEBUG = True
     sys.argv.remove('--cuaev-debug')
 
 # compile cuaev with optimizations: e.g. intrinsics functions and use_fast_math flag
-# CUAEV_OPT = '--cuaev-opt' in sys.argv
-# if CUAEV_OPT:
-#     sys.argv.remove('--cuaev-opt')
 CUAEV_OPT = True
+if "--no-cuaev-opt" in sys.argv:
+    CUAEV_OPT = False
+    sys.argv.remove('--no-cuaev-opt')
 
 if not BUILD_EXT_ALL_SM and not FAST_BUILD_EXT:
     log.warning("Will not install cuaev")
