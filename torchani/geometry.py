@@ -35,7 +35,7 @@ def tile_into_tight_cell(
     density: tp.Optional[float] = None,
     fixed_displacement_size: tp.Optional[float] = None,
     make_coordinates_positive: bool = True,
-):
+) -> tp.Tuple[Tensor, Tensor, Tensor]:
     r"""
     Tile to generate a tight cell
 
