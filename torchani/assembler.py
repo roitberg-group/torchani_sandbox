@@ -42,7 +42,7 @@ from torchani.atomics import (
     parse_activation,
 )
 from torchani.models import BuiltinModel, PairPotentialsModel
-from torchani.neighbors import parse_neighborlist, NeighborlistArg
+from torchani.neighbors import parse_neighborlist, NeighborlistArg, Neighborlist
 from torchani.cutoffs import parse_cutoff_fn, Cutoff, CutoffArg
 from torchani.potentials import (
     PairPotential,
@@ -52,14 +52,13 @@ from torchani.potentials import (
 )
 from torchani.aev import AEVComputer, StandardAngular, StandardRadial
 from torchani.nn import ANIModel, Ensemble
-from torchani.utils import GSAES, sort_by_element
+from torchani.utils import GSAES, sort_by_element, PERIODIC_TABLE
 from torchani.storage import STATE_DICTS_DIR
 
 ModelType = tp.Type[BuiltinModel]
 FeaturizerType = tp.Type[AEVComputer]
 PairPotentialType = tp.Type[PairPotential]
 ContainerType = tp.Type[ANIModel]
-ShifterType = tp.Type[EnergyAdder]
 
 SFCl: tp.Tuple[str, ...] = ("S", "F", "Cl")
 ELEMENTS_1X: tp.Tuple[str, ...] = ("H", "C", "N", "O")
@@ -118,33 +117,36 @@ class AtomicMakerWrapper:
 
 
 class Assembler:
+    _symbols: tp.Tuple[str, ...]
+    _neighborlist: Neighborlist
+    _ensemble_size: int
+
     def __init__(
         self,
         ensemble_size: int = 1,
-        symbols: tp.Sequence[str] = (),
         container_type: ContainerType = ANIModel,
-        shifter_type: ShifterType = EnergyAdder,
         model_type: ModelType = BuiltinModel,
-        featurizer: tp.Optional[FeaturizerWrapper] = None,
-        atomic_maker: tp.Optional[AtomicMakerWrapper] = None,
         neighborlist: NeighborlistArg = "full_pairwise",
+        global_cutoff_fn: CutoffArg = "smooth2",
         periodic_table_index: bool = True,
     ) -> None:
-        self._global_cutoff_fn: tp.Optional[Cutoff] = None
 
-        self._neighborlist = parse_neighborlist(neighborlist)
-        self._featurizer: tp.Optional[FeaturizerWrapper] = featurizer
+        # These simple attrs and modules can be set here
+        self.set_global_cutoff_fn(global_cutoff_fn)
+        self.set_neighborlist(neighborlist)
+        self.ensemble_size = ensemble_size
+
+        # These are complex modules that are parsed later
+        self._global_cutoff_fn: tp.Optional[Cutoff] = None
+        self._featurizer: tp.Optional[FeaturizerWrapper] = None
+        self._atomic_maker: tp.Optional[AtomicMakerWrapper] = None
         self._pairwise_potentials: tp.List[PairPotentialWrapper] = []
 
         # This part of the assembler organizes the self-energies, the
         # symbols and the atomic networks
         self._self_energies: tp.Dict[str, float] = {}
-        self._atomic_maker: tp.Optional[AtomicMakerWrapper] = atomic_maker
         self._atomic_networks: tp.Dict[str, torch.nn.Module] = {}
-        self._shifter_type: ShifterType = shifter_type
         self._container_type: ContainerType = container_type
-        self._symbols: tp.Tuple[str, ...] = tuple(symbols)
-        self._ensemble_size: int = ensemble_size
 
         # This is the general container for all the parts of the model
         self._model_type: ModelType = model_type
@@ -182,6 +184,8 @@ class Assembler:
         return self._symbols
 
     def set_symbols(self, symbols: tp.Sequence[str], auto_sort: bool = True) -> None:
+        if any(s not in PERIODIC_TABLE for s in symbols):
+            raise ValueError(f"All symbols in {symbols} must be valid element names")
         if auto_sort:
             self._symbols = sort_by_element(symbols)
         else:
@@ -236,9 +240,6 @@ class Assembler:
             )
         gsaes = GSAES[lot.lower()]
         self.self_energies = {s: gsaes[s] for s in self.symbols}
-
-    def set_shifter(self, shifter_type: ShifterType) -> None:
-        self._shifter_type = shifter_type
 
     def set_container(
         self,
@@ -348,7 +349,7 @@ class Assembler:
         else:
             neural_networks = self._container_type(self.atomic_networks)
         self_energies = self.self_energies
-        shifter = self._shifter_type(
+        shifter = EnergyAdder(
             symbols=self.symbols,
             self_energies=tuple(self_energies[k] for k in self.symbols),
         )
@@ -446,10 +447,14 @@ def ANI1x(
             periodic_table_index=periodic_table_index,
             pretrained=pretrained,
         )
-    asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
+    asm = Assembler(
+        ensemble_size=8,
+        global_cutoff_fn="cosine",
+        neighborlist=neighborlist,
+        periodic_table_index=periodic_table_index,
+    )
     asm.set_symbols(ELEMENTS_1X, auto_sort=False)
     asm.set_atomic_maker("ani1x", activation="celu", bias=True)
-    asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
         angular_terms=StandardAngular.like_1x(),
@@ -459,7 +464,6 @@ def ANI1x(
             "use_cuaev_interface": use_cuaev_interface,
         },
     )
-    asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble()
     if pretrained:
@@ -499,9 +503,13 @@ def ANI1ccx(
             periodic_table_index=periodic_table_index,
             pretrained=pretrained,
         )
-    asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
+    asm = Assembler(
+        ensemble_size=8,
+        global_cutoff_fn="cosine",
+        neighborlist=neighborlist,
+        periodic_table_index=periodic_table_index,
+    )
     asm.set_symbols(ELEMENTS_1X, auto_sort=False)
-    asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
         radial_terms=StandardRadial.like_1ccx(),
@@ -512,7 +520,6 @@ def ANI1ccx(
         },
     )
     asm.set_atomic_maker("ani1ccx", activation="celu", bias=True)
-    asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("ccsd(t)star-cbs")
     model = asm.assemble()
     if pretrained:
@@ -551,9 +558,14 @@ def ANI2x(
             periodic_table_index=periodic_table_index,
             pretrained=pretrained,
         )
+    asm = Assembler(
+        ensemble_size=8,
+        global_cutoff_fn="cosine",
+        neighborlist=neighborlist,
+        periodic_table_index=periodic_table_index,
+    )
     asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
     asm.set_symbols(ELEMENTS_2X, auto_sort=False)
-    asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
         radial_terms=StandardRadial.like_2x(),
@@ -564,7 +576,6 @@ def ANI2x(
         },
     )
     asm.set_atomic_maker("ani2x", activation="celu", bias=True)
-    asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble()
     if pretrained:
@@ -583,9 +594,13 @@ def ANIala(
     r"""Experimental Model fine tuned to solvated frames of Ala dipeptide"""
     if model_index is not None:
         raise ValueError("Model index is not supported for ANIala")
-    asm = Assembler(ensemble_size=1, periodic_table_index=periodic_table_index)
+    asm = Assembler(
+        ensemble_size=1,
+        global_cutoff_fn="cosine",
+        neighborlist=neighborlist,
+        periodic_table_index=periodic_table_index,
+    )
     asm.set_symbols(ELEMENTS_2X, auto_sort=False)
-    asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
         radial_terms=StandardRadial.like_2x(),
@@ -596,7 +611,6 @@ def ANIala(
         },
     )
     asm.set_atomic_maker("aniala", activation="celu", bias=True)
-    asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble()
     if pretrained:
@@ -617,9 +631,13 @@ def ANIdr(
     It predicts
     energies on HCNOFSCl elements
     """
-    asm = Assembler(ensemble_size=7, periodic_table_index=periodic_table_index)
+    asm = Assembler(
+        ensemble_size=7,
+        global_cutoff_fn="smooth2",
+        neighborlist=neighborlist,
+        periodic_table_index=periodic_table_index,
+    )
     asm.set_symbols(ELEMENTS_2X, auto_sort=False)
-    asm.set_global_cutoff_fn("smooth2")
     asm.set_featurizer(
         AEVComputer,
         angular_terms=StandardAngular.like_2x(),
@@ -637,7 +655,6 @@ def ANIdr(
         cutoff_fn="smooth4",
         extra={"functional": "b973c"},
     )
-    asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("b973c-def2mtzvp")
     model = asm.assemble()
     if pretrained:
@@ -669,9 +686,12 @@ def FlexANI(
     r"""
     Flexible builder to create ANI-style models
     """
-    asm = Assembler(ensemble_size=ensemble_size, periodic_table_index=True)
+    asm = Assembler(
+        ensemble_size=ensemble_size,
+        global_cutoff_fn=cutoff_fn,
+        neighborlist=neighborlist,
+    )
     asm.set_symbols(symbols)
-    asm.set_global_cutoff_fn(cutoff_fn)
     asm.set_featurizer(
         AEVComputer,
         radial_terms=StandardRadial.cover_linearly(
@@ -691,7 +711,6 @@ def FlexANI(
         extra={"use_cuda_extension": use_cuda_ops, "use_cuaev_interface": use_cuda_ops},
     )
     asm.set_atomic_maker(atomic_maker, activation=activation, bias=bias)
-    asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies(lot)
     if repulsion:
         asm.add_pairwise_potential(
