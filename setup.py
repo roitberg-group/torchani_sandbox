@@ -38,7 +38,7 @@ if "--no-cuaev-opt" in sys.argv:
     CUAEV_OPT = False
     sys.argv.remove('--no-cuaev-opt')
 
-if not BUILD_EXT_ALL_SM and not FAST_BUILD_EXT:
+if not (BUILD_EXT_ALL_SM or FAST_BUILD_EXT):
     log.warning("Will not install cuaev")
 
 with open("README.md", "r") as fh:
@@ -142,7 +142,7 @@ def mnp_extension():
 
 
 def ext_kwargs():
-    if not BUILD_EXT_ALL_SM and not FAST_BUILD_EXT:
+    if not (BUILD_EXT_ALL_SM or FAST_BUILD_EXT):
         return dict(
             provides=['torchani']
         )
