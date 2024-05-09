@@ -189,6 +189,7 @@ setup(
     fallback_version="2.3",
     install_requires=[
         'torch',
+        'typing_extensions>=4.0.0',  # needed for Self support
         'lark-parser',
         'requests',
         'h5py',

@@ -1,4 +1,3 @@
-import typing_extensions as tpx
 import typing as tp
 import json
 import shutil
@@ -8,8 +7,9 @@ from pathlib import Path
 from collections import OrderedDict
 
 import numpy as np
+import typing_extensions as tpx
 
-from torchani.datasets._annotations import StrPath, Self
+from torchani.datasets._annotations import StrPath
 from torchani.datasets._backends.interface import _StoreWrapper, _ConformerGroup, CacheHolder, _FileOrDirLocation
 from torchani.datasets._backends.zarr_impl import _ZarrTemporaryLocation
 
@@ -184,7 +184,7 @@ class _PqStore(_StoreWrapper[tp.Union["pandas.DataFrame", "cudf.DataFrame"]]):
         return cache.group_sizes, cache.properties.union(self._dummy_properties)
 
     @classmethod
-    def make_empty(cls, store_location: StrPath, grouping: str = "by_num_atoms", **kwargs) -> Self:
+    def make_empty(cls, store_location: StrPath, grouping: str = "by_num_atoms", **kwargs) -> tpx.Self:
         root = Path(store_location).resolve()
         root.mkdir(exist_ok=True)
         assert not list(root.iterdir()), "location is not empty"
@@ -196,7 +196,7 @@ class _PqStore(_StoreWrapper[tp.Union["pandas.DataFrame", "cudf.DataFrame"]]):
         return cls(store_location, **kwargs)
 
     # File-like
-    def open(self, mode: str = 'r', only_attrs: bool = False) -> Self:
+    def open(self, mode: str = 'r', only_attrs: bool = False) -> tpx.Self:
         if not only_attrs:
             self._store_obj = DataFrameAdaptor(self._engine.read_parquet(self.location.pq))
         else:
@@ -212,7 +212,7 @@ class _PqStore(_StoreWrapper[tp.Union["pandas.DataFrame", "cudf.DataFrame"]]):
         self._store_obj.mode = mode
         return self
 
-    def close(self) -> Self:
+    def close(self) -> tpx.Self:
         if self._queued_appends:
             self.execute_queued_appends()
         if self._store._is_dirty:

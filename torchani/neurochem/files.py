@@ -1,5 +1,4 @@
 r"""Some utilities for extracting information from neurochem files"""
-import typing_extensions as tpx
 from dataclasses import dataclass
 import typing as tp
 import io
@@ -8,6 +7,7 @@ import shutil
 from pathlib import Path
 
 import requests
+import typing_extensions as tpx
 
 from torchani.aev import AEVComputer
 from torchani.utils import EnergyShifter
