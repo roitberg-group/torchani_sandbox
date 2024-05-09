@@ -5,7 +5,12 @@ from copy import deepcopy
 import torch
 
 
-def _parse_activation(module: tp.Union[str, torch.nn.Module]) -> torch.nn.Module:
+AtomicMaker = tp.Callable[[str, int, tp.Optional[torch.nn.Module], bool, int], torch.nn.Sequential]
+AtomicMakerArg = tp.Union[str, AtomicMaker]
+ActivationArg = tp.Union[str, torch.nn.Module]
+
+
+def parse_activation(module: ActivationArg) -> torch.nn.Module:
     if module == "gelu":
         return torch.nn.GELU()
     if module == "celu":
@@ -14,7 +19,7 @@ def _parse_activation(module: tp.Union[str, torch.nn.Module]) -> torch.nn.Module
     return module
 
 
-def _parse_atomics(module: tp.Union[str, tp.Callable[[str, int], torch.nn.Module]]) -> tp.Callable[[str, int], torch.nn.Module]:
+def parse_atomic_maker(module: AtomicMakerArg) -> AtomicMaker:
     if module == "ani1x":
         return like_1x
     elif module == "ani2x":
@@ -34,7 +39,7 @@ def standard(
     activation: tp.Optional[torch.nn.Module] = None,
     bias: bool = False,
     classifier_out: int = 1
-):
+) -> torch.nn.Sequential:
     r"""Makes a standard ANI style atomic network"""
     if activation is None:
         activation = torch.nn.GELU()
@@ -56,7 +61,7 @@ def like_1x(
     activation: tp.Optional[torch.nn.Module] = None,
     bias: bool = True,
     classifier_out: int = 1
-):
+) -> torch.nn.Sequential:
     r"""Makes an atomic network. Defaults are the ones in the ANI-1x (and 1ccx) model"""
     if activation is None:
         activation = torch.nn.CELU(0.1)
@@ -80,7 +85,7 @@ def like_ala(
     activation: tp.Optional[torch.nn.Module] = None,
     bias: bool = True,
     classifier_out: int = 1
-):
+) -> torch.nn.Sequential:
     r"""Makes an atomic network. The defaults are the ones used in the ANI-2x model"""
     if activation is None:
         activation = torch.nn.CELU(0.1)
@@ -107,7 +112,7 @@ def like_2x(
     activation: tp.Optional[torch.nn.Module] = None,
     bias: bool = True,
     classifier_out: int = 1
-):
+) -> torch.nn.Sequential:
     r"""Makes an atomic network. The defaults are the ones used in the ANI-2x model"""
     if activation is None:
         activation = torch.nn.CELU(0.1)
@@ -134,7 +139,7 @@ def like_dr(
     activation: tp.Optional[torch.nn.Module] = None,
     bias: bool = False,
     classifier_out: int = 1
-):
+) -> torch.nn.Sequential:
     r"""Makes an atomic network. The defaults are the ones used in the ANI-dr model"""
     dims_for_atoms = {
         'H': (feat_dim, 256, 192, 160),

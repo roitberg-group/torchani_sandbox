@@ -24,7 +24,6 @@ These pieces are assembled into a Model, which is a subclass of BuiltinModel
 
 Some of the Featurizers support custom made cuda operators that accelerate them
 """
-import functools
 from copy import deepcopy
 import warnings
 import math
@@ -35,7 +34,9 @@ import typing as tp
 import torch
 from torch import Tensor
 
-from torchani import atomics
+from torchani.atomics import (
+    AtomicMaker, AtomicMakerArg, ActivationArg, parse_atomic_maker, parse_activation,
+)
 from torchani.models import BuiltinModel, PairPotentialsModel
 from torchani.neighbors import parse_neighborlist, NeighborlistArg
 from torchani.cutoffs import parse_cutoff_fn, Cutoff, CutoffArg
@@ -99,6 +100,17 @@ class PairPotentialWrapper:
     extra: tp.Optional[tp.Dict[str, tp.Any]] = None
 
 
+@dataclass
+class AtomicMakerWrapper:
+    fn: AtomicMaker
+    activation: torch.nn.Module
+    bias: bool = False
+    classifier_out: int = 1
+
+    def create(self, symbol: str, feat_dim: int) -> torch.nn.Sequential:
+        return self.fn(symbol, feat_dim, self.activation, self.bias, self.classifier_out)
+
+
 class Assembler:
     def __init__(
         self,
@@ -108,21 +120,20 @@ class Assembler:
         shifter_type: ShifterType = EnergyAdder,
         model_type: ModelType = BuiltinModel,
         featurizer: tp.Optional[FeaturizerWrapper] = None,
+        atomic_maker: tp.Optional[AtomicMakerWrapper] = None,
         neighborlist: NeighborlistArg = "full_pairwise",
         periodic_table_index: bool = True,
     ) -> None:
         self._global_cutoff_fn: tp.Optional[Cutoff] = None
 
         self._neighborlist = parse_neighborlist(neighborlist)
-        self._featurizer = featurizer
+        self._featurizer: tp.Optional[FeaturizerWrapper] = featurizer
         self._pairwise_potentials: tp.List[PairPotentialWrapper] = []
 
         # This part of the assembler organizes the self-energies, the
         # symbols and the atomic networks
         self._self_energies: tp.Dict[str, float] = {}
-        self._fn_for_networks: tp.Optional[
-            tp.Callable[[str, int], torch.nn.Module]
-        ] = None
+        self._atomic_maker: tp.Optional[AtomicMakerWrapper] = atomic_maker
         self._atomic_networks: tp.Dict[str, torch.nn.Module] = {}
         self._shifter_type: ShifterType = shifter_type
         self._container_type: ContainerType = container_type
@@ -177,9 +188,17 @@ class Assembler:
 
     def set_atomic_maker(
         self,
-        fn: tp.Callable[[str, int], torch.nn.Module],
+        fn: AtomicMakerArg,
+        activation: tp.Union[str, torch.nn.Module],
+        bias: bool = False,
+        classifier_out: int = 1,
     ) -> None:
-        self._fn_for_networks = fn
+        self._atomic_maker = AtomicMakerWrapper(
+            fn=parse_atomic_maker(fn),
+            activation=parse_activation(activation),
+            bias=bias,
+            classifier_out=classifier_out,
+        )
 
     @property
     def self_energies(self) -> tp.Dict[str, float]:
@@ -304,9 +323,9 @@ class Assembler:
         )
         # This fails because the attribute is marked as final, but it should not be
         neural_networks: tp.Union[ANIModel, Ensemble]
-        if self._fn_for_networks is not None:
+        if self._atomic_maker is not None:
             self._atomic_networks = {
-                s: self._fn_for_networks(s, featurizer.aev_length) for s in self.symbols
+                s: self._atomic_maker.create(s, featurizer.aev_length) for s in self.symbols
             }
         else:
             raise RuntimeError(
@@ -416,7 +435,7 @@ def ANI1x(
         )
     asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
     asm.set_symbols(ELEMENTS_1X, auto_sort=False)
-    asm.set_atomic_maker(atomics.like_1x)
+    asm.set_atomic_maker("ani1x", activation="celu", bias=True)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
@@ -473,7 +492,7 @@ def ANI1ccx(
         angular_terms=StandardAngular.like_1ccx(),
         extra={"use_cuda_extension": use_cuda_extension, "use_cuaev_interface": use_cuaev_interface},
     )
-    asm.set_atomic_maker(atomics.like_1ccx)
+    asm.set_atomic_maker("ani1ccx", activation="celu", bias=True)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("ccsd(t)star-cbs")
     model = asm.assemble()
@@ -522,7 +541,7 @@ def ANI2x(
         angular_terms=StandardAngular.like_2x(),
         extra={"use_cuda_extension": use_cuda_extension, "use_cuaev_interface": use_cuaev_interface},
     )
-    asm.set_atomic_maker(atomics.like_2x)
+    asm.set_atomic_maker("ani2x", activation="celu", bias=True)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble()
@@ -551,7 +570,7 @@ def ANIala(
         angular_terms=StandardAngular.like_2x(),
         extra={"use_cuda_extension": use_cuda_extension, "use_cuaev_interface": use_cuaev_interface},
     )
-    asm.set_atomic_maker(atomics.like_ala)
+    asm.set_atomic_maker("aniala", activation="celu", bias=True)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble()
@@ -582,7 +601,7 @@ def ANIdr(
         radial_terms=StandardRadial.like_2x(),
         extra={"use_cuda_extension": use_cuda_ops, "use_cuaev_interface": use_cuda_ops},
     )
-    asm.set_atomic_maker(atomics.like_dr)
+    asm.set_atomic_maker("anidr", activation="gelu", bias=False)
     asm.add_pairwise_potential(
         RepulsionXTB,
         cutoff=5.3,
@@ -591,7 +610,7 @@ def ANIdr(
         TwoBodyDispersionD3,
         cutoff=8.5,
         cutoff_fn="smooth4",
-        extra={"functional": "B973c"},
+        extra={"functional": "b973c"},
     )
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("b973c-def2mtzvp")
@@ -617,16 +636,15 @@ def FlexANI(
     neighborlist: NeighborlistArg,
     dispersion: bool,
     repulsion: bool,
-    atomic_maker: tp.Union[str, tp.Callable[[str, int], torch.nn.Module]],
-    activation: tp.Union[str, torch.nn.Module],
+    atomic_maker: AtomicMakerArg,
+    activation: ActivationArg,
     bias: bool,
     use_cuda_ops: bool,
-    periodic_table_index: bool,
 ) -> BuiltinModel:
     r"""
     Flexible builder to create ANI-style models
     """
-    asm = Assembler(ensemble_size=ensemble_size, periodic_table_index=periodic_table_index)
+    asm = Assembler(ensemble_size=ensemble_size, periodic_table_index=True)
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
     asm.set_featurizer(
@@ -647,12 +665,7 @@ def FlexANI(
         ),
         extra={"use_cuda_extension": use_cuda_ops, "use_cuaev_interface": use_cuda_ops},
     )
-    _atomic_maker = functools.partial(
-        atomics._parse_atomics(atomic_maker),
-        activation=atomics._parse_activation(activation),
-        bias=bias,
-    )
-    asm.set_atomic_maker(_atomic_maker)
+    asm.set_atomic_maker(atomic_maker, activation=activation, bias=bias)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies(lot)
     if repulsion:
@@ -685,11 +698,10 @@ def FlexANI1(
     neighborlist: NeighborlistArg = "full_pairwise",
     dispersion: bool = False,
     repulsion: bool = True,
-    atomic_maker: tp.Union[str, tp.Callable[[str, int], torch.nn.Module]] = "ani1x",
-    activation: tp.Union[str, torch.nn.Module] = "gelu",
+    atomic_maker: AtomicMakerArg = "ani1x",
+    activation: ActivationArg = "gelu",
     bias: bool = False,
     use_cuda_ops: bool = False,
-    periodic_table_index: bool = True,
 ) -> BuiltinModel:
     r"""
     Builder that uses defaults similar to ANI1x
@@ -714,7 +726,6 @@ def FlexANI1(
         activation=activation,
         bias=bias,
         use_cuda_ops=use_cuda_ops,
-        periodic_table_index=periodic_table_index,
     )
 
 
@@ -734,11 +745,10 @@ def FlexANI2(
     neighborlist: NeighborlistArg = "full_pairwise",
     dispersion: bool = False,
     repulsion: bool = True,
-    atomic_maker: tp.Union[str, tp.Callable[[str, int], torch.nn.Module]] = "ani2x",
-    activation: tp.Union[str, torch.nn.Module] = "gelu",
+    atomic_maker: AtomicMakerArg = "ani2x",
+    activation: ActivationArg = "gelu",
     bias: bool = False,
     use_cuda_ops: bool = False,
-    periodic_table_index: bool = True,
 ) -> BuiltinModel:
     r"""
     Builder that uses defaults similar to ANI2x
@@ -763,7 +773,6 @@ def FlexANI2(
         activation=activation,
         bias=bias,
         use_cuda_ops=use_cuda_ops,
-        periodic_table_index=periodic_table_index,
     )
 
 
