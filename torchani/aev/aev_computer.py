@@ -156,9 +156,9 @@ class AEVComputer(torch.nn.Module):
         if self.use_cuda_extension:
             if not cuaev_is_installed:
                 raise ValueError("cuAEV is not installed")
-            if not type(self.angular_terms) == StandardAngular:
+            if type(self.angular_terms) is not StandardAngular:
                 raise ValueError("non-standard angular terms not supported for cuAEV")
-            if not type(self.radial_terms) == StandardRadial:
+            if type(self.radial_terms) is not StandardRadial:
                 raise ValueError("non-standard radial terms not supported for cuAEV")
         if cuaev_is_installed:
             self._register_cuaev_computer()
