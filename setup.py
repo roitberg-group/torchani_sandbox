@@ -9,6 +9,12 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("setup")
 
 
+BUILD_EXT_ALL_SM = False
+FAST_BUILD_EXT = False
+ONLY_BUILD_SM80 = False
+CUAEV_DEBUG = False
+CUAEV_OPT = True
+
 if '--ext-all-sms' in sys.argv:
     BUILD_EXT_ALL_SM = True
     sys.argv.remove('--ext-all-sms')
@@ -28,7 +34,6 @@ if "--cuaev-debug" in sys.argv:
     sys.argv.remove('--cuaev-debug')
 
 # compile cuaev with optimizations: e.g. intrinsics functions and use_fast_math flag
-CUAEV_OPT = True
 if "--no-cuaev-opt" in sys.argv:
     CUAEV_OPT = False
     sys.argv.remove('--no-cuaev-opt')
