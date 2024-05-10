@@ -322,7 +322,7 @@ class AEVComputer(torch.nn.Module):
         return atom_index12, diff_vector, distances
 
     @jit_unused_if_no_cuaev()
-    def _compute_cuaev_with_half_nbrlist(self, species: Tensor, coordinates: Tensor, atom_index12: Tensor, diff_vector: Tensor, distances: Tensor) -> tp.Tuple[Tensor, Tensor, Tensor]:
+    def _compute_cuaev_with_half_nbrlist(self, species: Tensor, coordinates: Tensor, atom_index12: Tensor, diff_vector: Tensor, distances: Tensor) -> Tensor:
         species = species.to(torch.int32)
         atom_index12 = atom_index12.to(torch.int32)
         # The coordinates will not be used in forward calculation, but it's gradient (force) will still be calculated in cuaev kernel,
