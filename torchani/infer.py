@@ -24,8 +24,8 @@ else:
 
 class BmmEnsemble(torch.nn.Module):
     """
-    Fuse all same networks of an ensemble into BmmNetworks, for example 8 same
-    H networks will be fused into 1 BmmNetwork. BmmNetwork is composed of
+    Fuse all same networks of an ensemble into BmmAtomicNetworks, for example 8 same
+    H networks will be fused into 1 BmmAtomicNetwork. BmmAtomicNetwork is composed of
     BmmLinear layers, which will perform Batch Matmul (bmm) instead of normal
     matmul to reduce the number of kernel calls.
     """
@@ -37,21 +37,18 @@ class BmmEnsemble(torch.nn.Module):
         self.num_networks = ensemble.num_networks
         self.num_species = ensemble.num_species
 
+        self.bmm_atomic_networks = torch.nn.ModuleList(
+            [
+                BmmAtomicNetwork([animodel[symbol] for animodel in ensemble])
+                for symbol in ensemble[0]
+            ]
+        )
+
+        # bookkeeping for optimization purposes
         self.last_species: Tensor = torch.empty(1)
         self.idx_list: tp.List[Tensor] = [
             torch.empty(0) for i in range(self.num_networks)
         ]
-
-        # The BMM atomic networks are "combined" networks for each element, each of
-        # which holds all networks associated with the members of an ensemble.
-        # Due to this scheme, BmmEnsemble operates like an normal ANIModel
-        # And doesn't iterate over the ensembles.
-        self.bmm_atomic_networks = torch.nn.ModuleList(
-            [
-                BmmNetwork([animodel[symbol] for animodel in ensemble])
-                for symbol in ensemble[0]
-            ]
-        )
 
     def forward(  # type: ignore
         self,
@@ -61,7 +58,7 @@ class BmmEnsemble(torch.nn.Module):
     ) -> SpeciesEnergies:
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
-        assert species.shape[0] == 1, "InferModel only supports single-conformer inputs"
+        assert species.shape[0] == 1, "BmmEnsemble only supports single-conformer inputs"
 
         self._check_if_idxlist_needs_updates_jittable(species)
         idx_list = self.idx_list
@@ -69,7 +66,6 @@ class BmmEnsemble(torch.nn.Module):
         energy_list = torch.zeros(self.num_networks, dtype=aev.dtype, device=aev.device)
         for i, net in enumerate(self.bmm_atomic_networks):
             if idx_list[i].shape[0] > 0:
-                # torch.cuda.nvtx.mark(f'species = {i}')
                 torch.ops.mnp.nvtx_range_push(f"network_{i}")
                 input_ = aev.index_select(0, idx_list[i])
                 output = net(input_).flatten()
@@ -83,7 +79,7 @@ class BmmEnsemble(torch.nn.Module):
     def _atomic_energies(self, species_aev: tp.Tuple[Tensor, Tensor]) -> Tensor:
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
-        assert species.shape[0] == 1, "InferModel only supports single-conformer inputs"
+        assert species.shape[0] == 1, "BmmEnsemble only supports single-conformer inputs"
 
         self._check_if_idxlist_needs_updates_jittable(species)
         idx_list = self.idx_list
@@ -120,18 +116,18 @@ class BmmEnsemble(torch.nn.Module):
             self.last_species = species
 
 
-class BmmNetwork(torch.nn.Module):
+class BmmAtomicNetwork(torch.nn.Module):
     r"""
-    BmmNetworks are the inference-optimized analogues of atomic networks.
+    BmmAtomicNetworks are the inference-optimized analogues of atomic networks.
 
-    BmmNetwork instances are "combined" atomic networks for a single element,
+    BmmAtomicNetwork instances are "combined" atomic networks for a single element,
     each of which holds all networks associated with the members of an
     ensemble.
 
-    BmmNetworks are used by BmmEnsemble to operate like a normal ANIModel and
+    BmmAtomicNetworks are used by BmmEnsemble to operate like a normal ANIModel and
     avoid iterating over the ensemble members.
 
-    BmmNetworks consist on a sequence of BmmLinear layers with interleaved
+    BmmAtomicNetworks consist on a sequence of BmmLinear layers with interleaved
     activation functions.
     """
     def __init__(self, networks: tp.Sequence[torch.nn.Sequential]):
@@ -331,7 +327,18 @@ class InferModelBase(torch.nn.Module):
         species, aev = species_aev
         aev = aev.flatten(0, 1)
         self._check_if_idxlist_needs_updates_jittable(species)
-        output = torch.ops.mnp.run(aev, self.num_networks, self.num_layers_list, self.start_layers_list, self.idx_list, self.weight_list_, self.bias_list_, self.stream_list, self.is_bmm, self.celu_alpha)
+        output = torch.ops.mnp.run(
+            aev,
+            self.num_networks,
+            self.num_layers_list,
+            self.start_layers_list,
+            self.idx_list,
+            self.weight_list_,
+            self.bias_list_,
+            self.stream_list,
+            self.is_bmm,
+            self.celu_alpha,
+        )
         return output
 
     @torch.jit.unused
@@ -339,13 +346,27 @@ class InferModelBase(torch.nn.Module):
         species, aev = species_aev
         aev = aev.flatten(0, 1)
         self._check_if_idxlist_needs_updates(species)
-
-        # torch.cuda.nvtx.range_push('Network')
         if not self.use_mnp:
-            output = MultiNetFunction.apply(aev, self.num_networks, self.idx_list, self.net_list, self.stream_list)
+            output = MultiNetFunction.apply(
+                aev,
+                self.num_networks,
+                self.idx_list,
+                self.net_list,
+                self.stream_list,
+            )
         else:
-            output = torch.ops.mnp.run(aev, self.num_networks, self.num_layers_list, self.start_layers_list, self.idx_list, self.weight_list_, self.bias_list_, self.stream_list, self.is_bmm, self.celu_alpha)
-        # torch.cuda.nvtx.range_pop()
+            output = torch.ops.mnp.run(
+                aev,
+                self.num_networks,
+                self.num_layers_list,
+                self.start_layers_list,
+                self.idx_list,
+                self.weight_list_,
+                self.bias_list_,
+                self.stream_list,
+                self.is_bmm,
+                self.celu_alpha,
+            )
         return output
 
     @torch.jit.unused
@@ -456,8 +477,8 @@ class ANIInferModel(InferModelBase):
 
 class BmmEnsembleMNP(InferModelBase):
     """
-    Fuse all same networks of an ensemble into BmmNetworks, for example 8 same
-    H networks will be fused into 1 BmmNetwork. BmmNetwork is composed of
+    Fuse all same networks of an ensemble into BmmAtomicNetworks, for example 8 same
+    H networks will be fused into 1 BmmAtomicNetwork. BmmAtomicNetwork is composed of
     BmmLinear layers, which will perform Batch Matmul (bmm) instead of normal
     matmul to reduce the number of kernel calls.
     """
@@ -471,7 +492,7 @@ class BmmEnsembleMNP(InferModelBase):
         # networks
         bmm_networks = []
         for net_key, network in models[0].items():
-            bmm_networks.append(BmmNetwork([model[net_key] for model in models]))
+            bmm_networks.append(BmmAtomicNetwork([model[net_key] for model in models]))
         self.net_list = torch.nn.ModuleList(bmm_networks)
 
         # mnp
