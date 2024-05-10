@@ -85,7 +85,7 @@ class BmmEnsemble(torch.nn.Module):
         idx_list = self.idx_list
         aev = aev.flatten(0, 1)
         energy_list = torch.zeros(aev.shape[0], dtype=aev.dtype, device=aev.device)
-        for i, net in enumerate(self.net_list):
+        for i, net in enumerate(self.bmm_atomic_networks):
             if idx_list[i].shape[0] > 0:
                 torch.ops.mnp.nvtx_range_push(f"network_{i}")
                 input_ = aev.index_select(0, idx_list[i])
