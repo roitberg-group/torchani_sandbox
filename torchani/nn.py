@@ -6,7 +6,6 @@ import torch
 from torch import Tensor
 
 from torchani.utils import PERIODIC_TABLE
-from torchani import infer
 from torchani.tuples import (
     SpeciesCoordinates,
     SpeciesEnergies
@@ -95,6 +94,8 @@ class ANIModel(torch.nn.ModuleDict):
         return output.unsqueeze(0)
 
     def to_infer_model(self, use_mnp: bool = False):
+        # Infer is imported here to prevent circular imports
+        from torchani import infer
         if use_mnp:
             warnings.warn(
                 'use_mnp will be removed in the future. '
@@ -140,6 +141,8 @@ class Ensemble(torch.nn.ModuleList):
         return members_atomic_energies
 
     def to_infer_model(self, use_mnp: bool = False):
+        # Infer is imported here to prevent circular imports
+        from torchani import infer
         if use_mnp:
             warnings.warn(
                 'use_mnp will be removed in the future. '

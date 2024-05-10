@@ -9,6 +9,7 @@ from torch import Tensor
 
 from torchani.utils import check_openmp_threads
 from torchani.tuples import SpeciesEnergies
+from torchani.nn import Ensemble
 
 
 mnp_is_installed = 'torchani.mnp' in importlib.metadata.metadata(
@@ -23,42 +24,50 @@ else:
 
 class BmmEnsemble(torch.nn.Module):
     """
-    Fuse all same networks of an ensemble into BmmNetworks, for example 8 same H networks will be fused into 1 BmmNetwork.
-    BmmNetwork is composed of BmmLinear layers, which will perform Batch Matmul (bmm) instead of normal matmul
-    to reduce the number of kernel calls.
+    Fuse all same networks of an ensemble into BmmNetworks, for example 8 same
+    H networks will be fused into 1 BmmNetwork. BmmNetwork is composed of
+    BmmLinear layers, which will perform Batch Matmul (bmm) instead of normal
+    matmul to reduce the number of kernel calls.
     """
     num_networks: int
     num_species: int
 
-    def __init__(self, models):
+    def __init__(self, ensemble: Ensemble):
         super().__init__()
-        self.num_networks = len(models)
-        self.num_species = len(models[0])
-        self.use_num_models = self.num_networks
-        self.last_species = torch.empty(1)
-        self.idx_list = [torch.empty(0) for i in range(self.num_networks)]
-        # assert all models have the same networks as model[0]
-        # and each network should have same architecture
+        self.num_networks = ensemble.num_networks
+        self.num_species = ensemble.num_species
 
-        # networks
-        bmm_networks = []
-        for net_key, network in models[0].items():
-            bmm_networks.append(BmmNetwork([model[net_key] for model in models]))
-        self.net_list = torch.nn.ModuleList(bmm_networks)
+        self.last_species: Tensor = torch.empty(1)
+        self.idx_list: tp.List[Tensor] = [
+            torch.empty(0) for i in range(self.num_networks)
+        ]
 
-    def forward(self, species_aev: tp.Tuple[Tensor, Tensor],  # type: ignore
-                cell: tp.Optional[Tensor] = None,
-                pbc: tp.Optional[Tensor] = None) -> SpeciesEnergies:
+        # The BMM atomic networks are "combined" networks for each element, each of
+        # which holds all networks associated with the members of an ensemble.
+        # Due to this scheme, BmmEnsemble operates like an normal ANIModel
+        # And doesn't iterate over the ensembles.
+        self.bmm_atomic_networks = torch.nn.ModuleList(
+            [
+                BmmNetwork([animodel[symbol] for animodel in ensemble])
+                for symbol in ensemble[0]
+            ]
+        )
+
+    def forward(  # type: ignore
+        self,
+        species_aev: tp.Tuple[Tensor, Tensor],
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None
+    ) -> SpeciesEnergies:
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
-        num_mol = species.shape[0]
-        assert num_mol == 1, "InferModel currently only support inference for single molecule"
+        assert species.shape[0] == 1, "InferModel only supports single-conformer inputs"
 
         self._check_if_idxlist_needs_updates_jittable(species)
         idx_list = self.idx_list
         aev = aev.flatten(0, 1)
         energy_list = torch.zeros(self.num_networks, dtype=aev.dtype, device=aev.device)
-        for i, net in enumerate(self.net_list):
+        for i, net in enumerate(self.bmm_atomic_networks):
             if idx_list[i].shape[0] > 0:
                 # torch.cuda.nvtx.mark(f'species = {i}')
                 torch.ops.mnp.nvtx_range_push(f"network_{i}")
@@ -74,8 +83,7 @@ class BmmEnsemble(torch.nn.Module):
     def _atomic_energies(self, species_aev: tp.Tuple[Tensor, Tensor]) -> Tensor:
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
-        num_mol = species.shape[0]
-        assert num_mol == 1, "InferModel currently only support inference for single molecule"
+        assert species.shape[0] == 1, "InferModel only supports single-conformer inputs"
 
         self._check_if_idxlist_needs_updates_jittable(species)
         idx_list = self.idx_list
@@ -83,7 +91,6 @@ class BmmEnsemble(torch.nn.Module):
         energy_list = torch.zeros(aev.shape[0], dtype=aev.dtype, device=aev.device)
         for i, net in enumerate(self.net_list):
             if idx_list[i].shape[0] > 0:
-                # torch.cuda.nvtx.mark(f'species = {i}')
                 torch.ops.mnp.nvtx_range_push(f"network_{i}")
                 input_ = aev.index_select(0, idx_list[i])
                 output = net(input_).flatten()
@@ -94,7 +101,7 @@ class BmmEnsemble(torch.nn.Module):
         return atomic_energies
 
     @torch.jit.export
-    def set_species(self, species):
+    def set_species(self, species: Tensor) -> None:
         species_ = species.flatten()
         with torch.no_grad():
             self.idx_list = [torch.empty(0) for i in range(self.num_networks)]
@@ -105,59 +112,55 @@ class BmmEnsemble(torch.nn.Module):
                     self.idx_list[i] = midx
 
     @torch.jit.export
-    def _check_if_idxlist_needs_updates_jittable(self, species):
+    def _check_if_idxlist_needs_updates_jittable(self, species: Tensor) -> None:
         # initialize each species index if it has not been initialized
         # or the species has changed
         if not torch.ops.mnp.is_same_tensor(self.last_species, species):
             self.set_species(species)
             self.last_species = species
 
-    @torch.jit.export
-    def select_models(self, use_num_models: tp.Optional[int] = None):
-        if use_num_models is None:
-            use_num_models = self.num_networks
-            return
-        assert use_num_models <= self.num_networks, f"use_num_models {use_num_models} cannot be larger than size {self.num_networks}"
-        for net in self.net_list:
-            net.select_models(use_num_models)
-        self.use_num_models = use_num_models
-
 
 class BmmNetwork(torch.nn.Module):
+    r"""
+    BmmNetworks are the inference-optimized analogues of atomic networks.
+
+    BmmNetwork instances are "combined" atomic networks for a single element,
+    each of which holds all networks associated with the members of an
+    ensemble.
+
+    BmmNetworks are used by BmmEnsemble to operate like a normal ANIModel and
+    avoid iterating over the ensemble members.
+
+    BmmNetworks consist on a sequence of BmmLinear layers with interleaved
+    activation functions.
     """
-    Multiple BmmLinear layers with activation function
-    """
-    def __init__(self, networks):
+    def __init__(self, networks: tp.Sequence[torch.nn.Sequential]):
         super().__init__()
         layers = []
         self.num_models = len(networks)
-        self.use_num_models = self.num_models
         for layer_idx, layer in enumerate(networks[0]):
-            if isinstance(layer, torch.nn.Linear):
+            if type(layers) is torch.nn.Linear:
                 layers.append(BmmLinear([net[layer_idx] for net in networks]))
-            else:
-                assert isinstance(layer, torch.nn.CELU) or isinstance(layer, torch.nn.GELU), "Currently only support CELU/GELU as activation function"
+            elif type(layer) in (torch.nn.CELU, torch.nn.GELU):
                 layers.append(layer)
+            else:
+                raise ValueError("Only GELU/CELU act. fn and Linear layers supported")
+
+        # Layers is now a sequences of BmmLinear interleaved with activation functions
         self.layers = torch.nn.ModuleList(layers)
         self.is_bmmlinear_layer = [isinstance(layer, BmmLinear) for layer in self.layers]
 
-    def forward(self, input_):
-        input_ = input_.expand(self.use_num_models, -1, -1)
+    def forward(self, input_: Tensor) -> Tensor:
+        input_ = input_.expand(self.num_models, -1, -1)
         for layer in self.layers:
             input_ = layer(input_)
         return input_.mean(0)
 
-    @torch.jit.export
-    def select_models(self, use_num_models: int):
-        for i, layer in enumerate(self.layers):
-            if self.is_bmmlinear_layer[i] and hasattr(layer, "select_models"):
-                layer.select_models(use_num_models)
-        self.use_num_models = use_num_models
-
 
 class BmmLinear(torch.nn.Module):
     """
-    Batch Linear layer fuses multiple Linear layers that have same architecture and same input.
+    Batch Linear layer fuses multiple Linear layers that have same architecture
+    and same input.
     input : (b x n x m)
     weight: (b x m x p)
     bias  : (b x 1 x p)
@@ -166,7 +169,6 @@ class BmmLinear(torch.nn.Module):
     def __init__(self, linear_layers):
         super().__init__()
         self.num_models = len(linear_layers)
-        self.use_num_models = self.num_models
         # assert each layer has same architecture
         weights = [layer.weight.unsqueeze(0).clone().detach() for layer in linear_layers]
         self.weights = torch.nn.Parameter(torch.cat(weights).transpose(1, 2))
@@ -180,9 +182,9 @@ class BmmLinear(torch.nn.Module):
 
     def forward(self, input_):
         # TODO, slicing weight and bias at every step is slow and useless
-        weights = self.weights[:self.use_num_models, :, :]
+        weights = self.weights[:self.num_models, :, :]
         if self.beta > 0:
-            bias = self.bias[:self.use_num_models, :, :]
+            bias = self.bias[:self.num_models, :, :]
         else:
             bias = self.bias
         return torch.baddbmm(bias, input_, weights, beta=self.beta)
@@ -190,23 +192,22 @@ class BmmLinear(torch.nn.Module):
     def extra_repr(self):
         return f"batch={self.weights.shape[0]}, in_features={self.weights.shape[1]}, out_features={self.weights.shape[2]}, bias={self.bias is not None}"
 
-    @torch.jit.export
-    def select_models(self, use_num_models: int):
-        self.use_num_models = use_num_models
 
-
-# ###########################################################################################
-# The code below implements the MNP (Multi Net Parallel) functionality, aimed at paralleling multiple networks across distinct CUDA streams.
-# However, given the complexity of this algorithm and its lack of generalizability, it should be deprecated in the future.
-# ###########################################################################################
-
-
+# ######################################################################################
+# The code below implements the MNP (Multi Net Parallel) functionality, aimed
+# at paralleling multiple networks across distinct CUDA streams. However, given
+# the complexity of this algorithm and its lack of generalizability, it is
+# deprecated and will be removed in the future
+# ######################################################################################
 class MultiNetFunction(torch.autograd.Function):
     """
-    Run Multiple Networks (HCNO..) on different streams, this is python implementation of MNP (Multi Net Parallel) autograd function, which
-    actually cannot parallel between different species networks because of loop performance of dynamic interpretation of python language.
+    Run Multiple Networks (HCNO..) on different streams, this is python
+    implementation of MNP (Multi Net Parallel) autograd function, which
+    actually cannot parallel between different species networks because of loop
+    performance of dynamic interpretation of python language.
 
-    There is no multiprocessing used here, whereas cpp version is implemented with OpenMP.
+    There is no multiprocessing used here, whereas cpp version is implemented
+    with OpenMP.
     """
     @staticmethod
     def forward(ctx, aev, num_networks, idx_list, net_list, stream_list):
@@ -455,9 +456,10 @@ class ANIInferModel(InferModelBase):
 
 class BmmEnsembleMNP(InferModelBase):
     """
-    Fuse all same networks of an ensemble into BmmNetworks, for example 8 same H networks will be fused into 1 BmmNetwork.
-    BmmNetwork is composed of BmmLinear layers, which will perform Batch Matmul (bmm) instead of normal matmul
-    to reduce the number of kernel calls.
+    Fuse all same networks of an ensemble into BmmNetworks, for example 8 same
+    H networks will be fused into 1 BmmNetwork. BmmNetwork is composed of
+    BmmLinear layers, which will perform Batch Matmul (bmm) instead of normal
+    matmul to reduce the number of kernel calls.
     """
     def __init__(self, models, use_mnp=True):
         num_networks = len(models[0])
