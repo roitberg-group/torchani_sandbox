@@ -116,7 +116,7 @@ class BmmAtomicNetwork(torch.nn.Module):
     """
     def __init__(self, networks: tp.Sequence[torch.nn.Sequential]):
         super().__init__()
-        self.num_models = len(networks)
+        self.num_batched_networks = len(networks)
 
         layers = []
         for layer_idx, layer in enumerate(networks[0]):
@@ -127,11 +127,11 @@ class BmmAtomicNetwork(torch.nn.Module):
             else:
                 raise ValueError("Only GELU/CELU act. fn and Linear layers supported")
 
-        # Layers is now a sequences of BmmLinear interleaved with activation functions
+        # "layers" is now a sequence of BmmLinear interleaved with activation functions
         self.layers = torch.nn.ModuleList(layers)
 
     def forward(self, input_: Tensor) -> Tensor:
-        input_ = input_.expand(self.num_models, -1, -1)
+        input_ = input_.expand(self.num_batched_networks, -1, -1)
         for layer in self.layers:
             input_ = layer(input_)
         return input_.mean(0)
@@ -140,17 +140,21 @@ class BmmAtomicNetwork(torch.nn.Module):
 class BmmLinear(torch.nn.Module):
     """
     Batch Linear layer fuses multiple Linear layers that have same architecture
-    and same input.
-    input : (b x n x m)
+    If "b" is the number of fused layers (which usually corresponds to members in
+    an ensamble), then we have:
+
+    input:  (b x n x m)
     weight: (b x m x p)
-    bias  : (b x 1 x p)
-    out   : (b x n x p)
+    bias:   (b x 1 x p)
+    output: (b x n x p)
     """
     def __init__(self, linears: tp.Sequence[torch.nn.Linear]):
         super().__init__()
-        # Each Linear must have the same shape
+        # Concatenate weights
         weights = [layer.weight.unsqueeze(0).clone().detach() for layer in linears]
         self.weights = torch.nn.Parameter(torch.cat(weights).transpose(1, 2))
+
+        # Concatenate biases
         if linears[0].bias is not None:
             bias = [layer.bias.view(1, 1, -1).clone().detach() for layer in linears]
             self.bias = torch.nn.Parameter(torch.cat(bias))
@@ -159,11 +163,16 @@ class BmmLinear(torch.nn.Module):
             self.bias = torch.nn.Parameter(torch.empty(1).view(1, 1, 1))
             self.beta = 0
 
-    def forward(self, input_):
+    def forward(self, input_: Tensor) -> Tensor:
         return torch.baddbmm(self.bias, input_, self.weights, beta=self.beta)
 
     def extra_repr(self):
-        return f"batch={self.weights.shape[0]}, in_features={self.weights.shape[1]}, out_features={self.weights.shape[2]}, bias={self.bias is not None}"
+        return (
+            f"batch={self.weights.shape[0]},"
+            f" in_features={self.weights.shape[1]},"
+            f" out_features={self.weights.shape[2]},"
+            f" bias={self.bias is not None}"
+        )
 
 
 # ######################################################################################
@@ -284,16 +293,10 @@ class InferModelBase(torch.nn.Module):
         assert species.shape == aev.shape[:-1]
         num_mol = species.shape[0]
         assert num_mol == 1, "InferModel currently only support inference for single molecule"
-        mol_energies = self._single_mol_energies((species, aev))
-        return SpeciesEnergies(species, mol_energies)
-
-    @torch.jit.export
-    def _single_mol_energies(self, species_aev: tp.Tuple[Tensor, Tensor]) -> Tensor:
-        species, aev = species_aev
         aev = aev.flatten(0, 1)
         self._check_species_and_maybe_update_idx_list(species)
         if self.use_mnp:
-            output = torch.ops.mnp.run(
+            energies = torch.ops.mnp.run(
                 aev,
                 self.num_networks,
                 self.num_layers_list,
@@ -309,14 +312,14 @@ class InferModelBase(torch.nn.Module):
             if torch.jit.is_scripting():
                 raise RuntimeError("JIT Infer Model only supports use_mnp=True")
             else:
-                output = MultiNetFunction.apply(
+                energies = MultiNetFunction.apply(
                     aev,
                     self.num_networks,
                     self.idx_list,
                     self.net_list,
                     self.stream_list,
                 )
-        return output
+        return SpeciesEnergies(species, energies)
 
     @torch.jit.export
     def _check_species_and_maybe_update_idx_list(self, species: Tensor) -> None:
