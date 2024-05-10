@@ -369,7 +369,7 @@ class InferModelBase(torch.nn.Module):
             self.last_species = species
 
     @torch.jit.export
-    def set_species(self, species: Tensor) -> Tensor:
+    def set_species(self, species: Tensor) -> None:
         species_ = species.flatten()
         with torch.no_grad():
             self.idx_list = [torch.empty(0) for i in range(self.num_networks)]
