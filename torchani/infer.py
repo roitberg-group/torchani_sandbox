@@ -364,7 +364,7 @@ class InferModelBase(torch.nn.Module):
     def _check_if_idxlist_needs_updates(self, species: Tensor) -> Tensor:
         # initialize each species index if it has not been initialized
         # or the species has changed
-        species_is_same: bool
+        species_is_same: bool = False
         if torch.jit.is_scripting():
             species_is_same = torch.ops.mnp.is_same_tensor(self.last_species, species)
         else:
