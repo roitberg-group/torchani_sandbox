@@ -60,7 +60,7 @@ class BmmEnsemble(torch.nn.Module):
         assert species.shape == aev.shape[:-1]
         assert species.shape[0] == 1, "BmmEnsemble only supports single-conformer inputs"
 
-        self._check_if_idxlist_needs_updates_jittable(species)
+        self._check_if_idxlist_needs_updates(species)
         idx_list = self.idx_list
         aev = aev.flatten(0, 1)
         energy_list = torch.zeros(self.num_networks, dtype=aev.dtype, device=aev.device)
@@ -81,7 +81,7 @@ class BmmEnsemble(torch.nn.Module):
         assert species.shape == aev.shape[:-1]
         assert species.shape[0] == 1, "BmmEnsemble only supports single-conformer inputs"
 
-        self._check_if_idxlist_needs_updates_jittable(species)
+        self._check_if_idxlist_needs_updates(species)
         idx_list = self.idx_list
         aev = aev.flatten(0, 1)
         energy_list = torch.zeros(aev.shape[0], dtype=aev.dtype, device=aev.device)
@@ -108,10 +108,16 @@ class BmmEnsemble(torch.nn.Module):
                     self.idx_list[i] = midx
 
     @torch.jit.export
-    def _check_if_idxlist_needs_updates_jittable(self, species: Tensor) -> None:
+    def _check_if_idxlist_needs_updates(self, species: Tensor) -> None:
         # initialize each species index if it has not been initialized
         # or the species has changed
-        if not torch.ops.mnp.is_same_tensor(self.last_species, species):
+        species_is_same: bool = False
+        if torch.jit.is_scripting():
+            species_is_same = torch.ops.mnp.is_same_tensor(self.last_species, species)
+        else:
+            species_is_same = self.last_species.data_ptr() == species.data_ptr()
+
+        if not species_is_same:
             self.set_species(species)
             self.last_species = species
 
@@ -285,7 +291,8 @@ class MultiNetFunction(torch.autograd.Function):
 class InferModelBase(torch.nn.Module):
     """
     Note when jit is True:
-    It is user's responsibility to manually call set_species() function before change to a different molecule.
+    It is user's responsibility to manually call set_species() function before
+    change to a different molecule.
 
     TODO: set_species() could be ommited once jit support tensor.data_ptr()
     """
@@ -323,38 +330,11 @@ class InferModelBase(torch.nn.Module):
         return SpeciesEnergies(species, mol_energies)
 
     @torch.jit.export
-    def _single_mol_energies_jittable(self, species_aev: tp.Tuple[Tensor, Tensor]) -> Tensor:
-        species, aev = species_aev
-        aev = aev.flatten(0, 1)
-        self._check_if_idxlist_needs_updates_jittable(species)
-        output = torch.ops.mnp.run(
-            aev,
-            self.num_networks,
-            self.num_layers_list,
-            self.start_layers_list,
-            self.idx_list,
-            self.weight_list_,
-            self.bias_list_,
-            self.stream_list,
-            self.is_bmm,
-            self.celu_alpha,
-        )
-        return output
-
-    @torch.jit.unused
     def _single_mol_energies(self, species_aev: tp.Tuple[Tensor, Tensor]) -> Tensor:
         species, aev = species_aev
         aev = aev.flatten(0, 1)
         self._check_if_idxlist_needs_updates(species)
-        if not self.use_mnp:
-            output = MultiNetFunction.apply(
-                aev,
-                self.num_networks,
-                self.idx_list,
-                self.net_list,
-                self.stream_list,
-            )
-        else:
+        if self.use_mnp:
             output = torch.ops.mnp.run(
                 aev,
                 self.num_networks,
@@ -367,26 +347,35 @@ class InferModelBase(torch.nn.Module):
                 self.is_bmm,
                 self.celu_alpha,
             )
+        else:
+            if torch.jit.is_scripting():
+                raise RuntimeError("JIT Infer Model only supports use_mnp=True")
+            else:
+                output = MultiNetFunction.apply(
+                    aev,
+                    self.num_networks,
+                    self.idx_list,
+                    self.net_list,
+                    self.stream_list,
+                )
         return output
 
-    @torch.jit.unused
-    def _check_if_idxlist_needs_updates(self, species):
+    @torch.jit.export
+    def _check_if_idxlist_needs_updates(self, species: Tensor) -> Tensor:
         # initialize each species index if it has not been initialized
         # or the species has changed
-        if self.last_species.data_ptr() != species.data_ptr():
+        species_is_same: bool
+        if torch.jit.is_scripting():
+            species_is_same = torch.ops.mnp.is_same_tensor(self.last_species, species)
+        else:
+            species_is_same = self.last_species.data_ptr() == species.data_ptr()
+
+        if not species_is_same:
             self.set_species(species)
             self.last_species = species
 
     @torch.jit.export
-    def _check_if_idxlist_needs_updates_jittable(self, species):
-        # initialize each species index if it has not been initialized
-        # or the species has changed
-        if not torch.ops.mnp.is_same_tensor(self.last_species, species):
-            self.set_species(species)
-            self.last_species = species
-
-    @torch.jit.export
-    def set_species(self, species):
+    def set_species(self, species: Tensor) -> Tensor:
         species_ = species.flatten()
         with torch.no_grad():
             self.idx_list = [torch.empty(0) for i in range(self.num_networks)]
@@ -437,7 +426,7 @@ class InferModelBase(torch.nn.Module):
 
     @torch.jit.unused
     def copy_weight_bias(self):
-        raise NotImplementedError("NotImplemented for InferModelBase")
+        raise NotImplementedError("Should be implemented by subclasses")
 
 
 class ANIInferModel(InferModelBase):
