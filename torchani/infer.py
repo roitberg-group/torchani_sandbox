@@ -148,8 +148,7 @@ class BmmLinear(torch.nn.Module):
     """
     def __init__(self, linears: tp.Sequence[torch.nn.Linear]):
         super().__init__()
-        self.num_models = len(linears)
-        # assert each layer has same architecture
+        # Each Linear must have the same shape
         weights = [layer.weight.unsqueeze(0).clone().detach() for layer in linears]
         self.weights = torch.nn.Parameter(torch.cat(weights).transpose(1, 2))
         if linears[0].bias is not None:
@@ -161,13 +160,7 @@ class BmmLinear(torch.nn.Module):
             self.beta = 0
 
     def forward(self, input_):
-        # TODO, slicing weight and bias at every step is slow and useless
-        weights = self.weights[:self.num_models, :, :]
-        if self.beta > 0:
-            bias = self.bias[:self.num_models, :, :]
-        else:
-            bias = self.bias
-        return torch.baddbmm(bias, input_, weights, beta=self.beta)
+        return torch.baddbmm(self.bias, input_, self.weights, beta=self.beta)
 
     def extra_repr(self):
         return f"batch={self.weights.shape[0]}, in_features={self.weights.shape[1]}, out_features={self.weights.shape[2]}, bias={self.bias is not None}"
