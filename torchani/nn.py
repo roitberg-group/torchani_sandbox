@@ -102,7 +102,7 @@ class ANIModel(torch.nn.ModuleDict):
                 'non-mnp ANIModel is not optimized for performance',
                 category=DeprecationWarning,
             )
-        return infer.InferModel(list(self.items()), use_mnp=use_mnp)  # type: ignore
+        return infer.InferModel(self, use_mnp=use_mnp)  # type: ignore
 
 
 class Ensemble(torch.nn.ModuleList):
