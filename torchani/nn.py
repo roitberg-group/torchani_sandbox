@@ -59,12 +59,8 @@ class ANIModel(torch.nn.ModuleDict):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
     ) -> SpeciesEnergies:
-        species, aev = species_aev
-        assert species.shape == aev.shape[:-1]
-
-        atomic_energies = self._atomic_energies((species, aev)).squeeze(0)
-        # shape of atomic energies is (C, A)
-        return SpeciesEnergies(species, torch.sum(atomic_energies, dim=1))
+        atomic_energies = self._atomic_energies(species_aev).squeeze(0)
+        return SpeciesEnergies(species_aev[0], torch.sum(atomic_energies, dim=1))
 
     def member(self, idx: int) -> 'ANIModel':
         if idx == 0:
@@ -77,14 +73,13 @@ class ANIModel(torch.nn.ModuleDict):
         species_aev: tp.Tuple[Tensor, Tensor],
     ) -> Tensor:
         # Obtain the atomic energies associated with a given tensor of AEV's
-        #  Note that the output is of shape (1, C, A)
+        # Note that the output is of shape (1, C, A)
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
+
         species_ = species.flatten()
         aev = aev.flatten(0, 1)
-
         output = aev.new_zeros(species_.shape)
-
         for i, m in enumerate(self.values()):
             midx = (species_ == i).nonzero().view(-1)
             if midx.shape[0] > 0:

@@ -56,59 +56,30 @@ class BmmEnsemble(torch.nn.Module):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None
     ) -> SpeciesEnergies:
-        species, aev = species_aev
-        assert species.shape == aev.shape[:-1]
-        assert species.shape[0] == 1, "BmmEnsemble only supports single-conformer inputs"
-
-        self._check_if_idxlist_needs_updates(species)
-        idx_list = self.idx_list
-        aev = aev.flatten(0, 1)
-        energy_list = torch.zeros(self.num_networks, dtype=aev.dtype, device=aev.device)
-        for i, net in enumerate(self.bmm_atomic_networks):
-            if idx_list[i].shape[0] > 0:
-                torch.ops.mnp.nvtx_range_push(f"network_{i}")
-                input_ = aev.index_select(0, idx_list[i])
-                output = net(input_).flatten()
-                energy_list[i] = torch.sum(output)
-                torch.ops.mnp.nvtx_range_pop()
-
-        mol_energies = torch.sum(energy_list, 0, True)
-        return SpeciesEnergies(species, mol_energies)
+        atomic_energies = self._atomic_energies(species_aev).squeeze(0)
+        return SpeciesEnergies(species_aev[0], torch.sum(atomic_energies, 0, True))
 
     @torch.jit.export
     def _atomic_energies(self, species_aev: tp.Tuple[Tensor, Tensor]) -> Tensor:
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
-        assert species.shape[0] == 1, "BmmEnsemble only supports single-conformer inputs"
+        assert aev.shape[0] == 1, "BmmEnsemble only supports single-conformer inputs"
 
-        self._check_if_idxlist_needs_updates(species)
+        self._check_species_and_maybe_update_idx_list(species)
         idx_list = self.idx_list
         aev = aev.flatten(0, 1)
-        energy_list = torch.zeros(aev.shape[0], dtype=aev.dtype, device=aev.device)
+        atomic_energies = torch.zeros(aev.shape[0], dtype=aev.dtype, device=aev.device)
         for i, net in enumerate(self.bmm_atomic_networks):
             if idx_list[i].shape[0] > 0:
                 torch.ops.mnp.nvtx_range_push(f"network_{i}")
                 input_ = aev.index_select(0, idx_list[i])
-                output = net(input_).flatten()
-                energy_list[idx_list[i]] = output
+                atomic_energies[idx_list[i]] = net(input_).flatten()
                 torch.ops.mnp.nvtx_range_pop()
-
-        atomic_energies = energy_list.unsqueeze(0)
+        atomic_energies = atomic_energies.unsqueeze(0)
         return atomic_energies
 
     @torch.jit.export
-    def set_species(self, species: Tensor) -> None:
-        species_ = species.flatten()
-        with torch.no_grad():
-            self.idx_list = [torch.empty(0) for i in range(self.num_networks)]
-            for i in range(self.num_networks):
-                mask = (species_ == i)
-                midx = mask.nonzero().flatten()
-                if midx.shape[0] > 0:
-                    self.idx_list[i] = midx
-
-    @torch.jit.export
-    def _check_if_idxlist_needs_updates(self, species: Tensor) -> None:
+    def _check_species_and_maybe_update_idx_list(self, species: Tensor) -> None:
         # initialize each species index if it has not been initialized
         # or the species has changed
         species_is_same: bool = False
@@ -118,7 +89,14 @@ class BmmEnsemble(torch.nn.Module):
             species_is_same = self.last_species.data_ptr() == species.data_ptr()
 
         if not species_is_same:
-            self.set_species(species)
+            species_ = species.flatten()
+            with torch.no_grad():
+                self.idx_list = [torch.empty(0) for i in range(self.num_networks)]
+                for i in range(self.num_networks):
+                    mask = (species_ == i)
+                    midx = mask.nonzero().flatten()
+                    if midx.shape[0] > 0:
+                        self.idx_list[i] = midx
             self.last_species = species
 
 
@@ -138,8 +116,9 @@ class BmmAtomicNetwork(torch.nn.Module):
     """
     def __init__(self, networks: tp.Sequence[torch.nn.Sequential]):
         super().__init__()
-        layers = []
         self.num_models = len(networks)
+
+        layers = []
         for layer_idx, layer in enumerate(networks[0]):
             if type(layer) is torch.nn.Linear:
                 layers.append(BmmLinear([net[layer_idx] for net in networks]))
@@ -150,7 +129,6 @@ class BmmAtomicNetwork(torch.nn.Module):
 
         # Layers is now a sequences of BmmLinear interleaved with activation functions
         self.layers = torch.nn.ModuleList(layers)
-        self.is_bmmlinear_layer = [isinstance(layer, BmmLinear) for layer in self.layers]
 
     def forward(self, input_: Tensor) -> Tensor:
         input_ = input_.expand(self.num_models, -1, -1)
@@ -168,14 +146,14 @@ class BmmLinear(torch.nn.Module):
     bias  : (b x 1 x p)
     out   : (b x n x p)
     """
-    def __init__(self, linear_layers):
+    def __init__(self, linears: tp.Sequence[torch.nn.Linear]):
         super().__init__()
-        self.num_models = len(linear_layers)
+        self.num_models = len(linears)
         # assert each layer has same architecture
-        weights = [layer.weight.unsqueeze(0).clone().detach() for layer in linear_layers]
+        weights = [layer.weight.unsqueeze(0).clone().detach() for layer in linears]
         self.weights = torch.nn.Parameter(torch.cat(weights).transpose(1, 2))
-        if linear_layers[0].bias is not None:
-            bias = [layer.bias.view(1, 1, -1).clone().detach() for layer in linear_layers]
+        if linears[0].bias is not None:
+            bias = [layer.bias.view(1, 1, -1).clone().detach() for layer in linears]
             self.bias = torch.nn.Parameter(torch.cat(bias))
             self.beta = 1
         else:
@@ -289,13 +267,6 @@ class MultiNetFunction(torch.autograd.Function):
 
 
 class InferModelBase(torch.nn.Module):
-    """
-    Note when jit is True:
-    It is user's responsibility to manually call set_species() function before
-    change to a different molecule.
-
-    TODO: set_species() could be ommited once jit support tensor.data_ptr()
-    """
     def __init__(self, num_networks):
         super().__init__()
 
@@ -327,7 +298,7 @@ class InferModelBase(torch.nn.Module):
     def _single_mol_energies(self, species_aev: tp.Tuple[Tensor, Tensor]) -> Tensor:
         species, aev = species_aev
         aev = aev.flatten(0, 1)
-        self._check_if_idxlist_needs_updates(species)
+        self._check_species_and_maybe_update_idx_list(species)
         if self.use_mnp:
             output = torch.ops.mnp.run(
                 aev,
@@ -355,7 +326,7 @@ class InferModelBase(torch.nn.Module):
         return output
 
     @torch.jit.export
-    def _check_if_idxlist_needs_updates(self, species: Tensor) -> Tensor:
+    def _check_species_and_maybe_update_idx_list(self, species: Tensor) -> None:
         # initialize each species index if it has not been initialized
         # or the species has changed
         species_is_same: bool = False
@@ -365,19 +336,15 @@ class InferModelBase(torch.nn.Module):
             species_is_same = self.last_species.data_ptr() == species.data_ptr()
 
         if not species_is_same:
-            self.set_species(species)
+            species_ = species.flatten()
+            with torch.no_grad():
+                self.idx_list = [torch.empty(0) for i in range(self.num_networks)]
+                for i in range(self.num_networks):
+                    mask = (species_ == i)
+                    midx = mask.nonzero().flatten()
+                    if midx.shape[0] > 0:
+                        self.idx_list[i] = midx
             self.last_species = species
-
-    @torch.jit.export
-    def set_species(self, species: Tensor) -> None:
-        species_ = species.flatten()
-        with torch.no_grad():
-            self.idx_list = [torch.empty(0) for i in range(self.num_networks)]
-            for i in range(self.num_networks):
-                mask = (species_ == i)
-                midx = mask.nonzero().flatten()
-                if midx.shape[0] > 0:
-                    self.idx_list[i] = midx
 
     @torch.jit.unused
     def init_mnp(self):
