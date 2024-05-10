@@ -135,9 +135,9 @@ class BmmAtomicNetwork(torch.nn.Module):
         layers = []
         self.num_models = len(networks)
         for layer_idx, layer in enumerate(networks[0]):
-            if type(layers) is torch.nn.Linear:
+            if type(layer) is torch.nn.Linear:
                 layers.append(BmmLinear([net[layer_idx] for net in networks]))
-            elif type(layer) in (torch.nn.CELU, torch.nn.GELU):
+            elif type(layer) is (torch.nn.CELU, torch.nn.GELU):
                 layers.append(layer)
             else:
                 raise ValueError("Only GELU/CELU act. fn and Linear layers supported")
