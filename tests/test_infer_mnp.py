@@ -23,8 +23,24 @@ os.environ['OMP_NUM_THREADS'] = '2'
 PDB_PATH = (Path(__file__).resolve().parent.parent / "dataset") / "pdb"
 
 
-@unittest.skipIf(not torch.cuda.is_available(), "InferMNP model needs CUDA")
-@unittest.skipIf(not torchani.infer.mnp_is_installed, "InferMNP model needs the mnp extension is installed")
+@unittest.skipIf(
+    not torchani.infer.mnp_is_installed,
+    "Nvtx commands need the MNP extension",
+)
+class TestNvtx(TestCase):
+    def testNVTX(self):
+        torch.ops.mnp.nvtx_range_push("hello")
+        torch.ops.mnp.nvtx_range_pop()
+
+
+@unittest.skipIf(
+    not torch.cuda.is_available(),
+    "InferMNP model needs CUDA",
+)
+@unittest.skipIf(
+    not torchani.infer.mnp_is_installed,
+    "InferMNP model needs the MNP extension",
+)
 class TestCPUInferMNP(TestCase):
     def setUp(self):
         self.scripting = False
@@ -35,7 +51,8 @@ class TestCPUInferMNP(TestCase):
         return model
 
     def _build_ani2x(self):
-        return torchani.models.ANI2x(use_cuda_extension=(self.device == "cuda")).to(self.device)
+        use_cuda = (self.device == "cuda")
+        return torchani.models.ANI2x(use_cuda_extension=use_cuda).to(self.device)
 
     def _test(self, model_ref, model_infer):
         files = ['small.pdb', '1hz5.pdb', '6W8H.pdb']
@@ -43,8 +60,17 @@ class TestCPUInferMNP(TestCase):
         files = files[:-1] if self.device == 'cpu' else files
         for file in files:
             mol = read(str(PDB_PATH / file))
-            species = torch.tensor([mol.get_atomic_numbers()], device=self.device)
-            coordinates = torch.tensor([mol.get_positions()], dtype=torch.float32, requires_grad=True, device=self.device)
+            species = torch.tensor(
+                mol.get_atomic_numbers(),
+                dtype=torch.int64,
+                device=self.device,
+            ).unsqueeze(0)
+            coordinates = torch.tensor(
+                mol.get_positions(),
+                dtype=torch.float32,
+                requires_grad=True,
+                device=self.device,
+            ).unsqueeze(0)
 
             _, energy1 = model_ref((species, coordinates))
             force1 = torch.autograd.grad(energy1.sum(), coordinates)[0]
@@ -56,29 +82,35 @@ class TestCPUInferMNP(TestCase):
 
     def testBmmEnsemble(self):
         ani2x_infer = self._build_ani2x()
-        ani2x_infer.neural_networks = ani2x_infer.neural_networks.to_infer_model(use_mnp=False)
+        ani2x_infer.neural_networks = ani2x_infer.neural_networks.to_infer_model(False)
         self._test(self.ani2x, self._setup_model(ani2x_infer))
 
-    @unittest.skipIf(True, "always")
     def testBmmEnsembleMNP(self):
         ani2x_infer = self._build_ani2x()
-        ani2x_infer.neural_networks = ani2x_infer.neural_networks.to_infer_model(use_mnp=True)
+        ani2x_infer.neural_networks = ani2x_infer.neural_networks.to_infer_model(True)
         self._test(self.ani2x, self._setup_model(ani2x_infer))
 
     def testANIInfer(self):
         if self.scripting:
             return
         ani2x_infer = self._build_ani2x()[0]
-        ani2x_infer.neural_networks = ani2x_infer.neural_networks.to_infer_model(use_mnp=False)
+        ani2x_infer.neural_networks = ani2x_infer.neural_networks.to_infer_model(False)
         self._test(self.ani2x[0], self._setup_model(ani2x_infer))
 
-    @unittest.skipIf(True, "always")
     def testANIInferMNP(self):
         ani2x_infer = self._build_ani2x()[0]
-        ani2x_infer.neural_networks = ani2x_infer.neural_networks.to_infer_model(use_mnp=True)
+        ani2x_infer.neural_networks = ani2x_infer.neural_networks.to_infer_model(True)
         self._test(self.ani2x[0], self._setup_model(ani2x_infer))
 
 
+@unittest.skipIf(
+    not torch.cuda.is_available(),
+    "InferMNP model needs CUDA",
+)
+@unittest.skipIf(
+    not torchani.infer.mnp_is_installed,
+    "InferMNP model needs the MNP extension",
+)
 class TestCUDAInferMNP(TestCPUInferMNP):
     def setUp(self):
         self.scripting = True

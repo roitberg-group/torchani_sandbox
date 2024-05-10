@@ -58,7 +58,7 @@ class BmmEnsemble(torch.nn.Module):
         # bookkeeping for optimization purposes
         self.last_species: Tensor = torch.empty(1)
         self.idx_list: tp.List[Tensor] = [
-            torch.empty(0) for i in range(self.num_batched_networks)
+            torch.empty(0) for i in range(self.num_species)
         ]
 
     def forward(  # type: ignore
@@ -102,8 +102,8 @@ class BmmEnsemble(torch.nn.Module):
         if not species_is_same:
             species_ = species.flatten()
             with torch.no_grad():
-                self.idx_list = [torch.empty(0) for i in range(self.num_batched_networks)]
-                for i in range(self.num_batched_networks):
+                self.idx_list = [torch.empty(0) for i in range(self.num_species)]
+                for i in range(self.num_species):
                     mask = (species_ == i)
                     midx = mask.nonzero().flatten()
                     if midx.shape[0] > 0:
@@ -363,8 +363,8 @@ class InferModelBase(torch.nn.Module):
         if not species_is_same:
             species_ = species.flatten()
             with torch.no_grad():
-                self.idx_list = [torch.empty(0) for i in range(self.num_networks)]
-                for i in range(self.num_networks):
+                self.idx_list = [torch.empty(0) for i in range(self.num_species)]
+                for i in range(self.num_species):
                     mask = (species_ == i)
                     midx = mask.nonzero().flatten()
                     if midx.shape[0] > 0:
@@ -374,7 +374,7 @@ class InferModelBase(torch.nn.Module):
     @torch.jit.unused
     def init_mnp(self) -> None:
         assert mnp_is_installed, "MNP extension is not installed"
-        self.weight_list = []  # shape: (num_networks, num_layers)
+        self.weight_list = []  # shape: (num_species, num_layers)
         self.bias_list = []
         self.celu_alpha = float("inf")
 
@@ -382,8 +382,8 @@ class InferModelBase(torch.nn.Module):
         self.copy_weights_and_biases()
 
         self.num_layers_list = [len(weights) for weights in self.weight_list]
-        self.start_layers_list = [0] * self.num_networks
-        for i in range(self.num_networks - 1):
+        self.start_layers_list = [0] * self.num_species
+        for i in range(self.num_species - 1):
             self.start_layers_list[i + 1] = self.start_layers_list[i] + self.num_layers_list[i]
 
         # flatten weight and bias list
