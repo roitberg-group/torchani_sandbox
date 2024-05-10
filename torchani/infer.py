@@ -320,13 +320,7 @@ class InferModelBase(torch.nn.Module):
         assert species.shape == aev.shape[:-1]
         num_mol = species.shape[0]
         assert num_mol == 1, "InferModel currently only support inference for single molecule"
-        if torch.jit.is_scripting():  # if in compilation (script) mode
-            if self.use_mnp:
-                mol_energies = self._single_mol_energies_jittable((species, aev))
-            else:
-                raise RuntimeError("JIT Infer Model only support use_mnp=True")
-        else:
-            mol_energies = self._single_mol_energies((species, aev))
+        mol_energies = self._single_mol_energies((species, aev))
         return SpeciesEnergies(species, mol_energies)
 
     @torch.jit.export
