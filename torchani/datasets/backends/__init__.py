@@ -1,4 +1,4 @@
-from ._backends import (
+from torchani.datasets.backends.backends import (
     StoreFactory,
     TemporaryLocation,
     _StoreWrapper,
