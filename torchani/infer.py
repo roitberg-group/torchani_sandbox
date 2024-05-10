@@ -145,6 +145,9 @@ class BmmAtomicNetwork(torch.nn.Module):
             input_ = layer(input_)
         return input_.mean(0)
 
+    def __iter__(self) -> tp.Iterator[torch.nn.Module]:
+        return iter(self.layers)
+
 
 class BmmLinear(torch.nn.Module):
     """
@@ -161,7 +164,7 @@ class BmmLinear(torch.nn.Module):
         super().__init__()
         # Concatenate weights
         weights = [layer.weight.unsqueeze(0).clone().detach() for layer in linears]
-        self.weights = torch.nn.Parameter(torch.cat(weights).transpose(1, 2))
+        self.weight = torch.nn.Parameter(torch.cat(weights).transpose(1, 2))
 
         # Concatenate biases
         if linears[0].bias is not None:
@@ -173,13 +176,13 @@ class BmmLinear(torch.nn.Module):
             self.beta = 0
 
     def forward(self, input_: Tensor) -> Tensor:
-        return torch.baddbmm(self.bias, input_, self.weights, beta=self.beta)
+        return torch.baddbmm(self.bias, input_, self.weight, beta=self.beta)
 
     def extra_repr(self):
         return (
-            f"batch={self.weights.shape[0]},"
-            f" in_features={self.weights.shape[1]},"
-            f" out_features={self.weights.shape[2]},"
+            f"batch={self.weight.shape[0]},"
+            f" in_features={self.weight.shape[1]},"
+            f" out_features={self.weight.shape[2]},"
             f" bias={self.bias is not None}"
         )
 
@@ -288,15 +291,31 @@ class MultiNetFunction(torch.autograd.Function):
         return aev_grad, None, None, None
 
 
-class InferModelBase(torch.nn.Module):
+class InferModel(torch.nn.Module):
     num_networks: int
     num_species: int
+    is_bmm: bool
+    use_mnp: bool
 
-    def __init__(self, num_species):
+    def __init__(self, modules: tp.Union[Ensemble, tp.List[tp.Tuple[str, torch.nn.Sequential]]], use_mnp: bool = False):
         super().__init__()
         # Needed for compatibility with the ANIModel and Ensemble API
         self.num_networks = 1
-        self.num_species = num_species
+
+        if isinstance(modules, Ensemble):
+            self.atomic_networks = torch.nn.ModuleList(
+                [
+                    BmmAtomicNetwork([animodel[symbol] for animodel in modules])
+                    for symbol in modules[0]
+                ]
+            )
+            self.is_bmm = True
+            self.num_species = modules.num_species
+        else:
+            self.atomic_networks = torch.nn.ModuleList([m for (_, m) in modules])
+            self.is_bmm = False
+            self.num_species = len(modules)
+
         self.last_species = torch.empty(1)
         assert torch.cuda.is_available(), "Infer model needs cuda is available"
 
@@ -309,6 +328,10 @@ class InferModelBase(torch.nn.Module):
         self.celu_alpha: float = float('inf')
         self.num_layers_list: tp.List[int] = [0]
         self.start_layers_list: tp.List[int] = [0]
+
+        self.use_mnp: bool = False
+        if use_mnp:
+            self.init_mnp()
 
     def forward(
         self,
@@ -374,28 +397,26 @@ class InferModelBase(torch.nn.Module):
     @torch.jit.unused
     def init_mnp(self) -> None:
         assert mnp_is_installed, "MNP extension is not installed"
-        self.weight_list = []  # shape: (num_species, num_layers)
-        self.bias_list = []
         self.celu_alpha = float("inf")
 
         # copy weights and bias, and transform them if is ensemble
-        self.copy_weights_and_biases()
+        weight_list, bias_list = self.copy_weights_and_biases()
 
-        self.num_layers_list = [len(weights) for weights in self.weight_list]
+        self.num_layers_list = [len(weight) for weight in weight_list]
         self.start_layers_list = [0] * self.num_species
         for i in range(self.num_species - 1):
             self.start_layers_list[i + 1] = self.start_layers_list[i] + self.num_layers_list[i]
 
         # flatten weight and bias list
-        self.weight_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.weight_list for item in sublist])
-        self.bias_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in self.bias_list for item in sublist])
+        flat_weight_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in weight_list for item in sublist])
+        flat_bias_list = torch.nn.ParameterList([torch.nn.Parameter(item) for sublist in bias_list for item in sublist])
         self.dummy_parameter = torch.nn.Parameter(torch.tensor(1.0))
 
-        self.num_weight_list = len(self.weight_list)
-        self.num_bias_list = len(self.bias_list)
+        self.num_weight_list = len(flat_weight_list)
+        self.num_bias_list = len(flat_bias_list)
         # self.weight_list is ParameterList, which could not be interpreted as List<Tensor>
-        self.weight_list_ = [w for w in self.weight_list]
-        self.bias_list_ = [b for b in self.bias_list]
+        self.weight_list_ = [w for w in flat_weight_list]
+        self.bias_list_ = [b for b in flat_bias_list]
 
         # check OpenMP environment variable
         check_openmp_threads()
@@ -403,78 +424,28 @@ class InferModelBase(torch.nn.Module):
         self.use_mnp = True
 
     @torch.jit.unused
-    def copy_weights_and_biases(self):
-        raise NotImplementedError("Should be implemented by subclasses")
-
-
-class ANIInferModel(InferModelBase):
-    num_networks: int
-    num_species: int
-
-    def __init__(self, modules, use_mnp: bool = True):
-        self.num_networks = 1
-        self.num_species = len(modules)
-        super().__init__(self.num_species)
-        self.atomic_networks = torch.nn.ModuleList([m for (_, m) in modules])
-
-        self.is_bmm = False
-        # mnp
-        self.use_mnp = False
-        if use_mnp:
-            self.init_mnp()
-
-    @torch.jit.unused
-    def copy_weights_and_biases(self):
-        for i, net in enumerate(self.atomic_networks):
-            weights = []
-            biases = []
-            for layer in net:
-                if isinstance(layer, torch.nn.Linear):
+    def copy_weights_and_biases(self) -> tp.Tuple[tp.List[tp.List[Tensor]], tp.List[tp.List[Tensor]]]:
+        weight_list: tp.List[tp.List[Tensor]] = []  # shape: (num_species, num_layers)
+        bias_list: tp.List[tp.List[Tensor]] = []
+        for i, atomic_network in enumerate(self.atomic_networks):
+            weights: tp.List[Tensor] = []
+            biases: tp.List[Tensor] = []
+            for layer in atomic_network:
+                layer_type = type(layer)
+                # Note that clone().detach() converts Parameter into Tensor
+                if layer_type is torch.nn.Linear:
                     weights.append(layer.weight.clone().detach().transpose(0, 1))
                     biases.append(layer.bias.clone().detach().unsqueeze(0))
-                else:
-                    assert isinstance(layer, torch.nn.CELU), "Currently only support CELU as activation function"
-                    if math.isinf(self.celu_alpha):
-                        self.celu_alpha = layer.alpha
-                    else:
-                        assert self.celu_alpha == layer.alpha, "All CELU layer should have same alpha"
-            self.weight_list.append(weights)
-            self.bias_list.append(biases)
-
-
-class BmmEnsembleMNP(InferModelBase):
-    def __init__(self, ensemble: Ensemble, use_mnp: bool = True):
-        self.num_networks = 1
-        self.num_species = ensemble.num_species
-        super().__init__(self.num_species)
-
-        self.atomic_networks = torch.nn.ModuleList(
-            [
-                BmmAtomicNetwork([animodel[symbol] for animodel in ensemble])
-                for symbol in ensemble[0]
-            ]
-        )
-        self.is_bmm = True
-
-        # mnp
-        self.use_mnp = False
-        if use_mnp:
-            self.init_mnp()
-
-    @torch.jit.unused
-    def copy_weights_and_biases(self):
-        for i, net in enumerate(self.atomic_networks):
-            weights = []
-            biases = []
-            for layer in net.layers:
-                if isinstance(layer, BmmLinear):
-                    weights.append(layer.weights.clone().detach())
+                elif layer_type is BmmLinear:
+                    weights.append(layer.weight.clone().detach())
                     biases.append(layer.bias.clone().detach())
-                else:
-                    assert isinstance(layer, torch.nn.CELU), "Currently only support CELU as activation function"
+                elif layer_type is torch.nn.CELU:
                     if math.isinf(self.celu_alpha):
                         self.celu_alpha = layer.alpha
                     else:
                         assert self.celu_alpha == layer.alpha, "All CELU layer should have same alpha"
-            self.weight_list.append(weights)
-            self.bias_list.append(biases)
+                else:
+                    raise ValueError(f"Unsupported layer type {layer_type}")
+            weight_list.append(weights)
+            bias_list.append(biases)
+        return weight_list, bias_list

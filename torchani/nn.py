@@ -97,7 +97,12 @@ class ANIModel(torch.nn.ModuleDict):
                 'It is too complex and not general enough',
                 category=DeprecationWarning,
             )
-        return infer.ANIInferModel(list(self.items()), use_mnp)  # type: ignore
+        else:
+            warnings.warn(
+                'non-mnp ANIModel is not optimized for performance',
+                category=DeprecationWarning,
+            )
+        return infer.InferModel(list(self.items()), use_mnp=use_mnp)  # type: ignore
 
 
 class Ensemble(torch.nn.ModuleList):
@@ -144,7 +149,7 @@ class Ensemble(torch.nn.ModuleList):
                 'It is too complex and not general enough',
                 category=DeprecationWarning,
             )
-            return infer.BmmEnsembleMNP(self)  # type: ignore
+            return infer.InferModel(self, use_mnp=True)  # type: ignore
         return infer.BmmEnsemble(self)  # type: ignore
 
 
