@@ -21,6 +21,24 @@ else:
     warnings.warn("mnp not installed")
 
 
+def _is_same_tensor(last: Tensor, current: Tensor) -> bool:
+    if torch.jit.is_scripting():
+        return torch.ops.mnp.is_same_tensor(last, current)
+    return last.data_ptr() == current.data_ptr()
+
+
+def _build_new_idx_list(species: Tensor, num_species: int) -> tp.List[Tensor]:
+    species_ = species.flatten()
+    with torch.no_grad():
+        idx_list = [torch.empty(0) for i in range(num_species)]
+        for i in range(num_species):
+            mask = (species_ == i)
+            midx = mask.nonzero().flatten()
+            if midx.shape[0] > 0:
+                idx_list[i] = midx
+    return idx_list
+
+
 class BmmEnsemble(torch.nn.Module):
     r"""
     The inference-optimized analogue of an ANIModel.
@@ -76,39 +94,22 @@ class BmmEnsemble(torch.nn.Module):
         assert species.shape == aev.shape[:-1]
         assert aev.shape[0] == 1, "BmmEnsemble only supports single-conformer inputs"
 
-        self._check_species_and_maybe_update_idx_list(species)
-        idx_list = self.idx_list
+        # Initialize each species index if it has not been initialized or the
+        # species has changed
+        if not _is_same_tensor(self.last_species, species):
+            self.idx_list = _build_new_idx_list(species, self.num_species)
+        self.last_species = species
+
         aev = aev.flatten(0, 1)
         atomic_energies = torch.zeros(aev.shape[0], dtype=aev.dtype, device=aev.device)
         for i, net in enumerate(self.atomic_networks):
-            if idx_list[i].shape[0] > 0:
+            if self.idx_list[i].shape[0] > 0:
                 torch.ops.mnp.nvtx_range_push(f"network_{i}")
-                input_ = aev.index_select(0, idx_list[i])
-                atomic_energies[idx_list[i]] = net(input_).flatten()
+                input_ = aev.index_select(0, self.idx_list[i])
+                atomic_energies[self.idx_list[i]] = net(input_).flatten()
                 torch.ops.mnp.nvtx_range_pop()
         atomic_energies = atomic_energies.unsqueeze(0)
         return atomic_energies
-
-    @torch.jit.export
-    def _check_species_and_maybe_update_idx_list(self, species: Tensor) -> None:
-        # initialize each species index if it has not been initialized
-        # or the species has changed
-        species_is_same: bool = False
-        if torch.jit.is_scripting():
-            species_is_same = torch.ops.mnp.is_same_tensor(self.last_species, species)
-        else:
-            species_is_same = self.last_species.data_ptr() == species.data_ptr()
-
-        if not species_is_same:
-            species_ = species.flatten()
-            with torch.no_grad():
-                self.idx_list = [torch.empty(0) for i in range(self.num_species)]
-                for i in range(self.num_species):
-                    mask = (species_ == i)
-                    midx = mask.nonzero().flatten()
-                    if midx.shape[0] > 0:
-                        self.idx_list[i] = midx
-            self.last_species = species
 
 
 class BmmAtomicNetwork(torch.nn.Module):
@@ -343,7 +344,11 @@ class InferModel(torch.nn.Module):
         assert species.shape == aev.shape[:-1]
         assert aev.shape[0] == 1, "InferModel only supports single-conformer inputs"
         aev = aev.flatten(0, 1)
-        self._check_species_and_maybe_update_idx_list(species)
+
+        if not _is_same_tensor(self.last_species, species):
+            self.idx_list = _build_new_idx_list(species, self.num_species)
+        self.last_species = species
+
         if self.use_mnp:
             energies = torch.ops.mnp.run(
                 aev,
@@ -372,27 +377,6 @@ class InferModel(torch.nn.Module):
     @torch.jit.export
     def _atomic_energies(self, species_aev: tp.Tuple[Tensor, Tensor]) -> Tensor:
         raise NotImplementedError("Not implemented for infer models")
-
-    @torch.jit.export
-    def _check_species_and_maybe_update_idx_list(self, species: Tensor) -> None:
-        # initialize each species index if it has not been initialized
-        # or the species has changed
-        species_is_same: bool = False
-        if torch.jit.is_scripting():
-            species_is_same = torch.ops.mnp.is_same_tensor(self.last_species, species)
-        else:
-            species_is_same = self.last_species.data_ptr() == species.data_ptr()
-
-        if not species_is_same:
-            species_ = species.flatten()
-            with torch.no_grad():
-                self.idx_list = [torch.empty(0) for i in range(self.num_species)]
-                for i in range(self.num_species):
-                    mask = (species_ == i)
-                    midx = mask.nonzero().flatten()
-                    if midx.shape[0] > 0:
-                        self.idx_list[i] = midx
-            self.last_species = species
 
     @torch.jit.unused
     def init_mnp(self) -> None:
