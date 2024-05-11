@@ -27,6 +27,7 @@ formats of NeuroChem at :attr:`torchani.neurochem`, and more at :attr:`torchani.
 .. _ANI-2x:
     https://doi.org/10.26434/chemrxiv.11819268.v1
 """
+import os
 import warnings
 from importlib.metadata import version, PackageNotFoundError
 
@@ -83,18 +84,22 @@ __all__ = [
     'data',  # TODO: Get rid of this
 ]
 
-# disable tf32
+# TF32 catastrophically degrades accuracy so we disable it
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
-# show warnings to users with ampere or newer gpu
+# This warning is only displayed if an Ampere GPU (or newer) is detected
+# and TORCHANI_NO_WARN_TF32 is not set
 if torch.cuda.is_available():
     num_devices = torch.cuda.device_count()
     max_sm_major = max(
         [torch.cuda.get_device_capability(i)[0] for i in range(num_devices)]
     )
-    if (max_sm_major >= 8):
+    if (max_sm_major >= 8) and (os.getenv("TORCHANI_NO_WARN_TF32") is None):
         warnings.warn(
-            "TF32 (TensorFloat 32) is disabled for accuracy reason")
+            "Your GPU supports TF32 (TensorFloat32), but"
+            " Torchani disables it, since it makes the models grossly inaccurate."
+            " To suppress warning set the env var TORCHANI_NO_WARN_TF32 to any value"
+        )
 
 try:
     from . import ase  # noqa: F401
