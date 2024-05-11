@@ -44,7 +44,8 @@ def _download_and_extract_archive(
 def _download_file_from_url(url: str, file_path: Path) -> None:
     print(f"Downloading {url} to {str(file_path)}")
     url = _get_redirect_url(url)
-    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})) as response:  # type: ignore[attr-defined]
+    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    with urllib.request.urlopen(request) as response:  # type: ignore[attr-defined]
         content = iter(lambda: response.read(_CHUNK_SIZE), b"")
         with open(file_path, "wb") as f, tqdm(total=response.length) as pbar:
             for chunk in content:
@@ -59,10 +60,12 @@ def _get_redirect_url(url: str) -> str:
     initial_url = url
     headers = {"Method": "HEAD", "User-Agent": _USER_AGENT}
     for _ in range(_MAX_HOPS + 1):
-        with urllib.request.urlopen(urllib.request.Request(url, headers=headers)) as response:  # type: ignore[attr-defined]
+        request = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(request) as response:  # type: ignore[attr-defined]
             if response.url == url or response.url is None:
                 return url
             url = response.url
     raise RecursionError(
-        f"Request to {initial_url} exceeded {_MAX_HOPS} redirects. The last redirect points to {url}."
+        f"Request to {initial_url} exceeded {_MAX_HOPS} redirects."
+        f" Last redirect points to {url}."
     )
