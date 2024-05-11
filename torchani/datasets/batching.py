@@ -316,7 +316,7 @@ def _divide_into_folds(
         # the first shuffle is necessary so that validation splits are shuffled
         validation_split = conformer_blocks[f]
 
-        training_split = torch.cat(conformer_blocks[:f] + conformer_blocks[f + 1:])
+        training_split = torch.cat(conformer_blocks[:f] + conformer_blocks[f + 1 :])
         # afterwards all training folds are reshuffled to get different
         # batching for different models in the ensemble / cross validation
         # process (it is technically redundant to reshuffle the first one but
@@ -433,7 +433,7 @@ def _save_splits_into_batches(
             all_batch_indices = torch.split(indices_of_split, batch_size)
 
             all_batch_indices_packets = [
-                all_batch_indices[j: j + max_batches_per_packet]
+                all_batch_indices[j : j + max_batches_per_packet]
                 for j in range(0, len(all_batch_indices), max_batches_per_packet)
             ]
             num_batch_indices_packets = len(all_batch_indices_packets)

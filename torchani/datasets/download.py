@@ -22,9 +22,9 @@ def _check_integrity(file_path: Path, md5: str) -> bool:
 
 # expects a .tar.gz file
 def _download_and_extract_archive(
-        base_url: str,
-        file_name: str,
-        dest_dir: Path,
+    base_url: str,
+    file_name: str,
+    dest_dir: Path,
 ) -> None:
     dest_dir.mkdir(exist_ok=True)
 
@@ -63,4 +63,6 @@ def _get_redirect_url(url: str) -> str:
             if response.url == url or response.url is None:
                 return url
             url = response.url
-    raise RecursionError(f"Request to {initial_url} exceeded {_MAX_HOPS} redirects. The last redirect points to {url}.")
+    raise RecursionError(
+        f"Request to {initial_url} exceeded {_MAX_HOPS} redirects. The last redirect points to {url}."
+    )
