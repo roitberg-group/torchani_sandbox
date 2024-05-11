@@ -13,6 +13,7 @@ from collections import OrderedDict
 import torch
 from torch import Tensor
 import numpy as np
+from numpy.typing import DTypeLike
 from tqdm import tqdm
 
 from torchani.utils import (
@@ -34,7 +35,6 @@ from torchani.datasets._annotations import (
     NumpyConformers,
     MixedConformers,
     StrPath,
-    DTypeLike,
     IdxLike,
 )
 
