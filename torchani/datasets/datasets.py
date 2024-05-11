@@ -209,8 +209,8 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
         the number of chunks of the whole dataset is num_conformers //
         max_size.
 
-        "limit" limits the number of output chunks to that number and then stops iteration
-        (iteration is still sequential, not random).
+        "limit" limits the number of output chunks to that number and then
+        stops iteration (iteration is still sequential, not random).
 
         The second element in the yielded tuple is the cumulative conformer count
         previous to the yielded tuple.
@@ -228,7 +228,7 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
                     splits = torch.split(conformers.pop(k), max_size)
                 else:
                     splits = [
-                        conformers[k][j : j + max_size]
+                        conformers[k][j:j + max_size]
                         for j in range(0, len(conformers[k]), max_size)
                     ]
                 splitted_conformers.update({k: splits})
@@ -322,7 +322,6 @@ class _ANISubdataset(_ANIDatasetBase):
     def __init__(
         self,
         store_location: StrPath,
-        create: bool = False,
         grouping: tp.Optional[str] = None,
         backend: tp.Optional[str] = None,
         verbose: bool = True,
@@ -330,14 +329,11 @@ class _ANISubdataset(_ANIDatasetBase):
         use_cudf: bool = False,
         _force_overwrite: bool = False,
     ):
-        # dummy_properties must be a dict of the form
-        # {'name': {'dtype': dtype, 'is_atomic': is_atomic, 'extra_dims': extra_dims, 'fill_value': fill_value}, ...}
-        # with one or more dummy properties. These will be created on the fly only if they are not
-        # present in the dataset already.
-        if create:
-            warnings.warn(
-                "'create' should not be specified, datasets are automatically created if the underlying file/dir doesn't exist"
-            )
+        # dummy_properties must be a dict of the form {'name': {'dtype': dtype,
+        # 'is_atomic': is_atomic, 'extra_dims': extra_dims, 'fill_value':
+        # fill_value}, ...} with one or more dummy properties. These will be
+        # created on the fly only if they are not present in the dataset
+        # already.
         super().__init__()
         self._store = StoreFactory(
             store_location,
@@ -569,7 +565,8 @@ class _ANISubdataset(_ANIDatasetBase):
         for k in properties:
             # try to convert to numpy, failure means it is already an ndarray
             try:
-                numpy_conformers[k] = mixed_conformers[k].detach().cpu().numpy()  # type: ignore
+                _array = mixed_conformers[k].detach().cpu().numpy()  # type: ignore
+                numpy_conformers[k] = _array
             except AttributeError:
                 numpy_conformers[k] = tp.cast(np.ndarray, mixed_conformers[k])
         for k in properties & _ELEMENT_KEYS:
@@ -745,7 +742,11 @@ class _ANISubdataset(_ANIDatasetBase):
                 ):
                     # mypy doesn't know that @wrap'ed functions have __wrapped__
                     # attribute, and fixing this is ugly
-                    rwds.append_conformers.__wrapped__(rwds, group_name, conformers)  # type: ignore
+                    rwds.append_conformers.__wrapped__(  # type: ignore
+                        rwds,
+                        group_name,
+                        conformers,
+                    )
             new_ds._attach_dummy_properties(self._dummy_properties)
             if inplace:
                 self._store.location.transfer_to(new_ds._store)
@@ -767,7 +768,11 @@ class _ANISubdataset(_ANIDatasetBase):
         needed in order to reduce the size of the file. Note that this is only
         useful for the h5py backend, otherwise it is a no-op.
         """
-        return self.to_backend.__wrapped__(self, verbose=verbose, inplace=True)  # type: ignore
+        return self.to_backend.__wrapped__(  # type: ignore
+            self,
+            verbose=verbose,
+            inplace=True,
+        )
 
     @_broadcast
     @_needs_cache_update
@@ -804,7 +809,11 @@ class _ANISubdataset(_ANIDatasetBase):
 
                     for formula, idx in zip(unique_formulas, formula_idxs):
                         selected_conformers = {k: v[idx] for k, v in conformers.items()}
-                        rwds.append_conformers.__wrapped__(rwds, formula, selected_conformers)  # type: ignore
+                        rwds.append_conformers.__wrapped__(  # type: ignore
+                            rwds,
+                            formula,
+                            selected_conformers,
+                        )
             new_ds._attach_dummy_properties(self._dummy_properties)
             self._store.location.transfer_to(new_ds._store)
         if repack:
@@ -838,7 +847,11 @@ class _ANISubdataset(_ANIDatasetBase):
                 ):
                     # This is done to accomodate the current group convention
                     new_name = str(_get_num_atoms(conformers)).zfill(3)
-                    rwds.append_conformers.__wrapped__(rwds, new_name, conformers)  # type: ignore
+                    rwds.append_conformers.__wrapped__(  # type: ignore
+                        rwds,
+                        new_name,
+                        conformers,
+                    )
             new_ds._attach_dummy_properties(self._dummy_properties)
             self._store.location.transfer_to(new_ds._store)
         if repack:
@@ -976,8 +989,8 @@ class _ANISubdataset(_ANIDatasetBase):
         properties = {properties} if isinstance(properties, str) else set(properties)
         if properties <= self.properties:
             raise ValueError(
-                f"Some of the properties requested {properties} are"
-                f" in the dataset, which has properties {self.properties}, but they should not be"
+                f"Requested properties: {properties} should not be in the dataset."
+                f" which has properties: {self.properties}."
             )
 
 

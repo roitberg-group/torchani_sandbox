@@ -69,10 +69,11 @@ class _ConformerGroup(tp.MutableMapping[str, np.ndarray], ABC):
         try:
             array = self._getitem_impl(p)
         except KeyError:
-            # A dummy property is defined with a padding value, a dtype, a shape, and an "is atomic" flag
-            # example: dummy_params =
-            # {'dtype': np.int64, 'extra_dims': (3,), 'is_atomic': True, 'fill_value': 0.0}
-            # this generates a property with shape (C, A, extra_dims), filled with value 0.0
+            # A dummy property is defined with a padding value, a dtype, a
+            # shape, and an "is atomic" flag example: dummy_params = {'dtype':
+            # np.int64, 'extra_dims': (3,), 'is_atomic': True, 'fill_value':
+            # 0.0} this generates a property with shape (C, A, extra_dims),
+            # filled with value 0.0
             params = self._dummy_properties[p]
             array = self._make_dummy_property(**params)
         assert isinstance(array, np.ndarray)
@@ -92,7 +93,7 @@ class _ConformerGroup(tp.MutableMapping[str, np.ndarray], ABC):
             species = self._getitem_impl("numbers")
         if species.ndim != 2:
             raise RuntimeError(
-                "Attempted to create dummy properties in a legacy dataset, this is not supported!"
+                "Dummy properties are not supported for legacy grouping"
             )
         shape: tp.Tuple[int, ...] = (species.shape[0],)
         if is_atomic:
