@@ -1,6 +1,5 @@
 from collections import OrderedDict
 import typing as tp
-import tempfile
 import os
 import warnings
 import itertools
