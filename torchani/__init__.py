@@ -87,14 +87,15 @@ __all__ = [
 # TF32 catastrophically degrades accuracy so we disable it
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
-# This warning is only displayed if an Ampere GPU (or newer) is detected
-# and TORCHANI_NO_WARN_TF32 is not set
+
+# We warn about this only if an Ampere GPU (or newer) is detected
+# (suppressed by setting TORCHANI_NO_WARN_TF32)
 if torch.cuda.is_available():
     num_devices = torch.cuda.device_count()
     max_sm_major = max(
         [torch.cuda.get_device_capability(i)[0] for i in range(num_devices)]
     )
-    if (max_sm_major >= 8) and (os.getenv("TORCHANI_NO_WARN_TF32") is None):
+    if (max_sm_major >= 8) and ("TORCHANI_NO_WARN_TF32" not in os.environ):
         warnings.warn(
             "Torchani disables TF32 (supported by your GPU) to prevent accuracy loss."
             " To suppress warning set the env var TORCHANI_NO_WARN_TF32 to any value"

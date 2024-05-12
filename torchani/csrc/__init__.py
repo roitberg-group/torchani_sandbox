@@ -11,7 +11,7 @@ MNP_IS_INSTALLED = "torchani.mnp" in importlib.metadata.metadata(
 
 # This env var is meant to be used by developers to manually disable extensions
 # for testing purposes
-if os.getenv("TORCHANI_DISABLE_EXTENSIONS") is not None:
+if "TORCHANI_DISABLE_EXTENSIONS" not in os.environ:
     CUAEV_IS_INSTALLED = False
     MNP_IS_INSTALLED = False
 
