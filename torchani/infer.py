@@ -1,7 +1,5 @@
 import math
-import os
 import typing as tp
-import warnings
 
 import torch
 from torch import Tensor
@@ -15,11 +13,6 @@ from torchani.csrc import MNP_IS_INSTALLED
 if MNP_IS_INSTALLED:
     # We need to import torchani.mnp to tell PyTorch to initialize torch.ops.mnp
     from . import mnp  # type: ignore # noqa: F401
-elif "TORCHANI_NO_WARN_EXTENSIONS" not in os.environ:
-    warnings.warn(
-        "The MNP C++ extension is not installed and will not be available."
-        " To suppress warning set the env var TORCHANI_NO_WARN_EXTENSIONS to any value"
-    )
 
 
 def _is_same_tensor(last: Tensor, current: Tensor) -> bool:

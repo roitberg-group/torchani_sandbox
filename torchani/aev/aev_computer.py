@@ -1,6 +1,4 @@
 import typing as tp
-import os
-import warnings
 
 import torch
 from torch import Tensor
@@ -23,11 +21,6 @@ from torchani.csrc import CUAEV_IS_INSTALLED
 if CUAEV_IS_INSTALLED:
     # We need to import torchani.cuaev to tell PyTorch to initialize torch.ops.cuaev
     from .. import cuaev  # type: ignore # noqa: F401
-elif "TORCHANI_NO_WARN_EXTENSIONS" not in os.environ:
-    warnings.warn(
-        "The AEV CUDA extension is not installed and will not be available."
-        " To suppress warning set the env var TORCHANI_NO_WARN_EXTENSIONS to any value"
-    )
 
 
 def jit_unused_if_no_cuaev():

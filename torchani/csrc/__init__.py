@@ -1,4 +1,5 @@
 import os
+import warnings
 import importlib.metadata
 
 CUAEV_IS_INSTALLED = "torchani.cuaev" in importlib.metadata.metadata(
@@ -14,6 +15,18 @@ MNP_IS_INSTALLED = "torchani.mnp" in importlib.metadata.metadata(
 if "TORCHANI_DISABLE_EXTENSIONS" not in os.environ:
     CUAEV_IS_INSTALLED = False
     MNP_IS_INSTALLED = False
+
+if "TORCHANI_NO_WARN_EXTENSIONS" not in os.environ:
+    if not CUAEV_IS_INSTALLED:
+        warnings.warn(
+            "The AEV CUDA extension is not installed and will not be available."
+            " To suppress warn set the env var TORCHANI_NO_WARN_EXTENSIONS to any value"
+        )
+    if not MNP_IS_INSTALLED:
+        warnings.warn(
+            "The MNP C++ extension is not installed and will not be available."
+            " To suppress warn set the env var TORCHANI_NO_WARN_EXTENSIONS to any value"
+        )
 
 
 __all__ = ["CUAEV_IS_INSTALLED", "MNP_IS_INSTALLED"]
