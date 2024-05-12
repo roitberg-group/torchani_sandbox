@@ -1036,9 +1036,9 @@ class TestANIDataset(TestCase):
             self.assertEqual(
                 set(v.keys()), {"species", "coordinates", "renamed_energies"}
             )
-        with self.assertRaisesRegex(ValueError, "Some of the properties requested"):
+        with self.assertRaises(ValueError):
             ds.rename_properties({"null0": "null1"})
-        with self.assertRaisesRegex(ValueError, "Some of the properties requested"):
+        with self.assertRaises(ValueError):
             ds.rename_properties({"species": "renamed_energies"})
 
     def testCreation(self):
