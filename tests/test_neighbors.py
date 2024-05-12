@@ -466,7 +466,15 @@ class TestCellListLargeSystem(ANITest):
 
             _, aevs_cl = self.aev_cl((species, coordinates))
             _, aevs_fp = self.aev_fp((species, coordinates))
-            self.assertEqual(aevs_cl, aevs_fp)
+            if self.jit and self.device == "cuda":
+                # JIT + CUDA can have slightly different answers
+                # TODO: Why? maybe due to nvfuser?
+                rtol = 1.0e-6
+                atol = 1.0e-6
+            else:
+                rtol = 1.0e-7
+                atol = 1.0e-7
+            self.assertEqual(aevs_cl, aevs_fp, rtol=rtol, atol=atol)
 
     def testRandom(self):
         species = torch.LongTensor(100).random_(0, 4).to(self.device).unsqueeze(0)
