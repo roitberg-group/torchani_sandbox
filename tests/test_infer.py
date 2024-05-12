@@ -91,7 +91,7 @@ class TestInfer(TestCase):
             _, energy1 = model((species, coordinates))
             _ = torch.autograd.grad(energy1.sum(), coordinates)[0]  # force
 
-        use_cuaev = self.device == "cuda"
+        use_cuaev = (self.device == "cuda") and torchani.csrc.CUAEV_IS_INSTALLED
         ani2x_jit = torch.jit.script(
             torchani.models.ANI2x(use_cuda_extension=use_cuaev).to(self.device)
         )
