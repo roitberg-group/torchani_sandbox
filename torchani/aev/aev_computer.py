@@ -1,6 +1,6 @@
 import typing as tp
+import os
 import warnings
-import importlib.metadata
 
 import torch
 from torch import Tensor
@@ -17,25 +17,24 @@ from torchani.aev.aev_terms import (
     StandardAngular,
     StandardRadial,
 )
-
-cuaev_is_installed = "torchani.cuaev" in importlib.metadata.metadata(
-    __package__.split(".")[0]
-).get_all("Provides", [])
+from torchani.csrc import CUAEV_IS_INSTALLED
 
 
-if cuaev_is_installed:
+if CUAEV_IS_INSTALLED:
     # We need to import torchani.cuaev to tell PyTorch to initialize torch.ops.cuaev
     from .. import cuaev  # type: ignore # noqa: F401
-else:
-    warnings.warn("cuaev not installed")
+elif os.getenv("TORCHANI_NO_WARN_EXTENSIONS") is None:
+    warnings.warn(
+        "The AEV CUDA extension is not installed and will not be available."
+        " To suppress warning set the env var TORCHANI_NO_WARN_EXTENSIONS to any value"
+    )
 
 
 def jit_unused_if_no_cuaev():
     def decorator(func):
-        if not cuaev_is_installed:
-            return torch.jit.unused(func)
-        return torch.jit.export(func)
-
+        if CUAEV_IS_INSTALLED:
+            return torch.jit.export(func)
+        return torch.jit.unused(func)
     return decorator
 
 
@@ -153,14 +152,15 @@ class AEVComputer(torch.nn.Module):
 
         # cuda aev
         if self.use_cuda_extension:
-            assert cuaev_is_installed, "AEV cuda extension is not installed"
+            if not CUAEV_IS_INSTALLED:
+                raise RuntimeError("The AEV CUDA extension is not installed")
             assert isinstance(
                 self.angular_terms, StandardAngular
             ), "nonstandard aev terms not supported for cuaev"
             assert isinstance(
                 self.radial_terms, StandardRadial
             ), "nonstandard aev terms not supported for cuaev"
-        if cuaev_is_installed:
+        if CUAEV_IS_INSTALLED:
             self._register_cuaev_computer()
 
         # We defer true cuaev initialization to forward so that we ensure that

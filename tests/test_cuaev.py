@@ -1,11 +1,14 @@
 import os
-import torch
-import torchani
 import unittest
 import pickle
+
+import torch
 from ase.io import read
-from torchani.testing import TestCase, make_tensor
 from parameterized import parameterized_class
+
+import torchani
+from torchani.testing import TestCase, make_tensor
+from torchani.csrc import CUAEV_IS_INSTALLED
 
 path = os.path.dirname(os.path.realpath(__file__))
 
@@ -17,7 +20,7 @@ skipIfNoMultiGPU = unittest.skipIf(
     "There are not enough GPU devices to run this test",
 )
 skipIfNoCUAEV = unittest.skipIf(
-    not torchani.aev.cuaev_is_installed, "only valid when cuaev is installed"
+    not CUAEV_IS_INSTALLED, "only valid when cuaev is installed"
 )
 
 

@@ -96,8 +96,7 @@ if torch.cuda.is_available():
     )
     if (max_sm_major >= 8) and (os.getenv("TORCHANI_NO_WARN_TF32") is None):
         warnings.warn(
-            "Your GPU supports TF32 (TensorFloat32), but"
-            " Torchani disables it, since it makes the models grossly inaccurate."
+            "Torchani disables TF32 (supported by your GPU) to prevent accuracy loss."
             " To suppress warning set the env var TORCHANI_NO_WARN_TF32 to any value"
         )
 

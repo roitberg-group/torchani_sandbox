@@ -1,7 +1,7 @@
 import math
+import os
 import typing as tp
 import warnings
-import importlib.metadata
 
 import torch
 from torch import Tensor
@@ -9,17 +9,17 @@ from torch import Tensor
 from torchani.utils import check_openmp_threads
 from torchani.tuples import SpeciesEnergies
 from torchani.nn import Ensemble, ANIModel
+from torchani.csrc import MNP_IS_INSTALLED
 
 
-mnp_is_installed = "torchani.mnp" in importlib.metadata.metadata(
-    __package__.split(".")[0]
-).get_all("Provides", [])
-
-if mnp_is_installed:
+if MNP_IS_INSTALLED:
     # We need to import torchani.mnp to tell PyTorch to initialize torch.ops.mnp
     from . import mnp  # type: ignore # noqa: F401
-else:
-    warnings.warn("mnp not installed")
+elif os.getenv("TORCHANI_NO_WARN_EXTENSIONS") is None:
+    warnings.warn(
+        "The MNP C++ extension is not installed and will not be available."
+        " To suppress warning set the env var TORCHANI_NO_WARN_EXTENSIONS to any value"
+    )
 
 
 def _is_same_tensor(last: Tensor, current: Tensor) -> bool:
@@ -342,8 +342,8 @@ class InferModel(torch.nn.Module):
 
     @torch.jit.unused
     def _init_mnp(self) -> None:
-        if not mnp_is_installed:
-            raise RuntimeError("MNP extension is not installed")
+        if not MNP_IS_INSTALLED:
+            raise RuntimeError("The MNP C++ extension is not installed")
         # Copy weights and biases (and transform them if copying from a BmmEnsemble)
         weight_list, bias_list = self._copy_weights_and_biases()
 
