@@ -15,6 +15,7 @@ from torchani.benchmark import timeit
 devices = ["cuda", "cpu"]
 ani2x = torchani.models.ANI2x()
 
+
 @parameterized_class(("device"), product(devices))
 @unittest.skipIf(not torch.cuda.is_available(), "Infer model needs cuda is available")
 class TestInfer(TestCase):
