@@ -1,5 +1,4 @@
 import typing as tp
-import warnings
 from collections import OrderedDict
 
 import torch
@@ -89,18 +88,6 @@ class ANIModel(torch.nn.ModuleDict):
     def to_infer_model(self, use_mnp: bool = False):
         # Infer is imported here to prevent circular imports
         from torchani import infer
-
-        if use_mnp:
-            warnings.warn(
-                "use_mnp will be removed in the future. "
-                "It is too complex and not general enough",
-                category=DeprecationWarning,
-            )
-        else:
-            warnings.warn(
-                "non-mnp ANIModel is not optimized for performance",
-                category=DeprecationWarning,
-            )
         return infer.InferModel(self, use_mnp=use_mnp)  # type: ignore
 
 
@@ -149,11 +136,6 @@ class Ensemble(torch.nn.ModuleList):
         from torchani import infer
 
         if use_mnp:
-            warnings.warn(
-                "use_mnp will be removed in the future. "
-                "It is too complex and not general enough",
-                category=DeprecationWarning,
-            )
             return infer.InferModel(self, use_mnp=True)  # type: ignore
         return infer.BmmEnsemble(self)  # type: ignore
 

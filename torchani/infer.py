@@ -299,6 +299,21 @@ class InferModel(torch.nn.Module):
 
     def __init__(self, module: tp.Union[Ensemble, ANIModel], use_mnp: bool = False):
         super().__init__()
+        import warnings
+        # Infer model in general is hard to maintain so we emit some
+        # deprecation messages. In the future we may not support it anymore
+        if use_mnp:
+            msg = (
+                "InferModel with MNP C++ extension is experimental."
+                " It has a complex implementation, and may be removed in the future."
+            )
+        else:
+            msg = (
+                "InferModel with no MNP C++ extension is not optimized."
+                " It is meant as a proof of concept and may be removed in the future."
+            )
+        warnings.warn(msg, category=DeprecationWarning)
+
         self.num_networks = 1  # For compatibility with ANIModel and Ensemble API
         self.num_species = module.num_species
 
@@ -315,6 +330,7 @@ class InferModel(torch.nn.Module):
         else:
             self.atomic_networks = torch.nn.ModuleList(list(module.values()))
         self._is_bmm = isinstance(module, Ensemble)
+
         self._use_mnp = use_mnp
 
         # bookkeeping for optimization purposes
