@@ -175,26 +175,6 @@ class Sequential(torch.nn.ModuleList):
         return input_
 
 
-class FittedSoftplus(torch.nn.Module):
-    """Softplus function parametrized to be equal to a CELU
-
-    This allows keeping the good characteristics of CELU, while having an
-    infinitely differentiable function.
-    It is highly recommended to leave alpha and beta as their defaults,
-    which match closely CELU with alpha = 0.1"""
-
-    alpha: float
-    beta: float
-
-    def __init__(self, alpha=0.1, beta=20):
-        super().__init__()
-        self.alpha = alpha
-        self.beta = beta
-
-    def forward(self, x: Tensor) -> Tensor:
-        return torch.nn.functional.softplus(x + self.alpha, beta=self.beta) - self.alpha
-
-
 class SpeciesConverter(torch.nn.Module):
     """Converts tensors with species labeled as atomic numbers into tensors
     labeled with internal torchani indices according to a custom ordering
