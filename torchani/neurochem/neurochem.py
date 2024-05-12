@@ -70,7 +70,7 @@ def load_aev_computer_and_symbols(
     cutoff_fn: CutoffArg = "cosine",
 ) -> tp.Tuple[AEVComputer, tp.Tuple[str, ...]]:
     aev_consts, aev_cutoffs, symbols = load_constants(consts_file)
-    aev_computer = AEVComputer(
+    aev_computer = AEVComputer.from_neurochem_constants(
         Rcr=aev_cutoffs["Rcr"],
         Rca=aev_cutoffs["Rca"],
         num_species=len(symbols),
@@ -78,8 +78,6 @@ def load_aev_computer_and_symbols(
         neighborlist=neighborlist,
         use_cuda_extension=use_cuda_extension,
         use_cuaev_interface=use_cuaev_interface,
-        radial_terms="standard",
-        angular_terms="standard",
         **aev_consts,
     )
     return aev_computer, symbols
