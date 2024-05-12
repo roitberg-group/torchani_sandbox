@@ -101,8 +101,17 @@ if torch.cuda.is_available():
             " To suppress warning set the env var TORCHANI_NO_WARN_TF32 to any value"
         )
 
+# We warn about ASE not being available since it is an optional dependency, but
+# many users will probably want to enable it
+# TODO: Maybe just make this a hard dependency
 try:
     from . import ase  # noqa: F401
     __all__.append('ase')
 except ImportError:
-    warnings.warn("Dependency not satisfied, torchani.ase will not be available")
+    if "TORCHANI_NO_WARN_ASE" not in os.environ:
+        warnings.warn(
+            "ASE could not be found."
+            " The torchani.ase module and model's *.ase() methods won't be available\n"
+            " To use them install ASE ('pip install ase' or'conda install ase')"
+            " To suppress warning set the env var TORCHANI_NO_WARN_ASE to any value"
+        )
