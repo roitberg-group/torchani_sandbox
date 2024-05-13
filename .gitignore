@@ -22,6 +22,9 @@ __pycache__
 *.zip
 a.out
 
+# Mypy and pytest cache
+*_cache
+
 # Ninja
 *.ninja
 *.ninja_log
@@ -48,7 +51,6 @@ benchmark_xyz
 /*.params
 /*.dat
 /tmp
-*_cache
 datacache
 dist
 /download
