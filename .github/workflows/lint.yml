@@ -15,6 +15,7 @@ jobs:
     steps:
     - name: Checkout torchani
       uses: actions/checkout@v3
+      with:
         token: ${{ secrets.PAT }}
 
     - name: Set up Python ${{ env.PY_VERSION }}
@@ -36,6 +37,7 @@ jobs:
     steps:
     - name: Checkout torchani
       uses: actions/checkout@v3
+      with:
         token: ${{ secrets.PAT }}
     - name: Set up Python ${{ env.PY_VERSION }}
       uses: actions/setup-python@v4
@@ -53,6 +55,7 @@ jobs:
     steps:
     - name: Checkout torchani
       uses: actions/checkout@v3
+      with:
         token: ${{ secrets.PAT }}
     - name: Check that clang-format is available
       run: which clang-format; clang-format --version
