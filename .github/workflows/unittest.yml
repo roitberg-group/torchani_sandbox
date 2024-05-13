@@ -22,20 +22,18 @@ jobs:
             docker run
             --rm
             --gpus '"device=none"'
-            -v $PWD:/examples nvcr.io/nvidia/pytorch:22.08-py3
+            pytorch/pytorch:1.13.1-cuda11.6-cudnn8-devel
             bash
             -c
             "mkdir -p /torchani_sandbox
             && cd /torchani_sandbox
-            && cp -r /examples/. /torchani_sandbox/
+            && pip install --upgrade pip
             && pip install 'setuptools>=61' 'setuptools_scm>=8'
             && pip install -r tests_requirements.txt
-            && pip uninstall cudf -y
             && ./download.sh
-            && pip install -e .
+            && pip install --no-build-isolation --editable .
             && cd tests/
             && pytest -s -v ."
-
 concurrency:
   group: unittests-cpu-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
