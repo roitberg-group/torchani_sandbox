@@ -630,7 +630,7 @@ class AtomicNumbersToMasses(torch.nn.Module):
         return masses
 
 
-# Convenience fn around SpeciesToMasses that is non-jittable
+# Convenience fn around AtomicNumbersToMasses that is non-jittable
 def atomic_numbers_to_masses(
     atomic_numbers: Tensor,
     dtype: torch.dtype = torch.float,

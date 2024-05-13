@@ -122,9 +122,11 @@ General Utilities
 =================
 
 .. automodule:: torchani.utils
-.. autofunction:: torchani.utils.get_atomic_masses
 .. autofunction:: torchani.utils.pad_atomic_properties
 .. autofunction:: torchani.utils.map_to_central
+.. autofunction:: torchani.utils.atomic_numbers_to_masses
+.. autoclass:: torchani.utils.AtomicNumbersToMasses
+    :members:
 .. autoclass:: torchani.utils.ChemicalSymbolsToInts
     :members:
 .. autoclass:: torchani.SpeciesConverter

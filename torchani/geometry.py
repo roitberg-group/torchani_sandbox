@@ -4,7 +4,7 @@ import typing as tp
 import torch
 from torch import Tensor
 
-from torchani.utils import SpeciesToMasses
+from torchani.utils import AtomicNumbersToMasses
 from torchani.constants import ATOMIC_MASSES
 
 
@@ -26,7 +26,7 @@ class Displacer(torch.nn.Module):
         super().__init__()
         self._atomic_masses: Tensor = torch.tensor(masses, device=device, dtype=dtype)
         self._center_of_mass = center_of_mass
-        self._converter = SpeciesToMasses(masses)
+        self._converter = AtomicNumbersToMasses(masses)
 
     def forward(self, species: Tensor, coordinates: Tensor) -> Tensor:
         mask = species == -1
