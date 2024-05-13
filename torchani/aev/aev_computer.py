@@ -214,7 +214,7 @@ class AEVComputer(torch.nn.Module):
                 species, coordinates, atom_index12, diff_vector, distances
             )
         else:
-            pbc is None or (
+            assert (pbc is None) or (
                 not pbc.any()
             ), "cuAEV doesn't support PBC when use_cuaev_interface=False"
             aev = self._compute_cuaev(species, coordinates)
