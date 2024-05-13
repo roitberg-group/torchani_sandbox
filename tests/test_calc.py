@@ -17,12 +17,12 @@ class TestDipoles(ANITest):
         coordinates = self.coordinates
         charges = torch.tensor([[0.1, 0.1, -0.2]], device=self.device)
         dipoles = compute_dipole(
-            species, coordinates, charges, center_of_mass=True
+            species, coordinates, charges,
         )
         self.assertEqual(dipoles, [[0.0000, -0.2000, 0.0000]])
 
         dipoles = compute_dipole(
-            species, coordinates, charges, center_of_mass=False
+            species, coordinates, charges, reference="origin",
         )
         self.assertEqual(dipoles, [[0.0000, -0.2000, 0.0000]])
 
@@ -31,12 +31,12 @@ class TestDipoles(ANITest):
         coordinates = self.coordinates
         charges = torch.tensor([[0.1, 0.1, -0.4]], device=self.device)
         dipoles = compute_dipole(
-            species, coordinates, charges, center_of_mass=True
+            species, coordinates, charges,
         )
         self.assertEqual(dipoles, [[0.0000, -0.2223813533782959, 0.0000]])
 
         dipoles = compute_dipole(
-            species, coordinates, charges, center_of_mass=False
+            species, coordinates, charges, reference="origin",
         )
         self.assertEqual(dipoles, [[0.0000, -0.4000, 0.0000]])
 

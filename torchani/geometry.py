@@ -7,6 +7,10 @@ from torch import Tensor
 from torchani.utils import AtomicNumbersToMasses
 from torchani.constants import ATOMIC_MASSES
 
+Reference = tp.Union[
+    tp.Literal["center_of_mass"], tp.Literal["center_of_geometry"], tp.Literal["origin"]
+]
+
 
 class Displacer(torch.nn.Module):
     r"""
@@ -19,16 +23,21 @@ class Displacer(torch.nn.Module):
     def __init__(
         self,
         masses: tp.Iterable[float] = ATOMIC_MASSES,
-        center_of_mass: bool = True,
+        reference: Reference = "center_of_mass",
         device: tp.Union[torch.device, tp.Literal["cpu"], tp.Literal["cuda"]] = "cpu",
         dtype: torch.dtype = torch.float,
     ) -> None:
         super().__init__()
         self._atomic_masses: Tensor = torch.tensor(masses, device=device, dtype=dtype)
-        self._center_of_mass = center_of_mass
-        self._converter = AtomicNumbersToMasses(masses)
+        self._center_of_mass = (reference == "center_of_mass")
+        self._skip = (reference == "origin")
+        self._converter = AtomicNumbersToMasses(masses, dtype=dtype, device=device)
 
     def forward(self, species: Tensor, coordinates: Tensor) -> Tensor:
+        # Do nothing if reference is origin
+        if self._skip:
+            return coordinates
+
         mask = species == -1
         if self._center_of_mass:
             masses = self._converter(species)
@@ -49,7 +58,7 @@ class Displacer(torch.nn.Module):
 def displace(
     atomic_numbers: Tensor,
     coordinates: Tensor,
-    center_of_mass: bool = True,
+    reference: Reference = "center_of_mass",
 ) -> Tensor:
     if torch.jit.is_scripting():
         raise RuntimeError(
@@ -59,7 +68,7 @@ def displace(
     return Displacer(
         device=atomic_numbers.device,
         dtype=coordinates.dtype,
-        center_of_mass=center_of_mass,
+        reference=reference,
     )(atomic_numbers, coordinates)
 
 

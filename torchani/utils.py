@@ -612,6 +612,7 @@ class AtomicNumbersToMasses(torch.nn.Module):
     Returns:
         :class:`torch.Tensor`: with, atomic masses, with the same shape as the input.
     """
+    atomic_masses: Tensor
 
     def __init__(
         self,
@@ -620,12 +621,15 @@ class AtomicNumbersToMasses(torch.nn.Module):
         dtype: torch.dtype = torch.float,
     ) -> None:
         super().__init__()
-        self._atomic_masses: Tensor = torch.tensor(masses, device=device, dtype=dtype)
+        self.register_buffer(
+            "atomic_masses",
+            torch.tensor(masses, device=device, dtype=dtype),
+        )
 
     def forward(self, atomic_numbers: Tensor) -> Tensor:
-        mask = (atomic_numbers == -1)
         assert not (atomic_numbers == 0).any(), "Input should be atomic numbers"
-        masses = self._atomic_masses[atomic_numbers]
+        mask = (atomic_numbers == -1)
+        masses = self.atomic_masses[atomic_numbers]
         masses.masked_fill_(mask, 0.0)
         return masses
 

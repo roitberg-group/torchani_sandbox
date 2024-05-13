@@ -17,7 +17,7 @@ class TestDisplaceToCom(ANITest):
             dtype=torch.float,
             device=self.device,
         )
-        displaced_coordinates = self.fn((species, coordinates))
+        displaced_coordinates = self.fn(species, coordinates)
         self.assertEqual(
             displaced_coordinates,
             coordinates
@@ -42,8 +42,9 @@ class TestDisplaceToCom(ANITest):
                 ]
             ],
             dtype=torch.float,
+            device=self.device,
         )
-        displaced_coordinates = self.fn((species, coordinates))
+        displaced_coordinates = self.fn(species, coordinates)
         expect_coordinates = coordinates - torch.tensor(
             [[0.5, 0.5, 0.5]], device=self.device, dtype=torch.float
         ).unsqueeze(1)
@@ -71,7 +72,7 @@ class TestDisplaceToCom(ANITest):
             device=self.device,
         )
         coordinates = torch.cat((coordinates, coordinates.clone()), dim=0)
-        displaced_coordinates = self.fn((species, coordinates))
+        displaced_coordinates = self.fn(species, coordinates)
         expect_coordinates = coordinates - torch.tensor(
             [[0.5, 0.5, 0.5]], device=self.device, dtype=torch.float
         ).unsqueeze(1)
@@ -80,7 +81,7 @@ class TestDisplaceToCom(ANITest):
 
     def testMatchOrcaResults(self):
         # this was taken from ORCA 4.2
-        species = torch.tensor([[1, 1, 8]], dtype=torch.long)
+        species = torch.tensor([[1, 1, 8]], dtype=torch.long, device=self.device)
         coordinates = torch.tensor(
             [
                 [
@@ -92,7 +93,7 @@ class TestDisplaceToCom(ANITest):
             dtype=torch.float,
             device=self.device,
         )
-        displaced_coordinates = self.fn((species, coordinates))
+        displaced_coordinates = self.fn(species, coordinates)
         # com = coordinates + displaced_coordinates
         expect_com = torch.tensor(
             [[0.038116, 0.098033, 0.000000]], device=self.device, dtype=torch.float

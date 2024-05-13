@@ -3,7 +3,7 @@ import typing as tp
 import torch
 from torch import Tensor
 
-from torchani.geometry import Displacer
+from torchani.geometry import Displacer, Reference
 from torchani.constants import ATOMIC_MASSES
 
 __all__ = ["DipoleComputer", "compute_dipole"]
@@ -26,11 +26,17 @@ class DipoleComputer(torch.nn.Module):
     def __init__(
         self,
         masses: tp.Iterable[float] = ATOMIC_MASSES,
-        center_of_mass: bool = True,
+        reference: Reference = "center_of_mass",
         device: tp.Union[torch.device, tp.Literal["cpu"], tp.Literal["cuda"]] = "cpu",
         dtype: torch.dtype = torch.float,
     ) -> None:
-        self._displacer = Displacer(masses, center_of_mass, device, dtype)
+        super().__init__()
+        self._displacer = Displacer(
+            masses,
+            reference,
+            device,
+            dtype,
+        )
 
     def forward(self, species: Tensor, coordinates: Tensor, charges: Tensor) -> Tensor:
         assert species.shape == charges.shape == coordinates.shape[:-1]
@@ -45,7 +51,7 @@ def compute_dipole(
     species: Tensor,
     coordinates: Tensor,
     charges: Tensor,
-    center_of_mass: bool = True,
+    reference: Reference = "center_of_mass",
 ) -> Tensor:
     if torch.jit.is_scripting():
         raise RuntimeError(
@@ -53,7 +59,7 @@ def compute_dipole(
             " consider using torchani.calc.DipoleComputer instead"
         )
     return DipoleComputer(
-        center_of_mass=center_of_mass,
+        reference=reference,
         device=species.device,
         dtype=coordinates.dtype,
     )(species, coordinates, charges)
