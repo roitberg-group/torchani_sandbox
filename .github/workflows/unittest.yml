@@ -9,7 +9,8 @@ on:
 jobs:
   unittests-cpu:
     runs-on: self-hosted
-
+    container: pytorch/pytorch:1.13.1-cuda11.6-cudnn8-devel
+    options: --gpus '"device=none"'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -19,12 +20,6 @@ jobs:
 
       - name: Install and Run tests
         run: >-
-            docker run
-            --rm
-            --gpus '"device=none"'
-            pytorch/pytorch:1.13.1-cuda11.6-cudnn8-devel
-            bash
-            -c
             "mkdir -p /torchani_sandbox
             && cd /torchani_sandbox
             && pip install --upgrade pip
