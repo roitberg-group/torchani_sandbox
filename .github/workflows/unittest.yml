@@ -18,17 +18,24 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
 
-      - name: Install and Run tests
-        run: >-
-            "mkdir -p /torchani_sandbox
-            && cd /torchani_sandbox
-            && pip install --upgrade pip
-            && pip install 'setuptools>=61' 'setuptools_scm>=8'
-            && pip install -r tests_requirements.txt
-            && ./download.sh
-            && pip install --no-build-isolation --editable .
-            && cd tests/
-            && pytest -s -v ."
+      - name: Install pip
+        run: pip install --upgrade pip
+
+      - name: Install setuptools
+        run: pip install 'setuptools>=61' 'setuptools_scm>=8'
+
+      - name: Install tests requirements
+        run: pip install -r tests_requirements.txt
+
+      - name: Download data
+        run: cd ./torchani_sandbox && ./download.sh
+
+      - name: Install torchani
+        run: pip install --no-build-isolation --editable ./torchani_sandbox
+
+      - name: Run tests
+        run: cd ./torchani_sandbox/tests && pytest -s -v .
+
 concurrency:
   group: unittests-cpu-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
