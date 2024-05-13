@@ -1,26 +1,23 @@
 import unittest
 import torch
 from torchani.testing import ANITest, expand
-from torchani.geometry import displace_to_com_frame
+from torchani.geometry import Displacer
 from torchani.units import bohr2angstrom
 
 
 @expand()
 class TestDisplaceToCom(ANITest):
     def setUp(self) -> None:
-        if self.jit:
-            self.fn = torch.jit.script(displace_to_com_frame)
-        else:
-            self.fn = displace_to_com_frame
+        self.fn = self._setup(Displacer())
 
-    def testCenterToComFrame(self):
+    def testSimple(self):
         species = torch.tensor([[1, 1, 1, 1, 6]], dtype=torch.long, device=self.device)
         coordinates = torch.tensor(
             [[[0.0, 0.0, 0.0], [0, 1, 1], [1, 0, 1], [1, 1, 0], [0.5, 0.5, 0.5]]],
             dtype=torch.float,
             device=self.device,
         )
-        species, displaced_coordinates = self.fn((species, coordinates))
+        displaced_coordinates = self.fn((species, coordinates))
         self.assertEqual(
             displaced_coordinates,
             coordinates
@@ -29,7 +26,7 @@ class TestDisplaceToCom(ANITest):
             ).unsqueeze(1),
         )
 
-    def testCenterToComFrameDummy(self):
+    def testDummyAtoms(self):
         species = torch.tensor(
             [[1, 1, 1, 1, 6, -1]], dtype=torch.long, device=self.device
         )
@@ -46,14 +43,14 @@ class TestDisplaceToCom(ANITest):
             ],
             dtype=torch.float,
         )
-        species, displaced_coordinates = self.fn((species, coordinates))
+        displaced_coordinates = self.fn((species, coordinates))
         expect_coordinates = coordinates - torch.tensor(
             [[0.5, 0.5, 0.5]], device=self.device, dtype=torch.float
         ).unsqueeze(1)
         expect_coordinates[(species == -1)] = 0
         self.assertEqual(displaced_coordinates, expect_coordinates)
 
-    def testCenterToComFrameMany(self):
+    def testBatched(self):
         species = torch.tensor(
             [[1, 1, 1, 1, 6, -1], [6, 6, 6, 6, 8, -1]],
             dtype=torch.long,
@@ -74,14 +71,14 @@ class TestDisplaceToCom(ANITest):
             device=self.device,
         )
         coordinates = torch.cat((coordinates, coordinates.clone()), dim=0)
-        species, displaced_coordinates = self.fn((species, coordinates))
+        displaced_coordinates = self.fn((species, coordinates))
         expect_coordinates = coordinates - torch.tensor(
             [[0.5, 0.5, 0.5]], device=self.device, dtype=torch.float
         ).unsqueeze(1)
         expect_coordinates[(species == -1)] = 0
         self.assertEqual(displaced_coordinates, expect_coordinates)
 
-    def testCenterOfMassWaterOrca(self):
+    def testMatchOrcaResults(self):
         # this was taken from ORCA 4.2
         species = torch.tensor([[1, 1, 8]], dtype=torch.long)
         coordinates = torch.tensor(
@@ -95,7 +92,7 @@ class TestDisplaceToCom(ANITest):
             dtype=torch.float,
             device=self.device,
         )
-        species, displaced_coordinates = self.fn((species, coordinates))
+        displaced_coordinates = self.fn((species, coordinates))
         # com = coordinates + displaced_coordinates
         expect_com = torch.tensor(
             [[0.038116, 0.098033, 0.000000]], device=self.device, dtype=torch.float

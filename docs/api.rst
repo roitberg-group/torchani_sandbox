@@ -113,8 +113,10 @@ Creation of 3D Geometries
 =========================
 
 .. automodule:: torchani.geometry
+.. autofunction:: torchani.geometry.displace
+.. autoclass:: torchani.geometry.Displacer
+    :members:
 .. autofunction:: torchani.geometry.tile_into_tight_cell
-.. autofunction:: torchani.geometry.displace_to_com_frame
 
 General Utilities
 =================
