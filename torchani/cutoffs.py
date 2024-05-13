@@ -6,8 +6,26 @@ from torch import Tensor
 
 
 # All cutoffs assume the elements in "distances" are smaller than "cutoff"
-# Cutoff modules must have no parameters
+# all parameters of a Cutoff **must be passed to init**
+# If cuaev supports the cutoff _cuaev_name must be defined to be a unique string
 class Cutoff(torch.nn.Module):
+
+    _cuaev_name: str
+
+    def __init__(self, *args: tp.Any, **kwargs: tp.Any) -> None:
+        super().__init__()
+        self.fn_params = args + tuple(kwargs.values())
+        self._cuaev_name = ""
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Cutoff):
+            return False
+        if not type(self) == type(other):
+            return False
+        if not self.fn_params == other.fn_params:
+            return False
+        return True
+
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
         raise NotImplementedError
 
@@ -18,24 +36,28 @@ class CutoffDummy(Cutoff):
 
 
 class CutoffCosine(Cutoff):
+    def __init__(self) -> None:
+        super().__init__()
+        self._cuaev_name = "cosine"
+
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
         return 0.5 * torch.cos(distances * (math.pi / cutoff)) + 0.5
 
 
 class CutoffSmooth(Cutoff):
+    def __init__(self, order: int = 2, eps: float = 1.0e-10) -> None:
+        super().__init__(order, eps)
+        if order == 2 and eps == 1.0e-10:
+            self._cuaev_name = "smooth"
+        self.order = order
+        self.eps = eps
+
     def forward(self, distances: Tensor, cutoff: float) -> Tensor:
-        order = 2
-        eps = 1e-10
-        e = 1 - 1 / (1 - (distances / cutoff) ** order).clamp(min=eps)
+        e = 1 - 1 / (1 - (distances / cutoff) ** self.order).clamp(min=self.eps)
         return torch.exp(e)
 
-
-class CutoffSmooth4(Cutoff):
-    def forward(self, distances: Tensor, cutoff: float) -> Tensor:
-        order = 4
-        eps = 1e-10
-        e = 1 - 1 / (1 - (distances / cutoff) ** order).clamp(min=eps)
-        return torch.exp(e)
+    def extra_repr(self) -> str:
+        return f"order={self.order}, eps={self.eps:.1e}"
 
 
 _Kinds = tp.Union[
@@ -61,9 +83,9 @@ def parse_cutoff_fn(
     elif cutoff_fn == "cosine":
         cutoff_fn = CutoffCosine()
     elif cutoff_fn in ("smooth", "smooth2"):
-        cutoff_fn = CutoffSmooth()
+        cutoff_fn = CutoffSmooth(order=2)
     elif cutoff_fn == "smooth4":
-        cutoff_fn = CutoffSmooth4()
+        cutoff_fn = CutoffSmooth(order=4)
     elif not isinstance(cutoff_fn, Cutoff):
         raise ValueError(f"Unsupported cutoff fn: {cutoff_fn}")
     return tp.cast(Cutoff, cutoff_fn)
