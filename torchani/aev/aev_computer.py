@@ -66,7 +66,7 @@ class AEVComputer(torch.nn.Module):
 
         self.angular_terms = parse_angular_term(angular_terms)
         self.radial_terms = parse_radial_term(radial_terms)
-        if self.angular_terms.cutoff_fn != self.radial_terms.cutoff_fn:
+        if not (self.angular_terms.cutoff_fn.is_same(self.radial_terms.cutoff_fn)):
             raise ValueError("Cutoff fn must be the same for angular and radial terms")
         if self.angular_terms.cutoff > self.radial_terms.cutoff:
             raise ValueError(

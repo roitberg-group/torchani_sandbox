@@ -17,7 +17,10 @@ class Cutoff(torch.nn.Module):
         self.fn_params = args + tuple(kwargs.values())
         self._cuaev_name = ""
 
-    def __eq__(self, other: object) -> bool:
+    @torch.jit.unused
+    def is_same(self, other: object) -> bool:
+        # This is a hack since I can't figure out how to safely override __eq__ int
+        # torch.nn.Module
         if not isinstance(other, Cutoff):
             return False
         if not type(self) == type(other):
