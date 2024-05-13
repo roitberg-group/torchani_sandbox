@@ -23,7 +23,7 @@ class Cutoff(torch.nn.Module):
         # torch.nn.Module
         if not isinstance(other, Cutoff):
             return False
-        if not type(self) == type(other):
+        if type(self) is not type(other):
             return False
         if not self.fn_params == other.fn_params:
             return False
