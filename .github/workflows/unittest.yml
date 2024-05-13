@@ -11,7 +11,7 @@ jobs:
     runs-on: self-hosted
     container:
       image: pytorch/pytorch:1.13.1-cuda11.6-cudnn8-devel
-      options: --rm --gpus '"device=none"'
+      options: --rm
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
