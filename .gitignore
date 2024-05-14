@@ -43,12 +43,12 @@ Untitled.ipynb
 /tests/runs
 /tools/plots
 /tools/benchmark
+/docs-build
 
 *.prof
 /data
 /test.py
 /build*
-/docs-build*
 benchmark_xyz
 *checkpoint*
 /quicktest.py
