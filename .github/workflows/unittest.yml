@@ -32,10 +32,7 @@ jobs:
             && pip install -r tests_requirements.txt
             && pip install -e .
             && cd tests/
-            && pytest -s -v ."
-            #"mkdir -p /torchani_sandbox
-            #&& cd /torchani_sandbox
-            #&& cp -r /examples/. /torchani_sandbox/
+            && pytest -v ."
 
 concurrency:
   group: unittests-cpu-${{ github.event.pull_request.number || github.sha }}
