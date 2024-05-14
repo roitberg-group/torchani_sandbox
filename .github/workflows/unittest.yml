@@ -16,23 +16,20 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           submodules: recursive
-      - name: Download test data
+      - name: Download tests data
         run: ./download.sh
-      - name: Install and Run tests
+      - name: Install torchani and run tests
         run: >-
             docker run
             --rm
             --gpus '"device=none"'
             --privileged
-            -v $PWD:/torchani_sandbox pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
-            bash
-            -c
-            "cd /torchani_sandbox
-            && pip install 'setuptools>=61' 'setuptools_scm>=8'
-            && pip install -r tests_requirements.txt
-            && pip install -e .
-            && cd tests/
-            && pytest -v ."
+            -v $PWD:/ani
+            pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
+            bash -c
+            "pip install 'setuptools>=61' 'setuptools_scm>=8' -r test_requirements.txt
+            && pip install -v --no-build-isolation --editable ./ani
+            && pytest ./ani"
 
 concurrency:
   group: unittests-cpu-${{ github.event.pull_request.number || github.sha }}
