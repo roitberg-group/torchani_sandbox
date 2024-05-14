@@ -50,11 +50,14 @@ Untitled.ipynb
 # Downloaded CUB include
 /include
 
+# Sphinx
+/docs-build*
+/docs/sg_execution_times.rst
+
 *.prof
 /tools/benchmark/*
 /data
 /build*
-/docs-build*
 benchmark_xyz
 *checkpoint*
 /*.ipt
