@@ -126,12 +126,12 @@ def cuda_extension(build_all=False):
         name='torchani.cuaev',
         sources=["torchani/csrc/cuaev.cpp", "torchani/csrc/aev.cu"],
         include_dirs=include_dirs,
-        extra_compile_args={'cxx': ['-std=c++14'], 'nvcc': nvcc_args})
+        extra_compile_args={'cxx': ['-std=c++17'], 'nvcc': nvcc_args})
 
 
 def mnp_extension():
     from torch.utils.cpp_extension import CUDAExtension
-    cxx_args = ['-std=c++14', '-fopenmp']
+    cxx_args = ['-std=c++17', '-fopenmp']
     if CUAEV_DEBUG:
         cxx_args.append('-DTORCHANI_DEBUG')
     return CUDAExtension(
