@@ -38,12 +38,12 @@ htmlcov/
 Untitled.ipynb
 
 # Full directories relative to project root
-/download
-/include
-/tests/runs
-/tools/plots
-/tools/benchmark
-/docs/build
+/download/
+/include/
+/tests/runs/
+/tools/plots/
+/tools/benchmark/
+/docs/build/
 
 *.prof
 /data
