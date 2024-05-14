@@ -1,5 +1,6 @@
 import os
 import subprocess
+from pathlib import Path
 import sys
 import logging
 
@@ -9,30 +10,28 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("setup")
 
 
+# Build extensions for all SMs
 BUILD_EXT_ALL_SM = '--ext-all-sms' in sys.argv
 if '--ext-all-sms' in sys.argv:
     sys.argv.remove('--ext-all-sms')
 
+# Build extensions only for detected SMs
 FAST_BUILD_EXT = '--ext' in sys.argv
 if '--ext' in sys.argv:
     sys.argv.remove('--ext')
 
-# compile cuaev with DEBUG infomation
+# Compile cuAEV with debug info
 CUAEV_DEBUG = '--cuaev-debug' in sys.argv
 if CUAEV_DEBUG:
     sys.argv.remove('--cuaev-debug')
 
-# compile cuaev with optimizations: e.g. intrinsics functions and use_fast_math flag
-# CUAEV_OPT = '--cuaev-opt' in sys.argv
-# if CUAEV_OPT:
-#     sys.argv.remove('--cuaev-opt')
-CUAEV_OPT = True
+# Compile cuAEV with optimizations: (__* intrinsic functions and use_fast_math flag)
+CUAEV_OPT = '--no-cuaev-opt' not in sys.argv
+if "--no-cuaev-opt" in sys.argv:
+    sys.argv.remove('--no-cuaev-opt')
 
 if not BUILD_EXT_ALL_SM and not FAST_BUILD_EXT:
     log.warning("Will not install cuaev")
-
-with open("README.md", "r") as fh:
-    long_description = fh.read()
 
 
 def maybe_download_cub():
@@ -85,9 +84,9 @@ def cuda_extension(build_all=False):
 
     nvcc_args = ['--expt-extended-lambda']
     if CUAEV_OPT:
+        print("CUAEV_OPT: ON")
+        print("Compiling cuAEV with -use_fast_math flag")
         nvcc_args.append('-use_fast_math')
-    # nvcc_args.append('-Xptxas=-v')
-
     # use cub in a safe manner, see:
     # https://github.com/pytorch/pytorch/pull/55292
     # https://github.com/pytorch/pytorch/pull/66219
@@ -165,7 +164,7 @@ def ext_kwargs():
 setup(
     name='torchani',
     description='PyTorch implementation of ANI',
-    long_description=long_description,
+    long_description=(Path(__file__).resolve().parent / "README.md").read_text(),
     long_description_content_type="text/markdown",
     url='https://github.com/aiqm/torchani',
     author='Xiang Gao',
