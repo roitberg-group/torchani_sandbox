@@ -8,7 +8,7 @@ __pycache__
 # Vscode
 /.vscode
 
-# Vim
+# Vim swap files
 *.swp
 *.swo
 
@@ -22,46 +22,49 @@ __pycache__
 *.zip
 a.out
 
-# Mypy and pytest cache
-*_cache
+# Mypy cache
+*.mypy_cache
 
-# Ninja
+# Testing:
+# Pytest cache
+*.pytest_cache
+# hypothesis
+*.hypothesis
+# Test runs
+/tests/runs
+# coverage.py code coverage results
+*.coverage
+htmlcov/
+
+# Ninja (for building extensions)
 *.ninja
 *.ninja_log
 
-# Code coverage
-.coverage
-htmlcov/
-
-# Notebooks
+# Jupyter Notebooks
 .ipynb_checkpoints
 Untitled.ipynb
+
+# Downloaded external data using download.sh
+/download
+
+# Downloaded CUB include
+/include
 
 *.prof
 /tools/benchmark/*
 /data
-/test.py
 /build*
 /docs-build*
 benchmark_xyz
 *checkpoint*
-/tests/runs
-/quicktest.py
 /*.ipt
 /*.params
 /*.dat
 /tmp
 datacache
 dist
-/download
-/download.tar.xz
 *.qdrep
 *.qdstrm
-/nnp_training.py
-/test*.py
-/include
-training_outputs/
 examples/dataset.pkl
 examples/batched_dataset_1x/*
 /tools/plots/*
-/tests/.hypothesis
