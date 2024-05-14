@@ -32,6 +32,16 @@ jobs:
             && cd ./tests
             && pytest -v ."
 
+      - name: Cleanup of test cache
+        if: ${{ always() }}
+        continue-on-error: true
+        run: >-
+            docker run
+            --rm
+            --privileged
+            -v $PWD:/ani ubuntu:latest
+            bash -c "rm -rf /ani/.pytest_cache"
+
 concurrency:
   group: unittests-cpu-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
