@@ -40,7 +40,7 @@ jobs:
             --rm
             --privileged
             -v $PWD:/ani ubuntu:latest
-            bash -c "rm -rf /ani"
+            bash -c "rm -rf /ani/.pytest_cache && rm -rf /ani/torchani.egg-info && find . -name __pycache__ --delete"
 
 concurrency:
   group: unittests-cpu-${{ github.event.pull_request.number || github.sha }}
