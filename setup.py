@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import logging
+import datetime
 
 from setuptools import setup, find_packages
 
@@ -173,7 +174,7 @@ setup(
     license='MIT',
     packages=find_packages(),
     include_package_data=True,
-    use_scm_version=True,
+    use_scm_version={"fallback_version": "0.0.0"},
     setup_requires=["setuptools>=61", 'setuptools_scm>=8'],
     install_requires=[
         'numpy>=1.24',
