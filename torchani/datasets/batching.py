@@ -359,7 +359,8 @@ def _divide_into_splits(
         any_key = list(split_sizes.keys())[0]
         split_sizes[any_key] += leftover
         assert sum(split_sizes.values()) == total_num_conformers
-    conformer_splits = torch.split(conformer_indices, list(split_sizes.values()))
+    # TODO: Unnecessary cast in current pytorch
+    conformer_splits = tuple(torch.split(conformer_indices, list(split_sizes.values())))
     assert len(conformer_splits) == len(split_sizes.values())
     print(
         f"Splits have number of conformers: {dict(split_sizes)}."
