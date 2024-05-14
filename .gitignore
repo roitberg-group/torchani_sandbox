@@ -22,7 +22,8 @@ __pycache__/
 a.out
 
 # Mypy and pytest cache
-*_cache
+.mypy_cache/
+.pytest_cache/
 
 # Ninja
 *.ninja
