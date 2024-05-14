@@ -25,4 +25,5 @@ RUN pip install twine wheel \
     && pip install -r docs_requirements.txt \
     && pip install pytest \
     && ./download.sh \
+    && pip install -v --no-build-isolation --editable . \
     && pip install -v --no-build-isolation --editable . --global-option="--ext"
