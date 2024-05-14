@@ -29,8 +29,8 @@ jobs:
             "cd /ani
             && pip install 'setuptools>=61' 'setuptools_scm>=8' -r tests_requirements.txt
             && pip install -v --no-build-isolation --editable .
-            && pytest - v .
-            && rm -rf .pytest_cache"
+            && cd ./tests
+            && pytest -v ."
 
 concurrency:
   group: unittests-cpu-${{ github.event.pull_request.number || github.sha }}

@@ -68,8 +68,8 @@ jobs:
           ${{ steps.meta.outputs.tags }}
           bash -c
           "nvidia-smi
-          && pytest -v .
-          && rm -rf .pytest_cache"
+          && cd ./tests
+          && pytest -v ."
 
       - name: Remove image
         if: ${{ always() }}
