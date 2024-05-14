@@ -29,10 +29,10 @@ jobs:
             "mkdir -p /torchani_sandbox
             && cd /torchani_sandbox
             && cp -r /examples/. /torchani_sandbox/
-            && pip install 'setuptools>=61' 'setuptools_scm>=8'
-            && pip install -r tests_requirements.txt
+            && pip install --progress-bar off 'setuptools>=61' 'setuptools_scm>=8'
+            && pip install --progress-bar off -r tests_requirements.txt
             && ./download.sh
-            && pip install -e .
+            && pip install --progress-bar off -e .
             && cd tests/
             && pytest -s -v ."
 
