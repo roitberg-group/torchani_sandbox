@@ -1,9 +1,8 @@
 # Python cache and build
-__pycache__
-.eggs
-*.egg-info
-/torchani.egg-info
+__pycache__/
 *.pyc
+.eggs
+*.egg-info/
 
 # Vscode
 /.vscode
