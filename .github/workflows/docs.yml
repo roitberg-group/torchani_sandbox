@@ -33,4 +33,4 @@ jobs:
       run: ./download.sh
 
     - name: Build docs
-      run: sphinx-build docs build
+      run: sphinx-build docs/src docs/build

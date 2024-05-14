@@ -43,7 +43,7 @@ Untitled.ipynb
 /tests/runs
 /tools/plots
 /tools/benchmark
-/docs-build
+/docs/build
 
 *.prof
 /data
