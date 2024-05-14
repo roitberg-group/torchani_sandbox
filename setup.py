@@ -177,8 +177,8 @@ setup(
     setup_requires=["setuptools>=61", 'setuptools_scm>=8'],
     install_requires=[
         'typing_extensions>=4.0.0',
-        'torch',
-        'numpy',
+        'torch==2.3',
+        'numpy>=1.22',
         'lark-parser',
         'requests',
         'h5py',
