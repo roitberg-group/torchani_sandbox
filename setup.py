@@ -2,7 +2,6 @@ import os
 import subprocess
 import sys
 import logging
-import datetime
 
 from setuptools import setup, find_packages
 
