@@ -32,7 +32,7 @@ jobs:
             && cd ./tests
             && pytest -v ."
 
-      - name: Cleanup of test cache
+      - name: Cleanup of all privileged-mode data
         if: ${{ always() }}
         continue-on-error: true
         run: >-
@@ -40,7 +40,7 @@ jobs:
             --rm
             --privileged
             -v $PWD:/ani ubuntu:latest
-            bash -c "rm -rf /ani/.pytest_cache"
+            bash -c "rm -rf /ani"
 
 concurrency:
   group: unittests-cpu-${{ github.event.pull_request.number || github.sha }}
