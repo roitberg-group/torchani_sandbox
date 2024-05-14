@@ -224,8 +224,7 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
             splitted_conformers: NumpyConformers = dict()
             for k in keys_copy:
                 if getter == "get_conformers":
-                    # TODO: unnecessary cast in current pytorch
-                    splits = tuple(torch.split(conformers.pop(k), max_size))
+                    splits = torch.split(conformers.pop(k), max_size)
                 else:
                     splits = tuple(
                         conformers[k][j:j + max_size]
