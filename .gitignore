@@ -37,15 +37,20 @@ htmlcov/
 .ipynb_checkpoints
 Untitled.ipynb
 
+# Full directories relative to project root
+/download
+/include
+/tests/runs
+/tools/plots
+/tools/benchmark
+
 *.prof
-/tools/benchmark/*
 /data
 /test.py
 /build*
 /docs-build*
 benchmark_xyz
 *checkpoint*
-/tests/runs
 /quicktest.py
 /*.ipt
 /*.params
@@ -53,15 +58,10 @@ benchmark_xyz
 /tmp
 datacache
 dist
-/download
-/download.tar.xz
 *.qdrep
 *.qdstrm
 /nnp_training.py
 /test*.py
-/include
-training_outputs/
 examples/dataset.pkl
 examples/batched_dataset_1x/*
-/tools/plots/*
 /tests/.hypothesis
