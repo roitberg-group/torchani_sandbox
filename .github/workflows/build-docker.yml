@@ -67,7 +67,9 @@ jobs:
           --gpus all
           ${{ steps.meta.outputs.tags }}
           bash -c
-          "nvidia-smi && pytest ."
+          "nvidia-smi
+          && pytest -v .
+          && rm -rf .pytest_cache"
 
       - name: Remove image
         if: ${{ always() }}
