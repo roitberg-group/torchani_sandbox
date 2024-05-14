@@ -98,6 +98,10 @@ sphix-build docs docs-build
 # Manually run unit tests (optional)
 cd ./tests
 pytest -v .
+# or manually run unit tests with coverage (optional)
+cd ./tests
+coverage run -m pytest -v .
+coverage report  # (or 'coverage html')
 ```
 
 Usually this process works for most use cases, but for more details regarding
