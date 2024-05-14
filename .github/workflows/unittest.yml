@@ -24,10 +24,10 @@ jobs:
             --rm
             --gpus '"device=none"'
             --privileged
-            -v $PWD:/ani
+            -v $PWD:/torchani_sandbox
             pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
             bash -c
-            "cd ./ani
+            "cd ./torchani_sandbox
             && pip install 'setuptools>=61' 'setuptools_scm>=8' -r test_requirements.txt
             && pip install -v --no-build-isolation --editable .
             && pytest ."
