@@ -15,10 +15,11 @@ SHELL ["/bin/bash", "-cu"]
 RUN apt-get update && apt-get install -y git wget unzip
 
 # Download and unzip test data
+COPY ./download.sh .
 RUN ./download.sh
 
 # Copy requirements files into the image
-COPY *_requirements.txt /torchani_sandbox/
+COPY *_requirements.txt .
 
 # Install requirements (note that only tests_requirements are needed for unit-tests)
 RUN pip install twine wheel pytest \
