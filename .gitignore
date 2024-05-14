@@ -45,23 +45,20 @@ Untitled.ipynb
 /tools/benchmark/
 /docs/build/
 
+# Nvidia Nsight Systems profiling
+*.qdrep
+*.qdstrm
+
 *.prof
-/data
-/test.py
 /build*
-benchmark_xyz
 *checkpoint*
-/quicktest.py
 /*.ipt
 /*.params
 /*.dat
 /tmp
 datacache
 dist
-*.qdrep
-*.qdstrm
 /nnp_training.py
-/test*.py
 examples/dataset.pkl
 examples/batched_dataset_1x/*
 /tests/.hypothesis
