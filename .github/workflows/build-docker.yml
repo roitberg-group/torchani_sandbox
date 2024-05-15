@@ -67,8 +67,7 @@ jobs:
           ${{ steps.meta.outputs.tags }}
           bash -c
           "nvidia-smi
-          && cd ./tests
-          && pytest -v ."
+          && pytest ."
 
       - name: Remove image
         if: ${{ always() }}
