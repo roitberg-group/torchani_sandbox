@@ -63,7 +63,6 @@ jobs:
         run: >-
           docker run
           --rm
-          --privileged
           --gpus all
           ${{ steps.meta.outputs.tags }}
           bash -c
