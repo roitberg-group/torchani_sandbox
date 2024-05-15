@@ -25,7 +25,7 @@ jobs:
             --gpus '"device=none"'
             -v $PWD:/ani pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
             bash -c
-            "&& mkdir /ani-tmp
+            "mkdir /ani-tmp
             && rsync -aEPz /ani/ /ani-tmp/
             && cd /ani-tmp
             && pip install 'setuptools>=61' 'setuptools_scm>=8' -r tests_requirements.txt
