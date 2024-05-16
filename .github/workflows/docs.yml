@@ -45,8 +45,14 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Build docs
-        run: sphinx-build docs/src docs/build
+      - name: Build extensions and run tests
+        run: >-
+          docker run
+          --rm
+          --gpus '"device=none"'
+          ${{ steps.meta.outputs.tags }}
+          bash -c
+          "sphinx-build docs/src docs/build"
 
       - name: Remove image
         if: ${{ always() }}
