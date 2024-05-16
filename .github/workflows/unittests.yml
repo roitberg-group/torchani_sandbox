@@ -11,7 +11,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  cpu:
+  cpu-tests:
     runs-on: [self-hosted, ipickering]
     permissions:
       contents: read
@@ -45,7 +45,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Run unit tests
+      - name: Run unit tests (CPU)
         run: >-
           docker run
           --rm

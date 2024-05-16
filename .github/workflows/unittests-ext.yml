@@ -2,30 +2,16 @@ name: unittests-ext
 
 on:
   pull_request:
-    paths:
-      - 'setup.py'
-      - 'torchani/csrc/**'
-      - 'torchani/aev/**'
-      - 'ci/**'
-      - 'test/test_cuaev.py'
-      - Dockerfile*
   push:
     branches:
       - master
-    paths:
-      - 'setup.py'
-      - 'torchani/csrc/**'
-      - 'torchani/aev/**'
-      - 'ci/**'
-      - 'test/test_cuaev.py'
-      - Dockerfile*
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  cuda:
+  gpu-tests-ext:
     runs-on: [self-hosted, ipickering]
     permissions:
       contents: read
@@ -59,7 +45,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Build extensions and run unit tests (gpu)
+      - name: Build extensions and run tests
         run: >-
           docker run
           --rm
@@ -67,7 +53,7 @@ jobs:
           ${{ steps.meta.outputs.tags }}
           bash -c
           'pip install -v --no-build-isolation --editable . --global-option="--ext"
-          && pytest .'
+          && pytest ./tests/test_cuaev.py ./tests/test_infer.py ./tests/test_infer_mnp.py'
 
       - name: Remove image
         if: ${{ always() }}
