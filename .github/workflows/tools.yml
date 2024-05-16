@@ -7,48 +7,81 @@ on:
       - master
 
 env:
-  PY_VERSION: 3.8
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   tools:
     runs-on: [self-hosted, ipickering]
+    permissions:
+      contents: read
+      packages: write
+
     steps:
-    - name: Checkout torchani
-      uses: actions/checkout@v3
-      with:
-        token: ${{ secrets.PAT }}
+      - name: Checkout torchani
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT }}
+          submodules: recursive
 
-    - name: Set up Python ${{ env.PY_VERSION }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PY_VERSION }}
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Fetch submodules
-      run: git submodule update --init
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
-    - name: Install dependencies
-      run: pip install 'setuptools>=61' 'setuptools_scm>=8' -r tools_requirements.txt
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
-    - name: Install TorchANI
-      run: pip install --no-build-isolation --editable .
+      - name: Inference benchmark
+        run: >-
+          docker run
+          --rm
+          --gpus all
+          ${{ steps.meta.outputs.tags }}
+          bash -c "python tools/inference-benchmark.py --tqdm dataset/xyz_files/CH4-5.xyz"
 
-    - name: Pytorch info
-      run: python -c 'from torch.utils.collect_env import get_pretty_env_info; print(get_pretty_env_info())'
+      - name: COMP6 benchmark
+        run: >-
+          docker run
+          --rm
+          --gpus all
+          ${{ steps.meta.outputs.tags }}
+          bash -c "python tools/comp6.py dataset/COMP6/COMP6v1/s66x8"
 
-    - name: Download data files
-      run: ./download.sh
+      - name: Training benchmark
+        run: >-
+          docker run
+          --rm
+          --gpus all
+          ${{ steps.meta.outputs.tags }}
+          bash -c "python tools/training-benchmark.py dataset/ani1-up_to_gdb4/ani_gdb_s01.h5"
 
+      - name: Training benchmark (Nsight Systems)
+        run: >-
+          docker run
+          --rm
+          --gpus all
+          ${{ steps.meta.outputs.tags }}
+          bash -c "python tools/training-benchmark-nsys-profile.py --dry-run dataset/ani1-up_to_gdb4/ani_gdb_s01.h5"
+
+      - name: Remove image
+        if: ${{ always() }}
+        continue-on-error: true
+        run: docker image rm ${{ steps.meta.outputs.tags }}
     - name: Inference benchmark
-      run: python tools/inference-benchmark.py --tqdm dataset/xyz_files/CH4-5.xyz
-
-    - name: COMP6 Benchmark
-      run: python tools/comp6.py dataset/COMP6/COMP6v1/s66x8
-
-    - name: Training Benchmark
-      run: python tools/training-benchmark.py dataset/ani1-up_to_gdb4/ani_gdb_s01.h5
-
-    - name: Training Benchmark Nsight System
-      run: python tools/training-benchmark-nsys-profile.py --dry-run dataset/ani1-up_to_gdb4/ani_gdb_s01.h5
 
 concurrency:
   group: tools-${{ github.event.pull_request.number || github.sha }}
