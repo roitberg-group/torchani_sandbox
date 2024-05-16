@@ -38,9 +38,6 @@ jobs:
           token: ${{ secrets.PAT }}
           submodules: recursive
 
-      - name: Download tests data
-        run: ./download.sh
-
       - name: Login to GHCR
         uses: docker/login-action@v2
         with:

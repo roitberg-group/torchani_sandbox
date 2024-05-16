@@ -6,8 +6,12 @@ ENV CUDA_HOME=/usr/local/cuda/
 ENV PATH=${CUDA_HOME}/bin:$PATH
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
-# Copy test data
-COPY ./download/ ./download/
+# Get dependencies to extract data and get correct setupttols_scm version
+RUN apt update && apt install -y git wget unzip
+
+# Download test data
+COPY ./download.sh .
+RUN ./download.sh
 
 # Copy pip requirements files
 COPY *_requirements.txt .
