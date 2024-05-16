@@ -81,7 +81,6 @@ jobs:
         if: ${{ always() }}
         continue-on-error: true
         run: docker image rm ${{ steps.meta.outputs.tags }}
-    - name: Inference benchmark
 
 concurrency:
   group: tools-${{ github.event.pull_request.number || github.sha }}
