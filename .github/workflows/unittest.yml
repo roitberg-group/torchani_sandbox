@@ -1,4 +1,4 @@
-name: unittests-cpu
+name: unittests
 
 on:
   pull_request:
@@ -6,9 +6,16 @@ on:
     branches:
       - master
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
-  unittests-cpu:
+  cpu:
     runs-on: [self-hosted, ipickering]
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout torchani
@@ -16,21 +23,44 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           submodules: recursive
+
       - name: Download tests data
         run: ./download.sh
-      - name: Install torchani and run tests
+
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ github.job_id }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Run unit tests
         run: >-
-            docker run
-            --rm
-            --gpus '"device=none"'
-            -v $PWD:/ani pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
-            bash -c
-            "cp -r /ani/ /ani-tmp/
-            && cd /ani-tmp
-            && pip install 'setuptools>=61' 'setuptools_scm>=8' -r tests_requirements.txt
-            && pip install --no-build-isolation --editable .
-            && pytest ."
+          docker run
+          --rm
+          --gpus '"device=none"'
+          ${{ steps.meta.outputs.tags }}
+          bash -c "pytest ."
+
+      - name: Remove image
+        if: ${{ always() }}
+        continue-on-error: true
+        run: docker image rm ${{ steps.meta.outputs.tags }}
 
 concurrency:
-  group: unittests-cpu-${{ github.event.pull_request.number || github.sha }}
+  group: unittests-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
