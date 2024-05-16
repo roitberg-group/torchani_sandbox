@@ -1,3 +1,4 @@
+# This image has ubuntu 22.0, cuda 11.8, cudnn 8.7, python 3.10, pytorch 2.3.0
 FROM pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
 WORKDIR /torchani_sandbox
 
@@ -6,7 +7,7 @@ ENV CUDA_HOME=/usr/local/cuda/
 ENV PATH=${CUDA_HOME}/bin:$PATH
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
-# Get dependencies to extract data and get correct setupttols_scm version
+# Get dependencies to extract data and get correct setuptools_scm version
 RUN apt update && apt install -y git wget unzip
 
 # Download test data
