@@ -8,6 +8,8 @@ class SimpleOrbitalAEVComputer(torch.nn.Module):
     def forward(
         self,
         coefficients: Tensor,
+        basis_functions: str,
+        use_angular_info: Bool,
     ) -> Tensor:
         # ) -> tp.Tuple[Tensor, Tensor, Tensor, Tensor]:
         # We first need to reshape the coefficients for their manipulation
@@ -15,18 +17,21 @@ class SimpleOrbitalAEVComputer(torch.nn.Module):
         # The p and d-type coefficientes form an orbital matrix that basically
         # Describes the coordinates in the "space of coefficients" of fake atoms
         # Around each actual atom.
-        s_coeffs, orbital_matrix = self._reshape_coefficients(coefficients)
+        s_coeffs, orbital_matrix = self._reshape_coefficients(coefficients,basis_functions)
 
         # In order to use the AEV computer function from the geometric AEVs, we need
         # to generate arrays that can serve as input for such function
-        # neighbor_idxs, distances = self._get_aev_inputs(orbital_matrix)
         distances = torch.linalg.norm(orbital_matrix, dim=-1)
         simple_orbital_aevs = torch.cat((s_coeffs, distances), dim=-1)
-        return simple_orbital_aevs  # shape (nconf, natoms, 21)
+        if use_angular_info:
+            angles = self._get_angles_from_orbital_matrix(orbital_matrix)
+            simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles), dim=-1)
+        return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
 
     def _reshape_coefficients(
         self,
         coefficients: Tensor,
+        basis_functions: str,
     ) -> tp.Tuple[Tensor, Tensor]:
         """ Output: A tuple containing 2 tensors: one with the s-type coefficients,
         and another with the p and d-type coefficients in the form of a matrix.
@@ -51,8 +56,16 @@ class SimpleOrbitalAEVComputer(torch.nn.Module):
         p_coeffs = coefficients[:, :, 9:21]  # Shape: (nconformers, natoms, 12)
         d_coeffs = coefficients[:, :, 21:]   # Shape: (nconformers, natoms, 24)
 
+        if basis_functions == 's':
+            return s_coeffs, torch.tensor([]) #In this case the orbital_matrix is empty
+        
         # Reshape p_coeffs to make it easier to handle individual components
         p_coeffs_reshaped = p_coeffs.view(nconformers, natoms, 4, 3)  # Shape: (nconformers, natoms, 4, 3)
+
+        if basis_functions == 'sp':
+            return s_coeffs, p_coeffs_reshaped #In this case the orbital_matrix only have AOVs from p-type coeffients
+        
+        # If we are in the 'spd' case, the orbital_matrix includes also AOVs from d-type coefficients
 
         # Reshape d_coeffs to make it easier to handle individual components
         # Correcting the reordering of d_coeffs
@@ -66,10 +79,17 @@ class SimpleOrbitalAEVComputer(torch.nn.Module):
         d_diagonal = d_coeffs_reshaped_reordered[:, :, :3]
         d_off_diagonal = d_coeffs_reshaped_reordered[:, :, 3:]
 
-        # Concatenate modified p and d coefficients to form the desired "matrix"
+        # Concatenate modified p and d coefficients to form the desired "matrix"                
         orbital_matrix = torch.cat([p_coeffs_reshaped, d_diagonal, d_off_diagonal], dim=2)  # Shape (nconformers, natoms, 12, 3)
 
         return s_coeffs, orbital_matrix
+
+    def _get_angles_from_orbital_matrix(
+        self,
+        orbital_matrix: Tensor,
+    ) -> Tensor:
+        #To do
+
 
     def _get_aev_inputs(
         self,

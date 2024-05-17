@@ -35,6 +35,8 @@ class ExCorrAEVComputer(AEVComputer):
         assert not use_cuda_extension
         assert not use_cuaev_interface
         assert (basis_functions == 'spd' or basis_functions == 'sp' or basis_functions == 's')
+        if ((basis_functions == 's') and use_simple_orbital_aev):
+            assert (not use_angular_info_in_simple_orbital_aev)
         super().__init__(
             Rcr,
             Rca,
@@ -101,7 +103,7 @@ class ExCorrAEVComputer(AEVComputer):
         # and **in general are not**
 
         if self.use_simple_orbital_aev:
-            aev = self.orbital_aev_computer(coefficients,self.use_angular_info_in_simple_orbital_aev)
+            aev = self.orbital_aev_computer(coefficients,self.use_angular_info_in_simple_orbital_aev,self.basis_functions )
         else:
             #To do -> Same but for an AEV-like expansion of the AOVs
             aev = torch.tensor([])  # Placeholder until implemented
