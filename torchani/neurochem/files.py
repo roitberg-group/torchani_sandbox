@@ -165,10 +165,10 @@ def modules_from_info_file(
 
 def load_builtin(
     model_name: str,
-    model_index: tp.Optional[int],
-    use_cuda_extension: bool,
-    use_cuaev_interface: bool,
-    periodic_table_index: bool,
+    model_index: tp.Optional[int] = None,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    periodic_table_index: bool = True,
 ) -> BuiltinModel:
     components = modules_from_builtin_name(
         model_name,

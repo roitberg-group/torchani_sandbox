@@ -1,6 +1,8 @@
 import unittest
-import torchani
+
 from torchani.testing import TestCase
+from torchani.neurochem import load_builtin
+from torchani.models import ANI1x, ANI2x, ANI1ccx
 
 
 class TestLoading(TestCase):
@@ -8,30 +10,30 @@ class TestLoading(TestCase):
     # loaded directly from a state_dict
 
     def testANI1x(self):
-        model = torchani.models.ANI1x(use_neurochem_source=False)
-        model_nc = torchani.models.ANI1x(use_neurochem_source=True)
+        model = ANI1x()
+        model_nc = load_builtin("ani1x")
         self.assertEqual(model_nc.state_dict(), model.state_dict())
 
     def testANI1xSingle(self):
         for j in range(8):
-            model = torchani.models.ANI1x(model_index=j, use_neurochem_source=False)
-            model_nc = torchani.models.ANI1x(model_index=j, use_neurochem_source=True)
+            model = ANI1x(model_index=j)
+            model_nc = load_builtin("ani1x", model_index=j)
             self.assertEqual(model_nc.state_dict(), model.state_dict())
 
     def testANI2x(self):
-        model = torchani.models.ANI2x(use_neurochem_source=False)
-        model_nc = torchani.models.ANI2x(use_neurochem_source=True)
+        model = ANI2x()
+        model_nc = load_builtin("ani2x")
         self.assertEqual(model_nc.state_dict(), model.state_dict())
 
     def testANI2xSingle(self):
         for j in range(8):
-            model = torchani.models.ANI2x(model_index=j, use_neurochem_source=False)
-            model_nc = torchani.models.ANI2x(model_index=j, use_neurochem_source=True)
+            model = ANI2x(model_index=j)
+            model_nc = load_builtin("ani2x", model_index=j)
             self.assertEqual(model_nc.state_dict(), model.state_dict())
 
     def testANI1ccx(self):
-        model = torchani.models.ANI1ccx(use_neurochem_source=False)
-        model_nc = torchani.models.ANI1ccx(use_neurochem_source=True)
+        model = ANI1ccx()
+        model_nc = load_builtin("ani1ccx")
         self.assertEqual(model_nc.state_dict(), model.state_dict())
 
 
