@@ -23,7 +23,12 @@ from torchani.neurochem.neurochem import (
 )
 
 
-__all__ = ["modules_from_builtin_name", "modules_from_info_file"]
+__all__ = [
+    "modules_from_builtin_name",
+    "modules_from_info_file",
+    "download_model_parameters",
+    "load_builtin",
+]
 
 
 SUPPORTED_MODELS = {"ani1x", "ani2x", "ani1ccx"}
