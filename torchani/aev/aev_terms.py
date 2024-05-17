@@ -195,7 +195,7 @@ class StandardRadial(RadialTerm):
                 ],
                 dtype=torch.float,
             ),
-            cutoff=5.2,
+            cutoff=5.1,
             cutoff_fn="cosine",
         )
 
