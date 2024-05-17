@@ -10,13 +10,13 @@ requirements:
     - python={{ environ.get('PYTHON_VERSION') }}
     - pip
     - git
-    #- cmake
-    #- ninja
+    - cmake
+    - ninja
     - setuptools
     - setuptools_scm
-    #- {{ compiler('c') }}
-    #- {{ compiler('cxx') }}
-    #- nvidia::cuda-toolkit={{ environ.get('CUDA_VERSION') }}
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    #- nvidia::cuda-libraries-dev={{ environ.get('CUDA_VERSION') }}
     #- nvidia::cuda-compiler={{ environ.get('CUDA_VERSION') }}
     #- pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
     #- pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
@@ -25,12 +25,9 @@ requirements:
     - python={{ environ.get('PYTHON_VERSION') }}
     - numpy >={{ environ.get('NUMPY_CONSTRAINT')}}
     - typing_extensions>=4.0.0
-    - lark-parser
     - h5py
     - tqdm
-    - ase
-    #- nvidia::cuda-toolkit={{ environ.get('CUDA_VERSION') }}
-    #- nvidia::cuda-compiler={{ environ.get('CUDA_VERSION') }}
+    - nvidia::cuda-libraries-dev={{ environ.get('CUDA_VERSION') }}
     - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
     - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
 
@@ -38,8 +35,7 @@ build:
   number: 0
   string: py{{ environ.get('PYTHON_VERSION') }}_torch{{ environ.get('PYTORCH_VERSION') }}_cuda{{ environ.get('CUDA_VERSION')}}
   script:
-    #- "{{ PYTHON }} -m pip install . --global-option='--ext-all-sms' -vvv --no-deps"
-    - "{{ PYTHON }} -m pip install . -vvv --no-deps"
+    - "{{ PYTHON }} -m pip install . --global-option='--ext-all-sms' -vvv --no-deps"
 
 #test:
   #imports:

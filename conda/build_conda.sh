@@ -39,12 +39,12 @@ conda build \
     --no-copy-test-source-files \
     --python "$PYTHON_VERSION" \
     "$script_dir/torchani"
-
 BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PYTHON_VERSION//./}_torch${PYTORCH_VERSION}_cuda${CUDA_VERSION}.tar.bz2"
 echo "Build file: $BUILD_FILE"
+
 # Upload to anaconda.org if release-anaconda is the arg
 if [[ $1 == 'release-anaconda' ]]; then
-    anaconda -t $CONDA_TOKEN upload -u roitberg-group "$BUILD_FILE" --force
+    anaconda -t "$CONDA_TOKEN" upload -u roitberg-group "$BUILD_FILE" --force
 # Upload to roitberg server if release-group is the arg
 elif [[ $1 == 'release-group' ]]; then
     mkdir -p /release/conda-packages/linux-64
@@ -53,5 +53,5 @@ elif [[ $1 == 'release-group' ]]; then
     conda index /release/conda-packages
     chown -R 1003:1003 /release/conda-packages
     apt update && apt install rsync -y
-    rsync -av --delete -e "ssh -p $SERVER_PORT -o StrictHostKeyChecking=no" /release/conda-packages/ $SERVER_USERNAME@roitberg.chem.ufl.edu:/home/statics/conda-packages/
+    rsync -av --delete -e "ssh -p $SERVER_PORT -o StrictHostKeyChecking=no" /release/conda-packages/ "$SERVER_USERNAME@roitberg.chem.ufl.edu:/home/statics/conda-packages/"
 fi
