@@ -78,15 +78,21 @@ class NeurochemInfo:
         return info
 
 
-def download_model_parameters(root: tp.Optional[Path] = None) -> None:
+def download_model_parameters(
+    root: tp.Optional[Path] = None, verbose: bool = True
+) -> None:
     if root is None:
         root = NEUROCHEM_DIR
+    if any(root.iterdir()):
+        if verbose:
+            print("Found existing files in directory, assuming params already present")
+        return
     repo = "ani-model-zoo"
     tag = "ani-2x"
     extracted_dirname = f"{repo}-{tag}"
     url = f"https://github.com/aiqm/{repo}/archive/{tag}.zip"
-
-    print("Downloading ANI model parameters ...")
+    if verbose:
+        print("Downloading ANI model parameters ...")
     resource_res = requests.get(url)
     resource_zip = zipfile.ZipFile(io.BytesIO(resource_res.content))
     resource_zip.extractall(root)
