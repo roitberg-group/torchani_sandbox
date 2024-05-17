@@ -13,11 +13,11 @@ from torchani.utils import pad_atomic_properties, broadcast_first_dim
 class TestForce(ANITest):
     def setUp(self):
         self.model = self._setup(ANI1x(model_index=0, periodic_table_index=False))
-        self.num = 50
+        self.num_conformers = 50
         self.file_path = (Path(__file__).resolve().parent / "test_data") / "ANI1_subset"
 
     def testIsomers(self):
-        for i in range(self.num):
+        for i in range(self.num_conformers):
             with open(self.file_path / str(i), "rb") as f:
                 coordinates, species, _, _, _, forces = pickle.load(f)
                 coordinates = torch.tensor(
@@ -31,7 +31,7 @@ class TestForce(ANITest):
 
     def testPadding(self):
         batch = []
-        for i in range(self.num):
+        for i in range(self.num_conformers):
             with open(self.file_path / str(i), "rb") as f:
                 coordinates, species, _, _, _, forces = pickle.load(f)
                 coordinates = torch.tensor(
