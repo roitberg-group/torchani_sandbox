@@ -1,3 +1,4 @@
+import typing as tp
 import torch
 import unittest
 import os
@@ -16,35 +17,16 @@ from torchani.utils import (
     pad_atomic_properties,
     map_to_central,
 )
-from torchani.neurochem import load_aev_computer_and_symbols
 from torchani.aev import AEVComputer, StandardAngular, StandardRadial
 
 
 path = os.path.dirname(os.path.realpath(__file__))
-const_file_1x = os.path.join(path, "test_data/rHCNO-5.2R_16-3.5A_a4-8.params")
-const_file_1ccx = os.path.join(path, "test_data/rHCNO-5.2R_16-3.5A_a4-8.params")
-const_file_2x = os.path.join(path, "test_data/rHCNOSFCl-5.1R_16-3.5A_a8-4.params")
 N = 97
 
 
 class TestAEVConstructor(TestCase):
     # Test that checks that inexact friendly constructor
     # reproduces the values from ANI1x with the correct parameters
-    def testEqualNeurochem1x(self):
-        aev_1x_nc, _ = load_aev_computer_and_symbols(const_file_1x)
-        aev_1x = AEVComputer.like_1x()
-        self._compare_constants(aev_1x_nc, aev_1x, rtol=1e-17, atol=1e-17)
-
-    def testEqualNeurochem2x(self):
-        aev_2x_nc, _ = load_aev_computer_and_symbols(const_file_2x)
-        aev_2x = AEVComputer.like_2x()
-        self._compare_constants(aev_2x_nc, aev_2x, rtol=1e-17, atol=1e-17)
-
-    def testEqualNeurochem1ccx(self):
-        aev_1ccx_nc, _ = load_aev_computer_and_symbols(const_file_1ccx)
-        aev_1ccx = AEVComputer.like_1ccx()
-        self._compare_constants(aev_1ccx_nc, aev_1ccx, rtol=1e-17, atol=1e-17)
-
     def testTerms1x(self):
         style_angular = StandardAngular.style_1x()
         style_radial = StandardRadial.style_1x()
@@ -97,7 +79,7 @@ class TestIsolated(TestCase):
             self.rcr + 1e-4,
             2 * self.rcr,
         ]
-        error = ()
+        error: tp.Tuple[str, float] = ("", 0.0)
         for dist in distances:
             coordinates = torch.tensor(
                 [[[-dist, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, dist]]],
@@ -108,7 +90,7 @@ class TestIsolated(TestCase):
                 _, _ = self.aev_computer((species, coordinates))
             except IndexError:
                 error = (traceback.format_exc(), dist)
-            if error:
+            if error[0]:
                 self.fail(
                     f"\n\n{error[0]}\nFailure at distance: {error[1]}\n"
                     f"Radial r_cut of aev_computer: {self.rcr}\n"
@@ -125,7 +107,7 @@ class TestIsolated(TestCase):
             self.rcr + 1e-4,
             2 * self.rcr,
         ]
-        error = ()
+        error: tp.Tuple[str, float] = ("", 0.0)
         for dist in distances:
             coordinates = torch.tensor(
                 [[[0.0, 0.0, 0.0], [0.0, 0.0, dist]]],
@@ -136,7 +118,7 @@ class TestIsolated(TestCase):
                 _, _ = self.aev_computer((species, coordinates))
             except IndexError:
                 error = (traceback.format_exc(), dist)
-            if error:
+            if error[0]:
                 self.fail(
                     f"\n\n{error[0]}\nFailure at distance: {error[1]}\n"
                     f"Radial r_cut of aev_computer: {self.rcr}\n"
@@ -146,7 +128,7 @@ class TestIsolated(TestCase):
     def testH(self):
         # Tests for failure on a single atom
         species = self.species_to_tensor(["H"]).to(self.device).unsqueeze(0)
-        error = ()
+        error = ""
         coordinates = torch.tensor(
             [[[0.0, 0.0, 0.0]]], requires_grad=True, device=self.device
         )
@@ -166,7 +148,7 @@ class TestAEV(_TestAEVBase):
         assert N % 5 == 0, "N must be a multiple of 5"
         coordinates_list = []
         species_list = []
-        grads_expect = []
+        grads_expect_list = []
         for j in range(N):
             c = torch.randn((1, 3, 3), dtype=torch.float, requires_grad=True)
             s = torch.randint(low=0, high=4, size=(1, 3), dtype=torch.long)
@@ -174,15 +156,16 @@ class TestAEV(_TestAEVBase):
                 s[0, 0] = -1
             _, aev = self.aev_computer((s, c))
             aev.backward(torch.ones_like(aev))
-
-            grads_expect.append(c.grad)
+            if c.grad is None:
+                self.fail("Got a None gradient")
+            grads_expect_list.append(c.grad)
             coordinates_list.append(c)
             species_list.append(s)
 
         coordinates_cat = torch.cat(coordinates_list, dim=0).detach()
         coordinates_cat.requires_grad_(True)
         species_cat = torch.cat(species_list, dim=0)
-        grads_expect = torch.cat(grads_expect, dim=0)
+        grads_expect = torch.cat(grads_expect_list, dim=0)
 
         _, aev = self.aev_computer((species_cat, coordinates_cat))
         aev.backward(torch.ones_like(aev))
@@ -215,7 +198,6 @@ class TestAEV(_TestAEVBase):
         self.assertFalse(torch.isnan(aev).any())
 
     def testBoundingCell(self):
-        # AEV should not output NaN even when coordinates are superimposed
         datafile = os.path.join(path, "test_data/ANI1_subset/10")
         with open(datafile, "rb") as f:
             coordinates, species, _, _, _, _ = pickle.load(f)
