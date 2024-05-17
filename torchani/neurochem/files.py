@@ -66,22 +66,28 @@ class NeurochemInfo:
         suffix = model_name.replace("ani", "")
         info_file_path = NEUROCHEM_DIR / f"ani-{suffix}_8x.info"
         if not info_file_path.is_file():
-            repo = "ani-model-zoo"
-            tag = "ani-2x"
-            extracted_dirname = f"{repo}-{tag}"
-            url = f"https://github.com/aiqm/{repo}/archive/{tag}.zip"
-
-            print("Downloading ANI model parameters ...")
-            resource_res = requests.get(url)
-            resource_zip = zipfile.ZipFile(io.BytesIO(resource_res.content))
-            resource_zip.extractall(NEUROCHEM_DIR)
-
-            extracted_dir = Path(NEUROCHEM_DIR) / extracted_dirname
-            for f in (extracted_dir / "resources").iterdir():
-                shutil.move(str(f), NEUROCHEM_DIR / f.name)
-            shutil.rmtree(extracted_dir)
+            download_model_parameters()
         info = cls.from_info_file(info_file_path)
         return info
+
+
+def download_model_parameters(root: tp.Optional[Path] = None) -> None:
+    if root is None:
+        root = NEUROCHEM_DIR
+    repo = "ani-model-zoo"
+    tag = "ani-2x"
+    extracted_dirname = f"{repo}-{tag}"
+    url = f"https://github.com/aiqm/{repo}/archive/{tag}.zip"
+
+    print("Downloading ANI model parameters ...")
+    resource_res = requests.get(url)
+    resource_zip = zipfile.ZipFile(io.BytesIO(resource_res.content))
+    resource_zip.extractall(root)
+
+    extracted_dir = Path(root) / extracted_dirname
+    for f in (extracted_dir / "resources").iterdir():
+        shutil.move(str(f), root / f.name)
+    shutil.rmtree(extracted_dir)
 
 
 def modules_from_info(

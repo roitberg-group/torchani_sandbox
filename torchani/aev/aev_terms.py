@@ -1,14 +1,11 @@
 import typing as tp
 import math
-from pathlib import Path
 
 import torch
 from torch import Tensor
 import typing_extensions as tpx
 
 from torchani.cutoffs import parse_cutoff_fn, CutoffArg
-
-state_dicts_path = Path(__file__).parent.parent.joinpath("resources/state_dicts/")
 
 
 class _Term(torch.nn.Module):

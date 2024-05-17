@@ -7,7 +7,11 @@ from torchani.neurochem.neurochem import (
     load_model,
     load_model_ensemble,
 )
-from torchani.neurochem.files import modules_from_builtin_name, modules_from_info_file
+from torchani.neurochem.files import (
+    modules_from_builtin_name,
+    modules_from_info_file,
+    download_model_parameters,
+)
 
 __all__ = [
     "load_aev_computer_and_symbols",
@@ -16,6 +20,7 @@ __all__ = [
     "load_model",
     "load_model_ensemble",
     "load_atomic_network",
+    "download_model_parameters",
     "modules_from_builtin_name",
     "modules_from_info_file",
 ]
