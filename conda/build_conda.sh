@@ -4,61 +4,52 @@ set -ex
 # USAGE:
 # Build packages of torchani
 # 1. test
-# PYTHON_VERSION=3.8 PACKAGE=torchani ./build_conda.sh
-# 2. release
-# PYTHON_VERSION=3.8 PACKAGE=torchani CONDA_TOKEN=TOKEN ./build_conda.sh release
+# ./build_conda.sh
+# 2. upload to group server
+# CONDA_TOKEN=TOKEN ./build_conda.sh release-group
+# 3. upload to anaconda server
+# CONDA_TOKEN=TOKEN ./build_conda.sh release-anaconda
 
-# helper functions
-script_dir=$(dirname $(realpath $0))
-. "$script_dir/pkg_helpers.bash"
+script_dir="$(dirname "$(realpath "$0")")"
 
-# source root dir
+# set build version
+VERSION_PREFIX=2.2
+BUILD_VERSION="${VERSION_PREFIX}.dev$(TZ='America/New_York' date "+%Y%m%d")$VERSION_SUFFIX"
+# The following variables are used by meta.yaml
+export BUILD_VERSION
 export SOURCE_ROOT_DIR="$script_dir/../"
+export PACKAGE_NAME=sandbox
+export PYTHON_VERSION=3.10
+export PYTORCH_VERSION=2.3
+export CUDA_VERSION=11.8
+export NUMPY_CONSTRAINT=1.24
 
-# setup variables
-setup_build_version 2.2
-setup_cuda_home
-setup_conda_pytorch_constraint
-setup_conda_cudatoolkit_constraint
-export USER=roitberg-group
-# default python version is 3.10 if it's not set
-PYTHON_VERSION="${PYTHON_VERSION:-3.10}"
-# default package is torchani
-PACKAGE="${PACKAGE:-torchani}"
-export CONDA=$(conda info --base)
+CONDA="$(conda info --base)"
 
-# set package-name and channel for torchani
-if [[ $PACKAGE == torchani ]]; then
-    export PACKAGE_NAME=sandbox
-    export CONDA_CHANNEL_FLAGS="-c pytorch -c nvidia -c defaults -c conda-forge"
-else
-    echo PACKAGE must be torchani
-    exit 1
-fi
-
-# conda-build dependency
-conda install conda-build conda-verify anaconda-client -y
-conda install conda-package-handling -y  # Update to newer version, Issue: https://github.com/conda/conda-package-handling/issues/71
-export PATH="$PATH:${CONDA_PREFIX}/bin:${CONDA}/bin"  # anaconda bin location
+# anaconda bin location
+export PATH="$PATH:${CONDA_PREFIX}/bin:${CONDA}/bin"
 which anaconda
 
 # build package
-conda build $CONDA_CHANNEL_FLAGS --no-anaconda-upload --no-copy-test-source-files --python "$PYTHON_VERSION" "$script_dir/$PACKAGE"
+conda build \
+    -c pytorch \
+    -c nvidia \
+    -c conda-forge \
+    --no-anaconda-upload \
+    --no-copy-test-source-files \
+    --python "$PYTHON_VERSION" \
+    "$script_dir/torchani"
 
-# upload to anaconda.org if has release_anaconda argument
-if [[ $1 == release_anaconda ]]; then
-    BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PYTHON_VERSION//./}_torch1.13.1_cuda11.6.tar.bz2"
-    echo $BUILD_FILE
-    anaconda -t $CONDA_TOKEN upload -u $USER $BUILD_FILE --force
-fi
-
-# upload to roitberg server if has release argument
-if [[ $1 == release ]]; then
-    BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PYTHON_VERSION//./}_torch1.13.1_cuda11.6.tar.bz2"
-    echo $BUILD_FILE
+BUILD_FILE="${CONDA}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PYTHON_VERSION//./}_torch${PYTORCH_VERSION}_cuda${CUDA_VERSION}.tar.bz2"
+echo "Build file: $BUILD_FILE"
+# Upload to anaconda.org if release-anaconda is the arg
+if [[ $1 == 'release-anaconda' ]]; then
+    anaconda -t $CONDA_TOKEN upload -u roitberg-group "$BUILD_FILE" --force
+# Upload to roitberg server if release-group is the arg
+elif [[ $1 == 'release-group' ]]; then
     mkdir -p /release/conda-packages/linux-64
-    cp $BUILD_FILE /release/conda-packages/linux-64
-    rm -rf "${CONDA}/conda-bld/*"                             # remove conda-bld directory
+    cp "$BUILD_FILE" /release/conda-packages/linux-64
+    rm -rf "${CONDA}/conda-bld/*"
     conda index /release/conda-packages
     chown -R 1003:1003 /release/conda-packages
     apt update && apt install rsync -y
