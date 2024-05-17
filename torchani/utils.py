@@ -3,7 +3,6 @@ import typing as tp
 import os
 import warnings
 import itertools
-import math
 from pathlib import Path
 from collections import Counter
 
@@ -14,15 +13,12 @@ from torch import Tensor
 import torch.utils.data
 
 from torchani.constants import ATOMIC_MASSES
-from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
-from torchani.tuples import SpeciesEnergies, VibAnalysis
+from torchani.tuples import SpeciesEnergies
 
 
 __all__ = [
     "pad_atomic_properties",
     "present_species",
-    "hessian",
-    "vibrational_analysis",
     "strip_redundant_padding",
     "ChemicalSymbolsToInts",
     "ChemicalSymbolsToAtomicNumbers",
@@ -462,23 +458,6 @@ class ChemicalSymbolsToInts(torch.nn.Module):
 
     def __len__(self):
         return len(self.rev_species)
-
-
-def _get_derivatives_not_none(
-    x: Tensor,
-    y: Tensor,
-    retain_graph: tp.Optional[bool] = None,
-    create_graph: bool = False,
-) -> Tensor:
-    ret = torch.autograd.grad(
-        [y.sum()], [x], retain_graph=retain_graph, create_graph=create_graph
-    )[0]
-    assert ret is not None
-    return ret
-
-
-
-
 
 
 class AtomicNumbersToMasses(torch.nn.Module):
