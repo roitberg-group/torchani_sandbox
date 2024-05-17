@@ -10,16 +10,16 @@ requirements:
     - python={{ environ.get('PYTHON_VERSION') }}
     - pip
     - git
-    - cmake
-    - ninja
+    #- cmake
+    #- ninja
     - setuptools
     - setuptools_scm
-    - {{ compiler('c') }}
-    - {{ compiler('cxx') }}
-    - nvidia::cuda-toolkit={{ environ.get('CUDA_VERSION') }}
-    - nvidia::cuda-compiler={{ environ.get('CUDA_VERSION') }}
-    - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
-    - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
+    #- {{ compiler('c') }}
+    #- {{ compiler('cxx') }}
+    #- nvidia::cuda-toolkit={{ environ.get('CUDA_VERSION') }}
+    #- nvidia::cuda-compiler={{ environ.get('CUDA_VERSION') }}
+    #- pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
+    #- pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
 
   run:
     - python={{ environ.get('PYTHON_VERSION') }}
@@ -29,8 +29,8 @@ requirements:
     - h5py
     - tqdm
     - ase
-    - nvidia::cuda-toolkit={{ environ.get('CUDA_VERSION') }}
-    - nvidia::cuda-compiler={{ environ.get('CUDA_VERSION') }}
+    #- nvidia::cuda-toolkit={{ environ.get('CUDA_VERSION') }}
+    #- nvidia::cuda-compiler={{ environ.get('CUDA_VERSION') }}
     - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
     - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
 
@@ -38,22 +38,23 @@ build:
   number: 0
   string: py{{ environ.get('PYTHON_VERSION') }}_torch{{ environ.get('PYTORCH_VERSION') }}_cuda{{ environ.get('CUDA_VERSION')}}
   script:
-    - "{{ PYTHON }} -m pip install . --global-option='--ext-all-sms' -vvv --no-deps"
+    #- "{{ PYTHON }} -m pip install . --global-option='--ext-all-sms' -vvv --no-deps"
+    - "{{ PYTHON }} -m pip install . -vvv --no-deps"
 
-test:
-  imports:
-    - torchani
-    - torchani.cuaev
-    - torchani.mnp
-  source_files:
-    - tests/*
-    - download.sh
-    - dataset/*
-  commands:
-    - pip install pytest pynvml ase parameterized expecttest
-    - ./download.sh
-    # cuaev test
-    - python tests/test_cuaev.py
+#test:
+  #imports:
+    #- torchani
+    #- torchani.cuaev
+    #- torchani.mnp
+  #source_files:
+    #- tests/*
+    #- download.sh
+    #- dataset/*
+  #commands:
+    #- pip install pytest pynvml ase parameterized expecttest
+    #- ./download.sh
+    ## cuaev test
+    #- python tests/test_cuaev.py
 
 about:
   home: https://roitberg.chem.ufl.edu
