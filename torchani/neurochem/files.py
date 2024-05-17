@@ -12,6 +12,7 @@ import requests
 from torchani.aev import AEVComputer
 from torchani.utils import EnergyShifter
 from torchani.nn import Ensemble, ANIModel
+from torchani.models import BuiltinModel
 from torchani.storage import NEUROCHEM_DIR
 from torchani.neurochem.utils import model_dir_from_prefix
 from torchani.neurochem.neurochem import (
@@ -61,7 +62,8 @@ class NeurochemInfo:
     def from_builtin_name(cls, model_name: str) -> tpx.Self:
         if model_name not in SUPPORTED_MODELS:
             raise ValueError(
-                f"Neurochem model {model_name} not supported",
+                f"Neurochem model {model_name} not supported,"
+                f" supported models are: {SUPPORTED_MODELS}",
             )
         suffix = model_name.replace("ani", "")
         info_file_path = NEUROCHEM_DIR / f"ani-{suffix}_8x.info"
@@ -158,4 +160,27 @@ def modules_from_info_file(
         model_index,
         use_cuda_extension,
         use_cuaev_interface,
+    )
+
+
+def load_builtin(
+    model_name: str,
+    model_index: tp.Optional[int],
+    use_cuda_extension: bool,
+    use_cuaev_interface: bool,
+    periodic_table_index: bool,
+) -> BuiltinModel:
+    components = modules_from_builtin_name(
+        model_name,
+        model_index,
+        use_cuda_extension,
+        use_cuaev_interface,
+    )
+    aev_computer, neural_networks, energy_shifter, elements = components
+    return BuiltinModel(
+        aev_computer,
+        neural_networks,
+        energy_shifter,
+        elements,
+        periodic_table_index=periodic_table_index,
     )
