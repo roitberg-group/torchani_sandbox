@@ -11,10 +11,10 @@ from torchani.models import ANI1x
 @expand()
 class TestEnsemble(ANITest):
     def setUp(self):
-        self.num_conformers = 10
         model = ANI1x(periodic_table_index=False)
         self.ensemble = self._setup(model)
         self.model_list = [self._setup(model[j]) for j in range(len(model))]
+        self.num_conformers = 10
         self.file_path = (Path(__file__).resolve().parent / "test_data") / "ANI1_subset"
 
     def testGDB(self):
