@@ -111,10 +111,13 @@ def hessian(
 ) -> tp.Dict[str, Tensor]:
     if not coordinates.requires_grad:
         raise ValueError("Coordinates input to this function must require grad")
-    flattened_force_components = forces.flatten(start_dim=1).unbind(dim=1)
+    num_molecules, num_atoms, num_dim = forces.shape
+    num_components = num_atoms * num_dim
+    flat_forces = forces.view(num_molecules, num_components)
+    # 3A Tensors, each of shape (C,)
+    flat_forces_tuple: tp.Tuple[Tensor, ...] = flat_forces.unbind(dim=1)
     result_list = []
-    num_components = len(flattened_force_components)
-    for j, component in enumerate(flattened_force_components):
+    for j, component in enumerate(flat_forces_tuple):
         _retain_graph: tp.Optional[bool]
         if j != (num_components - 1):
             _retain_graph = True
@@ -123,8 +126,10 @@ def hessian(
             _retain_graph = retain_graph
         result_list.append(
             torch.autograd.grad(
-                component.sum(), coordinates, retain_graph=_retain_graph
-            )[0].flatten(start_dim=1)
+                component.sum(),
+                coordinates,
+                retain_graph=_retain_graph,
+            )[0].view(num_molecules, num_components)
         )
     result = -torch.stack(result_list, dim=1)
     if not keep_requires_grad:
