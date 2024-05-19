@@ -24,7 +24,7 @@ class SimpleOrbitalAEVComputer(torch.nn.Module):
         distances = torch.linalg.norm(orbital_matrix, dim=-1)
         simple_orbital_aevs = torch.cat((s_coeffs, distances), dim=-1)
         if use_angular_info:
-            angles = self._get_angles_from_orbital_matrix(orbital_matrix)
+            angles = self._get_angles_from_orbital_matrix(orbital_matrix,distances)
             simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles), dim=-1)
         return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
 
@@ -87,9 +87,26 @@ class SimpleOrbitalAEVComputer(torch.nn.Module):
     def _get_angles_from_orbital_matrix(
         self,
         orbital_matrix: Tensor,
+        distances: Tensor
     ) -> Tensor:
-        #To do
+        #To do 
+        #If basis_functions is 'spd', orbital_matrix.shape is (nconformers, natoms, 12, 3) and distances shape is (nconformers, natoms, 12)
+        #If basis_functions is 'sp',  orbital_matrix.shape is (nconformers, natoms,  4, 3) and distances shape is (nconformers, natoms, 4)
 
+        nconformers, natoms, naovs = distances.shape
+         
+        # Normalize the vectors using the provided distances
+        orbital_matrix_normalized = orbital_matrix / distances.unsqueeze(-1)
+
+        # Calculate angles between each vector and the following vectors
+        angles = torch.zeros((nconformers, natoms, naovs, naovs))
+        for i in range(naovs):
+            for j in range(i+1, naovs):
+                cos_angles = torch.einsum('ijkl,ijml->ijkm', orbital_matrix_normalized[:, :, i, :], orbital_matrix_normalized[:, :, j, :])                    
+                angles[:, :, i, j] = torch.acos(0.95 * cos_angles) # 0.95 is multiplied to the cos values to prevent acos from returning NaN.
+     
+        return angles
+ 
 
     def _get_aev_inputs(
         self,
