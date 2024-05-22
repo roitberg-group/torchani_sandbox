@@ -1,3 +1,4 @@
+import warnings
 import unittest
 import os
 
@@ -13,6 +14,7 @@ const_file_1ccx = os.path.join(path, "test_data/rHCNO-5.2R_16-3.5A_a4-8.params")
 const_file_2x = os.path.join(path, "test_data/rHCNOSFCl-5.1R_16-3.5A_a8-4.params")
 
 if not NEUROCHEM_IS_AVAILABLE:
+    warnings.warn("Skipping all neurochem tests, install 'lark-parser' to run them")
     raise unittest.SkipTest(
         "neurochem submodule is not available, skipping all neurochem tests."
     )
