@@ -39,7 +39,7 @@ class XYZ:
         self.mols = []
         atom_count = None
         species = []
-        coordinates = []
+        _coordinates = []
         state = "ready"
         for i in lines:
             i = i.strip()
@@ -49,17 +49,19 @@ class XYZ:
             elif state == "comment":
                 state = "atoms"
             else:
-                s, x, y, z = i.split()
-                x, y, z = float(x), float(y), float(z)
+                s, _x, _y, _z = i.split()
+                x, y, z = float(_x), float(_y), float(_z)
                 species.append(s)
-                coordinates.append([x, y, z])
+                _coordinates.append([x, y, z])
+                if atom_count is None:
+                    raise RuntimeError("Atom count not present")
                 atom_count -= 1
                 if atom_count == 0:
                     state = "ready"
                     species = ani1x.species_to_tensor(species).to(device)
-                    coordinates = torch.tensor(coordinates, device=device)
+                    coordinates = torch.tensor(_coordinates, device=device)
                     self.mols.append((species, coordinates))
-                    coordinates = []
+                    _coordinates = []
                     species = []
 
     def __len__(self):
