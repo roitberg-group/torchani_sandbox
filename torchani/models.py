@@ -35,9 +35,6 @@ example usage:
     # get an ASE Calculator using this ensemble
     ani1x_calc = ani1x.ase()
 
-    # convert atom species from string to long tensor
-    ani1x.species_to_tensor(['C', 'H', 'H', 'H', 'H'])
-
     # output shape of energies is (M, C), where M is the number of ensemble members
     _, members_energies = ani1x.members_energies((species, coordinates))
 
