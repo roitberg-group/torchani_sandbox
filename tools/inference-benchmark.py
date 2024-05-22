@@ -5,7 +5,7 @@ import tqdm
 import torch
 
 from torchani.models import ANI1x
-from torchani.utils import EnergyShifter
+from torchani.utils import ATOMIC_NUMBERS
 
 # parse command line arguments
 parser = argparse.ArgumentParser()
@@ -26,12 +26,7 @@ args = parser.parse_args()
 
 # set up benchmark
 device = torch.device(args.device)
-ani1x = ANI1x()
-nnp = torch.nn.Sequential(
-    ani1x.aev_computer,
-    ani1x.neural_networks[0],
-    EnergyShifter(ani1x.energy_shifter.self_energies.tolist()),
-).to(device)
+nnp = ANI1x()[0].to(device)
 
 
 # load XYZ files
@@ -54,16 +49,24 @@ class XYZ:
             elif state == "comment":
                 state = "atoms"
             else:
-                s, x, y, z = i.split()
-                x, y, z = float(x), float(y), float(z)
+                s, _x, _y, _z = i.split()
+                x, y, z = float(_x), float(_y), float(_z)
                 species.append(s)
                 coordinates.append([x, y, z])
+                if atom_count is None:
+                    raise RuntimeError("Incorrect atom count in xyz")
                 atom_count -= 1
                 if atom_count == 0:
                     state = "ready"
-                    species = ani1x.species_to_tensor(species).to(device)
-                    coordinates = torch.tensor(coordinates, device=device)
-                    self.mols.append((species, coordinates))
+                    _species = torch.tensor(
+                        [ATOMIC_NUMBERS[k] for k in species],
+                        dtype=torch.long,
+                        device=device,
+                    )
+                    _coordinates = torch.tensor(
+                        coordinates, dtype=torch.float, device=device
+                    )
+                    self.mols.append((_species, _coordinates))
                     coordinates = []
                     species = []
 
@@ -87,10 +90,10 @@ print("[Batch mode]")
 species, coordinates = torch.utils.data.dataloader.default_collate(list(xyz))
 coordinates.requires_grad_(True)
 start = timeit.default_timer()
-energies = nnp((species, coordinates))[1]
+energies = nnp((species, coordinates)).energies
 mid = timeit.default_timer()
 print("Energy time:", mid - start)
-force = -torch.autograd.grad(energies.sum(), coordinates)[0]
+_ = -torch.autograd.grad(energies.sum(), coordinates)[0]
 print("Force time:", timeit.default_timer() - mid)
 print()
 
@@ -102,6 +105,6 @@ if args.tqdm:
 for species, coordinates in xyz:
     species = species.unsqueeze(0)
     coordinates = coordinates.unsqueeze(0).detach().requires_grad_(True)
-    energies = nnp((species, coordinates))[1]
-    force = -torch.autograd.grad(energies.sum(), coordinates)[0]
+    energies = nnp((species, coordinates)).energies
+    _ = -torch.autograd.grad(energies.sum(), coordinates)[0]
 print("Time:", timeit.default_timer() - start)
