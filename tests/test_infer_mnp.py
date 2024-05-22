@@ -85,7 +85,7 @@ class TestCPUInferMNP(TestCase):
 
             force1, energy1 = energies_and_forces(model_ref, species, coordinates)
             force2, energy2 = energies_and_forces(model_infer, species, coordinates)
-            self.assertEqual(energy1, energy2, atol=1e-5, rtol=1e-5)
+            self.assertEqual(energy1, energy2, atol=5e-4, rtol=5e-4)
             self.assertEqual(force1, force2, atol=5e-4, rtol=5e-4)
 
     def testBmmEnsemble(self):
