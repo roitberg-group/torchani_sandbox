@@ -36,8 +36,9 @@ def energies_forces_and_hessians(
         forces,
         coordinates,
         retain_graph=retain_graph,
-        keep_requires_grad=keep_requires_grad,
     )
+    if not keep_requires_grad:
+        coordinates.requires_grad_(False)
     return EnergiesForcesHessians(energies, forces, _hessians)
 
 
@@ -58,8 +59,9 @@ def energies_and_forces(
         coordinates,
         retain_graph=retain_graph,
         create_graph=create_graph,
-        keep_requires_grad=keep_requires_grad,
     )
+    if not keep_requires_grad:
+        coordinates.requires_grad_(False)
     return EnergiesForces(energies, _forces)
 
 
@@ -69,7 +71,6 @@ def forces(
     coordinates: Tensor,
     retain_graph: tp.Optional[bool] = None,
     create_graph: bool = False,
-    keep_requires_grad: bool = False,
 ) -> Tensor:
     if not coordinates.requires_grad:
         raise ValueError("Coordinates input to this function must require grad")
@@ -79,8 +80,6 @@ def forces(
         retain_graph=retain_graph,
         create_graph=create_graph,
     )[0]
-    if not keep_requires_grad:
-        coordinates.requires_grad_(False)
     return _forces
 
 
@@ -88,20 +87,17 @@ def forces_and_hessians(
     energies: Tensor,
     coordinates: Tensor,
     retain_graph: tp.Optional[bool] = None,
-    keep_requires_grad: bool = False,
 ) -> ForcesHessians:
     _forces = forces(
         energies,
         coordinates,
         retain_graph=True,
         create_graph=True,
-        keep_requires_grad=True,
     )
     _hessians = hessians(
         _forces,
         coordinates,
         retain_graph=retain_graph,
-        keep_requires_grad=keep_requires_grad,
     )
     return ForcesHessians(_forces, _hessians)
 
@@ -110,7 +106,6 @@ def hessians(
     forces: Tensor,
     coordinates: Tensor,
     retain_graph: tp.Optional[bool] = None,
-    keep_requires_grad: bool = False,
 ) -> Tensor:
     if not coordinates.requires_grad:
         raise ValueError("Coordinates input to this function must require grad")
@@ -137,8 +132,6 @@ def hessians(
             )  # shape (C, 1, 3A)
         )
     _hessians = -torch.cat(result_list, dim=1)  # shape (C, 3A, 3A)
-    if not keep_requires_grad:
-        coordinates.requires_grad_(False)
     return _hessians
 
 

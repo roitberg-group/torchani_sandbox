@@ -154,16 +154,15 @@ class TestActiveLearningForces(ANITest):
         expect_forces = self.model.members_forces(
             (self.species, self.coordinates)
         ).forces
+        self.coordinates.requires_grad_(True)
         members_energies = self.model.members_energies(
             (self.species, self.coordinates)
         ).energies
-        self.coordinates.requires_grad_(True)
         forces_list = [
             forces(
                 energies,
                 self.coordinates,
                 retain_graph=True,
-                keep_requires_grad=True,
             )
             for energies in members_energies
         ]
@@ -175,16 +174,15 @@ class TestActiveLearningForces(ANITest):
         _, expect_forces = energies_and_forces(
             self.model, self.species, self.coordinates
         )
+        self.coordinates.requires_grad_(True)
         members_energies = self.model.members_energies(
             (self.species, self.coordinates)
         ).energies
-        self.coordinates.requires_grad_(True)
         forces_list = [
             forces(
                 energies,
                 self.coordinates,
                 retain_graph=True,
-                keep_requires_grad=True,
             )
             for energies in members_energies
         ]
