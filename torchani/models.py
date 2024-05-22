@@ -103,7 +103,6 @@ class BuiltinModel(torch.nn.Module):
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
         self.energy_shifter = energy_shifter
-        self.species_to_tensor = ChemicalSymbolsToInts(elements)
         device = self.energy_shifter.self_energies.device
         self.species_converter = SpeciesConverter(elements).to(device)
 
