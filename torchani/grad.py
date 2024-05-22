@@ -22,23 +22,22 @@ def energies_forces_and_hessians(
     species: Tensor,
     coordinates: Tensor,
     retain_graph: bool = False,
-    keep_requires_grad: bool = False,
 ) -> EnergiesForcesHessians:
+    saved_requires_grad = coordinates.requires_grad
+    coordinates.requires_grad_(True)
     energies, forces = energies_and_forces(
         model,
         species,
         coordinates,
         retain_graph=True,
         create_graph=True,
-        keep_requires_grad=True,
     )
     _hessians = hessians(
         forces,
         coordinates,
         retain_graph=retain_graph,
     )
-    if not keep_requires_grad:
-        coordinates.requires_grad_(False)
+    coordinates.requires_grad_(saved_requires_grad)
     return EnergiesForcesHessians(energies, forces, _hessians)
 
 
@@ -50,9 +49,14 @@ def energies_and_forces(
     pbc: tp.Optional[Tensor] = None,
     retain_graph: tp.Optional[bool] = None,
     create_graph: bool = False,
-    keep_requires_grad: bool = False,
 ) -> EnergiesForces:
+    saved_requires_grad = coordinates.requires_grad
     coordinates.requires_grad_(True)
+    if not coordinates.is_leaf:
+        raise ValueError(
+            "'coordinates' passed to `torchani.grad` functions must be a 'leaf' Tensor"
+            "(i.e. must not have been modified prior to being used as an input)."
+        )
     energies = model((species, coordinates), cell=cell, pbc=pbc).energies
     _forces = forces(
         energies,
@@ -60,8 +64,7 @@ def energies_and_forces(
         retain_graph=retain_graph,
         create_graph=create_graph,
     )
-    if not keep_requires_grad:
-        coordinates.requires_grad_(False)
+    coordinates.requires_grad_(saved_requires_grad)
     return EnergiesForces(energies, _forces)
 
 
@@ -73,7 +76,14 @@ def forces(
     create_graph: bool = False,
 ) -> Tensor:
     if not coordinates.requires_grad:
-        raise ValueError("Coordinates input to this function must require grad")
+        raise ValueError(
+            "'coordinates' passed to `torchani.grad.forces` must require grad"
+        )
+    if not coordinates.is_leaf:
+        raise ValueError(
+            "'coordinates' passed to `torchani.grad` functions must be a 'leaf' Tensor"
+            "(i.e. must not have been modified prior to being used as an input)."
+        )
     _grads = torch.autograd.grad(
         [energies.sum()],
         [coordinates],
@@ -109,7 +119,14 @@ def hessians(
     retain_graph: tp.Optional[bool] = None,
 ) -> Tensor:
     if not coordinates.requires_grad:
-        raise ValueError("Coordinates input to this function must require grad")
+        raise ValueError(
+            "'coordinates' passed to `torchani.grad.hessians` must require grad"
+        )
+    if not coordinates.is_leaf:
+        raise ValueError(
+            "'coordinates' passed to `torchani.grad` functions must be a 'leaf' Tensor"
+            "(i.e. must not have been modified prior to being used as an input)."
+        )
     num_molecules, num_atoms, num_dim = forces.shape
     num_components = num_atoms * num_dim
     flat_forces = forces.view(num_molecules, num_components)

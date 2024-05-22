@@ -46,7 +46,7 @@ def recursive_h5_files(base):
 def by_batch(species, coordinates, model):
     shape = species.shape
     batchsize = max(1, args.batchatoms // shape[1])
-    coordinates = coordinates.clone().detach().requires_grad_(True)
+    coordinates = coordinates.clone().detach()
     species = torch.split(species, batchsize)
     coordinates = torch.split(coordinates, batchsize)
     energies = []
