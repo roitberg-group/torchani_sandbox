@@ -3,6 +3,7 @@ import os
 import pickle
 
 import torch
+from torch.autograd import gradcheck, gradgradcheck
 
 import torchani
 from torchani.testing import ANITest, expand
@@ -38,7 +39,7 @@ class TestTorchNumericalCheck(ANITest):
             )
             species = torch.tensor(species, device=self.device, dtype=torch.long)
 
-            torch.autograd.gradcheck(
+            gradcheck(
                 lambda x: self.model((species, x)).energies,
                 coordinates,
                 nondet_tol=1e-13,
@@ -50,7 +51,7 @@ class TestTorchNumericalCheck(ANITest):
                 coordinates, device=self.device, dtype=torch.double, requires_grad=True
             )
             species = torch.tensor(species, device=self.device, dtype=torch.long)
-            torch.autograd.gradgradcheck(
+            gradgradcheck(
                 lambda x: self.model((species, x)).energies,
                 coordinates,
                 nondet_tol=1e-13,
