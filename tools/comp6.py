@@ -97,7 +97,6 @@ def do_benchmark(model):
         forces = torch.tensor(i["forces"], device=args.device)
         # compute
         energies2, forces2 = by_batch(species, coordinates, model)
-        breakpoint()
         ediff = energies - energies2
         relative_ediff = relative_energies(energies) - relative_energies(energies2)
         fdiff = forces.flatten() - forces2.flatten()
