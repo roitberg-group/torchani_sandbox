@@ -63,6 +63,7 @@ def energies_and_forces(
     return EnergiesForces(energies, _forces)
 
 
+# Note that for training, create_graph=True and retain_graph=True are both needed
 def forces(
     energies: Tensor,
     coordinates: Tensor,
