@@ -8,6 +8,7 @@ from tqdm import tqdm
 from torchani.models import ANI1x
 from torchani.data._pyanitools import anidataloader
 from torchani.units import hartree2kcalpermol
+from torchani.grad import energies_and_forces
 
 
 # parse command line arguments
@@ -51,8 +52,7 @@ def by_batch(species, coordinates, model):
     energies = []
     forces = []
     for s, c in zip(species, coordinates):
-        e = model((s, c)).energies
-        (f,) = torch.autograd.grad(e.sum(), c)
+        f, e = energies_and_forces(model, s, c)
         energies.append(e)
         forces.append(f)
     return torch.cat(energies).detach(), torch.cat(forces).detach()

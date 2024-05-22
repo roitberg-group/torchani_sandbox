@@ -51,6 +51,7 @@ from torchani import (
     sae,
     infer,
     constants,
+    grad,
     data,  # TODO: Get rid of this
 )
 # NOTE: ase is an optional dependency so we don't import it here
@@ -66,6 +67,7 @@ __all__ = [
     'EnergyShifter',
     'ANIModel',
     'Ensemble',
+    'grad',
     'SpeciesConverter',
     'utils',
     'models',

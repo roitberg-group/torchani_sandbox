@@ -7,19 +7,24 @@ from torch import Tensor
 from torchani.models import BuiltinModel
 from torchani.potentials import PotentialWrapper
 from torchani.units import mhessian2fconst, sqrt_mhessian2invcm, sqrt_mhessian2milliev
-from torchani.tuples import VibAnalysis
+from torchani.tuples import (
+    VibAnalysis,
+    EnergiesForcesHessians,
+    EnergiesForces,
+    ForcesHessians,
+)
 
 Model = tp.Union[BuiltinModel, PotentialWrapper]
 
 
-def energies_forces_and_hessian(
+def energies_forces_and_hessians(
     model: Model,
     species: Tensor,
     coordinates: Tensor,
     retain_graph: bool = False,
     keep_requires_grad: bool = False,
-) -> tp.Dict[str, Tensor]:
-    output = energies_and_forces(
+) -> EnergiesForcesHessians:
+    energies, forces = energies_and_forces(
         model,
         species,
         coordinates,
@@ -27,14 +32,13 @@ def energies_forces_and_hessian(
         create_graph=True,
         keep_requires_grad=True,
     )
-    result = hessian(
-        output["forces"],
+    _hessians = hessians(
+        forces,
         coordinates,
         retain_graph=retain_graph,
         keep_requires_grad=keep_requires_grad,
     )
-    output.update(result)
-    return output
+    return EnergiesForcesHessians(energies, forces, _hessians)
 
 
 def energies_and_forces(
@@ -46,18 +50,17 @@ def energies_and_forces(
     retain_graph: tp.Optional[bool] = None,
     create_graph: bool = False,
     keep_requires_grad: bool = False,
-) -> tp.Dict[str, Tensor]:
+) -> EnergiesForces:
     coordinates.requires_grad_(True)
     energies = model((species, coordinates), cell=cell, pbc=pbc).energies
-    output = forces(
+    _forces = forces(
         energies,
         coordinates,
         retain_graph=retain_graph,
         create_graph=create_graph,
         keep_requires_grad=keep_requires_grad,
     )
-    output.update({"energies": energies})
-    return output
+    return EnergiesForces(energies, _forces)
 
 
 def forces(
@@ -66,10 +69,10 @@ def forces(
     retain_graph: tp.Optional[bool] = None,
     create_graph: bool = False,
     keep_requires_grad: bool = False,
-) -> tp.Dict[str, Tensor]:
+) -> Tensor:
     if not coordinates.requires_grad:
         raise ValueError("Coordinates input to this function must require grad")
-    result = -torch.autograd.grad(
+    _forces = -torch.autograd.grad(
         energies.sum(),
         coordinates,
         retain_graph=retain_graph,
@@ -77,38 +80,37 @@ def forces(
     )[0]
     if not keep_requires_grad:
         coordinates.requires_grad_(False)
-    return {"forces": result}
+    return _forces
 
 
-def forces_and_hessian(
+def forces_and_hessians(
     energies: Tensor,
     coordinates: Tensor,
     retain_graph: tp.Optional[bool] = None,
     keep_requires_grad: bool = False,
-) -> tp.Dict[str, Tensor]:
-    output = forces(
+) -> ForcesHessians:
+    _forces = forces(
         energies,
         coordinates,
         retain_graph=True,
         create_graph=True,
         keep_requires_grad=True,
     )
-    result = hessian(
-        output["forces"],
+    _hessians = hessians(
+        _forces,
         coordinates,
         retain_graph=retain_graph,
         keep_requires_grad=keep_requires_grad,
     )
-    output.update(result)
-    return output
+    return ForcesHessians(_forces, _hessians)
 
 
-def hessian(
+def hessians(
     forces: Tensor,
     coordinates: Tensor,
     retain_graph: tp.Optional[bool] = None,
     keep_requires_grad: bool = False,
-) -> tp.Dict[str, Tensor]:
+) -> Tensor:
     if not coordinates.requires_grad:
         raise ValueError("Coordinates input to this function must require grad")
     num_molecules, num_atoms, num_dim = forces.shape
@@ -129,15 +131,26 @@ def hessian(
                 component.sum(),
                 coordinates,
                 retain_graph=_retain_graph,
-            )[0].view(num_molecules, num_components)
+            )[0].view(
+                num_molecules, 1, num_components
+            )  # shape (C, 1, 3A)
         )
-    result = -torch.stack(result_list, dim=1)
+    _hessians = -torch.cat(result_list, dim=1)  # shape (C, 3A, 3A)
     if not keep_requires_grad:
         coordinates.requires_grad_(False)
-    return {"hessian": result}
+    return _hessians
 
 
-def vibrational_analysis(masses, hessian, mode_type="MDU", unit="cm^-1"):
+ModeKind = tp.Literal["mdu", "mdn", "mwn"]
+UnitKind = tp.Literal["cm^-1", "meV"]
+
+
+def vibrational_analysis(
+    masses: Tensor,
+    hessian: Tensor,
+    mode_kind: ModeKind = "mdu",
+    unit: UnitKind = "cm^-1",
+):
     """Computing the vibrational wavenumbers from hessian.
 
     Note that normal modes in many popular software packages such as
@@ -146,7 +159,7 @@ def vibrational_analysis(masses, hessian, mode_type="MDU", unit="cm^-1"):
     Some packages such as Psi4 let ychoose different normalizations.
     Force constants and reduced masses are calculated as in Gaussian.
 
-    mode_type should be one of:
+    mode_kind should be one of:
     - MWN (mass weighted normalized)
     - MDU (mass deweighted unnormalized)
     - MDN (mass deweighted normalized)
@@ -161,9 +174,9 @@ def vibrational_analysis(masses, hessian, mode_type="MDU", unit="cm^-1"):
     translational, and rotational modes.
     """
     if unit == "meV":
-        unit_converter = sqrt_mhessian2milliev
+        converter = sqrt_mhessian2milliev
     elif unit == "cm^-1":
-        unit_converter = sqrt_mhessian2invcm
+        converter = sqrt_mhessian2invcm
     else:
         raise ValueError("Only meV and cm^-1 are supported right now")
 
@@ -177,9 +190,7 @@ def vibrational_analysis(masses, hessian, mode_type="MDU", unit="cm^-1"):
     # Hq = w^2 * Tq ==> Hq = w^2 * T^(1/2) T^(1/2) q
     # Letting q' = T^(1/2) q, we then have
     # T^(-1/2) H T^(-1/2) q' = w^2 * q'
-    inv_sqrt_mass = (1 / masses.sqrt()).repeat_interleave(
-        3, dim=1
-    )  # shape (molecule, 3 * atoms)
+    inv_sqrt_mass = (1 / masses.sqrt()).repeat_interleave(3, dim=1)  # shape (C, 3 * A)
     mass_scaled_hessian = (
         hessian * inv_sqrt_mass.unsqueeze(1) * inv_sqrt_mass.unsqueeze(2)
     )
@@ -188,27 +199,34 @@ def vibrational_analysis(masses, hessian, mode_type="MDU", unit="cm^-1"):
     mass_scaled_hessian = mass_scaled_hessian.squeeze(0)
     eigenvalues, eigenvectors = torch.linalg.eigh(mass_scaled_hessian)
     signs = torch.sign(eigenvalues)
-    angular_frequencies = eigenvalues.abs().sqrt()
-    frequencies = angular_frequencies / (2 * math.pi)
-    frequencies = frequencies * signs
-    # converting from sqrt(hartree / (amu * angstrom^2)) to cm^-1 or meV
-    wavenumbers = unit_converter(frequencies)
 
     # Note that the normal modes are the COLUMNS of the eigenvectors matrix
     mw_normalized = eigenvectors.t()
     md_unnormalized = mw_normalized * inv_sqrt_mass
     norm_factors = 1 / torch.linalg.norm(md_unnormalized, dim=1)  # units are sqrt(AMU)
-    md_normalized = md_unnormalized * norm_factors.unsqueeze(1)
-
     rmasses = norm_factors**2  # units are AMU
     # The conversion factor for Ha/(AMU*A^2) to mDyne/(A*AMU) is about 4.3597482
     fconstants = mhessian2fconst(eigenvalues) * rmasses  # units are mDyne/A
 
-    if mode_type == "MDN":
-        modes = (md_normalized).reshape(frequencies.numel(), -1, 3)
-    elif mode_type == "MDU":
-        modes = (md_unnormalized).reshape(frequencies.numel(), -1, 3)
-    elif mode_type == "MWN":
-        modes = (mw_normalized).reshape(frequencies.numel(), -1, 3)
+    if mode_kind.lower() in ["mdn", "mass-deweighted-normalized"]:
+        modes = (md_unnormalized * norm_factors.unsqueeze(1)).reshape(
+            eigenvalues.numel(), -1, 3
+        )
+    elif mode_kind.lower() in ["mdu", "mass-deweighted-unnormalized"]:
+        modes = (md_unnormalized).reshape(eigenvalues.numel(), -1, 3)
+    elif mode_kind.lower() in ["mwn", "mass-weighted-normalized"]:
+        modes = (mw_normalized).reshape(eigenvalues.numel(), -1, 3)
+    else:
+        raise ValueError(f"Incorrect mode kind {mode_kind}")
 
-    return VibAnalysis(wavenumbers, modes, fconstants, rmasses)
+    # Converting from sqrt(hartree / (amu * angstrom^2)) to cm^-1 or meV
+    angular_frequencies = eigenvalues.abs().sqrt()
+    frequencies = angular_frequencies / (2 * math.pi)
+    frequencies = frequencies * signs
+    frequencies = converter(frequencies)
+    return VibAnalysis(
+        frequencies,
+        modes,
+        fconstants,
+        rmasses,
+    )
