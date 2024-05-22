@@ -67,7 +67,6 @@ from torchani.tuples import (
 )
 from torchani.nn import SpeciesConverter, Ensemble, ANIModel
 from torchani.utils import (
-    ChemicalSymbolsToInts,
     PERIODIC_TABLE,
     ATOMIC_NUMBERS,
 )
