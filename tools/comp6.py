@@ -52,7 +52,7 @@ def by_batch(species, coordinates, model):
     energies = []
     forces = []
     for s, c in zip(species, coordinates):
-        f, e = energies_and_forces(model, s, c)
+        e, f = energies_and_forces(model, s, c)
         energies.append(e)
         forces.append(f)
     return torch.cat(energies).detach(), torch.cat(forces).detach()
@@ -97,6 +97,7 @@ def do_benchmark(model):
         forces = torch.tensor(i["forces"], device=args.device)
         # compute
         energies2, forces2 = by_batch(species, coordinates, model)
+        breakpoint()
         ediff = energies - energies2
         relative_ediff = relative_energies(energies) - relative_energies(energies2)
         fdiff = forces.flatten() - forces2.flatten()
