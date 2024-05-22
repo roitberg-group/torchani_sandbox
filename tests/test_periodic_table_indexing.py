@@ -69,7 +69,7 @@ class TestBuiltinEnsemblePeriodicTableIndex(ANITest):
             self.model2, self.species2, self.coordinates
         )
         self.assertEqual(energy1, energy2)
-        self.assertEqual(energy1, force1)
+        self.assertEqual(force1, force2)
 
     def testCH4Single(self):
         energy1, force1 = energies_and_forces(
@@ -79,7 +79,7 @@ class TestBuiltinEnsemblePeriodicTableIndex(ANITest):
             self.single_model2, self.species2, self.coordinates
         )
         self.assertEqual(energy1, energy2)
-        self.assertEqual(energy1, force1)
+        self.assertEqual(force1, force2)
 
 
 if __name__ == "__main__":

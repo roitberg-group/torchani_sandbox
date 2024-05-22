@@ -6,6 +6,7 @@ import torch
 
 from torchani.models import ANI1x
 from torchani.utils import ATOMIC_NUMBERS
+from torchani.grad import energies_and_forces, forces
 
 # parse command line arguments
 parser = argparse.ArgumentParser()
@@ -54,7 +55,7 @@ class XYZ:
                 species.append(s)
                 coordinates.append([x, y, z])
                 if atom_count is None:
-                    raise RuntimeError("Incorrect atom count in xyz")
+                    raise RuntimeError("Atom count not present in xyz")
                 atom_count -= 1
                 if atom_count == 0:
                     state = "ready"
@@ -93,7 +94,7 @@ start = timeit.default_timer()
 energies = nnp((species, coordinates)).energies
 mid = timeit.default_timer()
 print("Energy time:", mid - start)
-_ = -torch.autograd.grad(energies.sum(), coordinates)[0]
+_ = forces(energies, coordinates)
 print("Force time:", timeit.default_timer() - mid)
 print()
 
@@ -103,8 +104,9 @@ start = timeit.default_timer()
 if args.tqdm:
     xyz = tqdm.tqdm(xyz)
 for species, coordinates in xyz:
-    species = species.unsqueeze(0)
-    coordinates = coordinates.unsqueeze(0).detach().requires_grad_(True)
-    energies = nnp((species, coordinates)).energies
-    _ = -torch.autograd.grad(energies.sum(), coordinates)[0]
+    _, _ = energies_and_forces(
+        nnp,
+        species.unsqueeze(0),
+        coordinates.unsqueeze(0).detach(),
+    )
 print("Time:", timeit.default_timer() - start)
