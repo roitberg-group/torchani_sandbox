@@ -96,13 +96,11 @@ class SubtractEnergyAndForce(Transform):
                 raise RuntimeError(
                     "It is not possible to JIT compile transforms that calculate forces"
                 )
-            output = energies_and_forces(self.wrapper, species, coordinates)
-            forces = output["forces"]
+            energies, forces = energies_and_forces(self.wrapper, species, coordinates)
             properties["forces"] -= forces
+            properties["energies"] -= energies
         else:
-            output = {"energies": self.wrapper((species, coordinates)).energies}
-        energies = output["energies"]
-        properties["energies"] -= energies
+            properties["energies"] -= self.wrapper((species, coordinates)).energies
         return properties
 
 

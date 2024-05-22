@@ -74,13 +74,14 @@ def forces(
 ) -> Tensor:
     if not coordinates.requires_grad:
         raise ValueError("Coordinates input to this function must require grad")
-    _forces = -torch.autograd.grad(
-        energies.sum(),
-        coordinates,
+    _grads = torch.autograd.grad(
+        [energies.sum()],
+        [coordinates],
         retain_graph=retain_graph,
         create_graph=create_graph,
     )[0]
-    return _forces
+    assert _grads is not None  # JIT
+    return -_grads
 
 
 def forces_and_hessians(
@@ -113,24 +114,21 @@ def hessians(
     num_components = num_atoms * num_dim
     flat_forces = forces.view(num_molecules, num_components)
     # 3A Tensors, each of shape (C,)
-    flat_forces_tuple: tp.Tuple[Tensor, ...] = flat_forces.unbind(dim=1)
+    flat_forces_tuple = flat_forces.unbind(dim=1)
     result_list = []
+    _retain_graph: tp.Optional[bool] = True
     for j, component in enumerate(flat_forces_tuple):
-        _retain_graph: tp.Optional[bool]
-        if j != (num_components - 1):
-            _retain_graph = True
-        else:
-            # For the last component we retain the graph only if instructed to
+        # For the last component we retain the graph only if instructed to
+        if j == (num_components - 1):
             _retain_graph = retain_graph
-        result_list.append(
-            torch.autograd.grad(
-                component.sum(),
-                coordinates,
-                retain_graph=_retain_graph,
-            )[0].view(
-                num_molecules, 1, num_components
-            )  # shape (C, 1, 3A)
-        )
+        _grads = torch.autograd.grad(
+            [component.sum()],
+            [coordinates],
+            retain_graph=_retain_graph,
+        )[0]
+        assert _grads is not None  # JIT
+        _grads = _grads.view(num_molecules, 1, num_components)  # shape (C, 1, 3A)
+        result_list.append(_grads)
     _hessians = -torch.cat(result_list, dim=1)  # shape (C, 3A, 3A)
     return _hessians
 
