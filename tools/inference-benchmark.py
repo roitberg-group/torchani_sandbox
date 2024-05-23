@@ -23,7 +23,7 @@ def main(filename: str, use_tqdm: bool, device: tp.Literal["cpu", "cuda"]) -> in
         xyz_file_path = Path.cwd() / filename
 
     model = ANI1x()[0].to(device)
-    species, coordinates = read_xyz(xyz_file_path, device=device)
+    species, coordinates, _ = read_xyz(xyz_file_path, device=device)
     num_conformations = species.shape[0]
     print(f"Num conformations: {num_conformations}")
     start = time.perf_counter()

@@ -1,14 +1,17 @@
+from pathlib import Path
 import typing as tp
-import torch
 import unittest
 import os
 import pickle
 import itertools
-import ase.io
 import traceback
+
+import torch
+
 from common_aev_test import _TestAEVBase
 from torchani.testing import TestCase
 from torchani.neighbors import FullPairwise
+from torchani.nn import SpeciesConverter
 from torchani.utils import (
     ChemicalSymbolsToInts,
     broadcast_first_dim,
@@ -16,6 +19,7 @@ from torchani.utils import (
     map_to_central,
 )
 from torchani.aev import AEVComputer, StandardAngular, StandardRadial
+from torchani.io import read_xyz
 
 
 path = os.path.dirname(os.path.realpath(__file__))
@@ -236,7 +240,7 @@ class TestAEV(_TestAEVBase):
         for expected_radial, expected_angular in radial_angular:
             conformations = expected_radial.shape[0]
             atoms = expected_radial.shape[1]
-            aev_ = aev[start:(start + conformations), 0:atoms]
+            aev_ = aev[start : (start + conformations), 0:atoms]
             start += conformations
             self.assertAEVEqual(expected_radial, expected_angular, aev_)
 
@@ -410,15 +414,15 @@ class TestAEVOnBoundary(TestCase):
 class TestAEVOnBenzenePBC(TestCase):
     def setUp(self):
         self.aev_computer = AEVComputer.like_1x()
-        filename = os.path.join(
-            path, "../tools/generate-unit-test-expect/others/Benzene.json"
+        species, coordinates, cell = read_xyz(
+            (Path(__file__).parent / "test_data") / "benzene.xyz"
         )
-        benzene = ase.io.read(filename)
-        self.cell = torch.tensor(benzene.get_cell(complete=True)[:], dtype=torch.float)
-        self.pbc = torch.tensor(benzene.get_pbc(), dtype=torch.bool)
-        symbols_to_idxs = ChemicalSymbolsToInts(["H", "C", "N", "O"])
-        self.species = symbols_to_idxs(benzene.get_chemical_symbols()).unsqueeze(0)
-        self.coordinates = torch.tensor(benzene.get_positions()).unsqueeze(0).float()
+        assert cell is not None
+        self.cell = cell
+        self.pbc = torch.tensor([True, True, True], dtype=torch.bool)
+        self.species, self.coordinates = SpeciesConverter(["H", "C", "N", "O"])(
+            (species, coordinates)
+        )
         _, self.aev = self.aev_computer(
             (self.species, self.coordinates), cell=self.cell, pbc=self.pbc
         )
