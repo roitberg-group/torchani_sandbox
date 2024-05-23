@@ -51,21 +51,23 @@ from torchani import (
     sae,
     infer,
     constants,
+    grad,
     data,  # TODO: Get rid of this
+    io,
 )
-# NOTE: ase is an optional dependency so we don't import it here
+# NOTE: ase and neurochem are optional dependencies so we don't import those here
 
 try:
     __version__ = version("torchani")
 except PackageNotFoundError:
-    # package is not installed
-    pass
+    pass  # package is not installed
 
 __all__ = [
     'AEVComputer',
     'EnergyShifter',
     'ANIModel',
     'Ensemble',
+    'grad',
     'SpeciesConverter',
     'utils',
     'models',
@@ -76,6 +78,7 @@ __all__ = [
     'datasets',
     'transforms',
     'cli',
+    'io',
     'geometry',
     'calc',
     'assembler',
@@ -102,7 +105,7 @@ if torch.cuda.is_available():
             " To suppress warning set the env var TORCHANI_NO_WARN_TF32 to any value"
         )
 
-# Optional dependencies
+# Optional submodules, depend on 'ase' and 'lark-parser' being available
 try:
     from . import ase  # noqa: F401
     __all__.append('ase')

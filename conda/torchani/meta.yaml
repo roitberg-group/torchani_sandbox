@@ -37,20 +37,20 @@ build:
   script:
     - "{{ PYTHON }} -m pip install . --global-option='--ext-all-sms' -vvv --no-deps"
 
-#test:
-  #imports:
-    #- torchani
-    #- torchani.cuaev
-    #- torchani.mnp
-  #source_files:
-    #- tests/*
-    #- download.sh
-    #- dataset/*
-  #commands:
-    #- pip install pytest pynvml ase parameterized expecttest
-    #- ./download.sh
-    ## cuaev test
-    #- python tests/test_cuaev.py
+test:
+  imports:
+    - torchani
+    - torchani.cuaev
+    - torchani.mnp
+  source_files:
+    - tests/*
+    - download.sh
+    - dataset/*
+  commands:
+    - pip install pytest ase parameterized expecttest
+    - ./download.sh
+    # cuaev test
+    - python tests/test_cuaev.py
 
 about:
   home: https://roitberg.chem.ufl.edu

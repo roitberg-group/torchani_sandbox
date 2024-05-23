@@ -12,7 +12,7 @@ def _get_cls_name(cls: type, idx: int, params: tp.Dict[str, tp.Any]) -> str:
 
 
 def expand(
-    device: tp.Union[tp.Literal["cpu"], tp.Literal["cuda"], None] = None,
+    device: tp.Optional[tp.Literal["cpu", "cuda"]] = None,
     jit: tp.Optional[bool] = None,
 ):
     if device not in (None, "cpu", "cuda"):
@@ -44,11 +44,11 @@ _T = tp.TypeVar("_T", bound=torch.nn.Module)
 
 @expand()
 class ANITest(TestCase):
-    _device: str
+    _device: tp.Literal["cpu", "cuda"]
     _jit: bool
 
     @property
-    def device(self) -> str:
+    def device(self) -> tp.Literal["cpu", "cuda"]:
         return getattr(self, "_device", "cpu")
 
     @property

@@ -8,7 +8,8 @@ from tqdm import tqdm
 from torchani.models import ANI1x
 from torchani.data._pyanitools import anidataloader
 from torchani.units import hartree2kcalpermol
-
+from torchani.utils import ATOMIC_NUMBERS
+from torchani.grad import energies_and_forces
 
 # parse command line arguments
 parser = argparse.ArgumentParser()
@@ -29,7 +30,7 @@ parser.add_argument(
 args = parser.parse_args()
 
 # run benchmark
-ani1x = ANI1x(periodic_table_index=False).to(args.device)
+ani1x = ANI1x().to(args.device)
 
 
 def recursive_h5_files(base):
@@ -45,14 +46,13 @@ def recursive_h5_files(base):
 def by_batch(species, coordinates, model):
     shape = species.shape
     batchsize = max(1, args.batchatoms // shape[1])
-    coordinates = coordinates.clone().detach().requires_grad_(True)
+    coordinates = coordinates.clone().detach()
     species = torch.split(species, batchsize)
     coordinates = torch.split(coordinates, batchsize)
     energies = []
     forces = []
     for s, c in zip(species, coordinates):
-        e = model((s, c)).energies
-        (f,) = torch.autograd.grad(e.sum(), c)
+        e, f = energies_and_forces(model, s, c)
         energies.append(e)
         forces.append(f)
     return torch.cat(energies).detach(), torch.cat(forces).detach()
@@ -87,12 +87,14 @@ def do_benchmark(model):
     rmse_averager_force = Averager()
     for i in tqdm(dataset, position=0, desc="dataset"):
         # read
-        coordinates = torch.tensor(i["coordinates"], device=args.device)
-        species = (
-            model.species_to_tensor(i["species"])
-            .unsqueeze(0)
-            .expand(coordinates.shape[0], -1)
+        coordinates = torch.tensor(
+            i["coordinates"], dtype=torch.float, device=args.device
         )
+        species = torch.tensor(
+            [ATOMIC_NUMBERS[k] for k in i["species"]],
+            dtype=torch.long,
+            device=args.device,
+        ).expand(coordinates.shape[0], -1)
         energies = torch.tensor(i["energies"], device=args.device)
         forces = torch.tensor(i["forces"], device=args.device)
         # compute

@@ -1,27 +1,43 @@
-import typing as tp
-import torch
+from pathlib import Path
 import unittest
 import os
 import pickle
 import itertools
-import ase
-import ase.io
-import math
 import traceback
-from common_aev_test import _TestAEVBase
+
+import torch
+
 from torchani.testing import TestCase
 from torchani.neighbors import FullPairwise
+from torchani.nn import SpeciesConverter
 from torchani.utils import (
     ChemicalSymbolsToInts,
-    broadcast_first_dim,
     pad_atomic_properties,
     map_to_central,
 )
 from torchani.aev import AEVComputer, StandardAngular, StandardRadial
+from torchani.io import read_xyz
+from torchani.neighbors import CellList
 
 
 path = os.path.dirname(os.path.realpath(__file__))
 N = 97
+
+
+class _TestAEVBase(TestCase):
+    def setUp(self):
+        self.aev_computer = AEVComputer.like_1x()
+        self.radial_length = self.aev_computer.radial_length
+        self._debug_aev = False
+
+    def assertAEVEqual(self, expected_radial, expected_angular, aev):
+        radial = aev[..., : self.radial_length]
+        angular = aev[..., self.radial_length:]
+        if self._debug_aev:
+            aid = 1
+            print(torch.stack([expected_radial[0, aid, :], radial[0, aid, :]]))
+        self.assertEqual(expected_radial, radial)
+        self.assertEqual(expected_angular, angular)
 
 
 class TestAEVConstructor(TestCase):
@@ -65,12 +81,12 @@ class TestIsolated(TestCase):
     def setUp(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.aev_computer = AEVComputer.like_1x().to(self.device)
-        self.species_to_tensor = ChemicalSymbolsToInts(["H", "C", "N", "O"])
+        self.symbols_to_idxs = ChemicalSymbolsToInts(["H", "C", "N", "O"])
         self.rcr = self.aev_computer.radial_terms.cutoff
         self.rca = self.aev_computer.angular_terms.cutoff
 
     def testCO2(self):
-        species = self.species_to_tensor(["O", "C", "O"]).to(self.device).unsqueeze(0)
+        species = self.symbols_to_idxs(["O", "C", "O"]).to(self.device).unsqueeze(0)
         distances = [
             1.0,
             self.rca,
@@ -79,7 +95,6 @@ class TestIsolated(TestCase):
             self.rcr + 1e-4,
             2 * self.rcr,
         ]
-        error: tp.Tuple[str, float] = ("", 0.0)
         for dist in distances:
             coordinates = torch.tensor(
                 [[[-dist, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, dist]]],
@@ -89,16 +104,14 @@ class TestIsolated(TestCase):
             try:
                 _, _ = self.aev_computer((species, coordinates))
             except IndexError:
-                error = (traceback.format_exc(), dist)
-            if error[0]:
                 self.fail(
-                    f"\n\n{error[0]}\nFailure at distance: {error[1]}\n"
+                    f"\n\n{traceback.format_exc()}\nFailure at distance: {dist}\n"
                     f"Radial r_cut of aev_computer: {self.rcr}\n"
                     f"Angular r_cut of aev_computer: {self.rca}"
                 )
 
     def testH2(self):
-        species = self.species_to_tensor(["H", "H"]).to(self.device).unsqueeze(0)
+        species = self.symbols_to_idxs(["H", "H"]).to(self.device).unsqueeze(0)
         distances = [
             1.0,
             self.rca,
@@ -107,7 +120,6 @@ class TestIsolated(TestCase):
             self.rcr + 1e-4,
             2 * self.rcr,
         ]
-        error: tp.Tuple[str, float] = ("", 0.0)
         for dist in distances:
             coordinates = torch.tensor(
                 [[[0.0, 0.0, 0.0], [0.0, 0.0, dist]]],
@@ -117,27 +129,24 @@ class TestIsolated(TestCase):
             try:
                 _, _ = self.aev_computer((species, coordinates))
             except IndexError:
-                error = (traceback.format_exc(), dist)
-            if error[0]:
                 self.fail(
-                    f"\n\n{error[0]}\nFailure at distance: {error[1]}\n"
+                    f"\n\n{traceback.format_exc()}\nFailure at distance: {dist}\n"
                     f"Radial r_cut of aev_computer: {self.rcr}\n"
                     f"Angular r_cut of aev_computer: {self.rca}"
                 )
 
     def testH(self):
         # Tests for failure on a single atom
-        species = self.species_to_tensor(["H"]).to(self.device).unsqueeze(0)
-        error = ""
+        species = self.symbols_to_idxs(["H"]).to(self.device).unsqueeze(0)
         coordinates = torch.tensor(
             [[[0.0, 0.0, 0.0]]], requires_grad=True, device=self.device
         )
         try:
             _, _ = self.aev_computer((species, coordinates))
         except IndexError:
-            error = traceback.format_exc()
-        if error:
-            self.fail(f"\n\n{error}\nFailure on lone atom\n")
+            self.fail(
+                f"\n\n{traceback.format_exc()}\nFailure on lone atom\n"
+            )
 
 
 class TestAEV(_TestAEVBase):
@@ -173,7 +182,7 @@ class TestAEV(_TestAEVBase):
 
     def testIsomers(self):
         for i in range(N):
-            datafile = os.path.join(path, "test_data/ANI1_subset/{}".format(i))
+            datafile = os.path.join(path, f"test_data/ANI1_subset/{i}")
             with open(datafile, "rb") as f:
                 (
                     coordinates,
@@ -214,7 +223,7 @@ class TestAEV(_TestAEVBase):
         species_coordinates = []
         radial_angular = []
         for i in range(N):
-            datafile = os.path.join(path, "test_data/ANI1_subset/{}".format(i))
+            datafile = os.path.join(path, f"test_data/ANI1_subset/{i}")
             with open(datafile, "rb") as f:
                 coordinates, species, radial, angular, _, _ = pickle.load(f)
                 coordinates = torch.from_numpy(coordinates)
@@ -222,14 +231,15 @@ class TestAEV(_TestAEVBase):
                 radial = torch.from_numpy(radial)
                 angular = torch.from_numpy(angular)
                 species_coordinates.append(
-                    broadcast_first_dim(
-                        {"species": species, "coordinates": coordinates}
-                    )
+                    {"species": species, "coordinates": coordinates}
                 )
                 radial_angular.append((radial, angular))
-        species_coordinates = pad_atomic_properties(species_coordinates)
+        species_coordinates_dict = pad_atomic_properties(species_coordinates)
         _, aev = self.aev_computer(
-            (species_coordinates["species"], species_coordinates["coordinates"])
+            (
+                species_coordinates_dict["species"],
+                species_coordinates_dict["coordinates"],
+            )
         )
         start = 0
         for expected_radial, expected_angular in radial_angular:
@@ -332,8 +342,11 @@ class TestPBCSeeEachOther(TestCase):
 
     def testNonRectangularPBCConnersSeeEachOther(self):
         species = torch.tensor([[0, 0]])
-        cell = ase.geometry.cellpar_to_cell([10, 10, 10 * math.sqrt(2), 90, 45, 90])
-        cell = torch.tensor(ase.geometry.complete_cell(cell), dtype=torch.double)
+        cell = torch.tensor(
+            [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [10.0, 0.0, 10.0]],
+            dtype=torch.double,
+        )
+
         pbc = torch.ones(3, dtype=torch.bool)
 
         xyz1 = torch.tensor([0.1, 0.1, 0.05], dtype=torch.double)
@@ -349,8 +362,10 @@ class TestPBCSeeEachOther(TestCase):
 class TestAEVOnBoundary(TestCase):
     def setUp(self):
         self.eps = 1e-9
-        cell = ase.geometry.cellpar_to_cell([100, 100, 100 * math.sqrt(2), 90, 45, 90])
-        self.cell = torch.tensor(ase.geometry.complete_cell(cell), dtype=torch.double)
+        self.cell = torch.tensor(
+            [[100.0, 0.0, 0.0], [0.0, 100.0, 0.0], [100.0, 0.0, 100.0]],
+            dtype=torch.double,
+        )
         self.inv_cell = torch.inverse(self.cell)
         self.coordinates = torch.tensor(
             [
@@ -404,15 +419,15 @@ class TestAEVOnBoundary(TestCase):
 class TestAEVOnBenzenePBC(TestCase):
     def setUp(self):
         self.aev_computer = AEVComputer.like_1x()
-        filename = os.path.join(
-            path, "../tools/generate-unit-test-expect/others/Benzene.json"
+        species, coordinates, cell = read_xyz(
+            (Path(__file__).parent / "test_data") / "benzene.xyz"
         )
-        benzene = ase.io.read(filename)
-        self.cell = torch.tensor(benzene.get_cell(complete=True)[:], dtype=torch.float)
-        self.pbc = torch.tensor(benzene.get_pbc(), dtype=torch.bool)
-        species_to_tensor = ChemicalSymbolsToInts(["H", "C", "N", "O"])
-        self.species = species_to_tensor(benzene.get_chemical_symbols()).unsqueeze(0)
-        self.coordinates = torch.tensor(benzene.get_positions()).unsqueeze(0).float()
+        assert cell is not None
+        self.cell = cell
+        self.pbc = torch.tensor([True, True, True], dtype=torch.bool)
+        self.species, self.coordinates = SpeciesConverter(["H", "C", "N", "O"])(
+            (species, coordinates)
+        )
         _, self.aev = self.aev_computer(
             (self.species, self.coordinates), cell=self.cell, pbc=self.pbc
         )
@@ -433,8 +448,8 @@ class TestAEVOnBenzenePBC(TestCase):
         cell2 = torch.stack([4 * c1, c2, c3])
         _, aev2 = self.aev_computer((species2, coordinates2), cell=cell2, pbc=self.pbc)
         for i in range(3):
-            _start = (i * self.natoms)
-            _end = ((i + 1) * self.natoms)
+            _start = i * self.natoms
+            _end = (i + 1) * self.natoms
             aev3 = aev2[:, _start:_end, :]
             self.assertEqual(self.aev, aev3)
 
@@ -451,6 +466,98 @@ class TestAEVOnBenzenePBC(TestCase):
         _, aev2 = self.aev_computer((species2, coordinates2))
         aev2 = aev2[:, : self.natoms, :]
         self.assertEqual(self.aev, aev2)
+
+
+class TestAEVNIST(_TestAEVBase):
+    def testNIST(self):
+        datafile = os.path.join(path, "test_data/NIST/all")
+        with open(datafile, "rb") as f:
+            data = pickle.load(f)
+            # only use first 100 data points to make test take an
+            # acceptable time
+            for coordinates, species, radial, angular, _, _ in data[:100]:
+                coordinates = torch.from_numpy(coordinates).to(torch.float)
+                species = torch.from_numpy(species)
+                radial = torch.from_numpy(radial).to(torch.float)
+                angular = torch.from_numpy(angular).to(torch.float)
+                _, aev = self.aev_computer((species, coordinates))
+                self.assertAEVEqual(radial, angular, aev)
+
+
+class TestDynamicsAEV(_TestAEVBase):
+    def testBenzene(self):
+        for i in [2, 8]:
+            datafile = os.path.join(path, f"test_data/benzene-md/{i}.dat")
+            with open(datafile, "rb") as f:
+                (
+                    coordinates,
+                    species,
+                    expected_radial,
+                    expected_angular,
+                    _,
+                    _,
+                    cell,
+                    pbc,
+                ) = pickle.load(f)
+                coordinates = torch.from_numpy(coordinates).float().unsqueeze(0)
+                species = torch.from_numpy(species).unsqueeze(0)
+                expected_radial = torch.from_numpy(expected_radial).float().unsqueeze(0)
+                expected_angular = (
+                    torch.from_numpy(expected_angular).float().unsqueeze(0)
+                )
+                cell = torch.from_numpy(cell).float()
+                pbc = torch.from_numpy(pbc).bool()
+                _, aev = self.aev_computer((species, coordinates), cell=cell, pbc=pbc)
+                self.assertAEVEqual(expected_radial, expected_angular, aev)
+
+    def testBenzeneCellList(self):
+        for i in [2, 8]:
+            datafile = os.path.join(path, f"test_data/benzene-md/{i}.dat")
+            self.aev_computer.neighborlist = CellList()
+            with open(datafile, "rb") as f:
+                (
+                    coordinates,
+                    species,
+                    expected_radial,
+                    expected_angular,
+                    _,
+                    _,
+                    cell,
+                    pbc,
+                ) = pickle.load(f)
+                coordinates = torch.from_numpy(coordinates).float().unsqueeze(0)
+                species = torch.from_numpy(species).unsqueeze(0)
+                expected_radial = torch.from_numpy(expected_radial).float().unsqueeze(0)
+                expected_angular = (
+                    torch.from_numpy(expected_angular).float().unsqueeze(0)
+                )
+                cell = torch.from_numpy(cell).float()
+                pbc = torch.from_numpy(pbc).bool()
+                _, aev = self.aev_computer((species, coordinates), cell=cell, pbc=pbc)
+                self.assertAEVEqual(expected_radial, expected_angular, aev)
+
+    def testTripeptide(self):
+        for i in range(100):
+            datafile = os.path.join(path, f"test_data/tripeptide-md/{i}.dat")
+            with open(datafile, "rb") as f:
+                (
+                    coordinates,
+                    species,
+                    expected_radial,
+                    expected_angular,
+                    _,
+                    _,
+                    _,
+                    _,
+                ) = pickle.load(f)
+                coordinates = torch.from_numpy(coordinates).float().unsqueeze(0)
+                species = torch.from_numpy(species).unsqueeze(0)
+                expected_radial = torch.from_numpy(expected_radial).float().unsqueeze(0)
+                expected_angular = (
+                    torch.from_numpy(expected_angular).float().unsqueeze(0)
+                )
+                _, aev = self.aev_computer((species, coordinates))
+                self.assertAEVEqual(expected_radial, expected_angular, aev)
 
 
 if __name__ == "__main__":

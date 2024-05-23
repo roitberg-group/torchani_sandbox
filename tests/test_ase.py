@@ -1,22 +1,29 @@
 import typing as tp
 from pathlib import Path
 from itertools import product
+import warnings
 import unittest
 import pickle
 
 import numpy as np
 from numpy.typing import NDArray
+from parameterized import parameterized
+
+from torchani import ASE_IS_AVAILABLE
+if not ASE_IS_AVAILABLE:
+    warnings.warn("Skipping all ASE tests, install ase to run them")
+    raise unittest.SkipTest("ASE is not available, skipping all ASE tests.")
+
 from ase import units, Atoms
-from ase.io import read
 from ase.vibrations import Vibrations
 from ase.optimize import BFGS
 from ase.lattice.cubic import Diamond
 from ase.md.langevin import Langevin
 from ase.md.nptberendsen import NPTBerendsen
 from ase.calculators.test import numeric_force
-from parameterized import parameterized
 
 from torchani.neighbors import CellList
+from torchani.io import read_xyz
 from torchani.testing import ANITest, expand
 from torchani.models import ANI1x, ANIdr, PairPotentialsModel
 from torchani.potentials import PairPotential
@@ -138,15 +145,19 @@ class TestASE(ANITest):
         # Run NPT dynamics for some steps and periodically check that the
         # numerical and analytical stresses agree up to a given
         # absolute difference
-        parts = ["tools", "generate-unit-test-expect", "others", "Benzene.json"]
-        json_file = Path(Path(__file__).parent.parent, *parts).resolve()
-        benzene = read(str(json_file))
-        # set velocities to a very small value to avoid division by zero
-        # warning due to initial zero temperature.
-        #
         # Note that there are 4 benzene molecules, thus, 48 atoms in
-        # Benzene.json
-        benzene.set_velocities(np.full((48, 3), 1e-15))
+        # Benzene.xyz
+        species, coordinates, cell = read_xyz(
+            (Path(__file__).parent / "test_data") / "benzene.xyz"
+        )
+        assert cell is not None
+        benzene = Atoms(
+            numbers=species.squeeze(0).numpy(),
+            positions=coordinates.squeeze(0).numpy(),
+            cell=cell.numpy(),
+            velocities=np.full((48, 3), 1e-15),  # Set velocities to very small value
+            pbc=True,
+        )
         calculator = model.ase(stress_partial_fdotr=stress_partial_fdotr)
         benzene.calc = calculator
         dyn = NPTBerendsen(
