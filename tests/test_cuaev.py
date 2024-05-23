@@ -427,7 +427,7 @@ class TestCUAEV(TestCase):
 
     def testTripeptideMD(self):
         for i in range(100):
-            datafile = os.path.join(path, "test_data/tripeptide-md/{}.dat".format(i))
+            datafile = os.path.join(path, f"test_data/tripeptide-md/{i}.dat")
             with open(datafile, "rb") as f:
                 coordinates, species, *_ = pickle.load(f)
                 coordinates = (
@@ -443,7 +443,7 @@ class TestCUAEV(TestCase):
 
     def testTripeptideMDBackward(self):
         for i in range(100):
-            datafile = os.path.join(path, "test_data/tripeptide-md/{}.dat".format(i))
+            datafile = os.path.join(path, f"test_data/tripeptide-md/{i}.dat")
             with open(datafile, "rb") as f:
                 coordinates, species, *_ = pickle.load(f)
                 coordinates = (
@@ -472,7 +472,7 @@ class TestCUAEV(TestCase):
         self._skip_if_not_cosine()
 
         for i in range(100):
-            datafile = os.path.join(path, "test_data/tripeptide-md/{}.dat".format(i))
+            datafile = os.path.join(path, f"test_data/tripeptide-md/{i}.dat")
             with open(datafile, "rb") as f:
                 coordinates, species, *_ = pickle.load(f)
                 coordinates = (
@@ -555,7 +555,7 @@ class TestCUAEV(TestCase):
         https://github.com/aiqm/torchani/pull/555
         """
         for i in range(5):
-            datafile = os.path.join(path, "test_data/tripeptide-md/{}.dat".format(i))
+            datafile = os.path.join(path, f"test_data/tripeptide-md/{i}.dat")
             with open(datafile, "rb") as f:
                 coordinates, species, *_ = pickle.load(f)
                 # change angstrom coordinates to 10 times smaller
@@ -569,7 +569,7 @@ class TestCUAEV(TestCase):
 
     def testVeryDenseMoleculeBackward(self):
         for i in range(5):
-            datafile = os.path.join(path, "test_data/tripeptide-md/{}.dat".format(i))
+            datafile = os.path.join(path, f"test_data/tripeptide-md/{i}.dat")
             with open(datafile, "rb") as f:
                 coordinates, species, *_ = pickle.load(f)
                 # change angstrom coordinates to 10 times smaller

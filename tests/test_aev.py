@@ -175,7 +175,7 @@ class TestAEV(_TestAEVBase):
 
     def testIsomers(self):
         for i in range(N):
-            datafile = os.path.join(path, "test_data/ANI1_subset/{}".format(i))
+            datafile = os.path.join(path, f"test_data/ANI1_subset/{i}")
             with open(datafile, "rb") as f:
                 (
                     coordinates,
@@ -216,7 +216,7 @@ class TestAEV(_TestAEVBase):
         species_coordinates = []
         radial_angular = []
         for i in range(N):
-            datafile = os.path.join(path, "test_data/ANI1_subset/{}".format(i))
+            datafile = os.path.join(path, f"test_data/ANI1_subset/{i}")
             with open(datafile, "rb") as f:
                 coordinates, species, radial, angular, _, _ = pickle.load(f)
                 coordinates = torch.from_numpy(coordinates)
