@@ -62,14 +62,15 @@ class ExCorrAEVComputer(AEVComputer):
             if basis_functions == 'spd':
                 orbital_aev_length = 21
             elif basis_functions == 'sp':
-                orbital_aev_length = 13            
+                orbital_aev_length = 13             
             elif basis_functions == 's':
                 orbital_aev_length = 9
             if use_angular_info_in_simple_orbital_aev:
                 #Only p and d AOVs have angular info associated
                 #The number of s+d AOVs is simple_orbital_aev_length-9 (because we need to substract the 9 s AOVs)
                 #If we calculate the number of angles as N(N-1)/2 (with N the number of s+d AOVs), we have:
-                orbital_aev_length = orbital_aev_length + ((orbital_aev_length-9)*(orbital_aev_length-10)/2)
+                nangles = int((orbital_aev_length-9)*(orbital_aev_length-10)/2)
+                orbital_aev_length = orbital_aev_length + nangles
             self.orbital_aev_computer = SimpleOrbitalAEVComputer()   
         else:
             #To do -> Include an AEV-like expansion for the AOVs
@@ -103,7 +104,7 @@ class ExCorrAEVComputer(AEVComputer):
         # and **in general are not**
 
         if self.use_simple_orbital_aev:
-            aev = self.orbital_aev_computer(coefficients,self.use_angular_info_in_simple_orbital_aev,self.basis_functions )
+            aev = self.orbital_aev_computer(coefficients=coefficients,use_angular_info=self.use_angular_info_in_simple_orbital_aev,basis_functions=self.basis_functions)
         else:
             #To do -> Same but for an AEV-like expansion of the AOVs
             aev = torch.tensor([])  # Placeholder until implemented

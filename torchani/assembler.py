@@ -629,6 +629,9 @@ def ExCorrANI(
     neighborlist: str = "full_pairwise",
     atomic_maker: tp.Union[tp.Callable[[str, int], torch.nn.Module], str] = "ani2x",
     use_geometric_aev: bool = False,
+    use_simple_orbital_aev: bool = True,
+    use_angular_info_in_simple_orbital_aev: bool = False,
+    basis_functions='spd',
 ) -> BuiltinModel:
     asm = Assembler(ensemble_size=ensemble_size)
     asm.set_symbols(symbols)
@@ -651,7 +654,11 @@ def ExCorrANI(
             num_angle_sections=angle_sections,
             cutoff=angular_cutoff,
         ),
-        extra={"use_geometric_aev": use_geometric_aev},
+        extra={"use_geometric_aev": use_geometric_aev,
+               "use_simple_orbital_aev": use_simple_orbital_aev,
+               "use_angular_info_in_simple_orbital_aev": use_angular_info_in_simple_orbital_aev,
+               "basis_functions": basis_functions
+               }
     )
     asm.set_atomic_maker(atomics._parse_atomics(atomic_maker))
     asm.set_neighborlist(neighborlist)

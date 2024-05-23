@@ -9,7 +9,7 @@ class SimpleOrbitalAEVComputer(torch.nn.Module):
         self,
         coefficients: Tensor,
         basis_functions: str,
-        use_angular_info: Bool,
+        use_angular_info: bool,
     ) -> Tensor:
         # ) -> tp.Tuple[Tensor, Tensor, Tensor, Tensor]:
         # We first need to reshape the coefficients for their manipulation
@@ -17,6 +17,10 @@ class SimpleOrbitalAEVComputer(torch.nn.Module):
         # The p and d-type coefficientes form an orbital matrix that basically
         # Describes the coordinates in the "space of coefficients" of fake atoms
         # Around each actual atom.
+
+        if basis_functions == 's':
+            return self._reshape_coefficients(coefficients,basis_functions) # shape (nconf, natoms, simple_orbital_aevs_length)
+        
         s_coeffs, orbital_matrix = self._reshape_coefficients(coefficients,basis_functions)
 
         # In order to use the AEV computer function from the geometric AEVs, we need
@@ -57,7 +61,7 @@ class SimpleOrbitalAEVComputer(torch.nn.Module):
         d_coeffs = coefficients[:, :, 21:]   # Shape: (nconformers, natoms, 24)
 
         if basis_functions == 's':
-            return s_coeffs, torch.tensor([]) #In this case the orbital_matrix is empty
+            return s_coeffs
         
         # Reshape p_coeffs to make it easier to handle individual components
         p_coeffs_reshaped = p_coeffs.view(nconformers, natoms, 4, 3)  # Shape: (nconformers, natoms, 4, 3)
@@ -89,22 +93,29 @@ class SimpleOrbitalAEVComputer(torch.nn.Module):
         orbital_matrix: Tensor,
         distances: Tensor
     ) -> Tensor:
-        #To do 
-        #If basis_functions is 'spd', orbital_matrix.shape is (nconformers, natoms, 12, 3) and distances shape is (nconformers, natoms, 12)
-        #If basis_functions is 'sp',  orbital_matrix.shape is (nconformers, natoms,  4, 3) and distances shape is (nconformers, natoms, 4)
-
         nconformers, natoms, naovs = distances.shape
-         
         # Normalize the vectors using the provided distances
-        orbital_matrix_normalized = orbital_matrix / distances.unsqueeze(-1)
 
+        # Create a mask for the zero vectors in the orbital matrix
+        zero_mask = (orbital_matrix.abs() < 1e-12).all(dim=-1)
+
+        # Perform the normalization, avoid division by zero by using where
+        orbital_matrix_normalized = torch.where(
+        zero_mask.unsqueeze(-1),
+        torch.zeros_like(orbital_matrix),
+        orbital_matrix / distances.unsqueeze(-1)        
+        )
+        # orbital_matrix_normalized = orbital_matrix / distances.unsqueeze(-1)
+           
         # Calculate angles between each vector and the following vectors
-        angles = torch.zeros((nconformers, natoms, naovs, naovs))
+        nangles = int((naovs-1)*naovs/2)
+        angles = torch.zeros((nconformers, natoms,nangles))
+        k = 0
         for i in range(naovs):
             for j in range(i+1, naovs):
-                cos_angles = torch.einsum('ijkl,ijml->ijkm', orbital_matrix_normalized[:, :, i, :], orbital_matrix_normalized[:, :, j, :])                    
-                angles[:, :, i, j] = torch.acos(0.95 * cos_angles) # 0.95 is multiplied to the cos values to prevent acos from returning NaN.
-     
+                cos_angles = torch.einsum('ijk,ijk->ij', orbital_matrix_normalized[:, :, i, :], orbital_matrix_normalized[:, :, j, :])
+                angles[:, :, k] = torch.acos(0.95 * cos_angles) # 0.95 is multiplied to the cos values to prevent acos from returning NaN.     
+                k = k + 1
         return angles
  
 
