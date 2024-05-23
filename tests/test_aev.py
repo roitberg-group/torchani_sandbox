@@ -1,5 +1,4 @@
 from pathlib import Path
-import typing as tp
 import unittest
 import os
 import pickle
@@ -97,7 +96,6 @@ class TestIsolated(TestCase):
             self.rcr + 1e-4,
             2 * self.rcr,
         ]
-        error: tp.Tuple[str, float] = ("", 0.0)
         for dist in distances:
             coordinates = torch.tensor(
                 [[[-dist, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, dist]]],
@@ -107,10 +105,8 @@ class TestIsolated(TestCase):
             try:
                 _, _ = self.aev_computer((species, coordinates))
             except IndexError:
-                error = (traceback.format_exc(), dist)
-            if error[0]:
                 self.fail(
-                    f"\n\n{error[0]}\nFailure at distance: {error[1]}\n"
+                    f"\n\n{traceback.format_exc()}\nFailure at distance: {dist}\n"
                     f"Radial r_cut of aev_computer: {self.rcr}\n"
                     f"Angular r_cut of aev_computer: {self.rca}"
                 )
@@ -125,7 +121,6 @@ class TestIsolated(TestCase):
             self.rcr + 1e-4,
             2 * self.rcr,
         ]
-        error: tp.Tuple[str, float] = ("", 0.0)
         for dist in distances:
             coordinates = torch.tensor(
                 [[[0.0, 0.0, 0.0], [0.0, 0.0, dist]]],
@@ -135,10 +130,8 @@ class TestIsolated(TestCase):
             try:
                 _, _ = self.aev_computer((species, coordinates))
             except IndexError:
-                error = (traceback.format_exc(), dist)
-            if error[0]:
                 self.fail(
-                    f"\n\n{error[0]}\nFailure at distance: {error[1]}\n"
+                    f"\n\n{traceback.format_exc()}\nFailure at distance: {dist}\n"
                     f"Radial r_cut of aev_computer: {self.rcr}\n"
                     f"Angular r_cut of aev_computer: {self.rca}"
                 )
@@ -146,16 +139,15 @@ class TestIsolated(TestCase):
     def testH(self):
         # Tests for failure on a single atom
         species = self.symbols_to_idxs(["H"]).to(self.device).unsqueeze(0)
-        error = ""
         coordinates = torch.tensor(
             [[[0.0, 0.0, 0.0]]], requires_grad=True, device=self.device
         )
         try:
             _, _ = self.aev_computer((species, coordinates))
         except IndexError:
-            error = traceback.format_exc()
-        if error:
-            self.fail(f"\n\n{error}\nFailure on lone atom\n")
+            self.fail(
+                f"\n\n{traceback.format_exc()}\nFailure on lone atom\n"
+            )
 
 
 class TestAEV(_TestAEVBase):
