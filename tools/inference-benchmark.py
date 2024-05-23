@@ -25,26 +25,23 @@ def main(filename: str, use_tqdm: bool, device: tp.Literal["cpu", "cuda"]) -> in
     model = ANI1x()[0].to(device)
     species, coordinates = read_xyz(xyz_file_path, device=device)
     num_conformations = species.shape[0]
-    print(num_conformations, "conformations")
-    print()
-
-    print("[Batch mode]")
+    print(f"Num conformations: {num_conformations}")
     start = time.perf_counter()
     energies_and_forces(model, species, coordinates)
-    print("Time for energies and forces:", time.perf_counter() - start)
-    print()
-
-    print("[Single mode]")
+    print(f"Time for energies and forces [batch]: {time.perf_counter() - start}")
     start = time.perf_counter()
     for species, coordinates in tqdm(
-        zip(species, coordinates), disable=not use_tqdm, total=num_conformations
+        zip(species, coordinates),
+        disable=not use_tqdm,
+        total=num_conformations,
+        leave=False,
     ):
         _, _ = energies_and_forces(
             model,
             species.unsqueeze(0),
             coordinates.unsqueeze(0).detach(),
         )
-    print("Time for energies and forces:", time.perf_counter() - start)
+    print(f"Time for energies and forces [batch]: {time.perf_counter() - start}")
     return 0
 
 
