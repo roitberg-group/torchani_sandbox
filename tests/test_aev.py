@@ -12,7 +12,6 @@ from torchani.neighbors import FullPairwise
 from torchani.nn import SpeciesConverter
 from torchani.utils import (
     ChemicalSymbolsToInts,
-    broadcast_first_dim,
     pad_atomic_properties,
     map_to_central,
 )
@@ -232,9 +231,7 @@ class TestAEV(_TestAEVBase):
                 radial = torch.from_numpy(radial)
                 angular = torch.from_numpy(angular)
                 species_coordinates.append(
-                    broadcast_first_dim(
                         {"species": species, "coordinates": coordinates}
-                    )
                 )
                 radial_angular.append((radial, angular))
         species_coordinates_dict = pad_atomic_properties(species_coordinates)
