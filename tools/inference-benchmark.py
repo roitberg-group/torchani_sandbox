@@ -55,9 +55,9 @@ if __name__ == "__main__":
         default=("cuda" if torch.cuda.is_available() else "cpu"),
     )
     parser.add_argument(
-        "--no-tqdm",
+        "--tqdm",
         dest="use_tqdm",
-        action="store_false",
+        action="store_true",
         help="Whether to use tqdm to display progress",
     )
     args = parser.parse_args()
