@@ -231,7 +231,7 @@ class TestAEV(_TestAEVBase):
                 radial = torch.from_numpy(radial)
                 angular = torch.from_numpy(angular)
                 species_coordinates.append(
-                        {"species": species, "coordinates": coordinates}
+                    {"species": species, "coordinates": coordinates}
                 )
                 radial_angular.append((radial, angular))
         species_coordinates_dict = pad_atomic_properties(species_coordinates)
