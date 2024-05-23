@@ -13,7 +13,7 @@ from torchani.grad import energies_and_forces
 
 
 def main(subset: str, max_size: int, device: tp.Literal["cpu", "cuda"]) -> int:
-    ds = COMP6v1(verbose=False, skip_check=True)
+    ds = COMP6v1(verbose=False)
     locations = [
         Path(p)
         for p in ds.store_locations
