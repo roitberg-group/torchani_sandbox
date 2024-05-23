@@ -7,6 +7,13 @@ import pickle
 
 import numpy as np
 from numpy.typing import NDArray
+from parameterized import parameterized
+
+from torchani import ASE_IS_AVAILABLE
+if not ASE_IS_AVAILABLE:
+    warnings.warn("Skipping all ASE tests, install ase to run them")
+    raise unittest.SkipTest("ASE is not available, skipping all ASE tests.")
+
 from ase import units, Atoms
 from ase.vibrations import Vibrations
 from ase.optimize import BFGS
@@ -14,19 +21,12 @@ from ase.lattice.cubic import Diamond
 from ase.md.langevin import Langevin
 from ase.md.nptberendsen import NPTBerendsen
 from ase.calculators.test import numeric_force
-from parameterized import parameterized
 
-from torchani import ASE_IS_AVAILABLE
 from torchani.neighbors import CellList
 from torchani.io import read_xyz
 from torchani.testing import ANITest, expand
 from torchani.models import ANI1x, ANIdr, PairPotentialsModel
 from torchani.potentials import PairPotential
-
-
-if not ASE_IS_AVAILABLE:
-    warnings.warn("Skipping all ASE tests, install ase to run them")
-    raise unittest.SkipTest("ASE is not available, skipping all ASE tests.")
 
 
 def _stress_test_name(fn: tp.Any, idx: int, param: tp.Any) -> str:
