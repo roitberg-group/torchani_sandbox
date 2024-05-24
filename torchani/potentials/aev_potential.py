@@ -3,17 +3,15 @@ import typing as tp
 from torch import Tensor
 
 from torchani.neighbors import NeighborData
-from torchani.nn import Ensemble, ANIModel
+from torchani.atomics import AtomicContainer
 from torchani.utils import PERIODIC_TABLE
 from torchani.aev.computer import AEVComputer
 from torchani.potentials.core import Potential
 
-NN = tp.Union[ANIModel, Ensemble]
-
 
 # Adaptor to use the aev computer as a three body potential
 class AEVPotential(Potential):
-    def __init__(self, aev_computer: AEVComputer, neural_networks: NN):
+    def __init__(self, aev_computer: AEVComputer, neural_networks: AtomicContainer):
         # Fetch the symbols or "Dummy" if they are not actually elements
         # NOTE: symbols that are not elements is supported for backwards
         # compatibility, since ANIModel supports arbitrary ordered dicts

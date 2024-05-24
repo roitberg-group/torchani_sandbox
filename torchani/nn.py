@@ -3,13 +3,14 @@ from collections import OrderedDict
 
 import torch
 from torch import Tensor
-import typing_extensions as tpx
 
 from torchani.utils import PERIODIC_TABLE
 from torchani.tuples import SpeciesCoordinates, SpeciesEnergies
+from torchani.atomics import AtomicContainer
+from torchani.infer import BmmEnsemble, InferModel
 
 
-class ANIModel(torch.nn.Module):
+class ANIModel(AtomicContainer):
     """ANI model that compute energies from species and AEVs.
 
     Different atom types might have different modules, when computing
@@ -32,10 +33,6 @@ class ANIModel(torch.nn.Module):
             the module for atom type ``i``. Different atom types can share a
             module by putting the same reference in :attr:`modules`.
     """
-
-    num_networks: int
-    num_species: int
-
     def _load_from_state_dict(
         self,
         state_dict,
@@ -76,7 +73,7 @@ class ANIModel(torch.nn.Module):
         self.num_species = len(self.atomics)
         self.num_networks = 1
 
-    def forward(  # type: ignore
+    def forward(
         self,
         species_aev: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
@@ -84,11 +81,6 @@ class ANIModel(torch.nn.Module):
     ) -> SpeciesEnergies:
         atomic_energies = self._atomic_energies(species_aev).squeeze(0)
         return SpeciesEnergies(species_aev[0], torch.sum(atomic_energies, dim=1))
-
-    def member(self, idx: int) -> tpx.Self:
-        if idx == 0:
-            return self
-        raise IndexError("Only idx=0 supported for ANIModel")
 
     @torch.jit.export
     def _atomic_energies(
@@ -111,19 +103,12 @@ class ANIModel(torch.nn.Module):
         output = output.view_as(species)
         return output.unsqueeze(0)
 
-    def to_infer_model(self, use_mnp: bool = False):
-        # Infer is imported here to prevent circular imports
-        from torchani import infer
-
-        return infer.InferModel(self, use_mnp=use_mnp)  # type: ignore
+    def to_infer_model(self, use_mnp: bool = False) -> AtomicContainer:
+        return InferModel(self, use_mnp=use_mnp)
 
 
-class Ensemble(torch.nn.Module):
+class Ensemble(AtomicContainer):
     """Compute the average output of an ensemble of modules."""
-
-    num_networks: int
-    num_species: int
-
     def _load_from_state_dict(
         self,
         state_dict,
@@ -161,17 +146,17 @@ class Ensemble(torch.nn.Module):
 
     def forward(
         self,
-        species_input: tp.Tuple[Tensor, Tensor],  # type: ignore
+        species_input: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
     ) -> SpeciesEnergies:
-        sum_ = 0
+        species, input = species_input
+        sum_ = torch.zeros(species.shape[0], dtype=input.dtype, device=input.device)
         for x in self.members:
-            sum_ += x(species_input)[1]
-        species, _ = species_input
-        return SpeciesEnergies(species, sum_ / self.num_networks)  # type: ignore
+            sum_ += x((species, input)).energies
+        return SpeciesEnergies(species, sum_ / self.num_networks)
 
-    def member(self, idx: int) -> ANIModel:
+    def member(self, idx: int) -> AtomicContainer:
         return self.members[idx]
 
     @torch.jit.export
@@ -184,13 +169,10 @@ class Ensemble(torch.nn.Module):
         # out shape is (M, C, A)
         return members_atomic_energies
 
-    def to_infer_model(self, use_mnp: bool = False):
-        # Infer is imported here to prevent circular imports
-        from torchani import infer
-
+    def to_infer_model(self, use_mnp: bool = False) -> AtomicContainer:
         if use_mnp:
-            return infer.InferModel(self, use_mnp=True)  # type: ignore
-        return infer.BmmEnsemble(self)  # type: ignore
+            return InferModel(self, use_mnp=True)
+        return BmmEnsemble(self)
 
 
 class Sequential(torch.nn.ModuleList):
@@ -201,7 +183,7 @@ class Sequential(torch.nn.ModuleList):
 
     def forward(
         self,
-        input_: tp.Tuple[Tensor, Tensor],  # type: ignore
+        input_: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
     ):
