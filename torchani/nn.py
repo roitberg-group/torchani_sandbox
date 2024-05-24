@@ -33,30 +33,15 @@ class ANIModel(AtomicContainer):
             the module for atom type ``i``. Different atom types can share a
             module by putting the same reference in :attr:`modules`.
     """
-    def _load_from_state_dict(
-        self,
-        state_dict,
-        prefix,
-        local_metadata,
-        strict,
-        missing_keys,
-        unexpected_keys,
-        error_msgs,
-    ) -> None:
+
+    # Needed for bw compatibility
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
         old_keys = list(state_dict.keys())
         for k in old_keys:
             suffix = k.split(prefix)[-1]
             if not suffix.startswith("atomics."):
                 state_dict["".join((prefix, "atomics.", suffix))] = state_dict.pop(k)
-        super()._load_from_state_dict(
-            state_dict,
-            prefix,
-            local_metadata,
-            strict,
-            missing_keys,
-            unexpected_keys,
-            error_msgs,
-        )
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     @staticmethod
     def ensureOrderedDict(modules):
@@ -109,30 +94,15 @@ class ANIModel(AtomicContainer):
 
 class Ensemble(AtomicContainer):
     """Compute the average output of an ensemble of modules."""
-    def _load_from_state_dict(
-        self,
-        state_dict,
-        prefix,
-        local_metadata,
-        strict,
-        missing_keys,
-        unexpected_keys,
-        error_msgs,
-    ) -> None:
+
+    # Needed for bw compatibility
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
         old_keys = list(state_dict.keys())
         for k in old_keys:
             suffix = k.split(prefix)[-1]
             if not suffix.startswith("members."):
                 state_dict["".join((prefix, "members.", suffix))] = state_dict.pop(k)
-        super()._load_from_state_dict(
-            state_dict,
-            prefix,
-            local_metadata,
-            strict,
-            missing_keys,
-            unexpected_keys,
-            error_msgs,
-        )
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def __init__(self, modules: tp.Sequence[ANIModel]):
         super().__init__()
