@@ -5,58 +5,19 @@ import argparse
 import torch
 from tqdm import tqdm
 
-import torchani
+from torchani import datasets
+from torchani.datasets import create_batched_dataset
+from torchani.models import ANI1x
 from torchani.units import hartree2kcalpermol
 from tool_utils import time_functions_in_model
 
-H_network = torch.nn.Sequential(
-    torch.nn.Linear(384, 160),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(160, 128),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(128, 96),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(96, 1),
-)
-
-C_network = torch.nn.Sequential(
-    torch.nn.Linear(384, 144),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(144, 112),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(112, 96),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(96, 1),
-)
-
-N_network = torch.nn.Sequential(
-    torch.nn.Linear(384, 128),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(128, 112),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(112, 96),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(96, 1),
-)
-
-O_network = torch.nn.Sequential(
-    torch.nn.Linear(384, 128),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(128, 112),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(112, 96),
-    torch.nn.CELU(0.1),
-    torch.nn.Linear(96, 1),
-)
-
-
 if __name__ == "__main__":
-    # parse command line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "dataset_path",
-        help="Path of the dataset, can a hdf5 file \
-                            or a directory containing hdf5 files",
+        "dataset",
+        help="Name of builtin dataset to train on",
+        nargs="?",
+        default="TestData",
     )
     parser.add_argument(
         "-d",
@@ -72,17 +33,20 @@ if __name__ == "__main__":
         type=int,
     )
     parser.add_argument(
-        "-y",
-        "--synchronize",
+        "--no-synchronize",
         action="store_true",
         help="Whether to wrap functions with torch.cuda.synchronize()",
     )
-    parser.add_argument("-n", "--num_epochs", help="epochs", default=1, type=int)
+    parser.add_argument(
+        "-n",
+        "--num_epochs",
+        help="epochs",
+        default=5,
+        type=int,
+    )
     args = parser.parse_args()
 
-    if args.synchronize:
-        synchronize = True
-    else:
+    if args.no_synchronize:
         synchronize = False
         print(
             "WARNING: Synchronization creates some small overhead but if CUDA"
@@ -91,11 +55,10 @@ if __name__ == "__main__":
             " function is performing. Only run this benchmark without"
             " synchronization if you know very well what you are doing"
         )
+    else:
+        synchronize = True
 
-    aev_computer = torchani.AEVComputer.like_1x()
-
-    nn = torchani.ANIModel([H_network, C_network, N_network, O_network])
-    model = torch.nn.Sequential(aev_computer, nn).to(args.device)
+    model = ANI1x(model_index=0).to(args.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.000001)
     mse = torch.nn.MSELoss(reduction="none")
 
@@ -103,7 +66,6 @@ if __name__ == "__main__":
     timers: tp.Dict[str, int] = dict()
 
     # time these functions
-
     fn_to_time_aev = [
         "_compute_radial_aev",
         "_compute_angular_aev",
@@ -111,48 +73,76 @@ if __name__ == "__main__":
         "_triple_by_molecule",
         "forward",
     ]
-    fn_to_time_neighborlist = ["forward"]
-    fn_to_time_nn = ["forward"]
-    fn_to_time_angular = ["forward"]
-    fn_to_time_radial = ["forward"]
-
     time_functions_in_model(
-        aev_computer.angular_terms, fn_to_time_angular, timers, synchronize
+        model.aev_computer.neighborlist,
+        ["forward"],
+        timers,
+        synchronize,
     )
     time_functions_in_model(
-        aev_computer.radial_terms, fn_to_time_radial, timers, synchronize
+        model.aev_computer.angular_terms,
+        ["forward"],
+        timers,
+        synchronize,
     )
-    time_functions_in_model(aev_computer, fn_to_time_aev, timers, synchronize)
     time_functions_in_model(
-        aev_computer.neighborlist, fn_to_time_neighborlist, timers, synchronize
+        model.aev_computer.radial_terms,
+        ["forward"],
+        timers,
+        synchronize,
     )
-    time_functions_in_model(nn, fn_to_time_nn, timers, synchronize)
-
-    print("=> loading dataset...")
-    shifter = torchani.EnergyShifter(None)
-    dataset = (
-        torchani.data.load(args.dataset_path)
-        .subtract_self_energies(shifter)
-        .species_to_indices()
-        .shuffle()
-        .collate(args.batch_size)
-        .cache()
+    time_functions_in_model(
+        model.aev_computer,
+        fn_to_time_aev,
+        timers,
+        synchronize,
+    )
+    time_functions_in_model(
+        model.neural_networks,
+        ["forward"],
+        timers,
+        synchronize,
+    )
+    time_functions_in_model(
+        model.energy_shifter,
+        ["forward"],
+        timers,
+        synchronize,
+    )
+    print("=> loading dataset")
+    try:
+        ds = getattr(datasets, args.dataset)(verbose=False)
+    except AttributeError:
+        raise RuntimeError(f"Dataset {args.dataset} could not be found")
+    splits = create_batched_dataset(
+        ds,
+        splits={"training": 1.0},
+        direct_cache=True,
+        batch_size=args.batch_size,
+        verbose=False,
+    )
+    train = torch.utils.data.DataLoader(
+        splits["training"], batch_size=None, shuffle=True
     )
 
-    print("=> start training")
-    start = time.time()
-
+    print("=> starting training")
+    start = time.perf_counter()
     for epoch in range(0, args.num_epochs):
-
-        print("Epoch: %d/%d" % (epoch + 1, args.num_epochs))
-        pbar = tqdm(desc="rmse: ?", total=len(dataset))
-
-        for i, properties in enumerate(dataset):
-            species = properties["species"].to(args.device)
-            coordinates = properties["coordinates"].to(args.device).float()
-            true_energies = properties["energies"].to(args.device).float()
+        for properties in tqdm(
+            train,
+            total=len(train),
+            desc=f"Epoch {epoch + 1}/{args.num_epochs}",
+            leave=False,
+        ):
+            species = properties["species"].to(device=args.device)
+            coordinates = properties["coordinates"].to(
+                device=args.device, dtype=torch.float
+            )
+            true_energies = properties["energies"].to(
+                device=args.device, dtype=torch.float
+            )
             num_atoms = (species >= 0).sum(dim=1, dtype=true_energies.dtype)
-            _, predicted_energies = model((species, coordinates))
+            predicted_energies = model((species, coordinates)).energies
             loss = (mse(predicted_energies, true_energies) / num_atoms.sqrt()).mean()
             rmse = (
                 hartree2kcalpermol((mse(predicted_energies, true_energies)).mean())
@@ -162,20 +152,14 @@ if __name__ == "__main__":
             )
             loss.backward()
             optimizer.step()
-
-            pbar.update()
-            pbar.set_description(f"rmse: {rmse}")
     if synchronize:
         torch.cuda.synchronize()
-    stop = time.time()
+    stop = time.perf_counter()
 
     for k in timers.keys():
         timers[k] = timers[k] / args.num_epochs
+    total = (stop - start) / args.num_epochs
 
-    print("=> more detail about benchmark")
     for k in timers:
-        if k not in ["AEVComputer.forward", "ANIModel.forward"]:
-            print("{} - {:.3f}s".format(k, timers[k]))
-    print("Total AEV forward - {:.3f}s".format(timers["AEVComputer.forward"]))
-    print("Total NN forward - {:.3f}s".format(timers["ANIModel.forward"]))
-    print("Total epoch time - {:.3f}s".format((stop - start) / args.num_epochs))
+        print(f"{k} - {timers[k]:.4f}s")
+    print(f"Total epoch time - {total:.4f}s")
