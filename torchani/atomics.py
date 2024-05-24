@@ -29,14 +29,14 @@ class AtomicContainer(torch.nn.Module):
     def member(self, idx: int) -> "AtomicContainer":
         if idx == 0:
             return self
-        raise IndexError(f"Only idx=0 supported for {type(self)}")
+        raise IndexError("Only idx=0 supported")
 
     @torch.jit.export
     def _atomic_energies(
         self,
         species_aev: tp.Tuple[Tensor, Tensor],
     ) -> Tensor:
-        raise NotImplementedError(f"Not implemented for {type(self)}")
+        raise NotImplementedError()
 
     def to_infer_model(self, use_mnp: bool = False) -> "AtomicContainer":
         return self
