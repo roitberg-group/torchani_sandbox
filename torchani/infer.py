@@ -86,8 +86,8 @@ class BmmEnsemble(torch.nn.Module):
 
         self.atomic_networks = torch.nn.ModuleList(
             [
-                BmmAtomicNetwork([animodel[symbol] for animodel in ensemble])
-                for symbol in ensemble[0]
+                BmmAtomicNetwork([animodel[symbol] for animodel in ensemble.members])
+                for symbol in ensemble.member(0).atomics
             ]
         )
 
@@ -371,12 +371,12 @@ class InferModel(torch.nn.Module):
         if isinstance(module, Ensemble):
             self.atomic_networks = torch.nn.ModuleList(
                 [
-                    BmmAtomicNetwork([animodel[symbol] for animodel in module])
-                    for symbol in module[0]
+                    BmmAtomicNetwork([animodel[symbol] for animodel in module.members])
+                    for symbol in module.member(0).atomics
                 ]
             )
         else:
-            self.atomic_networks = torch.nn.ModuleList(list(module.values()))
+            self.atomic_networks = torch.nn.ModuleList(list(module.atomics.values()))
         self._is_bmm = isinstance(module, Ensemble)
 
         self._use_mnp = use_mnp
