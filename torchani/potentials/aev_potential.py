@@ -14,15 +14,14 @@ NN = tp.Union[ANIModel, Ensemble]
 # Adaptor to use the aev computer as a three body potential
 class AEVPotential(Potential):
     def __init__(self, aev_computer: AEVComputer, neural_networks: NN):
-        if isinstance(neural_networks, Ensemble):
-            any_nn = neural_networks[0]
-        else:
-            any_nn = neural_networks
         # Fetch the symbols or "Dummy" if they are not actually elements
         # NOTE: symbols that are not elements is supported for backwards
         # compatibility, since ANIModel supports arbitrary ordered dicts
         # as inputs.
-        symbols = tuple(k if k in PERIODIC_TABLE else "Dummy" for k in any_nn)
+        symbols = tuple(
+            k if k in PERIODIC_TABLE else "Dummy"
+            for k in neural_networks.member(0).atomics
+        )
         super().__init__(cutoff=aev_computer.radial_terms.cutoff, symbols=symbols)
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
