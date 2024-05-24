@@ -36,25 +36,15 @@ args = parser.parse_args()
 
 molecule = ase.io.read(args.filename)
 model = ANI1x(model_index=0).cuda()
-calculator = model.ase()
-molecule.calc = calculator
+molecule.calc = model.ase()
 dyn = ase.md.verlet.VelocityVerlet(molecule, timestep=1 * ase.units.fs)
 
 dyn.run(1000)  # warm up
-
-# enable timers
-_aev_fns = (
-    "_compute_radial_aev",
-    "_compute_angular_aev",
-    "_compute_aev",
-    "_triple_by_molecule",
-)
-fn_to_time_neighborlist = ["forward"]
-
-aev_computer = model.aev_computer
 time_functions(
     [
         ("forward", model.aev_computer.neighborlist),
+        ("forward", model.aev_computer.angular_terms),
+        ("forward", model.aev_computer.radial_terms),
         (
             (
                 "_compute_radial_aev",
@@ -65,12 +55,14 @@ time_functions(
             ),
             model.aev_computer,
         ),
+        ("forward", model.neural_networks),
+        ("forward", model.energy_shifter),
     ],
     timers={},
+    sync=True,
     nvtx=True,
-    sync=False,
 )
 torch.cuda.cudart().cudaProfilerStart()
 patch(model)
 with torch.autograd.profiler.emit_nvtx(record_shapes=True):
-    dyn.run(10)
+    dyn.run(10)  # profile
