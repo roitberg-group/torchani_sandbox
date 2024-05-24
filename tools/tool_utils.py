@@ -1,5 +1,5 @@
 import typing as tp
-import timeit
+import time
 
 import torch
 
@@ -18,13 +18,13 @@ def time_func(
             torch.cuda.synchronize()
         if nvtx:
             torch.cuda.nvtx.range_push(key)
-        start = timeit.default_timer()
+        start = time.perf_counter()
         ret = func(*args, **kwargs)
         if sync:
             torch.cuda.synchronize()
         if nvtx:
             torch.cuda.nvtx.range_pop()
-        end = timeit.default_timer()
+        end = time.perf_counter()
         timers[key] += end - start
         return ret
 
