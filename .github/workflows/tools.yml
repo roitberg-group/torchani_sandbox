@@ -58,7 +58,7 @@ jobs:
           ${{ steps.meta.outputs.tags }}
           bash -c "python tools/training-benchmark.py"
 
-      - name: Training benchmark (Nsight Systems)
+      - name: Training benchmark (Nsight)
         run: >-
           docker run
           --rm
@@ -74,7 +74,7 @@ jobs:
           ${{ steps.meta.outputs.tags }}
           bash -c "python tools/md-benchmark.py"
 
-      - name: MD benchmark (Nsight Systems)
+      - name: MD benchmark (Nsight)
         run: >-
           docker run
           --rm
