@@ -79,7 +79,7 @@ if __name__ == "__main__":
         "--num-warm-up",
         help="Number of warm up steps",
         type=int,
-        default=500,
+        default=100,
     )
     parser.add_argument(
         "-e",
