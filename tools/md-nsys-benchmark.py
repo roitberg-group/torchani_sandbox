@@ -1,68 +1,109 @@
 import argparse
+import sys
 
 import torch
 import ase
 import ase.io
 import ase.md
+from rich import Console
 
 from torchani.models import ANI1x
-from tool_utils import time_functions
+from tool_utils import Timer
 
 
-def patch(model, name=None):
-    if name is None:
-        name = type(model).__name__
-    else:
-        name = name + ': ' + type(model).__name__
+def main(
+    sync: bool,
+    nvtx: bool,
+    device: str,
+    file: str,
+    num_warm_up: int,
+    num_profile: int,
+) -> int:
+    console = Console()
+    molecule = ase.io.read(file)
+    model = ANI1x(model_index=0).to(torch.device(device))
+    molecule.calc = model.ase()
+    dyn = ase.md.verlet.VelocityVerlet(molecule, timestep=1 * ase.units.fs)
 
-    def push(*args, _name=name, **kwargs):
-        torch.cuda.nvtx.range_push(_name)
-
-    def pop(*args, **kwargs):
-        torch.cuda.nvtx.range_pop()
-
-    model.register_forward_pre_hook(push)
-    model.register_forward_hook(pop)
-
-    for name, child in model.named_children():
-        patch(child, name)
-
-    return model
-
-
-parser = argparse.ArgumentParser()
-parser.add_argument("filename", help="file for the molecule")
-args = parser.parse_args()
-
-molecule = ase.io.read(args.filename)
-model = ANI1x(model_index=0).cuda()
-molecule.calc = model.ase()
-dyn = ase.md.verlet.VelocityVerlet(molecule, timestep=1 * ase.units.fs)
-
-dyn.run(1000)  # warm up
-time_functions(
-    [
-        ("forward", model.aev_computer.neighborlist),
-        ("forward", model.aev_computer.angular_terms),
-        ("forward", model.aev_computer.radial_terms),
-        (
-            (
-                "_compute_radial_aev",
-                "_compute_angular_aev",
-                "_compute_aev",
-                "_triple_by_molecule",
-                "forward",
-            ),
+    timer = Timer(
+        modules=[
+            model,
             model.aev_computer,
-        ),
-        ("forward", model.neural_networks),
-        ("forward", model.energy_shifter),
-    ],
-    timers={},
-    sync=True,
-    nvtx=True,
-)
-torch.cuda.cudart().cudaProfilerStart()
-patch(model)
-with torch.autograd.profiler.emit_nvtx(record_shapes=True):
-    dyn.run(10)  # profile
+            model.aev_computer.neighborlist,
+            model.aev_computer.angular_terms,
+            model.aev_computer.radial_terms,
+            model.neural_networks,
+            model.energy_shifter,
+        ],
+        nvtx=nvtx,
+        sync=sync,
+    )
+    console.print("Warm up...")
+    dyn.run(num_warm_up)
+    console.print("Profiling...")
+    timer.start_profiling()
+    with torch.autograd.profiler.emit_nvtx(enabled=nvtx, record_shapes=True):
+        dyn.run(num_profile)
+    timer.stop_profiling()
+    timer.display()
+    return 0
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "file",
+        help="Path to xyz file to use as input for MD",
+        nargs="?",
+        default="TestData",
+    )
+    parser.add_argument(
+        "-d",
+        "--device",
+        help="Device of modules and tensors",
+        default=("cuda" if torch.cuda.is_available() else "cpu"),
+    )
+    parser.add_argument(
+        "-w",
+        "--num-warm-up",
+        help="Number of warm up steps",
+        type=int,
+        default=1000,
+    )
+    parser.add_argument(
+        "-e",
+        "--num-profile",
+        help="Number of profiling steps",
+        type=int,
+        default=100,
+    )
+    parser.add_argument(
+        "--nvtx",
+        action="store_true",
+        help="Whether to emit nvtx for NVIDIA Nsight systems",
+    )
+    parser.add_argument(
+        "--no-sync",
+        action="store_true",
+        help="Whether to disable sync between CUDA calls",
+    )
+    args = parser.parse_args()
+    if args.nvtx and not torch.cuda.is_available():
+        raise ValueError("CUDA is needed to profile with NVTX")
+    sync = False
+    if args.device == "cuda":
+        if args.no_sync:
+            print("CUDA sync DISABLED between function calls")
+        else:
+            sync = True
+            print("CUDA sync ENABLED between function calls")
+    sys.exit(
+        main(
+            sync=sync,
+            nvtx=args.nvtx,
+            device=args.device,
+            file=args.file,
+            num_warm_up=args.num_warm_up,
+            num_profile=args.num_profile,
+        )
+    )
