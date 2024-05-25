@@ -104,12 +104,13 @@ if __name__ == "__main__":
     sync = False
     if args.device == "cuda" and not args.no_sync:
         sync = True
-    console.print(
-        f"NVTX {'[green]ENABLED[/green]' if args.nvtx else '[red]DISABLED[/red]'}"
-    )
-    console.print(
-        f"CUDA sync {'[green]ENABLED[/green]' if sync else '[red]DISABLED[/red]'}"
-    )
+    if args.device == "cuda":
+        console.print(
+            f"NVTX {'[green]ENABLED[/green]' if args.nvtx else '[red]DISABLED[/red]'}"
+        )
+        console.print(
+            f"CUDA sync {'[green]ENABLED[/green]' if sync else '[red]DISABLED[/red]'}"
+        )
     sys.exit(
         main(
             sync=sync,

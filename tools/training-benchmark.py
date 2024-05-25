@@ -26,7 +26,7 @@ def main(
     mse = torch.nn.MSELoss(reduction="none")
 
     try:
-        ds = getattr(datasets, args.dataset)(verbose=False, skip_check=True)
+        ds = getattr(datasets, args.dataset)(verbose=False)
     except AttributeError:
         raise RuntimeError(f"Dataset {args.dataset} could not be found")
     splits = create_batched_dataset(
@@ -144,12 +144,13 @@ if __name__ == "__main__":
     sync = False
     if args.device == "cuda" and not args.no_sync:
         sync = True
-    console.print(
-        f"NVTX {'[green]ENABLED[/green]' if args.nvtx else '[red]DISABLED[/red]'}"
-    )
-    console.print(
-        f"CUDA sync {'[green]ENABLED[/green]' if sync else '[red]DISABLED[/red]'}"
-    )
+    if args.device == "cuda":
+        console.print(
+            f"NVTX {'[green]ENABLED[/green]' if args.nvtx else '[red]DISABLED[/red]'}"
+        )
+        console.print(
+            f"CUDA sync {'[green]ENABLED[/green]' if sync else '[red]DISABLED[/red]'}"
+        )
     sys.exit(
         main(
             sync=sync,
