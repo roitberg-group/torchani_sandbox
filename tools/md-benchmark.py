@@ -1,14 +1,18 @@
 import argparse
 import sys
+from pathlib import Path
 
 import torch
 import ase
 import ase.io
 import ase.md
-from rich import Console
+from rich.console import Console
 
 from torchani.models import ANI1x
 from tool_utils import Timer
+
+console = Console()
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def main(
@@ -19,7 +23,6 @@ def main(
     num_warm_up: int,
     num_profile: int,
 ) -> int:
-    console = Console()
     molecule = ase.io.read(file)
     model = ANI1x(model_index=0).to(torch.device(device))
     molecule.calc = model.ase()
@@ -38,9 +41,9 @@ def main(
         nvtx=nvtx,
         sync=sync,
     )
-    console.print("Warm up...")
+    console.print(f"Warm up for {num_warm_up} steps")
     dyn.run(num_warm_up)
-    console.print("Profiling...")
+    console.print(f"Profiling for {num_profile} steps")
     timer.start_profiling()
     with torch.autograd.profiler.emit_nvtx(enabled=nvtx, record_shapes=True):
         dyn.run(num_profile)
@@ -55,7 +58,7 @@ if __name__ == "__main__":
         "file",
         help="Path to xyz file to use as input for MD",
         nargs="?",
-        default="TestData",
+        default="",
     )
     parser.add_argument(
         "-d",
@@ -68,7 +71,7 @@ if __name__ == "__main__":
         "--num-warm-up",
         help="Number of warm up steps",
         type=int,
-        default=1000,
+        default=500,
     )
     parser.add_argument(
         "-e",
@@ -88,21 +91,29 @@ if __name__ == "__main__":
         help="Whether to disable sync between CUDA calls",
     )
     args = parser.parse_args()
+    if not args.file:
+        file = str(
+            Path(ROOT, "tests", "test_data", "small.xyz")
+        )
+    else:
+        file = args.file
     if args.nvtx and not torch.cuda.is_available():
         raise ValueError("CUDA is needed to profile with NVTX")
     sync = False
-    if args.device == "cuda":
-        if args.no_sync:
-            print("CUDA sync DISABLED between function calls")
-        else:
-            sync = True
-            print("CUDA sync ENABLED between function calls")
+    if args.device == "cuda" and not args.no_sync:
+        sync = True
+    console.print(
+        f"NVTX {'[green]ENABLED[/green]' if args.nvtx else '[red]DISABLED[/red]'}"
+    )
+    console.print(
+        f"CUDA sync {'[green]ENABLED[/green]' if sync else '[red]DISABLED[/red]'}"
+    )
     sys.exit(
         main(
             sync=sync,
             nvtx=args.nvtx,
             device=args.device,
-            file=args.file,
+            file=file,
             num_warm_up=args.num_warm_up,
             num_profile=args.num_profile,
         )

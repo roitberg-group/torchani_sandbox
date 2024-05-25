@@ -118,17 +118,14 @@ class Timer:
         console.print()
         console.print(table)
         if "batch" in self._last_timers:
-            console.print()
             value = self._last_timers["batch"]
             console.print(f"Batch median-time (ms): {np.median(np.array(value)):.5f}")
         if "opt-step" in self._last_timers:
-            console.print()
             value = self._last_timers["opt-step"]
             console.print(
                 f"Optimizer step median-time (ms): {np.median(np.array(value)):.5f}"
             )
         if "loss-bw" in self._last_timers:
-            console.print()
             value = self._last_timers["loss-bw"]
             console.print(
                 f"Loss backwards median-time (ms): {np.median(np.array(value)):.5f}"

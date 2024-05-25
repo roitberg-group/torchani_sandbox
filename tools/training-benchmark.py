@@ -3,11 +3,13 @@ import argparse
 
 import torch
 from tqdm import tqdm
+from rich.console import Console
 
 from torchani import datasets
 from torchani.datasets import create_batched_dataset
 from torchani.models import ANI1x
 from tool_utils import Timer
+console = Console()
 
 
 def main(
@@ -139,12 +141,14 @@ if __name__ == "__main__":
     if args.nvtx and not torch.cuda.is_available():
         raise ValueError("CUDA is needed to profile with NVTX")
     sync = False
-    if args.device == "cuda":
-        if args.no_sync:
-            print("CUDA sync DISABLED between function calls")
-        else:
-            sync = True
-            print("CUDA sync ENABLED between function calls")
+    if args.device == "cuda" and not args.no_sync:
+        sync = True
+    console.print(
+        f"NVTX {'[green]ENABLED[/green]' if args.nvtx else '[red]DISABLED[/red]'}"
+    )
+    console.print(
+        f"CUDA sync {'[green]ENABLED[/green]' if sync else '[red]DISABLED[/red]'}"
+    )
     sys.exit(
         main(
             sync=sync,
