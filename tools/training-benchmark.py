@@ -51,6 +51,7 @@ def main(
             model.aev_computer.angular_terms,
             model.aev_computer.radial_terms,
         ],
+        device=device,
         nvtx=nvtx,
         sync=sync,
     )

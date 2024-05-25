@@ -23,7 +23,14 @@ def main(
     num_warm_up: int,
     num_profile: int,
 ) -> int:
-    molecule = ase.io.read(file)
+    if not file:
+        xyz_file_path = Path(ROOT, "tests", "test_data", "small.xyz")
+    elif file.startswith("/"):
+        xyz_file_path = Path(file)
+    else:
+        xyz_file_path = Path.cwd() / file
+
+    molecule = ase.io.read(str(xyz_file_path))
     model = ANI1x(model_index=0).to(torch.device(device))
     molecule.calc = model.ase()
     dyn = ase.md.verlet.VelocityVerlet(molecule, timestep=1 * ase.units.fs)
@@ -38,6 +45,7 @@ def main(
             model.neural_networks,
             model.energy_shifter,
         ],
+        device=device,
         nvtx=nvtx,
         sync=sync,
     )
@@ -91,12 +99,6 @@ if __name__ == "__main__":
         help="Whether to disable sync between CUDA calls",
     )
     args = parser.parse_args()
-    if not args.file:
-        file = str(
-            Path(ROOT, "tests", "test_data", "small.xyz")
-        )
-    else:
-        file = args.file
     if args.nvtx and not torch.cuda.is_available():
         raise ValueError("CUDA is needed to profile with NVTX")
     sync = False
@@ -113,7 +115,7 @@ if __name__ == "__main__":
             sync=sync,
             nvtx=args.nvtx,
             device=args.device,
-            file=file,
+            file=args.file,
             num_warm_up=args.num_warm_up,
             num_profile=args.num_profile,
         )
