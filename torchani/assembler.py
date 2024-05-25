@@ -270,7 +270,7 @@ class Assembler:
 
     def build_atomic_networks(
         self, in_dim: int
-    ) -> OrderedDict[str, torch.nn.Module]:
+    ) -> tp.OrderedDict[str, torch.nn.Module]:
         if self._fn_for_networks is None:
             raise RuntimeError(
                 "Atomic Network Maker not set. Call 'set_atomic_maker' before assembly"
