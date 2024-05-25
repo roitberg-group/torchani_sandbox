@@ -10,9 +10,10 @@ from rich.console import Console
 
 from torchani.io import read_xyz
 from torchani.csrc import CUAEV_IS_INSTALLED, MNP_IS_INSTALLED
-from torchani.benchmark import timeit
 from torchani.models import ANI2x
 from torchani.grad import energies_and_forces
+
+from tool_utils import timeit
 
 if not MNP_IS_INSTALLED:
     raise RuntimeError("MNP is not installed, can't run benchmark")
