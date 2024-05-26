@@ -376,7 +376,7 @@ class InferModel(AtomicContainer):
         return SpeciesEnergies(species, energies)
 
     @jit_unused_if_no_mnp()
-    def _cpp_mnp_cpp(self, aev: Tensor) -> Tensor:
+    def _cpp_mnp(self, aev: Tensor) -> Tensor:
         weights: tp.List[Tensor] = []
         biases: tp.List[Tensor] = []
         for name, buffer in self.named_buffers():
