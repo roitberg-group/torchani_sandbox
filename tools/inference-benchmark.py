@@ -195,12 +195,13 @@ if __name__ == "__main__":
         no_tqdm=args.no_tqdm,
         device=args.device,
     )
-    main(
-        optimize="compile",
-        file=args.filename,
-        nvtx=args.nvtx,
-        sync=sync,
-        no_tqdm=args.no_tqdm,
-        device=args.device,
-    )
+    if tuple(map(int, torch.__version__.split("."))) >= (2, 0):
+        main(
+            optimize="compile",
+            file=args.filename,
+            nvtx=args.nvtx,
+            sync=sync,
+            no_tqdm=args.no_tqdm,
+            device=args.device,
+        )
     sys.exit(0)
