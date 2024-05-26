@@ -156,11 +156,6 @@ if __name__ == "__main__":
         help="Whether to disable sync between CUDA calls",
     )
     parser.add_argument(
-        "--no-jit",
-        action="store_true",
-        help="Whether to use JIT compilation",
-    )
-    parser.add_argument(
         "-c",
         "--compile",
         action="store_true",
@@ -192,15 +187,14 @@ if __name__ == "__main__":
         device=args.device,
         detail=args.detail,
     )
-    if not args.no_jit:
-        main(
-            optimize="jit",
-            file=args.filename,
-            nvtx=args.nvtx,
-            sync=sync,
-            no_tqdm=args.no_tqdm,
-            device=args.device,
-        )
+    main(
+        optimize="jit",
+        file=args.filename,
+        nvtx=args.nvtx,
+        sync=sync,
+        no_tqdm=args.no_tqdm,
+        device=args.device,
+    )
     if args.compile:
         if not tuple(map(int, torch.__version__.split("."))) >= (2, 0):
             raise RuntimeError("PyTorch 2.0 or later needed for torch.compile")
