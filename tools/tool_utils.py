@@ -196,10 +196,10 @@ def timeit(
         label = func.__name__
 
     # warmup
-    torch.cuda.nvtx.range_push(f"{label}_warmup")
+    torch.cuda.nvtx.range_push(f"{label}-warmup")
     for _ in range(warmup):
         func(*args)
-    torch.cuda.nvtx.range_pop()  # pop label_warmup
+    torch.cuda.nvtx.range_pop()
 
     # start timer
     if cpu_timing:
@@ -216,7 +216,7 @@ def timeit(
         with torch.profiler.profile(activities=[ProfilerActivity.CUDA]) as prof:
             with record_function("run_total"):
                 for i in range(steps):
-                    torch.cuda.nvtx.range_push(f"{i}th_iteration")
+                    torch.cuda.nvtx.range_push(f"iteration-{i}")
                     func(*args)
                     torch.cuda.nvtx.range_pop()
         events = prof.key_averages()
@@ -233,7 +233,7 @@ def timeit(
     else:
         events = None
         for i in range(steps):
-            torch.cuda.nvtx.range_push(f"{i}th_iteration")
+            torch.cuda.nvtx.range_push(f"iteration-{i}")
             func(*args)
             torch.cuda.nvtx.range_pop()
     torch.cuda.nvtx.range_pop()  # pop label
