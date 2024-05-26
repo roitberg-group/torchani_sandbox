@@ -32,9 +32,7 @@ def _is_same_tensor_optimized(last: Tensor, current: Tensor) -> bool:
 
 
 def _is_same_tensor(last: Tensor, current: Tensor) -> bool:
-    # Fallback to this, it is slow but it is the only available path if MNP is
-    # not installed, at least until TorchScript supports data_ptr() (which is
-    # probably never)
+    # Potentially, slower fallback if MNP is not installed (until JIT supports data_ptr)
     same_shape = last.shape == current.shape
     if not same_shape:
         return False
@@ -84,9 +82,7 @@ class BmmEnsemble(AtomicContainer):
         self.num_batched_networks = ensemble.num_networks
         self.num_species = ensemble.num_species
         if not hasattr(ensemble, "members"):
-            raise TypeError(
-                "BmmEnsemble can only take a torchani.nn.Ensemble as an input"
-            )
+            raise TypeError("BmmEnsemble can only take an Ensemble as an input")
         self.atomic_networks = torch.nn.ModuleList(
             [
                 BmmAtomicNetwork(
@@ -144,7 +140,7 @@ class BmmEnsemble(AtomicContainer):
 
 class BmmAtomicNetwork(torch.nn.Module):
     r"""
-    The inference-optimized analogue of atomic networks.
+    The inference-optimized analogue of an atomic networks.
 
     BmmAtomicNetwork instances are "combined" atomic networks for a single
     element, each of which holds all networks associated with all the members
@@ -183,14 +179,14 @@ class BmmAtomicNetwork(torch.nn.Module):
 
 class BmmLinear(torch.nn.Module):
     """
-    Batch Linear layer fuses multiple Linear layers that have same architecture
-    If "b" is the number of fused layers (which usually corresponds to members
+    Batched Linear layer that fuses multiple Linear layers that have same architecture
+    If "e" is the number of fused layers (which usually corresponds to members
     in an ensamble), then we have:
 
-    input:  (b x n x m)
-    weight: (b x m x p)
-    bias:   (b x 1 x p)
-    output: (b x n x p)
+    input:  (e x n x m)
+    weight: (e x m x p)
+    bias:   (e x 1 x p)
+    output: (e x n x p)
     """
 
     def __init__(self, linears: tp.Sequence[torch.nn.Linear]):
