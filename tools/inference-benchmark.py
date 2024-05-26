@@ -60,7 +60,7 @@ def main(
         sync=sync,
     )
     console.print(f"Batch of {num_conformations} conformations")
-    for _ in tqdm(range(10), desc="Warm up", total=10, leave=False):
+    for _ in tqdm(range(30), desc="Warm up", total=30, leave=False):
         energies_and_forces(model, species, coordinates)
     timer.start_profiling()
     for _ in tqdm(range(10), desc="Profiling", total=10, leave=False):
@@ -97,7 +97,7 @@ def main(
         enumerate(zip(species, coordinates)),
         desc="Warm Up",
         disable=no_tqdm,
-        total=100,
+        total=200,
         leave=False,
     ):
         _, _ = energies_and_forces(
@@ -105,7 +105,7 @@ def main(
             _species.unsqueeze(0),
             _coordinates.unsqueeze(0).detach(),
         )
-        if j == 99:
+        if j == 199:
             break
     timer.start_profiling()
     for j, (_species, _coordinates) in tqdm(
