@@ -156,8 +156,7 @@ class Timer:
             bw = self.reduction_fn(np.array(bw_values)) if bw_values else 0.0
             table.add_row(name, f"{fw:.5f}", f"{bw:.5f}")
         if self.modules:
-            console.print("WARNING: Backward times are not reliable", style="yellow")
-            console.print()
+            console.print("WARNING: Backward times are not reliable. Hooks and sync create overhead", style="yellow")
             console.print(table)
         if "batch" in self._last_timers:
             value = self._last_timers["batch"]
