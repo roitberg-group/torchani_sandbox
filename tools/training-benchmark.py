@@ -28,7 +28,7 @@ def main(
     console.print(
         f"Profiling with optimization={opt.value}, on device: {device.upper()}"
     )
-    detail = (opt is not Opt.JIT) and detail
+    detail = (opt is Opt.NONE) and detail
     model = ANI1x(model_index=0).to(device)
     if opt is Opt.JIT:
         model = torch.jit.script(model)
@@ -135,7 +135,7 @@ if __name__ == "__main__":
         "--num-profile",
         help="Number of profiling batches",
         type=int,
-        default=100,
+        default=10,
     )
     parser.add_argument(
         "-b",

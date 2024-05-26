@@ -73,10 +73,9 @@ class Timer:
     def display(self) -> None:
         console = Console()
         table = Table(
-            title="Timings",
             box=None,
         )
-        table.add_column("module", style="magenta")
+        table.add_column("timing", style="magenta")
         table.add_column("num calls", style="blue")
         table.add_column("median (ms)", style="green")
         table.add_column("mean (ms)", style="green")

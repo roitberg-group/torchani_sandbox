@@ -163,7 +163,7 @@ if __name__ == "__main__":
         "--num-profile",
         help="Number of profiling steps",
         type=int,
-        default=50,
+        default=10,
     )
     args = parser.parse_args()
     if args.nvtx and not torch.cuda.is_available():
