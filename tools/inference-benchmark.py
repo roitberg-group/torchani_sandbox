@@ -102,7 +102,6 @@ def main(
         ]
         if detail
         else [],
-        device=device,
         nvtx=nvtx,
         sync=sync,
     )
