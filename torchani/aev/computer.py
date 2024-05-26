@@ -124,7 +124,7 @@ class AEVComputer(torch.nn.Module):
 
     @staticmethod
     def _calculate_triu_index(num_species: int) -> Tensor:
-        # helper method for initialization
+        # Helper method for initialization
         species1, species2 = torch.triu_indices(num_species, num_species).unbind(0)
         pair_index = torch.arange(species1.shape[0], dtype=torch.long)
         ret = torch.zeros(num_species, num_species, dtype=torch.long)
