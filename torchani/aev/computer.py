@@ -86,7 +86,9 @@ class AEVComputer(torch.nn.Module):
             )
         self._cuaev_cutoff_fn = self.angular_terms.cutoff_fn._cuaev_name
         self.neighborlist = parse_neighborlist(neighborlist)
-        self.register_buffer("triu_index", self._calculate_triu_index(num_species))
+        self.register_buffer(
+            "triu_index", self._calculate_triu_index(num_species, device=device)
+        )
         self.radial_sublength = self.radial_terms.sublength
         self.angular_sublength = self.angular_terms.sublength
         self.radial_length = self.radial_sublength * self.num_species
@@ -133,11 +135,16 @@ class AEVComputer(torch.nn.Module):
                 )
 
     @staticmethod
-    def _calculate_triu_index(num_species: int) -> Tensor:
+    def _calculate_triu_index(num_species: int, device: Device = "cpu") -> Tensor:
         # Helper method for initialization
-        species1, species2 = torch.triu_indices(num_species, num_species).unbind(0)
-        pair_index = torch.arange(species1.shape[0], dtype=torch.long)
-        ret = torch.zeros(num_species, num_species, dtype=torch.long)
+        species1, species2 = torch.triu_indices(
+            num_species,
+            num_species,
+            device=device,
+            dtype=torch.long,
+        ).unbind(0)
+        pair_index = torch.arange(species1.shape[0], dtype=torch.long, device=device)
+        ret = torch.zeros(num_species, num_species, dtype=torch.long, device=device)
         ret[species1, species2] = pair_index
         ret[species2, species1] = pair_index
         return ret
