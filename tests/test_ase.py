@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from parameterized import parameterized
 
 from torchani import ASE_IS_AVAILABLE
+
 if not ASE_IS_AVAILABLE:
     warnings.warn("Skipping all ASE tests, install ase to run them")
     raise unittest.SkipTest("ASE is not available, skipping all ASE tests.")
@@ -28,6 +29,7 @@ from torchani.io import read_xyz
 from torchani.testing import ANITest, expand
 from torchani.models import ANI1x, ANIdr, PairPotentialsModel
 from torchani.potentials import PairPotential
+from torchani.utils import SYMBOLS_1X
 
 
 def _stress_test_name(fn: tp.Any, idx: int, param: tp.Any) -> str:
@@ -63,9 +65,9 @@ class TestASE(ANITest):
                 energy_shifter=model_cell.energy_shifter,
                 elements=model_cell.get_chemical_symbols(),
                 pairwise_potentials=[
-                    PairPotential(cutoff=6.4),
-                    PairPotential(cutoff=5.2),
-                    PairPotential(cutoff=3.0),
+                    PairPotential(symbols=SYMBOLS_1X, cutoff=6.4),
+                    PairPotential(symbols=SYMBOLS_1X, cutoff=5.2),
+                    PairPotential(symbols=SYMBOLS_1X, cutoff=3.0),
                 ],
             ).double()
         )

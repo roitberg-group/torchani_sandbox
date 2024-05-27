@@ -109,7 +109,7 @@ class StandardRadial(RadialTerm):
             start, cutoff, int(num_shifts) + 1, device=device, dtype=dtype
         )[:-1]
         EtaR = torch.tensor([eta], dtype=dtype, device=device)
-        return cls(EtaR, ShfR, cutoff, cutoff_fn)
+        return cls(EtaR, ShfR, cutoff, cutoff_fn, device=device, dtype=dtype)
 
     @classmethod
     def style_1x(
@@ -128,6 +128,8 @@ class StandardRadial(RadialTerm):
             eta=eta,
             num_shifts=num_shifts,
             cutoff_fn=cutoff_fn,
+            device=device,
+            dtype=dtype,
         )
 
     @classmethod
@@ -147,6 +149,8 @@ class StandardRadial(RadialTerm):
             eta=eta,
             num_shifts=num_shifts,
             cutoff_fn=cutoff_fn,
+            device=device,
+            dtype=dtype,
         )
 
     @classmethod
@@ -183,6 +187,8 @@ class StandardRadial(RadialTerm):
             ),
             cutoff=5.2,
             cutoff_fn="cosine",
+            device=device,
+            dtype=dtype,
         )
 
     @classmethod
@@ -227,6 +233,8 @@ class StandardRadial(RadialTerm):
             ),
             cutoff=5.1,
             cutoff_fn="cosine",
+            device=device,
+            dtype=dtype,
         )
 
 
@@ -340,7 +348,9 @@ class StandardAngular(AngularTerm):
             )
             + angle_start
         )[:-1]
-        return cls(EtaA, Zeta, ShfA, ShfZ, cutoff, cutoff_fn)
+        return cls(
+            EtaA, Zeta, ShfA, ShfZ, cutoff, cutoff_fn, device=device, dtype=dtype
+        )
 
     @classmethod
     def style_1x(
@@ -429,6 +439,8 @@ class StandardAngular(AngularTerm):
             ),
             cutoff=3.5,
             cutoff_fn="cosine",
+            device=device,
+            dtype=dtype,
         )
 
     @classmethod
@@ -476,6 +488,8 @@ class StandardAngular(AngularTerm):
             ),
             cutoff=3.5,
             cutoff_fn="cosine",
+            device=device,
+            dtype=dtype,
         )
 
 

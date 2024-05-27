@@ -557,7 +557,7 @@ class AEVComputer(torch.nn.Module):
         cutoff_fn: CutoffArg = "cosine",
         neighborlist: NeighborlistArg = "full_pairwise",
         device: Device = "cpu",
-        dtype: torch.float = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         r"""Initialize the AEV computer from the following constants:
 
@@ -608,6 +608,8 @@ class AEVComputer(torch.nn.Module):
             use_cuda_extension=use_cuda_extension,
             use_cuaev_interface=use_cuaev_interface,
             neighborlist=neighborlist,
+            device=device,
+            dtype=dtype,
         )
 
     @classmethod
@@ -658,6 +660,8 @@ class AEVComputer(torch.nn.Module):
             use_cuda_extension=use_cuda_extension,
             use_cuaev_interface=use_cuaev_interface,
             neighborlist=neighborlist,
+            device=device,
+            dtype=dtype,
         )
 
     @classmethod
@@ -708,6 +712,8 @@ class AEVComputer(torch.nn.Module):
             use_cuda_extension=use_cuda_extension,
             use_cuaev_interface=use_cuaev_interface,
             neighborlist=neighborlist,
+            device=device,
+            dtype=dtype,
         )
 
     @classmethod
