@@ -463,8 +463,8 @@ def atomic_numbers_to_masses(
     atomic_numbers: Tensor,
     dtype: torch.dtype = torch.float,
 ) -> Tensor:
-        if not dtype.is_floating_point:
-            raise ValueError("dtype must be a floating point dtype")
+    if not dtype.is_floating_point:
+        raise ValueError("dtype must be a floating point dtype")
     if torch.jit.is_scripting():
         raise RuntimeError(
             "'torchani.utils.atomic_numbers_to_masses' doesn't support JIT, "
