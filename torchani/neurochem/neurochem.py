@@ -9,6 +9,8 @@ from collections import OrderedDict
 import torch
 from torch import Tensor
 
+from torchani.annotations import StrPath
+
 try:
     import lark
 except ImportError:
@@ -33,7 +35,7 @@ class NeurochemParseError(RuntimeError):
 
 
 def load_aev_computer_and_symbols(
-    consts_file: tp.Union[str, Path],
+    consts_file: StrPath,
     use_cuda_extension: bool = False,
     use_cuaev_interface: bool = False,
     neighborlist: NeighborlistArg = "full_pairwise",
@@ -54,7 +56,7 @@ def load_aev_computer_and_symbols(
 
 
 def load_constants(
-    consts_file: tp.Union[Path, str]
+    consts_file: StrPath
 ) -> tp.Tuple[tp.Dict[str, Tensor], tp.Dict[str, float], tp.Tuple[str, ...]]:
     aev_consts: tp.Dict[str, Tensor] = {}
     aev_cutoffs: tp.Dict[str, float] = {}
@@ -79,17 +81,17 @@ def load_constants(
                     )
             except Exception:
                 raise NeurochemParseError(
-                    f"Unable to parse const file {consts_file}"
+                    f"Unable to parse const file {str(consts_file)}"
                 ) from None
     return aev_consts, aev_cutoffs, symbols
 
 
-def load_energy_adder(filename: tp.Union[Path, str]) -> EnergyAdder:
+def load_energy_adder(filename: StrPath) -> EnergyAdder:
     """Returns an object of :class:`EnergyAdder` with self energies from
     NeuroChem sae file"""
     _self_energies = []
     _symbols = []
-    with open(Path(filename).resolve(), mode="rt", encoding="utf-8") as f:
+    with open(filename, mode="rt", encoding="utf-8") as f:
         for i in f:
             line = [x.strip() for x in i.split("=")]
             symbol = line[0].split(",")[0].strip()
@@ -119,7 +121,7 @@ class EnergyShifter(torch.nn.Module):
 
 
 # This function is kept for backwards compatibility
-def load_sae(filename: tp.Union[Path, str]):
+def load_sae(filename: StrPath):
     """Returns an object of :class:`EnergyShifter` with self energies from
     NeuroChem sae file"""
     return EnergyShifter(load_energy_adder(filename))
@@ -140,7 +142,7 @@ def _get_activation(activation_index: int) -> tp.Optional[torch.nn.Module]:
     raise NeurochemParseError(f"Unsupported activation index {activation_index}")
 
 
-def load_atomic_network(filename: tp.Union[Path, str]) -> torch.nn.Sequential:
+def load_atomic_network(filename: StrPath) -> torch.nn.Sequential:
     """Returns an instance of :class:`torch.nn.Sequential` with hyperparameters
     and parameters loaded from NeuroChem's .nnf, .wparam and .bparam files."""
     filename = Path(filename).resolve()
@@ -291,7 +293,7 @@ def load_atomic_network(filename: tp.Union[Path, str]) -> torch.nn.Sequential:
         return torch.nn.Sequential(*layers)
 
 
-def load_model(symbols: tp.Sequence[str], model_dir: tp.Union[Path, str]) -> ANIModel:
+def load_model(symbols: tp.Sequence[str], model_dir: StrPath) -> ANIModel:
     """Returns an instance of :class:`torchani.nn.ANIModel` loaded from
     NeuroChem's network directory.
 
@@ -309,7 +311,7 @@ def load_model(symbols: tp.Sequence[str], model_dir: tp.Union[Path, str]) -> ANI
 
 
 def load_model_ensemble(
-    symbols: tp.Sequence[str], prefix: tp.Union[Path, str], count: int
+    symbols: tp.Sequence[str], prefix: StrPath, count: int
 ) -> Ensemble:
     """Returns an instance of :class:`torchani.nn.Ensemble` loaded from
     NeuroChem's network directories beginning with the given prefix.

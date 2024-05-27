@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 
 from torchani.utils import ATOMIC_NUMBERS, pad_atomic_properties
-from torchani.annotations import Device
+from torchani.annotations import Device, StrPath
 
 
 class TorchaniIOError(IOError):
@@ -14,7 +14,7 @@ class TorchaniIOError(IOError):
 
 
 def read_xyz(
-    path: tp.Union[str, Path],
+    path: StrPath,
     dtype: torch.dtype = torch.float,
     device: Device = "cpu",
 ) -> tp.Tuple[Tensor, Tensor, tp.Optional[Tensor]]:
