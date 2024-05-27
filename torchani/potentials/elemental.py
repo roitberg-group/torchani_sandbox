@@ -89,7 +89,8 @@ def StandaloneEnergyAdder(
         device=device,
         dtype=dtype,
     )
+    # TODO: cast currently needed due to neighborlist being stateful
     return PotentialWrapper(
         module,
         periodic_table_index,
-    )
+    ).to(device=device, dtype=dtype)

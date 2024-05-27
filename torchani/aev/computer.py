@@ -85,7 +85,10 @@ class AEVComputer(torch.nn.Module):
                 f" should be smaller than radial cutoff {self.radial_terms.cutoff}"
             )
         self._cuaev_cutoff_fn = self.angular_terms.cutoff_fn._cuaev_name
-        self.neighborlist = parse_neighborlist(neighborlist)
+        # TODO: cast currently needed due to neighborlist being stateful
+        self.neighborlist = parse_neighborlist(neighborlist).to(
+            device=device, dtype=dtype
+        )
         self.register_buffer(
             "triu_index", self._calculate_triu_index(num_species, device=device)
         )

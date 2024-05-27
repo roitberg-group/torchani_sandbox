@@ -121,8 +121,9 @@ def StandaloneRepulsionXTB(
         device=device,
         dtype=dtype,
     )
+    # TODO: cast currently needed due to neighborlist being stateful
     return PotentialWrapper(
         potential=module,
         neighborlist=neighborlist,
         periodic_table_index=periodic_table_index,
-    )
+    ).to(device=device, dtype=dtype)

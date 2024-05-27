@@ -13,7 +13,7 @@ from torchani.grad import energies_and_forces
 
 # This is an example of how to use the repulsion interactions coded in torchani
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-rep = StandaloneRepulsionXTB().to(device)
+rep = StandaloneRepulsionXTB(symbols=("H", "C", "N", "O"), device=device)
 
 coordinates = torch.tensor(
     [
@@ -44,7 +44,7 @@ print("Force:", force.squeeze())
 
 # By default the supported species are H C N O, but different supported species
 # can also be passed down to the constructor
-rep = StandaloneRepulsionXTB(symbols=("H", "C", "N", "O", "S", "Fe")).to(device)
+rep = StandaloneRepulsionXTB(symbols=("H", "C", "N", "O", "S", "Fe"), device=device)
 # here I changed the species a bit to make a nonesense molecules
 coordinates = torch.tensor(
     [

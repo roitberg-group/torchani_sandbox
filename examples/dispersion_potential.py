@@ -14,7 +14,9 @@ from torchani.grad import energies_and_forces
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # By default the dispersion interactions have no cutoff
-disp = StandaloneTwoBodyDispersionD3().to(device)
+disp = StandaloneTwoBodyDispersionD3(
+    symbols=("H", "C", "N", "O"), functional="B973c", device=device
+)
 
 coordinates = torch.tensor(
     [
@@ -45,7 +47,9 @@ print("Force:", force.squeeze())
 
 # By default the supported species are H C N O, but different supported species
 # can also be passed down to the constructor
-disp = StandaloneTwoBodyDispersionD3(symbols=("H", "C", "N", "O", "S", "Fe")).to(device)
+disp = StandaloneTwoBodyDispersionD3(
+    symbols=("H", "C", "N", "O", "S", "Fe"), functional="B973c", device=device
+)
 # Here I changed the species a bit to make a nonesense molecules
 coordinates = torch.tensor(
     [

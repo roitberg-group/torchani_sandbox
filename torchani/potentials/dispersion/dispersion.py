@@ -250,8 +250,11 @@ def StandaloneTwoBodyDispersionD3(
         device=device,
         dtype=dtype,
     )
+    # TODO: cast currently needed due to neighborlist being stateful
     return PotentialWrapper(
         potential=module,
         periodic_table_index=periodic_table_index,
         neighborlist=neighborlist,
+    ).to(
+        device=device, dtype=dtype
     )
