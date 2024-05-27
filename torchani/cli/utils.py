@@ -9,16 +9,17 @@ from pathlib import Path
 from torchani.datasets import ANIDataset
 from torchani.datasets.builtin import _DATASETS_JSON_PATH
 from torchani.datasets.download import _CHUNK_SIZE
+from torchani.annotations import StrPath
 
 
-def h5info(path: tp.Union[str, Path]) -> None:
-    path_ = Path(path)
-    assert path_.exists(), f"{str(path_)} does not exist"
-    if path_.is_file():
-        files = [path_]
+def h5info(path: StrPath) -> None:
+    path = Path(path).resolve()
+    assert path.exists(), f"{str(path)} does not exist"
+    if path.is_file():
+        files = [path]
     else:
-        files = list(Path(path_).glob("*.h5"))
-        assert len(files) > 0, f"no h5 files found at {path_}"
+        files = list(Path(path).glob("*.h5"))
+        assert len(files) > 0, f"no h5 files found at {path}"
     names = [f.stem for f in files]
     ds = ANIDataset(locations=files, names=names)
     print(ds)
