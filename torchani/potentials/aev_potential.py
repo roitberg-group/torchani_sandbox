@@ -1,3 +1,4 @@
+import torch
 import typing as tp
 
 from torch import Tensor
@@ -7,11 +8,18 @@ from torchani.atomics import AtomicContainer
 from torchani.utils import PERIODIC_TABLE
 from torchani.aev.computer import AEVComputer
 from torchani.potentials.core import Potential
+from torchani.annotations import Device, FloatDType
 
 
 # Adaptor to use the aev computer as a three body potential
 class AEVPotential(Potential):
-    def __init__(self, aev_computer: AEVComputer, neural_networks: AtomicContainer):
+    def __init__(
+        self,
+        aev_computer: AEVComputer,
+        neural_networks: AtomicContainer,
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
+    ):
         # Fetch the symbols or "Dummy" if they are not actually elements
         # NOTE: symbols that are not elements is supported for backwards
         # compatibility, since ANIModel supports arbitrary ordered dicts
@@ -20,9 +28,13 @@ class AEVPotential(Potential):
             k if k in PERIODIC_TABLE else "Dummy"
             for k in neural_networks.member(0).atomics
         )
-        super().__init__(cutoff=aev_computer.radial_terms.cutoff, symbols=symbols)
-        self.aev_computer = aev_computer
-        self.neural_networks = neural_networks
+        super().__init__(
+            symbols=symbols,
+            cutoff=aev_computer.radial_terms.cutoff,
+            device=device,
+        )
+        self.aev_computer = aev_computer.to(device=device, dtype=dtype)
+        self.neural_networks = neural_networks.to(device=device, dtype=dtype)
 
     def forward(
         self,

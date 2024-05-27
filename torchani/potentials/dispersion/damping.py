@@ -3,10 +3,12 @@ import typing as tp
 import torch
 from torch import Tensor
 from torch.jit import Final
+import typing_extensions as tpx
 
 from torchani.utils import ATOMIC_NUMBERS
 from torchani.units import ANGSTROM_TO_BOHR
 from torchani.potentials.dispersion import constants
+from torchani.annotations import Device, FloatDType
 
 
 # D3M modifies parameters AND damp function for zero-damp and only
@@ -14,32 +16,39 @@ from torchani.potentials.dispersion import constants
 class Damp(torch.nn.Module):
     r"""Damp function interface
 
-    Damp functions are like cutoff functions, but modulate potentials close to
-    zero.
+    Damp functions modulate potentials close to zero.
 
-    For modulating potentials of different "order" (e.g. 1 / r ** 6 => order 6),
-    different parameters may be needed.
+    For modulating potentials of different "order" (e.g. 1 / r ** 6 => order
+    6), different parameters may be needed.
     """
 
-    _order: Final[int]
+    order: Final[int]
     atomic_numbers: Tensor
 
     def __init__(
         self,
+        symbols: tp.Sequence[str],
+        order: int,
         *args,
-        symbols: tp.Sequence[str] = ('H', 'C', 'N', 'O'),
-        order: int = 6,
+        device: Device = "cpu",
         **kwargs,
     ):
         super().__init__()
-        self._order = order
+        self.order = order
         self.atomic_numbers = torch.tensor(
             [ATOMIC_NUMBERS[e] for e in symbols],
-            dtype=torch.long
+            dtype=torch.long,
+            device=device,
         )
 
     @classmethod
-    def from_functional(cls, functional: str = "wB97X", **kwargs) -> "Damp":
+    def from_functional(
+        cls,
+        symbols: tp.Sequence[str],
+        order: int,
+        functional: str,
+        device: Device = "cpu",
+    ) -> tpx.Self:
         raise NotImplementedError()
 
     def forward(self, species12: Tensor, distances: Tensor) -> Tensor:
@@ -60,41 +69,43 @@ class BJDamp(Damp):
 
     def __init__(
         self,
+        symbols: tp.Sequence[str],
+        order: int,
         a1: float,
         a2: float,
-        *args,
-        cutoff_radii: tp.Optional[Tensor] = None,
-        **kwargs,
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ):
-        super().__init__(*args, **kwargs)
-        sqrt_q = constants.get_sqrt_empirical_charge()
+        super().__init__(symbols=symbols, order=order, device=device)
+        sqrt_q = constants.get_sqrt_empirical_charge().do(device=device, dtype=dtype)
 
         znumbers = self.atomic_numbers
-        if cutoff_radii is None:
-            _cutoff_radii = torch.sqrt(
-                3 * torch.outer(sqrt_q, sqrt_q)
-            )[:, znumbers][znumbers, :]
-        else:
-            _cutoff_radii = cutoff_radii
+        outer_sqrt_q = torch.outer(sqrt_q, sqrt_q)
+        cutoff_radii = torch.sqrt(3 * outer_sqrt_q)[:, znumbers][znumbers, :]
 
-        # Cutoff radii is a matrix of T x T where T are the supported elements.
-        assert _cutoff_radii.shape == (len(znumbers), len(znumbers))
+        # Cutoff radii is a matrix of S x S where S are the supported elements.
+        assert cutoff_radii.shape == (len(znumbers), len(znumbers))
 
-        self.register_buffer('cutoff_radii', _cutoff_radii)
+        self.register_buffer("cutoff_radii", cutoff_radii)
         self._a1 = a1
         self._a2 = a2
 
     @classmethod
     def from_functional(
         cls,
-        functional: str = "wB97X",
-        modified_damp: bool = False,
-        **kwargs,
-    ) -> "BJDamp":
-        if modified_damp:
-            raise ValueError("Modified damp is not yet implemented")
+        symbols: tp.Sequence[str],
+        order: int,
+        functional: str,
+        device: Device = "cpu",
+    ) -> tpx.Self:
         d = constants.get_functional_constants()[functional.lower()]
-        return cls(a1=d["a1"], a2=d["a2"], cutoff_radii=None, **kwargs)
+        return cls(
+            symbols=symbols,
+            order=order,
+            a1=d["a1"],
+            a2=d["a2"],
+            device=device,
+        )
 
     def forward(
         self,
@@ -102,8 +113,8 @@ class BJDamp(Damp):
         distances: Tensor,
     ) -> Tensor:
         cutoff_radii = self.cutoff_radii[species12[0], species12[1]]
-        damp_term = (self._a1 * cutoff_radii + self._a2).pow(self._order)
-        return distances.pow(self._order) + damp_term
+        damp_term = (self._a1 * cutoff_radii + self._a2).pow(self.order)
+        return distances.pow(self.order) + damp_term
 
 
 class ZeroDamp(Damp):
@@ -120,43 +131,38 @@ class ZeroDamp(Damp):
 
     def __init__(
         self,
+        symbols: tp.Sequence[str],
+        order: int,
         alpha: int,
         sr: float,
-        *args,
         beta: float = 0.0,
-        cutoff_radii: tp.Optional[Tensor] = None,
-        **kwargs,
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(symbols=symbols, order=order, device=device)
 
         znumbers = self.atomic_numbers
-        if cutoff_radii is None:
-            # These cutoff radii are in Angstrom, so we convert to Bohr.
-            _cutoff_radii = ANGSTROM_TO_BOHR * constants.get_cutoff_radii()
-            _cutoff_radii = _cutoff_radii[:, znumbers][znumbers, :]
-        else:
-            _cutoff_radii = cutoff_radii
+        # These cutoff radii are in Angstrom, so we convert to Bohr.
+        cutoff_radii = constants.get_cutoff_radii().to(dtype=dtype, device=device)
+        cutoff_radii = ANGSTROM_TO_BOHR * cutoff_radii[:, znumbers][znumbers, :]
 
         # Cutoff radii is a matrix of T x T where T are the supported elements.
-        assert _cutoff_radii.shape == (len(znumbers), len(znumbers))
+        assert cutoff_radii.shape == (len(znumbers), len(znumbers))
 
         self._sr = sr
         self._beta = beta
         self._alpha = alpha
-        self.register_buffer('cutoff_radii', _cutoff_radii)
+        self.register_buffer("cutoff_radii", cutoff_radii)
 
     @classmethod
     def from_functional(
         cls,
-        functional: str = "wB97X",
-        order: int = 6,
-        modified_damp: bool = False,
-        **kwargs
-    ) -> "ZeroDamp":
+        symbols: tp.Sequence[str],
+        order: int,
+        functional: str,
+        device: Device = "cpu",
+    ) -> tpx.Self:
         d = constants.get_functional_constants()[functional.lower()]
-        if modified_damp:
-            raise ValueError("Modified damp is not yet implemented")
-
         if order == 6:
             sr = d["sr6"]
             alpha = 14
@@ -165,7 +171,14 @@ class ZeroDamp(Damp):
             sr = d["sr8"]
             alpha = 16
 
-        return cls(sr=sr, alpha=alpha, beta=0.0, cutoff_radii=None, **kwargs)
+        return cls(
+            symbols=symbols,
+            order=order,
+            sr=sr,
+            alpha=alpha,
+            beta=0.0,
+            device=device,
+        )
 
     def forward(
         self,
@@ -174,7 +187,7 @@ class ZeroDamp(Damp):
     ) -> Tensor:
         cutoff_radii = self.cutoff_radii[species12[0], species12[1]]
         inner_term = distances / (self._srr * cutoff_radii) + cutoff_radii * self._beta
-        return distances.pow(self._order) * (1 + (6 * inner_term).pow(-self._alpha))
+        return distances.pow(self.order) * (1 + (6 * inner_term).pow(-self._alpha))
 
 
 def _parse_damp_fn_cls(kind: str) -> tp.Type[Damp]:

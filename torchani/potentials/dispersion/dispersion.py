@@ -15,6 +15,7 @@ from torchani.potentials.dispersion.damping import (
     Damp,
     _parse_damp_fn_cls,
 )
+from torchani.annotations import Device, FloatDType
 
 
 class TwoBodyDispersionD3(PairPotential):
@@ -38,16 +39,19 @@ class TwoBodyDispersionD3(PairPotential):
 
     def __init__(
         self,
-        *args,
+        symbols: tp.Sequence[str],
         damp_fn_6: Damp,
         damp_fn_8: Damp,
         s6: float,
         s8: float,
+        cutoff: float = math.inf,
         cutoff_fn: CutoffArg = "dummy",
-        cutoff=math.inf,
-        **kwargs,
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ):
-        super().__init__(*args, cutoff=cutoff, cutoff_fn=cutoff_fn, **kwargs)
+        super().__init__(
+            symbols=symbols, cutoff=cutoff, cutoff_fn=cutoff_fn, device=device
+        )
 
         self._damp_fn_6 = damp_fn_6
         self._damp_fn_8 = damp_fn_8
@@ -64,6 +68,9 @@ class TwoBodyDispersionD3(PairPotential):
         self._eps = 1e-35
 
         order6_constants, coordnums_a, coordnums_b = constants.get_c6_constants()
+        order6_constants = order6_constants.to(device=device, dtype=dtype)
+        coordnums_a = coordnums_a.to(device=device, dtype=dtype)
+        coordnums_b = coordnums_b.to(device=device, dtype=dtype)
         self.register_buffer(
             "precalc_coeff6",
             order6_constants[self.atomic_numbers, :][:, self.atomic_numbers],
@@ -78,14 +85,16 @@ class TwoBodyDispersionD3(PairPotential):
         )
 
         # The product of the sqrt of the empirical q's is stored directly
-        sqrt_empirical_charge = constants.get_sqrt_empirical_charge()
+        sqrt_empirical_charge = constants.get_sqrt_empirical_charge().to(
+            device=device, dtype=dtype
+        )
         charge_ab = torch.outer(sqrt_empirical_charge, sqrt_empirical_charge)
         self.register_buffer(
             "sqrt_charge_ab", charge_ab[self.atomic_numbers, :][:, self.atomic_numbers]
         )
 
         # Covalent radii are in angstrom so we first convert to bohr
-        covalent_radii = constants.get_covalent_radii()
+        covalent_radii = constants.get_covalent_radii().to(device=device, dtype=dtype)
         self.register_buffer(
             "covalent_radii",
             self.ANGSTROM_TO_BOHR * covalent_radii[self.atomic_numbers],
@@ -94,22 +103,35 @@ class TwoBodyDispersionD3(PairPotential):
     @classmethod
     def from_functional(
         cls,
-        symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
-        functional: str = "wB97X",
-        modified_damp: bool = False,
+        symbols: tp.Sequence[str],
+        functional: str,
         damp_fn: str = "bj",
-        **kwargs,
+        cutoff: float = math.inf,
+        cutoff_fn: CutoffArg = "dummy",
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ) -> "TwoBodyDispersionD3":
         d = constants.get_functional_constants()[functional.lower()]
         DampCls = _parse_damp_fn_cls(damp_fn)
 
         return cls(
+            symbols=symbols,
             s6=d[f"s6_{damp_fn}"],
             s8=d[f"s8_{damp_fn}"],
-            damp_fn_6=DampCls.from_functional(functional, symbols=symbols, order=6),
-            damp_fn_8=DampCls.from_functional(functional, symbols=symbols, order=8),
-            symbols=symbols,
-            **kwargs,
+            damp_fn_6=DampCls.from_functional(
+                functional=functional,
+                symbols=symbols,
+                order=6,
+            ),
+            damp_fn_8=DampCls.from_functional(
+                functional=functional,
+                symbols=symbols,
+                order=8,
+            ),
+            cutoff=cutoff,
+            cutoff_fn=cutoff_fn,
+            device=device,
+            dtype=dtype,
         )
 
     def pair_energies(
@@ -209,20 +231,24 @@ class TwoBodyDispersionD3(PairPotential):
 
 
 def StandaloneTwoBodyDispersionD3(
-    functional: str = "wB97X",
-    symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
-    cutoff_fn: CutoffArg = "dummy",
+    symbols: tp.Sequence[str],
+    functional: str,
     damp_fn: str = "bj",
     cutoff: float = math.inf,
-    periodic_table_index: bool = True,
+    cutoff_fn: CutoffArg = "dummy",
     neighborlist: NeighborlistArg = "full_pairwise",
+    periodic_table_index: bool = True,
+    device: Device = "cpu",
+    dtype: FloatDType = torch.float,
 ) -> PotentialWrapper:
     module = TwoBodyDispersionD3.from_functional(
+        symbols=symbols,
         functional=functional,
         cutoff=cutoff,
         cutoff_fn=cutoff_fn,
         damp_fn=damp_fn,
-        symbols=symbols,
+        device=device,
+        dtype=dtype,
     )
     return PotentialWrapper(
         potential=module,

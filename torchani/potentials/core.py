@@ -6,6 +6,7 @@ from torch import Tensor
 from torchani.utils import ATOMIC_NUMBERS, PERIODIC_TABLE
 from torchani.cutoffs import parse_cutoff_fn, CutoffArg
 from torchani.neighbors import NeighborData
+from torchani.annotations import Device
 
 
 class Potential(torch.nn.Module):
@@ -20,14 +21,17 @@ class Potential(torch.nn.Module):
 
     def __init__(
         self,
+        cutoff: float,
+        symbols: tp.Sequence[str],
         *args,
-        cutoff: float = 5.2,
-        symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
+        device: Device = "cpu",
         **kwargs
     ):
         super().__init__()
         self.atomic_numbers = torch.tensor(
-            [ATOMIC_NUMBERS[e] for e in symbols], dtype=torch.long
+            [ATOMIC_NUMBERS[e] for e in symbols],
+            dtype=torch.long,
+            device=device,
         )
         self.cutoff = cutoff
 
@@ -80,13 +84,14 @@ class PairPotential(Potential):
 
     def __init__(
         self,
+        symbols: tp.Sequence[str],
+        cutoff: float,
         *args,
-        cutoff: float = 5.2,
-        symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
         cutoff_fn: CutoffArg = "dummy",
+        device: Device = "cpu",
         **kwargs
     ):
-        super().__init__(cutoff=cutoff, symbols=symbols)
+        super().__init__(symbols=symbols, cutoff=cutoff, device=device)
         self.cutoff_fn = parse_cutoff_fn(cutoff_fn)
 
     def pair_energies(

@@ -7,6 +7,7 @@ from torchani.neighbors import NeighborData
 from torchani.utils import sorted_gsaes
 from torchani.potentials.core import Potential
 from torchani.potentials.wrapper import PotentialWrapper
+from torchani.annotations import Device, FloatDType
 
 
 class EnergyAdder(Potential):
@@ -22,14 +23,21 @@ class EnergyAdder(Potential):
 
     self_energies: Tensor
 
-    def __init__(self, symbols: tp.Sequence[str], self_energies: tp.Sequence[float]):
-        super().__init__(cutoff=0.0, symbols=symbols)
+    def __init__(
+        self,
+        symbols: tp.Sequence[str],
+        self_energies: tp.Sequence[float],
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
+    ):
+        super().__init__(symbols=symbols, cutoff=0.0, device=device)
         if not len(symbols) == len(self_energies):
             raise ValueError(
                 "Chemical symbols and self energies do not match in length"
             )
         self.register_buffer(
-            "self_energies", torch.tensor(self_energies, dtype=torch.float)
+            "self_energies",
+            torch.tensor(self_energies, dtype=dtype, device=device),
         )
 
     @classmethod
@@ -72,10 +80,14 @@ def StandaloneEnergyAdder(
     symbols: tp.Sequence[str],
     self_energies: tp.Sequence[float],
     periodic_table_index: bool = True,
+    device: Device = "cpu",
+    dtype: FloatDType = torch.float,
 ) -> PotentialWrapper:
     module = EnergyAdder(
         symbols=symbols,
         self_energies=self_energies,
+        device=device,
+        dtype=dtype,
     )
     return PotentialWrapper(
         module,

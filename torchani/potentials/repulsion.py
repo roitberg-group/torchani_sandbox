@@ -11,6 +11,7 @@ from torchani.cutoffs import CutoffArg
 from torchani.potentials.wrapper import PotentialWrapper
 from torchani.potentials.core import PairPotential
 from torchani.potentials._repulsion_constants import alpha_constants, y_eff_constants
+from torchani.annotations import Device, FloatDType
 
 _ELEMENTS_NUM = len(ATOMIC_NUMBERS)
 
@@ -32,30 +33,37 @@ class RepulsionXTB(PairPotential):
 
     def __init__(
         self,
+        symbols: tp.Sequence[str],
         alpha: tp.Sequence[float] = (),
         y_eff: tp.Sequence[float] = (),
-        k_rep_ab: tp.Optional[Tensor] = None,
+        cutoff: float = 5.2,
         cutoff_fn: CutoffArg = "smooth",
-        **pairwise_kwargs,
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ):
-        super().__init__(cutoff_fn=cutoff_fn, **pairwise_kwargs)
+        super().__init__(cutoff_fn=cutoff_fn, symbols=symbols, cutoff=cutoff)
 
         if not alpha:
-            _alpha = torch.tensor(alpha_constants)[self.atomic_numbers]
+            _alpha = torch.tensor(alpha_constants, dtype=dtype, device=device)[
+                self.atomic_numbers
+            ]
         else:
-            _alpha = torch.tensor(alpha)
+            _alpha = torch.tensor(alpha, dtype=dtype, device=device)
         if not y_eff:
-            _y_eff = torch.tensor(y_eff_constants)[self.atomic_numbers]
+            _y_eff = torch.tensor(y_eff_constants, device=device, dtype=dtype)[
+                self.atomic_numbers
+            ]
         else:
-            _y_eff = torch.tensor(y_eff)
+            _y_eff = torch.tensor(y_eff, device=device, dtype=dtype)
 
-        if k_rep_ab is None:
-            k_rep_ab = torch.full((_ELEMENTS_NUM + 1, _ELEMENTS_NUM + 1), 1.5)
-            k_rep_ab[1, 1] = 1.0
-            k_rep_ab = k_rep_ab[self.atomic_numbers, :][:, self.atomic_numbers]
+        # k-rep is hardcoded
+        k_rep_ab = torch.full(
+            (_ELEMENTS_NUM + 1, _ELEMENTS_NUM + 1), 1.5, dtype=dtype, device=device
+        )
+        k_rep_ab[1, 1] = 1.0
+        k_rep_ab = k_rep_ab[self.atomic_numbers, :][:, self.atomic_numbers]
 
         # Validation
-        assert k_rep_ab is not None
         assert k_rep_ab.shape[0] == len(self.atomic_numbers)
         assert k_rep_ab.shape[1] == len(self.atomic_numbers)
         assert len(_y_eff) == len(self.atomic_numbers)
@@ -94,22 +102,24 @@ class RepulsionXTB(PairPotential):
 
 
 def StandaloneRepulsionXTB(
-    cutoff: float = 5.2,
+    symbols: tp.Sequence[str],
     alpha: tp.Sequence[float] = (),
     y_eff: tp.Sequence[float] = (),
-    k_rep_ab: tp.Optional[Tensor] = None,
-    symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
+    cutoff: float = 5.2,
     cutoff_fn: CutoffArg = "smooth",
     neighborlist: NeighborlistArg = "full_pairwise",
     periodic_table_index: bool = True,
+    device: Device = "cpu",
+    dtype: FloatDType = torch.float,
 ) -> PotentialWrapper:
     module = RepulsionXTB(
+        symbols=symbols,
         alpha=alpha,
         y_eff=y_eff,
-        k_rep_ab=k_rep_ab,
         cutoff=cutoff,
-        symbols=symbols,
         cutoff_fn=cutoff_fn,
+        device=device,
+        dtype=dtype,
     )
     return PotentialWrapper(
         potential=module,
