@@ -12,6 +12,7 @@ from torchani.atomics import AtomicContainer
 from torchani.models import BuiltinModel
 from torchani.storage import NEUROCHEM_DIR
 from torchani.potentials import EnergyAdder
+from torchani.annotations import StrPath
 from torchani.neurochem.utils import model_dir_from_prefix
 from torchani.neurochem.neurochem import (
     load_aev_computer_and_symbols,
@@ -41,7 +42,7 @@ class NeurochemInfo:
     ensemble_size: int
 
     @classmethod
-    def from_info_file(cls, info_file_path: Path) -> tpx.Self:
+    def from_info_file(cls, info_file_path: StrPath) -> tpx.Self:
         with open(info_file_path, mode="rt", encoding="utf-8") as f:
             lines: tp.List[str] = [x.strip() for x in f.readlines()][:4]
             _const_file, _sae_file, _ensemble_prefix, _ensemble_size = lines
@@ -154,7 +155,7 @@ def modules_from_builtin_name(
 
 
 def modules_from_info_file(
-    info_file: Path,
+    info_file: StrPath,
     model_index: tp.Optional[int] = None,
     use_cuda_extension: bool = False,
     use_cuaev_interface: bool = False,
@@ -173,13 +174,12 @@ def modules_from_info_file(
 
 
 def load_builtin_from_info_file(
-    info_file: tp.Union[Path, str],
+    info_file: StrPath,
     model_index: tp.Optional[int] = None,
     use_cuda_extension: bool = False,
     use_cuaev_interface: bool = False,
     periodic_table_index: bool = True,
 ) -> BuiltinModel:
-    info_file = Path(info_file).resolve()
     components = modules_from_info_file(
         info_file,
         model_index,
