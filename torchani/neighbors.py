@@ -7,7 +7,7 @@ from torch.jit import Final
 
 from torchani.utils import map_to_central, cumsum_from_zero
 from torchani.tuples import NeighborData
-from torchani.annotations import Device, FloatDType
+from torchani.annotations import Device
 
 
 def rescreen(
@@ -27,10 +27,8 @@ def _make_default_cell(coordinates: Tensor) -> Tensor:
 
 
 def _make_default_pbc(coordinates: Tensor) -> Tensor:
-    return (
-        torch.tensor(
-            [False, False, False], dtype=torch.bool, device=coordinates.device
-        ),
+    return torch.tensor(
+        [False, False, False], dtype=torch.bool, device=coordinates.device
     )
 
 
@@ -311,9 +309,11 @@ class CellList(Neighborlist):
         skin: tp.Optional[float] = None,
         constant_volume: bool = False,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ):
         super().__init__()
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
 
         # right now I will only support this, and the extra neighbors are
         # hardcoded, but full support for arbitrary buckets per cutoff is possible

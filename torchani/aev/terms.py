@@ -6,7 +6,7 @@ from torch import Tensor
 import typing_extensions as tpx
 
 from torchani.cutoffs import parse_cutoff_fn, CutoffArg
-from torchani.annotations import Device, FloatDType
+from torchani.annotations import Device
 
 
 class _Term(torch.nn.Module):
@@ -59,9 +59,11 @@ class StandardRadial(RadialTerm):
         cutoff: float,
         cutoff_fn: CutoffArg = "cosine",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ):
         super().__init__(cutoff=cutoff, cutoff_fn=cutoff_fn)
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         # initialize the cutoff function
         self.cutoff_fn = parse_cutoff_fn(cutoff_fn)
 
@@ -93,7 +95,7 @@ class StandardRadial(RadialTerm):
         num_shifts: int = 16,
         cutoff_fn: CutoffArg = "cosine",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         r"""Builds angular terms by linearly subdividing space radially up to a cutoff
 
@@ -101,6 +103,8 @@ class StandardRadial(RadialTerm):
         excluding it. This similar to the way angular and radial shifts were
         originally created for the ANI models
         """
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         ShfR = torch.linspace(
             start, cutoff, int(num_shifts) + 1, device=device, dtype=dtype
         )[:-1]
@@ -116,7 +120,7 @@ class StandardRadial(RadialTerm):
         num_shifts: int = 16,
         cutoff_fn: CutoffArg = "cosine",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         return cls.cover_linearly(
             start=start,
@@ -135,7 +139,7 @@ class StandardRadial(RadialTerm):
         num_shifts: int = 16,
         cutoff_fn: CutoffArg = "cosine",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         return cls.cover_linearly(
             start=start,
@@ -149,8 +153,10 @@ class StandardRadial(RadialTerm):
     def like_1x(
         cls,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         return cls(
             EtaR=torch.tensor([16.0], dtype=dtype, device=device),
             ShfR=torch.tensor(
@@ -183,7 +189,7 @@ class StandardRadial(RadialTerm):
     def like_1ccx(
         cls,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         return cls.like_1x(device=device, dtype=dtype)
 
@@ -191,8 +197,10 @@ class StandardRadial(RadialTerm):
     def like_2x(
         cls,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         return cls(
             EtaR=torch.tensor([19.7], dtype=dtype, device=device),
             ShfR=torch.tensor(
@@ -249,9 +257,11 @@ class StandardAngular(AngularTerm):
         cutoff: float,
         cutoff_fn: CutoffArg = "cosine",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ):
         super().__init__(cutoff=cutoff, cutoff_fn=cutoff_fn)
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         # convert constant tensors to a ready-to-broadcast shape
         # shape convension (..., EtaA, Zeta, ShfA, ShfZ)
         self.register_buffer(
@@ -306,7 +316,7 @@ class StandardAngular(AngularTerm):
         num_angle_sections: int = 4,
         cutoff_fn: CutoffArg = "cosine",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         r"""Builds angular terms by linearly subdividing space in the angular
         dimension and in the radial one up to a cutoff
@@ -316,6 +326,8 @@ class StandardAngular(AngularTerm):
         This is the way angular and radial shifts were originally created in
         ANI.
         """
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         EtaA = torch.tensor([eta], dtype=dtype, device=device)
         ShfA = torch.linspace(
             start, cutoff, int(num_shifts) + 1, dtype=dtype, device=device
@@ -341,7 +353,7 @@ class StandardAngular(AngularTerm):
         num_angle_sections: int = 8,
         cutoff_fn: CutoffArg = "cosine",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         return cls.cover_linearly(
             start=start,
@@ -366,7 +378,7 @@ class StandardAngular(AngularTerm):
         num_angle_sections: int = 4,
         cutoff_fn: CutoffArg = "cosine",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         return cls.cover_linearly(
             start=start,
@@ -384,8 +396,10 @@ class StandardAngular(AngularTerm):
     def like_1x(
         cls,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         return cls(
             EtaA=torch.tensor([8.0], dtype=dtype, device=device),
             Zeta=torch.tensor([32.0], dtype=dtype, device=device),
@@ -421,7 +435,7 @@ class StandardAngular(AngularTerm):
     def like_1ccx(
         cls,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         return cls.like_1x(device=device, dtype=dtype)
 
@@ -429,8 +443,10 @@ class StandardAngular(AngularTerm):
     def like_2x(
         cls,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         return cls(
             EtaA=torch.tensor([12.5], dtype=dtype, device=device),
             Zeta=torch.tensor([14.1], dtype=dtype, device=device),
@@ -471,8 +487,10 @@ RadialTermArg = tp.Union[_Models, RadialTerm]
 def parse_angular_term(
     angular_term: AngularTermArg,
     device: Device = "cpu",
-    dtype: FloatDType = torch.float,
+    dtype: torch.dtype = torch.float,
 ) -> AngularTerm:
+    if not dtype.is_floating_point:
+        raise ValueError("dtype must be a floating point dtype")
     if angular_term == "ani1x":
         angular_term = StandardAngular.like_1x(device=device, dtype=dtype)
     elif angular_term == "ani2x":
@@ -489,8 +507,10 @@ def parse_angular_term(
 def parse_radial_term(
     radial_term: RadialTermArg,
     device: Device = "cpu",
-    dtype: FloatDType = torch.float,
+    dtype: torch.dtype = torch.float,
 ) -> RadialTerm:
+    if not dtype.is_floating_point:
+        raise ValueError("dtype must be a floating point dtype")
     if radial_term == "ani1x":
         radial_term = StandardRadial.like_1x(device=device, dtype=dtype)
     elif radial_term == "ani2x":

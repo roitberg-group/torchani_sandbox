@@ -18,7 +18,7 @@ from torchani.aev.terms import (
     AngularTermArg,
 )
 from torchani.csrc import CUAEV_IS_INSTALLED
-from torchani.annotations import Device, FloatDType
+from torchani.annotations import Device
 
 
 if CUAEV_IS_INSTALLED:
@@ -59,7 +59,7 @@ class AEVComputer(torch.nn.Module):
         cutoff_fn: tp.Optional[CutoffArg] = None,
         neighborlist: NeighborlistArg = "full_pairwise",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ):
         super().__init__()
         self.use_cuda_extension = use_cuda_extension
@@ -86,6 +86,8 @@ class AEVComputer(torch.nn.Module):
             )
         self._cuaev_cutoff_fn = self.angular_terms.cutoff_fn._cuaev_name
         # TODO: cast currently needed due to neighborlist being stateful
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         self.neighborlist = parse_neighborlist(neighborlist).to(
             device=device, dtype=dtype
         )
@@ -555,7 +557,7 @@ class AEVComputer(torch.nn.Module):
         cutoff_fn: CutoffArg = "cosine",
         neighborlist: NeighborlistArg = "full_pairwise",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.float = torch.float,
     ) -> tpx.Self:
         r"""Initialize the AEV computer from the following constants:
 
@@ -629,7 +631,7 @@ class AEVComputer(torch.nn.Module):
         angular_num_shifts: int = 4,
         angular_num_angle_sections: int = 8,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         return cls(
             radial_terms=StandardRadial.cover_linearly(
@@ -679,7 +681,7 @@ class AEVComputer(torch.nn.Module):
         angular_num_shifts: int = 8,
         angular_num_angle_sections: int = 4,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         return cls(
             radial_terms=StandardRadial.cover_linearly(
@@ -715,7 +717,7 @@ class AEVComputer(torch.nn.Module):
         use_cuaev_interface: bool = False,
         neighborlist: NeighborlistArg = "full_pairwise",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         return cls(
             angular_terms="ani1x",
@@ -735,7 +737,7 @@ class AEVComputer(torch.nn.Module):
         use_cuaev_interface: bool = False,
         neighborlist: NeighborlistArg = "full_pairwise",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         return cls(
             angular_terms="ani1ccx",
@@ -755,7 +757,7 @@ class AEVComputer(torch.nn.Module):
         use_cuaev_interface: bool = False,
         neighborlist: NeighborlistArg = "full_pairwise",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> tpx.Self:
         return cls(
             angular_terms="ani2x",

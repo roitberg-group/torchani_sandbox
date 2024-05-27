@@ -21,4 +21,3 @@ StrPath = tp.Union[str, Path]
 StrPathODict = tp.Union[tp.OrderedDict[str, str], tp.OrderedDict[str, Path]]
 
 Device = tp.Union[torch.device, tp.Literal["cuda", "cpu"]]
-FloatDType = tp.Union[torch.float, torch.double]

@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 
 from torchani.utils import ATOMIC_NUMBERS, pad_atomic_properties
-from torchani.annotations import Device, StrPath, FloatDType
+from torchani.annotations import Device, StrPath
 
 
 class TorchaniIOError(IOError):
@@ -15,7 +15,7 @@ class TorchaniIOError(IOError):
 
 def read_xyz(
     path: StrPath,
-    dtype: FloatDType = torch.float,
+    dtype: torch.dtype = torch.float,
     device: Device = "cpu",
 ) -> tp.Tuple[Tensor, Tensor, tp.Optional[Tensor]]:
     r"""
@@ -27,6 +27,8 @@ def read_xyz(
 
     Cell is read from the first conformation.
     """
+    if not dtype.is_floating_point:
+        raise ValueError("dtype must be a floating point dtype")
     path = Path(path).resolve()
     cell: tp.Optional[Tensor] = None
     properties: tp.List[tp.Dict[str, Tensor]] = []
