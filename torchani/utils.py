@@ -16,6 +16,9 @@ from torchani.constants import ATOMIC_MASSES
 from torchani.annotations import Device
 from torchani.tuples import SpeciesEnergies
 
+SYMBOLS_1X = ("H", "C", "N", "O")
+SYMBOLS_2X = ("H", "C", "N", "O", "S", "F", "Cl")
+
 
 __all__ = [
     "pad_atomic_properties",

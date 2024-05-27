@@ -79,7 +79,7 @@ class BJDamp(Damp):
         super().__init__(symbols=symbols, order=order, device=device)
         if not dtype.is_floating_point:
             raise ValueError("dtype must be a floating point dtype")
-        sqrt_q = constants.get_sqrt_empirical_charge().do(device=device, dtype=dtype)
+        sqrt_q = constants.get_sqrt_empirical_charge().to(device=device, dtype=dtype)
 
         znumbers = self.atomic_numbers
         outer_sqrt_q = torch.outer(sqrt_q, sqrt_q)

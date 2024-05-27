@@ -52,7 +52,7 @@ from torchani.aev.terms import (
 )
 from torchani.nn import ANIModel, Ensemble
 from torchani.atomics import AtomicContainer
-from torchani.utils import GSAES, sort_by_element
+from torchani.utils import GSAES, sort_by_element, SYMBOLS_1X, SYMBOLS_2X
 from torchani.storage import STATE_DICTS_DIR
 
 ModelType = tp.Type[BuiltinModel]
@@ -60,10 +60,6 @@ FeaturizerType = tp.Type[AEVComputer]
 PairPotentialType = tp.Type[PairPotential]
 ContainerType = tp.Type[ANIModel]
 ShifterType = tp.Type[EnergyAdder]
-
-SFCl: tp.Tuple[str, ...] = ("S", "F", "Cl")
-ELEMENTS_1X: tp.Tuple[str, ...] = ("H", "C", "N", "O")
-ELEMENTS_2X: tp.Tuple[str, ...] = ELEMENTS_1X + SFCl
 
 
 # "global" cutoff means the global cutoff_fn will be used
@@ -381,7 +377,7 @@ def ANI1x(
         https://aip.scitation.org/doi/abs/10.1063/1.5023802
     """
     asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
-    asm.set_symbols(ELEMENTS_1X, auto_sort=False)
+    asm.set_symbols(SYMBOLS_1X, auto_sort=False)
     asm.set_atomic_maker(atomics.like_1x)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
@@ -424,7 +420,7 @@ def ANI1ccx(
         https://doi.org/10.26434/chemrxiv.6744440.v1
     """
     asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
-    asm.set_symbols(ELEMENTS_1X, auto_sort=False)
+    asm.set_symbols(SYMBOLS_1X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
@@ -466,7 +462,7 @@ def ANI2x(
         https://doi.org/10.26434/chemrxiv.11819268.v1
     """
     asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
-    asm.set_symbols(ELEMENTS_2X, auto_sort=False)
+    asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
@@ -498,7 +494,7 @@ def ANIala(
     if model_index is not None:
         raise ValueError("Model index is not supported for ANIala")
     asm = Assembler(ensemble_size=1, periodic_table_index=periodic_table_index)
-    asm.set_symbols(ELEMENTS_2X, auto_sort=False)
+    asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
         AEVComputer,
@@ -532,7 +528,7 @@ def ANIdr(
     energies on HCNOFSCl elements
     """
     asm = Assembler(ensemble_size=7, periodic_table_index=periodic_table_index)
-    asm.set_symbols(ELEMENTS_2X, auto_sort=False)
+    asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("smooth2")
     asm.set_featurizer(
         AEVComputer,
