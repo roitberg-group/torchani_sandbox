@@ -98,14 +98,14 @@ class TestCellList(TestCase):
         clist._setup_variables(self.cell, self.cut)
 
         frac = clist._fractionalize_coordinates(self.coordinates)
-        main_vector_bucket_index = clist._fractional_to_vector_bucket_indices(frac)
-        self.assertTrue(main_vector_bucket_index.shape == torch.Size([1, 54, 3]))
-        self.assertTrue((main_vector_bucket_index == vector_bucket_index_compare).all())
+        main_vector_bucket_idx = clist._fractional_to_vector_bucket_indices(frac)
+        self.assertTrue(main_vector_bucket_idx.shape == torch.Size([1, 54, 3]))
+        self.assertTrue((main_vector_bucket_idx == vector_bucket_idx_compare).all())
 
     def testFlatBucketIndex(self):
         clist = self.clist
         clist._setup_variables(self.cell, self.cut)
-        flat = clist._to_flat_index(vector_bucket_index_compare)
+        flat = clist._to_flat_idx(vector_bucket_idx_compare)
         # all flat bucket indices are present
         flat_compare = torch.repeat_interleave(torch.arange(0, 27, dtype=torch.long), 2)
         self.assertEqual(flat, flat_compare.unsqueeze(0))
@@ -113,9 +113,9 @@ class TestCellList(TestCase):
     def testFlatBucketIndexAlternative(self):
         clist = self.clist
         clist._setup_variables(self.cell, self.cut)
-        atoms = vector_bucket_index_compare.shape[1]
+        atoms = vector_bucket_idx_compare.shape[1]
         flat = clist.vector_idx_to_flat[
-            (vector_bucket_index_compare + torch.ones(1, dtype=torch.long))
+            (vector_bucket_idx_compare + torch.ones(1, dtype=torch.long))
             .reshape(-1, 3)
             .unbind(1)
         ].reshape(1, atoms)
@@ -127,7 +127,7 @@ class TestCellList(TestCase):
         num_flat = 27
         clist = self.clist
         clist._setup_variables(self.cell, self.cut)
-        flat = clist._to_flat_index(vector_bucket_index_compare)
+        flat = clist._to_flat_idx(vector_bucket_idx_compare)
         self.assertTrue(clist.total_buckets == num_flat)
         count_in_flat, cumcount_in_flat, max_ = clist._get_atoms_in_flat_bucket_counts(
             flat
@@ -375,7 +375,7 @@ class TestCellListEnergiesCuda(TestCellListEnergies):
         self.num_to_test = 100
 
 
-vector_bucket_index_compare = torch.tensor(
+vector_bucket_idx_compare = torch.tensor(
     [
         [
             [0, 0, 0],
