@@ -18,6 +18,7 @@ from torchani.aev.terms import (
     AngularTermArg,
 )
 from torchani.csrc import CUAEV_IS_INSTALLED
+from torchani.annotations import Device, FloatDType
 
 
 if CUAEV_IS_INSTALLED:
@@ -57,6 +58,8 @@ class AEVComputer(torch.nn.Module):
         use_cuaev_interface: bool = False,
         cutoff_fn: tp.Optional[CutoffArg] = None,
         neighborlist: NeighborlistArg = "full_pairwise",
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ):
         super().__init__()
         self.use_cuda_extension = use_cuda_extension

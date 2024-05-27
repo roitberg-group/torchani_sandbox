@@ -13,7 +13,7 @@ from torch import Tensor
 import torch.utils.data
 
 from torchani.constants import ATOMIC_MASSES
-from torchani.annotations import Device, FloatDtype
+from torchani.annotations import Device, FloatDType
 from torchani.tuples import SpeciesEnergies
 
 
@@ -440,7 +440,7 @@ class AtomicNumbersToMasses(torch.nn.Module):
         self,
         masses: tp.Iterable[float] = ATOMIC_MASSES,
         device: Device = "cpu",
-        dtype: FloatDtype = torch.float,
+        dtype: FloatDType = torch.float,
     ) -> None:
         super().__init__()
         self.register_buffer(
@@ -459,7 +459,7 @@ class AtomicNumbersToMasses(torch.nn.Module):
 # Convenience fn around AtomicNumbersToMasses that is non-jittable
 def atomic_numbers_to_masses(
     atomic_numbers: Tensor,
-    dtype: FloatDtype = torch.float,
+    dtype: FloatDType = torch.float,
 ) -> Tensor:
     if torch.jit.is_scripting():
         raise RuntimeError(

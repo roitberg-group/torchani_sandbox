@@ -6,7 +6,7 @@ from torch import Tensor
 from torchani.geometry import Displacer, Reference
 from torchani.constants import ATOMIC_MASSES
 
-from torchani.annotations import Device, FloatDtype
+from torchani.annotations import Device, FloatDType
 
 __all__ = ["DipoleComputer", "compute_dipole"]
 
@@ -30,7 +30,7 @@ class DipoleComputer(torch.nn.Module):
         masses: tp.Iterable[float] = ATOMIC_MASSES,
         reference: Reference = "center_of_mass",
         device: Device = "cpu",
-        dtype: FloatDtype = torch.float,
+        dtype: FloatDType = torch.float,
     ) -> None:
         super().__init__()
         self._displacer = Displacer(

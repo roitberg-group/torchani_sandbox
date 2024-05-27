@@ -7,7 +7,7 @@ from torch import Tensor
 from torchani.utils import AtomicNumbersToMasses
 from torchani.constants import ATOMIC_MASSES
 
-from torchani.annotations import Device, FloatDtype
+from torchani.annotations import Device, FloatDType
 
 Reference = tp.Literal["center_of_mass", "center_of_geometry", "origin"]
 
@@ -25,7 +25,7 @@ class Displacer(torch.nn.Module):
         masses: tp.Iterable[float] = ATOMIC_MASSES,
         reference: Reference = "center_of_mass",
         device: Device = "cpu",
-        dtype: FloatDtype = torch.float,
+        dtype: FloatDType = torch.float,
     ) -> None:
         super().__init__()
         self._atomic_masses: Tensor = torch.tensor(masses, device=device, dtype=dtype)
