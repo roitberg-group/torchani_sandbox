@@ -15,7 +15,7 @@ from torchani.potentials.dispersion.damping import (
     Damp,
     _parse_damp_fn_cls,
 )
-from torchani.annotations import Device, FloatDType
+from torchani.annotations import Device
 
 
 class TwoBodyDispersionD3(PairPotential):
@@ -47,12 +47,13 @@ class TwoBodyDispersionD3(PairPotential):
         cutoff: float = math.inf,
         cutoff_fn: CutoffArg = "dummy",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ):
         super().__init__(
             symbols=symbols, cutoff=cutoff, cutoff_fn=cutoff_fn, device=device
         )
-
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         self._damp_fn_6 = damp_fn_6
         self._damp_fn_8 = damp_fn_8
         self.ANGSTROM_TO_BOHR = ANGSTROM_TO_BOHR
@@ -109,7 +110,7 @@ class TwoBodyDispersionD3(PairPotential):
         cutoff: float = math.inf,
         cutoff_fn: CutoffArg = "dummy",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ) -> "TwoBodyDispersionD3":
         d = constants.get_functional_constants()[functional.lower()]
         DampCls = _parse_damp_fn_cls(damp_fn)
@@ -239,7 +240,7 @@ def StandaloneTwoBodyDispersionD3(
     neighborlist: NeighborlistArg = "full_pairwise",
     periodic_table_index: bool = True,
     device: Device = "cpu",
-    dtype: FloatDType = torch.float,
+    dtype: torch.dtype = torch.float,
 ) -> PotentialWrapper:
     module = TwoBodyDispersionD3.from_functional(
         symbols=symbols,
@@ -251,6 +252,8 @@ def StandaloneTwoBodyDispersionD3(
         dtype=dtype,
     )
     # TODO: cast currently needed due to neighborlist being stateful
+    if not dtype.is_floating_point:
+        raise ValueError("dtype must be a floating point dtype")
     return PotentialWrapper(
         potential=module,
         periodic_table_index=periodic_table_index,

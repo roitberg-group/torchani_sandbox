@@ -8,7 +8,7 @@ from torchani.atomics import AtomicContainer
 from torchani.utils import PERIODIC_TABLE
 from torchani.aev.computer import AEVComputer
 from torchani.potentials.core import Potential
-from torchani.annotations import Device, FloatDType
+from torchani.annotations import Device
 
 
 # Adaptor to use the aev computer as a three body potential
@@ -18,7 +18,7 @@ class AEVPotential(Potential):
         aev_computer: AEVComputer,
         neural_networks: AtomicContainer,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ):
         # Fetch the symbols or "Dummy" if they are not actually elements
         # NOTE: symbols that are not elements is supported for backwards
@@ -33,6 +33,8 @@ class AEVPotential(Potential):
             cutoff=aev_computer.radial_terms.cutoff,
             device=device,
         )
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         self.aev_computer = aev_computer.to(device=device, dtype=dtype)
         self.neural_networks = neural_networks.to(device=device, dtype=dtype)
 

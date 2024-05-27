@@ -8,7 +8,7 @@ import typing_extensions as tpx
 from torchani.utils import ATOMIC_NUMBERS
 from torchani.units import ANGSTROM_TO_BOHR
 from torchani.potentials.dispersion import constants
-from torchani.annotations import Device, FloatDType
+from torchani.annotations import Device
 
 
 # D3M modifies parameters AND damp function for zero-damp and only
@@ -74,9 +74,11 @@ class BJDamp(Damp):
         a1: float,
         a2: float,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ):
         super().__init__(symbols=symbols, order=order, device=device)
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         sqrt_q = constants.get_sqrt_empirical_charge().do(device=device, dtype=dtype)
 
         znumbers = self.atomic_numbers
@@ -137,9 +139,11 @@ class ZeroDamp(Damp):
         sr: float,
         beta: float = 0.0,
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ):
         super().__init__(symbols=symbols, order=order, device=device)
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
 
         znumbers = self.atomic_numbers
         # These cutoff radii are in Angstrom, so we convert to Bohr.

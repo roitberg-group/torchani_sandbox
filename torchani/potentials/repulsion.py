@@ -11,7 +11,7 @@ from torchani.cutoffs import CutoffArg
 from torchani.potentials.wrapper import PotentialWrapper
 from torchani.potentials.core import PairPotential
 from torchani.potentials._repulsion_constants import alpha_constants, y_eff_constants
-from torchani.annotations import Device, FloatDType
+from torchani.annotations import Device
 
 _ELEMENTS_NUM = len(ATOMIC_NUMBERS)
 
@@ -39,9 +39,11 @@ class RepulsionXTB(PairPotential):
         cutoff: float = 5.2,
         cutoff_fn: CutoffArg = "smooth",
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ):
         super().__init__(cutoff_fn=cutoff_fn, symbols=symbols, cutoff=cutoff)
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
 
         if not alpha:
             _alpha = torch.tensor(alpha_constants, dtype=dtype, device=device)[
@@ -110,7 +112,7 @@ def StandaloneRepulsionXTB(
     neighborlist: NeighborlistArg = "full_pairwise",
     periodic_table_index: bool = True,
     device: Device = "cpu",
-    dtype: FloatDType = torch.float,
+    dtype: torch.dtype = torch.float,
 ) -> PotentialWrapper:
     module = RepulsionXTB(
         symbols=symbols,
@@ -122,6 +124,8 @@ def StandaloneRepulsionXTB(
         dtype=dtype,
     )
     # TODO: cast currently needed due to neighborlist being stateful
+    if not dtype.is_floating_point:
+        raise ValueError("dtype must be a floating point dtype")
     return PotentialWrapper(
         potential=module,
         neighborlist=neighborlist,

@@ -7,7 +7,7 @@ from torchani.neighbors import NeighborData
 from torchani.utils import sorted_gsaes
 from torchani.potentials.core import Potential
 from torchani.potentials.wrapper import PotentialWrapper
-from torchani.annotations import Device, FloatDType
+from torchani.annotations import Device
 
 
 class EnergyAdder(Potential):
@@ -28,9 +28,11 @@ class EnergyAdder(Potential):
         symbols: tp.Sequence[str],
         self_energies: tp.Sequence[float],
         device: Device = "cpu",
-        dtype: FloatDType = torch.float,
+        dtype: torch.dtype = torch.float,
     ):
         super().__init__(symbols=symbols, cutoff=0.0, device=device)
+        if not dtype.is_floating_point:
+            raise ValueError("dtype must be a floating point dtype")
         if not len(symbols) == len(self_energies):
             raise ValueError(
                 "Chemical symbols and self energies do not match in length"
@@ -81,8 +83,10 @@ def StandaloneEnergyAdder(
     self_energies: tp.Sequence[float],
     periodic_table_index: bool = True,
     device: Device = "cpu",
-    dtype: FloatDType = torch.float,
+    dtype: torch.dtype = torch.float,
 ) -> PotentialWrapper:
+    if not dtype.is_floating_point:
+        raise ValueError("dtype must be a floating point dtype")
     module = EnergyAdder(
         symbols=symbols,
         self_energies=self_energies,
