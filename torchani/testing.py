@@ -17,7 +17,11 @@ def expand(
     device: tp.Optional[Device] = None,
     jit: tp.Optional[bool] = None,
 ):
-    _device = ("cpu", "cuda") if device is None else (device,)
+    _device = (
+        ("cpu", "cuda")
+        if device is None
+        else (device,)
+    )
     _jit = (False, True) if jit is None else (jit,)
     decorator = parameterized_class(
         ("_device", "_jit"),
@@ -48,8 +52,9 @@ class ANITest(TestCase):
     _jit: bool
 
     @property
-    def device(self) -> Device:
-        return getattr(self, "_device", "cpu")
+    def device(self) -> torch.device:
+        _device = getattr(self, "_device", "cpu")
+        return torch.device(_device)
 
     @property
     def jit(self) -> bool:
@@ -57,7 +62,9 @@ class ANITest(TestCase):
 
     @classmethod
     def setUpClass(cls):
-        if (getattr(cls, "_device", "cpu") == "cuda") and not torch.cuda.is_available():
+        if (
+            torch.device(getattr(cls, "_device", "cpu")).type == "cuda"
+        ) and not torch.cuda.is_available():
             raise unittest.SkipTest("CUDA is not available")
 
     # jit-scripting should for the most part be transparent to users, so we
