@@ -20,7 +20,7 @@ class TestDispersion(ANITest):
         units.ANGSTROM_TO_BOHR = 1 / 0.52917726
         units.HARTREE_TO_KCALPERMOL = 627.509541
 
-        self.aev_computer = self._setup(AEVComputer.like_1x().double())
+        self.aev_computer = self._setup(AEVComputer.like_1x(dtype=torch.double))
         # fully symmetric methane
         self.coordinates = torch.tensor(
             [[0, 0, 0], [0, 1, 1], [1, 0, 1], [1, 1, 0], [0.5, 0.5, 0.5]],
@@ -68,7 +68,8 @@ class TestDispersion(ANITest):
             torch.tensor(
                 [1.0052222, 1.0052222, 1.0052222, 1.0052222, 3.999873048],
                 device=self.device,
-            ).double(),
+                dtype=torch.double,
+            ),
         )
 
     def testPrecomputedC6(self):

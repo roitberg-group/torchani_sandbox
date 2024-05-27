@@ -32,7 +32,7 @@ coordinates = torch.tensor(
 species = torch.tensor([[1, 0, 0, 0, 0]], device=device)
 
 # Suppose that we want to make an aev computer in the ANI 2x style:
-aev_computer = AEVComputer.style_2x().to(device)
+aev_computer = AEVComputer.style_2x(device=device)
 species, aevs = aev_computer((species, coordinates))
 radial_length = aev_computer.radial_length
 print("AEV computer similar to 2x")
@@ -49,7 +49,7 @@ print()
 # WARNING: Be very careful, if a model has not been trained using this cutoff function
 # then using this aev computer with it will give nonsensical results
 
-aev_computer_smooth = AEVComputer.style_1x(cutoff_fn="smooth").to(device)
+aev_computer_smooth = AEVComputer.style_1x(cutoff_fn="smooth", device=device)
 radial_length = aev_computer_smooth.radial_length
 species, aevs = aev_computer_smooth((species, coordinates))
 print("AEV computer similar to 1x, but with a smooth cutoff")
@@ -76,7 +76,7 @@ class CutoffBiweight(Cutoff):
         return (cutoff**2 - distances**2) ** 2 / cutoff**4
 
 
-aev_computer_bw = AEVComputer.style_1x(cutoff_fn=CutoffBiweight()).to(device)
+aev_computer_bw = AEVComputer.style_1x(cutoff_fn=CutoffBiweight(), device=device)
 radial_length = aev_computer_bw.radial_length
 species, aevs = aev_computer_smooth((species, coordinates))
 print("AEV computer similar to 1x, but with a custom cutoff function")
@@ -146,7 +146,8 @@ aev_computer_cosdiff = AEVComputer(
     radial_terms=StandardRadial.style_1x(cutoff_fn="cosine"),
     angular_terms=AngularCosDiff(EtaA, ShfA, Gamma, ShfZ, cutoff, cutoff_fn="cosine"),
     num_species=4,
-).to(device)
+    device=device,
+)
 
 radial_length = aev_computer_cosdiff.radial_length
 species, aevs = aev_computer_cosdiff((species, coordinates))

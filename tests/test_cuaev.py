@@ -91,25 +91,18 @@ class TestCUAEVNoGPU(TestCase):
     ],
 )
 class TestCUAEV(TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.ani2x = torchani.models.ANI2x(model_index=None)
-
     def setUp(self, device="cuda:0"):
         # double precision error is within 5e-13
         self.tolerance = 5e-5 if self.dtype == torch.float32 else 5e-13
         self.device = device
-        self.aev_computer_1x = (
-            torchani.AEVComputer.style_1x(cutoff_fn=self.cutoff_fn)
-            .to(self.dtype)
-            .to(self.device)
+        self.aev_computer_1x = torchani.AEVComputer.style_1x(
+            cutoff_fn=self.cutoff_fn, device=self.device, dtype=self.dtype
         )
-        self.cuaev_computer_1x = (
-            torchani.AEVComputer.style_1x(
-                cutoff_fn=self.cutoff_fn, use_cuda_extension=True
-            )
-            .to(self.dtype)
-            .to(self.device)
+        self.cuaev_computer_1x = torchani.AEVComputer.style_1x(
+            cutoff_fn=self.cutoff_fn,
+            use_cuda_extension=True,
+            dtype=self.dtype,
+            device=self.device,
         )
         self.nn = (
             torch.nn.Sequential(torch.nn.Linear(384, 1, False))
@@ -117,28 +110,23 @@ class TestCUAEV(TestCase):
             .to(self.device)
         )
 
-        self.aev_computer_2x = (
-            torchani.AEVComputer.style_2x(cutoff_fn=self.cutoff_fn)
-            .to(self.dtype)
-            .to(self.device)
+        self.aev_computer_2x = torchani.AEVComputer.style_2x(
+            cutoff_fn=self.cutoff_fn, dtype=self.dtype, device=self.device
         )
-        self.cuaev_computer_2x = (
-            torchani.AEVComputer.style_2x(
-                cutoff_fn=self.cutoff_fn, use_cuda_extension=True
-            )
-            .to(self.dtype)
-            .to(self.device)
+        self.cuaev_computer_2x = torchani.AEVComputer.style_2x(
+            use_cuda_extension=True,
+            cutoff_fn=self.cutoff_fn,
+            dtype=self.dtype,
+            device=self.device,
         )
-        self.cuaev_computer_2x_use_interface = (
-            torchani.AEVComputer.style_2x(
-                cutoff_fn=self.cutoff_fn,
-                use_cuda_extension=True,
-                use_cuaev_interface=True,
-            )
-            .to(self.dtype)
-            .to(self.device)
+        self.cuaev_computer_2x_use_interface = torchani.AEVComputer.style_2x(
+            use_cuda_extension=True,
+            use_cuaev_interface=True,
+            cutoff_fn=self.cutoff_fn,
+            dtype=self.dtype,
+            device=self.device,
         )
-        self.ani2x = self.__class__.ani2x.to(self.dtype).to(self.device)
+        self.ani2x = torchani.models.ANI2x().to(dtype=self.dtype, device=self.device)
         self.cutoff_2x = self.cuaev_computer_2x.radial_terms.cutoff
         self.cutoff_1x = self.cuaev_computer_1x.radial_terms.cutoff
 
@@ -677,9 +665,7 @@ class TestCUAEV(TestCase):
         cu_aev.backward(torch.ones_like(cu_aev))
         cuaev_grad = coordinates.grad
         self.assertEqual(cu_aev, aev, atol=self.tolerance, rtol=self.tolerance)
-        self.assertEqual(
-            cuaev_grad, aev_grad, atol=self.tolerance, rtol=self.tolerance
-        )
+        self.assertEqual(cuaev_grad, aev_grad, atol=self.tolerance, rtol=self.tolerance)
 
     def testWithFullNbrList_nopbc(self):
         files = ["small.xyz", "1hz5.xyz", "6W8H.xyz"]
@@ -751,10 +737,8 @@ class TestCUAEV(TestCase):
             jlist,
             numneigh,
         ) = self.cuaev_computer_2x_use_interface._half_to_full_nbrlist(atom_index12)
-        cu_aev = (
-            self.cuaev_computer_2x_use_interface._compute_cuaev_with_full_nbrlist(
-                species, coordinates, ilist_unique, jlist, numneigh
-            )
+        cu_aev = self.cuaev_computer_2x_use_interface._compute_cuaev_with_full_nbrlist(
+            species, coordinates, ilist_unique, jlist, numneigh
         )
 
         cu_aev.backward(torch.ones_like(cu_aev))

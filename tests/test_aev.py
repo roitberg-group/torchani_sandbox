@@ -80,7 +80,7 @@ class TestIsolated(TestCase):
     # this can throw an IndexError for large distances or lone atoms
     def setUp(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.aev_computer = AEVComputer.like_1x().to(self.device)
+        self.aev_computer = AEVComputer.like_1x(device=self.device)
         self.symbols_to_idxs = ChemicalSymbolsToInts(["H", "C", "N", "O"])
         self.rcr = self.aev_computer.radial_terms.cutoff
         self.rca = self.aev_computer.angular_terms.cutoff
@@ -258,7 +258,7 @@ class TestAEVJIT(TestAEV):
 
 class TestPBCSeeEachOther(TestCase):
     def setUp(self):
-        self.aev_computer = AEVComputer.like_1x().to(torch.double)
+        self.aev_computer = AEVComputer.like_1x(dtype=torch.double)
         self.neighborlist = FullPairwise()
 
     def testTranslationalInvariancePBC(self):
@@ -383,7 +383,7 @@ class TestAEVOnBoundary(TestCase):
         self.pbc = torch.ones(3, dtype=torch.bool)
         self.v1, self.v2, self.v3 = self.cell
         self.center_coordinates = self.coordinates + 0.5 * (self.v1 + self.v2 + self.v3)
-        self.aev_computer = AEVComputer.like_1x().to(torch.double)
+        self.aev_computer = AEVComputer.like_1x(dtype=torch.double)
 
         _, self.aev = self.aev_computer(
             (self.species, self.center_coordinates), cell=self.cell, pbc=self.pbc

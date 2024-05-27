@@ -6,6 +6,7 @@ from torch import Tensor
 import typing_extensions as tpx
 
 from torchani.cutoffs import parse_cutoff_fn, CutoffArg
+from torchani.annotations import Device, FloatDType
 
 
 class _Term(torch.nn.Module):
@@ -57,6 +58,8 @@ class StandardRadial(RadialTerm):
         ShfR: Tensor,
         cutoff: float,
         cutoff_fn: CutoffArg = "cosine",
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ):
         super().__init__(cutoff=cutoff, cutoff_fn=cutoff_fn)
         # initialize the cutoff function
@@ -64,8 +67,8 @@ class StandardRadial(RadialTerm):
 
         # convert constant tensors to a ready-to-broadcast shape
         # shape convension (..., EtaR, ShfR)
-        self.register_buffer("EtaR", EtaR.view(-1, 1))
-        self.register_buffer("ShfR", ShfR.view(1, -1))
+        self.register_buffer("EtaR", EtaR.view(-1, 1).to(device=device, dtype=dtype))
+        self.register_buffer("ShfR", ShfR.view(1, -1).to(device=device, dtype=dtype))
         self.sublength = self.EtaR.numel() * self.ShfR.numel()
 
     def forward(self, distances: Tensor) -> Tensor:
@@ -89,6 +92,8 @@ class StandardRadial(RadialTerm):
         eta: float = 19.7,
         num_shifts: int = 16,
         cutoff_fn: CutoffArg = "cosine",
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ) -> tpx.Self:
         r"""Builds angular terms by linearly subdividing space radially up to a cutoff
 
@@ -96,8 +101,10 @@ class StandardRadial(RadialTerm):
         excluding it. This similar to the way angular and radial shifts were
         originally created for the ANI models
         """
-        ShfR = torch.linspace(start, cutoff, int(num_shifts) + 1)[:-1].to(torch.float)
-        EtaR = torch.tensor([eta], dtype=torch.float)
+        ShfR = torch.linspace(
+            start, cutoff, int(num_shifts) + 1, device=device, dtype=dtype
+        )[:-1]
+        EtaR = torch.tensor([eta], dtype=dtype, device=device)
         return cls(EtaR, ShfR, cutoff, cutoff_fn)
 
     @classmethod
@@ -108,6 +115,8 @@ class StandardRadial(RadialTerm):
         eta: float = 16.0,
         num_shifts: int = 16,
         cutoff_fn: CutoffArg = "cosine",
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ) -> tpx.Self:
         return cls.cover_linearly(
             start=start,
@@ -125,6 +134,8 @@ class StandardRadial(RadialTerm):
         eta: float = 19.7,
         num_shifts: int = 16,
         cutoff_fn: CutoffArg = "cosine",
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ) -> tpx.Self:
         return cls.cover_linearly(
             start=start,
@@ -135,9 +146,13 @@ class StandardRadial(RadialTerm):
         )
 
     @classmethod
-    def like_1x(cls) -> tpx.Self:
+    def like_1x(
+        cls,
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
+    ) -> tpx.Self:
         return cls(
-            EtaR=torch.tensor([16.0], dtype=torch.float),
+            EtaR=torch.tensor([16.0], dtype=dtype, device=device),
             ShfR=torch.tensor(
                 [
                     0.9,
@@ -157,20 +172,29 @@ class StandardRadial(RadialTerm):
                     4.6625000,
                     4.9312500,
                 ],
-                dtype=torch.float,
+                dtype=dtype,
+                device=device,
             ),
             cutoff=5.2,
             cutoff_fn="cosine",
         )
 
     @classmethod
-    def like_1ccx(cls) -> tpx.Self:
-        return cls.like_1x()
+    def like_1ccx(
+        cls,
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
+    ) -> tpx.Self:
+        return cls.like_1x(device=device, dtype=dtype)
 
     @classmethod
-    def like_2x(cls) -> tpx.Self:
+    def like_2x(
+        cls,
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
+    ) -> tpx.Self:
         return cls(
-            EtaR=torch.tensor([19.7], dtype=torch.float),
+            EtaR=torch.tensor([19.7], dtype=dtype, device=device),
             ShfR=torch.tensor(
                 [
                     0.8,
@@ -190,7 +214,8 @@ class StandardRadial(RadialTerm):
                     4.5625000,
                     4.8312500,
                 ],
-                dtype=torch.float,
+                dtype=dtype,
+                device=device,
             ),
             cutoff=5.1,
             cutoff_fn="cosine",
@@ -223,14 +248,24 @@ class StandardAngular(AngularTerm):
         ShfZ: Tensor,
         cutoff: float,
         cutoff_fn: CutoffArg = "cosine",
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ):
         super().__init__(cutoff=cutoff, cutoff_fn=cutoff_fn)
         # convert constant tensors to a ready-to-broadcast shape
         # shape convension (..., EtaA, Zeta, ShfA, ShfZ)
-        self.register_buffer("EtaA", EtaA.view(-1, 1, 1, 1))
-        self.register_buffer("Zeta", Zeta.view(1, -1, 1, 1))
-        self.register_buffer("ShfA", ShfA.view(1, 1, -1, 1))
-        self.register_buffer("ShfZ", ShfZ.view(1, 1, 1, -1))
+        self.register_buffer(
+            "EtaA", EtaA.view(-1, 1, 1, 1).to(device=device, dtype=dtype)
+        )
+        self.register_buffer(
+            "Zeta", Zeta.view(1, -1, 1, 1).to(device=device, dtype=dtype)
+        )
+        self.register_buffer(
+            "ShfA", ShfA.view(1, 1, -1, 1).to(device=device, dtype=dtype)
+        )
+        self.register_buffer(
+            "ShfZ", ShfZ.view(1, 1, 1, -1).to(device=device, dtype=dtype)
+        )
         self.sublength = (
             self.EtaA.numel()
             * self.Zeta.numel()
@@ -270,6 +305,8 @@ class StandardAngular(AngularTerm):
         num_shifts: int = 8,
         num_angle_sections: int = 4,
         cutoff_fn: CutoffArg = "cosine",
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ) -> tpx.Self:
         r"""Builds angular terms by linearly subdividing space in the angular
         dimension and in the radial one up to a cutoff
@@ -279,13 +316,18 @@ class StandardAngular(AngularTerm):
         This is the way angular and radial shifts were originally created in
         ANI.
         """
-        EtaA = torch.tensor([eta], dtype=torch.float)
-        ShfA = torch.linspace(start, cutoff, int(num_shifts) + 1)[:-1].to(torch.float)
-        Zeta = torch.tensor([zeta], dtype=torch.float)
+        EtaA = torch.tensor([eta], dtype=dtype, device=device)
+        ShfA = torch.linspace(
+            start, cutoff, int(num_shifts) + 1, dtype=dtype, device=device
+        )[:-1]
+        Zeta = torch.tensor([zeta], dtype=dtype, device=device)
         angle_start = math.pi / (2 * int(num_angle_sections))
-        ShfZ = (torch.linspace(0, math.pi, int(num_angle_sections) + 1) + angle_start)[
-            :-1
-        ].to(torch.float)
+        ShfZ = (
+            torch.linspace(
+                0, math.pi, int(num_angle_sections) + 1, dtype=dtype, device=device
+            )
+            + angle_start
+        )[:-1]
         return cls(EtaA, Zeta, ShfA, ShfZ, cutoff, cutoff_fn)
 
     @classmethod
@@ -298,6 +340,8 @@ class StandardAngular(AngularTerm):
         num_shifts: int = 4,
         num_angle_sections: int = 8,
         cutoff_fn: CutoffArg = "cosine",
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ) -> tpx.Self:
         return cls.cover_linearly(
             start=start,
@@ -307,6 +351,8 @@ class StandardAngular(AngularTerm):
             num_shifts=num_shifts,
             num_angle_sections=num_angle_sections,
             cutoff_fn=cutoff_fn,
+            device=device,
+            dtype=dtype,
         )
 
     @classmethod
@@ -319,6 +365,8 @@ class StandardAngular(AngularTerm):
         num_shifts: int = 8,
         num_angle_sections: int = 4,
         cutoff_fn: CutoffArg = "cosine",
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
     ) -> tpx.Self:
         return cls.cover_linearly(
             start=start,
@@ -328,13 +376,19 @@ class StandardAngular(AngularTerm):
             num_shifts=num_shifts,
             num_angle_sections=num_angle_sections,
             cutoff_fn=cutoff_fn,
+            device=device,
+            dtype=dtype,
         )
 
     @classmethod
-    def like_1x(cls) -> tpx.Self:
+    def like_1x(
+        cls,
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
+    ) -> tpx.Self:
         return cls(
-            EtaA=torch.tensor([8.0], dtype=torch.float),
-            Zeta=torch.tensor([32.0], dtype=torch.float),
+            EtaA=torch.tensor([8.0], dtype=dtype, device=device),
+            Zeta=torch.tensor([32.0], dtype=dtype, device=device),
             ShfA=torch.tensor(
                 [
                     0.9,
@@ -342,7 +396,8 @@ class StandardAngular(AngularTerm):
                     2.2000000,
                     2.8500000,
                 ],
-                dtype=torch.float,
+                dtype=dtype,
+                device=device,
             ),
             ShfZ=torch.tensor(
                 [
@@ -355,21 +410,30 @@ class StandardAngular(AngularTerm):
                     2.5525440,
                     2.9452431,
                 ],
-                dtype=torch.float,
+                dtype=dtype,
+                device=device,
             ),
             cutoff=3.5,
             cutoff_fn="cosine",
         )
 
     @classmethod
-    def like_1ccx(cls) -> tpx.Self:
-        return cls.like_1x()
+    def like_1ccx(
+        cls,
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
+    ) -> tpx.Self:
+        return cls.like_1x(device=device, dtype=dtype)
 
     @classmethod
-    def like_2x(cls) -> tpx.Self:
+    def like_2x(
+        cls,
+        device: Device = "cpu",
+        dtype: FloatDType = torch.float,
+    ) -> tpx.Self:
         return cls(
-            EtaA=torch.tensor([12.5], dtype=torch.float),
-            Zeta=torch.tensor([14.1], dtype=torch.float),
+            EtaA=torch.tensor([12.5], dtype=dtype, device=device),
+            Zeta=torch.tensor([14.1], dtype=dtype, device=device),
             ShfA=torch.tensor(
                 [
                     0.8,
@@ -381,7 +445,8 @@ class StandardAngular(AngularTerm):
                     2.8250000,
                     3.1625000,
                 ],
-                dtype=torch.float,
+                dtype=dtype,
+                device=device,
             ),
             ShfZ=torch.tensor(
                 [
@@ -390,7 +455,8 @@ class StandardAngular(AngularTerm):
                     1.9634954,
                     2.7488936,
                 ],
-                dtype=torch.float,
+                dtype=dtype,
+                device=device,
             ),
             cutoff=3.5,
             cutoff_fn="cosine",
@@ -402,25 +468,37 @@ AngularTermArg = tp.Union[_Models, AngularTerm]
 RadialTermArg = tp.Union[_Models, RadialTerm]
 
 
-def parse_angular_term(angular_term: AngularTermArg) -> AngularTerm:
+def parse_angular_term(
+    angular_term: AngularTermArg,
+    device: Device = "cpu",
+    dtype: FloatDType = torch.float,
+) -> AngularTerm:
     if angular_term == "ani1x":
-        angular_term = StandardAngular.like_1x()
+        angular_term = StandardAngular.like_1x(device=device, dtype=dtype)
     elif angular_term == "ani2x":
-        angular_term = StandardAngular.like_2x()
+        angular_term = StandardAngular.like_2x(device=device, dtype=dtype)
     elif angular_term == "ani1ccx":
-        angular_term = StandardAngular.like_1ccx()
-    elif not isinstance(angular_term, AngularTerm):
-        raise ValueError(f"Unsupported angular term: {angular_term}")
+        angular_term = StandardAngular.like_1ccx(device=device, dtype=dtype)
+    else:
+        if not isinstance(angular_term, AngularTerm):
+            raise ValueError(f"Unsupported angular term: {angular_term}")
+        angular_term = angular_term.to(device=device, dtype=dtype)
     return tp.cast(AngularTerm, angular_term)
 
 
-def parse_radial_term(radial_term: RadialTermArg) -> RadialTerm:
+def parse_radial_term(
+    radial_term: RadialTermArg,
+    device: Device = "cpu",
+    dtype: FloatDType = torch.float,
+) -> RadialTerm:
     if radial_term == "ani1x":
-        radial_term = StandardRadial.like_1x()
+        radial_term = StandardRadial.like_1x(device=device, dtype=dtype)
     elif radial_term == "ani2x":
-        radial_term = StandardRadial.like_2x()
+        radial_term = StandardRadial.like_2x(device=device, dtype=dtype)
     elif radial_term == "ani1ccx":
-        radial_term = StandardRadial.like_1ccx()
-    elif not isinstance(radial_term, RadialTerm):
-        raise ValueError(f"Unsupported radial term: {radial_term}")
+        radial_term = StandardRadial.like_1ccx(device=device, dtype=dtype)
+    else:
+        if not isinstance(radial_term, RadialTerm):
+            raise ValueError(f"Unsupported radial term: {radial_term}")
+        radial_term = radial_term.to(device=device, dtype=dtype)
     return tp.cast(RadialTerm, radial_term)
