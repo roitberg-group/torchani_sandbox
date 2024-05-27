@@ -42,6 +42,7 @@ from torchani import (
     models,
     units,
     datasets,
+    annotations,
     transforms,
     cli,
     geometry,
@@ -63,12 +64,8 @@ except PackageNotFoundError:
     pass  # package is not installed
 
 __all__ = [
-    'AEVComputer',
-    'EnergyShifter',
-    'ANIModel',
-    'Ensemble',
+    "annotations",
     'grad',
-    'SpeciesConverter',
     'utils',
     'models',
     'units',
@@ -86,6 +83,11 @@ __all__ = [
     "infer",
     "constants",
     'data',  # TODO: Get rid of this
+    'AEVComputer',
+    'EnergyShifter',
+    'ANIModel',
+    'Ensemble',
+    'SpeciesConverter',
 ]
 
 # TF32 catastrophically degrades accuracy so we disable it

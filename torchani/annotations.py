@@ -3,6 +3,7 @@ import typing as tp
 from pathlib import Path
 
 import numpy as np
+import torch
 from torch import Tensor
 from numpy.typing import NDArray
 
@@ -18,3 +19,5 @@ MixedConformers = tp.MutableMapping[str, tp.Union[Tensor, NumberOrStrArray]]
 # mimic typeshed
 StrPath = tp.Union[str, Path]
 StrPathODict = tp.Union[tp.OrderedDict[str, str], tp.OrderedDict[str, Path]]
+
+Device = tp.Union[torch.device, tp.Literal["cuda", "cpu"]]

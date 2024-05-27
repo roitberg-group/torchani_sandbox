@@ -15,7 +15,7 @@ from tqdm import tqdm
 from torchani.utils import pad_atomic_properties, cumsum_from_zero, PADDING
 from torchani.datasets.datasets import ANIDataset
 from torchani.transforms import Transform, Identity
-from torchani.datasets._annotations import Conformers, StrPath
+from torchani.annotations import Conformers, StrPath
 
 
 class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):

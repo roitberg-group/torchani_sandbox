@@ -29,7 +29,7 @@ from torchani.datasets.backends import (
     _ConformerWrapper,
     _SUFFIXES,
 )
-from torchani.datasets._annotations import (
+from torchani.annotations import (
     Conformers,
     NumpyConformers,
     MixedConformers,
