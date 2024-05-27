@@ -53,8 +53,8 @@ class Neighborlist(torch.nn.Module):
         # no effects on forces or energies
 
         # add an epsilon to pad due to floating point precision
-        min_ = torch.min(coordinates.view(-1, 3), dim=0)[0] - eps
-        max_ = torch.max(coordinates.view(-1, 3), dim=0)[0] + eps
+        min_ = torch.min(coordinates.view(-1, 3), dim=0).values - eps
+        max_ = torch.max(coordinates.view(-1, 3), dim=0).values + eps
         largest_dist = max_ - min_
         coordinates = coordinates - min_
         cell = self.default_cell * largest_dist
