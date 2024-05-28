@@ -547,10 +547,9 @@ class CellList(Neighborlist):
         cell: Tensor,  # shape (3, 3)
         pbc: Tensor,  # shape (3,)
     ) -> tp.Tuple[Tensor, tp.Optional[Tensor]]:
-        # 2) Given fractional coords we calculate each atom's location
-        # in the 3D grid that spans the cell. This location is given
-        # by a by a grid_idx3 "g3", and by a single flat grid_idx "g"
-
+        # 1) Calculate the location of each atom i the 3D grid that spans the
+        # cell. This location is given by a by a grid_idx3 "g3", and by a
+        # single flat grid_idx "g"
         # shapes (C, A, 3) and (C, A) for g3[a] and g[a]
         atom_grid_idx3 = coords_to_grid_idx3(coordinates, cell, self.grid_shape)
         atom_grid_idx = flatten_grid_idx3(atom_grid_idx3, self.grid_shape)
@@ -932,7 +931,7 @@ def count_atoms_in_grid(
     grid_numel: int,
 ) -> tp.Tuple[Tensor, Tensor]:
     # NOTE: count in flat bucket: 3 0 0 0 ... 2 0 0 0 ... 1 0 1 0 ...,
-    # shape is total buckets F cumulative buckets count has the number of
+    # shape is total grid elements G. grid_cumcount has the number of
     # atoms BEFORE a given bucket cumulative buckets count: 0 3 3 3 ... 3 5
     # 5 5 ... 5 6 6 7 ...
     atom_grid_idx = atom_grid_idx.view(-1)  # shape (A,), get rid of C
