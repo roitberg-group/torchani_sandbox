@@ -11,7 +11,7 @@ from torchani.neighbors import (
     coords_to_fractional,
     coords_to_grid_idx3,
     flatten_grid_idx3,
-    image_pairs_inside_buckets,
+    image_pairs_within,
     count_atoms_in_buckets,
 )
 from torchani.geometry import tile_into_tight_cell
@@ -49,7 +49,7 @@ class TestCellList(TestCase):
 
     def testInitDefault(self):
         self.assertTrue(self.clist.buckets_per_cutoff == 1)
-        self.assertTrue(self.clist.num_neighbors == 13)
+        self.assertTrue(self.clist.surround_offset_idx3.shape == (13, 3))
 
     def testSetupCell(self):
         clist = self.clist
@@ -133,7 +133,7 @@ class TestCellList(TestCase):
         # these are all 0 2 4 6 ...
         self.assertEqual(grid_cumcount, torch.arange(0, 54, 2))
 
-    def testImagePairsInsideCentralBuckets(self):
+    def testImagePairsWithinBuckets(self):
         clist = self.clist
         clist._setup_variables(self.cell, self.cutoff)
         atom_grid_idx3 = coords_to_grid_idx3(
@@ -143,15 +143,15 @@ class TestCellList(TestCase):
         grid_count, grid_cumcount = count_atoms_in_buckets(
             atom_grid_idx, clist.grid_numel
         )
-        inside = image_pairs_inside_buckets(
+        within = image_pairs_within(
             grid_count,
             grid_cumcount,
             int(grid_count.max()),
         )
         # some hand comparisons
-        self.assertEqual(inside.shape, (2, 27))
-        self.assertEqual(inside[0], torch.arange(1, 55, 2))
-        self.assertEqual(inside[1], torch.arange(0, 54, 2))
+        self.assertEqual(within.shape, (2, 27))
+        self.assertEqual(within[0], torch.arange(1, 55, 2))
+        self.assertEqual(within[1], torch.arange(0, 54, 2))
 
     def testCellListInit(self):
         AEVComputer.like_1x(neighborlist="cell_list")
