@@ -547,25 +547,13 @@ class CellList(Neighborlist):
         cell: Tensor,  # shape (3, 3)
         pbc: Tensor,  # shape (3,)
     ) -> tp.Tuple[Tensor, tp.Optional[Tensor]]:
-        # 1) Fractionalize coordinates. All coordinates will be relative to the
-        # cell lengths after this step, which means they lie in the range [0., 1.)
-        fractionals = fractionalize_coords(coordinates, cell)  # shape (C, A, 3)
-
         # 2) Given fractional coords we calculate each atom's location
         # in the 3D grid that spans the cell. This location is given
         # by a by a grid_idx3 "g3", and by a single flat grid_idx "g"
 
         # shapes (C, A, 3) and (C, A) for g3[a] and g[a]
-        atom_grid_idx3 = fractional_coords_to_grid_idx3(fractionals, self.grid_shape)
+        atom_grid_idx3 = coords_to_grid_idx3(coordinates, cell, self.grid_shape)
         atom_grid_idx = flatten_grid_idx3(atom_grid_idx3, self.grid_shape)
-
-        # 3) get image_indices -> atom_indices and inverse mapping
-        # NOTE: there is not necessarily a requirement to do this here
-        # NOTE: watch out, since sorting is not stable this may scramble the atoms
-        # in the same box, so that the atidx you get after applying
-        # atidx_from_imidx[something] will not be the correct order
-        # since what we want is the pairs this is fine, pairs are agnostic to
-        # species.
 
         # FIRST WE WANT "WITHIN" IMAGE PAIRS
         # 1) Calculate:
@@ -612,6 +600,11 @@ class CellList(Neighborlist):
             grid_count_max,
         )
 
+        # NOTE: watch out, since sorting is not stable this may scramble the atoms
+        # in the same box, so that the atidx you get after applying
+        # atidx_from_imidx[something] will not be the correct order
+        # since what we want is the pairs this is fine, pairs are agnostic to
+        # species.
         # shapes (A,) and (A,) for i[a] and a[i]
         atom_to_image, image_to_atom = atom_image_converters(atom_grid_idx)
 
@@ -868,6 +861,22 @@ class CellList(Neighborlist):
         return bool(need_new_list)
 
 
+def coords_to_grid_idx3(
+    coordinates: Tensor,
+    cell: Tensor,
+    grid_shape: Tensor,
+) -> Tensor:
+    # Transforms a tensor of coordinates (shape (C, A, 3))
+    # into a tensor of grid_idx3 (same shape, (C, A, 3))
+    #
+    # 1) Fractionalize coordinates. All coordinates will be relative to the
+    # cell lengths after this step, which means they lie in the range [0., 1.)
+    fractionals = fractionalize_coords(coordinates, cell)  # shape (C, A, 3)
+    # 2) assign to each fractional the corresponding grid_idx3
+    grid_idx3 = torch.floor(fractionals * grid_shape.view(1, 1, -1)).to(torch.long)
+    return grid_idx3
+
+
 def fractionalize_coords(coordinates: Tensor, cell: Tensor) -> Tensor:
     # Scale coordinates to box size
     #
@@ -875,20 +884,14 @@ def fractionalize_coords(coordinates: Tensor, cell: Tensor) -> Tensor:
     # instance that if the coordinate is 3.15 times the cell length, it is
     # turned into 3.15; if it is 0.15 times the cell length, it is turned
     # into 0.15, etc
-    fractional_coordinates = torch.matmul(coordinates, cell.inverse())
+    fractional_coords = torch.matmul(coordinates, cell.inverse())
     # this is done to account for possible coordinates outside the box,
     # which amber does, in order to calculate diffusion coefficients, etc
-    fractional_coordinates -= fractional_coordinates.floor()
+    fractional_coords -= fractional_coords.floor()
     # fractional_coordinates should be in the range [0, 1.0)
-    fractional_coordinates[fractional_coordinates >= 1.0] += -1.0
-    fractional_coordinates[fractional_coordinates < 0.0] += 1.0
-    return fractional_coordinates
-
-
-def fractional_coords_to_grid_idx3(fractionals: Tensor, grid_shape: Tensor) -> Tensor:
-    # Transforms a tensor of fractional coordinates (shape (C, A, 3))
-    # into a tensor of grid_idx3 (same shape, (C, A, 3))
-    return torch.floor(fractionals * grid_shape.view(1, 1, -1)).to(torch.long)
+    fractional_coords[fractional_coords >= 1.0] += -1.0
+    fractional_coords[fractional_coords < 0.0] += 1.0
+    return fractional_coords
 
 
 def flatten_grid_idx3(grid_idx3: Tensor, grid_shape: Tensor) -> Tensor:

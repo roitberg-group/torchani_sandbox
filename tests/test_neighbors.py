@@ -10,7 +10,7 @@ from torchani.neighbors import (
     CellList,
     fractionalize_coords,
     flatten_grid_idx3,
-    fractional_coords_to_grid_idx3,
+    coords_to_grid_idx3,
     image_pairs_within_grid_elements,
     count_atoms_in_grid,
 )
@@ -87,8 +87,9 @@ class TestCellList(TestCase):
     def testGridIdx3(self):
         clist = self.clist
         clist._setup_variables(self.cell, self.cutoff)
-        frac = fractionalize_coords(self.coordinates, self.cell)
-        atom_grid_idx3 = fractional_coords_to_grid_idx3(frac, clist.grid_shape)
+        atom_grid_idx3 = coords_to_grid_idx3(
+            self.coordinates, self.cell, clist.grid_shape
+        )
         self.assertTrue(atom_grid_idx3.shape == (1, 54, 3))
         self.assertEqual(atom_grid_idx3, atom_grid_idx3_expect)
 
@@ -133,8 +134,9 @@ class TestCellList(TestCase):
     def testWithinBetween(self):
         clist = self.clist
         clist._setup_variables(self.cell, self.cutoff)
-        frac = fractionalize_coords(self.coordinates, self.cell)
-        atom_grid_idx3 = fractional_coords_to_grid_idx3(frac, clist.grid_shape)
+        atom_grid_idx3 = coords_to_grid_idx3(
+            self.coordinates, self.cell, clist.grid_shape
+        )
         atom_grid_idx = flatten_grid_idx3(atom_grid_idx3, clist.grid_shape)
         grid_count, grid_cumcount = count_atoms_in_grid(atom_grid_idx, clist.grid_numel)
         within = image_pairs_within_grid_elements(
@@ -181,9 +183,9 @@ class TestCellList(TestCase):
         ]
         for coordinates in batch:
             self._check_neighborlists_match(
-                torch.tensor(
-                    coordinates, dtype=torch.float, device=self.device
-                ).view(1, -1, 3)
+                torch.tensor(coordinates, dtype=torch.float, device=self.device).view(
+                    1, -1, 3
+                )
             )
         self._check_neighborlists_match(self.coordinates)
 
