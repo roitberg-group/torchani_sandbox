@@ -316,9 +316,9 @@ class CellList(Neighborlist):
     cell_diagonal: Tensor
     grid_shape: Tensor
     vector_idx_to_flat: Tensor
-    translation_cases: Tensor
-    vector_idx_displacement: Tensor
-    translation_displacement_indices: Tensor
+    wrap_kind_from_idx3: Tensor
+    surround_offset_idx3: Tensor
+    wrap_offset_idx3: Tensor
     bucket_length_lower_bound: Tensor
     spherical_factor: Tensor
 
@@ -351,15 +351,15 @@ class CellList(Neighborlist):
             "vector_idx_to_flat", torch.zeros(1, dtype=torch.long), persistent=False
         )
         self.register_buffer(
-            "translation_cases", torch.zeros(1, dtype=torch.long), persistent=False
+            "wrap_kind_from_idx3", torch.zeros(1, dtype=torch.long), persistent=False
         )
         self.register_buffer(
-            "vector_idx_displacement",
+            "surround_offset_idx3",
             torch.zeros(1, dtype=torch.long),
             persistent=False,
         )
         self.register_buffer(
-            "translation_displacement_indices",
+            "wrap_offset_idx3",
             torch.zeros(1, dtype=torch.long),
             persistent=False,
         )
@@ -381,32 +381,38 @@ class CellList(Neighborlist):
         )
         self.register_buffer("old_coordinates", torch.zeros(1), persistent=False)
 
-        # buckets_per_cutoff is also the number of buckets that is scanned in
-        # each direction. It determines how fine grained the grid is, with
-        # respect to the cutoff. This is 2 for amber, but 1 is useful for debug
+        # "buckets_per_cutoff" determines how fine grained the 3D grid is, with respect
+        # to the distance cutoff. This is 2 for amber, but 1 for torchani.
         self.buckets_per_cutoff = buckets_per_cutoff
-        # Here I get the vector index displacements for the neighbors of an
-        # arbitrary vector index I think these are enough (this is different
-        # from pmemd)
-        # I choose all the displacements except for the zero
-        # displacement that does nothing, which is the last one
-        # hand written order ("right-to-left, top-to-bottom")
-        # The selected grid elements in the planes are:
+
+        # Get the grid_idx3 offsets for the surrounding buckets of an
+        # arbitrary bucket (TODO: this is different from pmemd, check why!)
+        #
+        # In order to avoid double counting, consider only half of the
+        # surrounding buckets.
+        #
+        # Choose all buckets in the bottom plane, and the lower half
+        # half of the buckets in the same plane of a given bucket
+        # (not sure if other choices are possible).
+        #
+        # 0-offset is not included
+        #
+        # Order is "right-to-left, top-to-bottom"
+        #
+        # The selected buckets in the planes are:
         # ("x" selected elements, "-" non-selected and "o" reference element)
         # top,   same,  bottom,
         # |---|  |---|  |xxx|
         # |---|  |xo-|  |xxx|
         # |---|  |xxx|  |xxx|
 
-        # NOTE: "0" corresponds to [0, 0, 0], but I don't really need that for
-        # vector indices only for translation displacements
         grid_idx3_offsets = [
-            # Neighbor grid elements in the same plane (gz = 0)
+            # Surrounding buckets in the same plane (gz-offset = 0)
             [-1, 0, 0],  # 1
             [-1, -1, 0],  # 2
             [0, -1, 0],  # 3
             [1, -1, 0],  # 4
-            # Neighbor grid elements in bottom plane (gz = -1)
+            # Surrounding buckets in bottom plane (gz-offset = -1)
             [-1, 1, -1],  # 5
             [0, 1, -1],  # 6
             [1, 1, -1],  # 7
@@ -417,14 +423,13 @@ class CellList(Neighborlist):
             [0, -1, -1],  # 12
             [1, -1, -1],  # 13
         ]
-        self.vector_idx_displacement = torch.tensor(grid_idx3_offsets, dtype=torch.long)
-        # These are the translation displacement indices, used to displace the
-        # image atoms
-        assert self.vector_idx_displacement.shape == (13, 3)
+        # These are used to get the surrounding buckets
+        # shape (neighbors=13, 3)
+        self.surround_offset_idx3 = torch.tensor(grid_idx3_offsets, dtype=torch.long)
 
-        # The translation displacements need all possible displacements in the
-        # same plane, so I add the missing ones here (these ones don't exist
-        # inside the grid elements)
+        # In the case of the wrap-offsets, we may need to displace atoms in all
+        # directions in the "same plane", so we have to add the extra displacements
+        # (We still don't need to displace in the top plane)
         grid_idx3_offsets.insert(0, [0, 0, 0])  # 0
         grid_idx3_offsets.extend(
             [
@@ -434,15 +439,10 @@ class CellList(Neighborlist):
                 [1, 0, 0],  # 17
             ],
         )
-        self.translation_displacement_indices = torch.tensor(
-            grid_idx3_offsets, dtype=torch.long
-        )
-        assert self.translation_displacement_indices.shape == (18, 3)
-        # This is 26 for 2 buckets and 18 for 1 bucket
-        # This is necessary for the image - atom map and atom - image map
-        self.num_neighbors = len(self.vector_idx_displacement)
+        # shape (wraps=18, 3)
+        self.wrap_offset_idx3 = torch.tensor(grid_idx3_offsets, dtype=torch.long)
 
-        # variables are not set until we have received a cell at least once
+        # These variables are not set until we have received a cell at least once
         self.last_cutoff = -1.0
         self.cell_variables_are_set = False
         self.old_values_are_cached = False
@@ -452,11 +452,9 @@ class CellList(Neighborlist):
         # for cell list
         self.grid_shape = self.grid_shape.to(dtype=torch.long)
         self.vector_idx_to_flat = self.vector_idx_to_flat.to(dtype=torch.long)
-        self.translation_cases = self.translation_cases.to(dtype=torch.long)
-        self.vector_idx_displacement = self.vector_idx_displacement.to(dtype=torch.long)
-        self.translation_displacement_indices = (
-            self.translation_displacement_indices.to(dtype=torch.long)
-        )
+        self.wrap_kind_from_idx3 = self.wrap_kind_from_idx3.to(dtype=torch.long)
+        self.surround_offset_idx3 = self.surround_offset_idx3.to(dtype=torch.long)
+        self.wrap_offset_idx3 = self.wrap_offset_idx3.to(dtype=torch.long)
 
     def forward(
         self,
@@ -556,7 +554,7 @@ class CellList(Neighborlist):
         atom_grid_idx3 = coords_to_grid_idx3(coordinates, cell, self.grid_shape)
         atom_grid_idx = flatten_grid_idx3(atom_grid_idx3, self.grid_shape)
 
-        # 2) Get image pairs of atoms INSIDE each bucket
+        # 2) Get image pairs of atoms WITHIN atoms inside a bucket
         # To do this, first calculate:
         # - Num atoms in each bucket "count_in_grid[g]", and the max, (c-max)
         # - Cumulative num atoms *before* each bucket "comcount_in_grid[g]"
@@ -565,88 +563,73 @@ class CellList(Neighborlist):
             atom_grid_idx, self.grid_numel
         )
         count_in_grid_max: int = int(count_in_grid.max())
-        # Shape (2, I)
-        _image_pairs_inside_buckets = image_pairs_inside_buckets(
+        # Shape (2, W)
+        _image_pairs_within = image_pairs_within(
             count_in_grid,
             cumcount_in_grid,
             count_in_grid_max,
         )
 
-        # Now get image pairs BETWEEN atoms inside a bucket and its surrounding buckets
-
-        # 3) Get grid_idx3 of the surrounding buckets of each atom
+        # 3) Get image pairs BETWEEN atoms inside a bucket and its surrounding buckets
+        # To do this, first get a grid_idx3 of the surrounding buckets of each atom
         # roughly: "grid_idx3[a, n, 3]" and "grid_idx[a, n]"
-        # shapes (C, A, N, 3) and (C, A, N)
+        # shapes (C, A, N, 3) and (C, A, N) (N=13 for 1-bucket-per-cutoff)
         atom_surround_idx3, atom_surround_idx = self._get_surround_idxs(atom_grid_idx3)
 
-        # 4) Upper and lower part of the external pairlist this is the
-        # correct "unpadded" upper
-        # part of the pairlist it repeats each image
-        # idx a number of times equal to the number of atoms on the
-        # neighborhood of each atom
+        # 4) Calc upper and lower part of the image_pairs_between.
+        # The "unpadded" upper part of the pairlist repeats each image idx a
+        # number of times equal to the number of atoms on the surroundings of
+        # each atom
 
-        # neighborhood count is A{n} (a), the number of atoms on the
-        # neighborhood (all the neighbor buckets) of each atom,
-        # A{n} (a) has shape 1 x A
-        # neighbor_translation_types
-        # has the type of shift for T(a, n), atom a,
-        # neighbor bucket n
+        # All 3 shapes are (C, A, N)
         count_in_atom_surround = count_in_grid[atom_surround_idx]
         cumcount_in_atom_surround = cumcount_in_grid[atom_surround_idx]
-        neighbor_translation_types = self._get_neighbor_translation_types(
-            atom_surround_idx3
-        )
-        lower, between_pairs_translation_types = self._lower_between_image_pairs(
+        atom_surround_wrap_kind = self._wrap_kind_from_surround_idx3(atom_surround_idx3)
+
+        # Both shapes are (B,)
+        lower_between, wrap_kind_between = self._lower_image_pairs_between(
             count_in_atom_surround,
             cumcount_in_atom_surround,
-            neighbor_translation_types,
+            atom_surround_wrap_kind,
             count_in_grid_max,
         )
 
-        # NOTE: watch out, since sorting is not stable this may scramble the atoms
-        # in the same box, so that the atidx you get after applying
-        # atidx_from_imidx[something] will not be the correct order
-        # since what we want is the pairs this is fine, pairs are agnostic to
-        # species.
-        # shapes (A,) and (A,) for i[a] and a[i]
+        # Both shapes (A,) for i[a] and a[i]
         atom_to_image, image_to_atom = atom_image_converters(atom_grid_idx)
 
-        neighborhood_count = count_in_atom_surround.sum(-1).squeeze()
-        upper = torch.repeat_interleave(atom_to_image, neighborhood_count)
-        assert lower.shape == upper.shape
-        _image_pairs_between_buckets = torch.stack((upper, lower), dim=0)
+        # Total count of all atoms in buckets surrounding a given atom.
+        # shape (C, A, N) -> (C, A) -> (C*A,) (get rid of C with view)
+        total_count_in_atom_surround = count_in_atom_surround.sum(-1).view(-1)
 
+        # shape (B,)
+        upper = torch.repeat_interleave(atom_to_image, total_count_in_atom_surround)
+        # shape (2, B)
+        _image_pairs_between = torch.stack((upper, lower_between), dim=0)
+
+        # 5) Get the necessary shifts. If no PBC is needed also get rid of the
+        # image_pairs_between that need wrapping
         if not pbc.any():
-            # select only the pairs that don't need any translation
-            non_pbc_pairs = (between_pairs_translation_types == 0).nonzero().flatten()
-            _image_pairs_between_buckets = _image_pairs_between_buckets.index_select(
-                1, non_pbc_pairs
+            _image_pairs_between = _image_pairs_between.index_select(
+                1, (wrap_kind_between == 0).view(-1).nonzero().view(-1)
             )
-            shift_indices = None
+            shift_idxs = None
         else:
-            between_pairs_shift_indices = (
-                self.translation_displacement_indices.index_select(
-                    0, between_pairs_translation_types
-                )
+            shift_idxs_between = self.wrap_offset_idx3.index_select(
+                0, wrap_kind_between
             )
-            assert between_pairs_shift_indices.shape[-1] == 3
-            within_pairs_shift_indices = torch.zeros(
-                len(_image_pairs_inside_buckets[0]),
+            shift_idxs_within = torch.zeros(
+                _image_pairs_within.shape[1],
                 3,
-                device=between_pairs_shift_indices.device,
+                device=cell.device,
                 dtype=torch.long,
             )
-            # -1 is necessary to ensure correct shifts
-            shift_indices = -torch.cat(
-                (between_pairs_shift_indices, within_pairs_shift_indices), dim=0
-            )
+            # -1 is necessary here (?!)
+            shift_idxs = torch.cat((-shift_idxs_between, shift_idxs_within), dim=0)
 
-        # Concatenate 'INSIDE' and 'BETWEEN' image pairs
-        image_pairs = torch.cat(
-            (_image_pairs_between_buckets, _image_pairs_inside_buckets), dim=1
-        )
+        # 6) Concatenate all image pairs, and convert to atom pairs
+        image_pairs = torch.cat((_image_pairs_between, _image_pairs_within), dim=1)
         atom_pairs = image_to_atom[image_pairs]
-        return atom_pairs, shift_indices
+        return atom_pairs, shift_idxs
 
     def _setup_variables(self, cell: Tensor, cutoff: float, extra_space: float = 1e-5):
         device = cell.device
@@ -701,29 +684,29 @@ class CellList(Neighborlist):
 
         # 5) I now create a tensor that when indexed with vector indices
         # gives the shifting case for that atom/neighbor bucket
-        self.translation_cases = torch.zeros_like(self.vector_idx_to_flat)
+        self.wrap_kind_from_idx3 = torch.zeros_like(self.vector_idx_to_flat)
         # now I need to  fill the vector
         # in some smart way
         # this should fill the tensor in a smart way
 
-        self.translation_cases[0, 1:-1, 1:-1] = 1
-        self.translation_cases[0, 0, 1:-1] = 2
-        self.translation_cases[1:-1, 0, 1:-1] = 3
-        self.translation_cases[-1, 0, 1:-1] = 4
-        self.translation_cases[0, -1, 0] = 5
-        self.translation_cases[1:-1, -1, 0] = 6
-        self.translation_cases[-1, -1, 0] = 7
-        self.translation_cases[0, 1:-1, 0] = 8
-        self.translation_cases[1:-1, 1:-1, 0] = 9
-        self.translation_cases[-1, 1:-1, 0] = 10
-        self.translation_cases[0, 0, 0] = 11
-        self.translation_cases[1:-1, 0, 0] = 12
-        self.translation_cases[-1, 0, 0] = 13
+        self.wrap_kind_from_idx3[0, 1:-1, 1:-1] = 1
+        self.wrap_kind_from_idx3[0, 0, 1:-1] = 2
+        self.wrap_kind_from_idx3[1:-1, 0, 1:-1] = 3
+        self.wrap_kind_from_idx3[-1, 0, 1:-1] = 4
+        self.wrap_kind_from_idx3[0, -1, 0] = 5
+        self.wrap_kind_from_idx3[1:-1, -1, 0] = 6
+        self.wrap_kind_from_idx3[-1, -1, 0] = 7
+        self.wrap_kind_from_idx3[0, 1:-1, 0] = 8
+        self.wrap_kind_from_idx3[1:-1, 1:-1, 0] = 9
+        self.wrap_kind_from_idx3[-1, 1:-1, 0] = 10
+        self.wrap_kind_from_idx3[0, 0, 0] = 11
+        self.wrap_kind_from_idx3[1:-1, 0, 0] = 12
+        self.wrap_kind_from_idx3[-1, 0, 0] = 13
         # extra
-        self.translation_cases[0, -1, 1:-1] = 14
-        self.translation_cases[1:-1, -1, 1:-1] = 15
-        self.translation_cases[-1, -1, 1:-1] = 16
-        self.translation_cases[-1, 1:-1, 1:-1] = 17
+        self.wrap_kind_from_idx3[0, -1, 1:-1] = 14
+        self.wrap_kind_from_idx3[1:-1, -1, 1:-1] = 15
+        self.wrap_kind_from_idx3[-1, -1, 1:-1] = 16
+        self.wrap_kind_from_idx3[-1, 1:-1, 1:-1] = 17
 
         self.cell_variables_are_set = True
 
@@ -733,33 +716,36 @@ class CellList(Neighborlist):
         x = torch.nn.functional.pad(x, (1, 1, 1, 1, 1, 1), mode="circular")
         return x.squeeze()
 
-    def _lower_between_image_pairs(
+    def _lower_image_pairs_between(
         self,
-        neighbor_count: Tensor,
-        neighbor_cumcount: Tensor,
-        neighbor_translation_types: Tensor,
-        grid_count_max: int,
+        count_in_atom_surround: Tensor,  # shape (C, A, N)
+        cumcount_in_atom_surround: Tensor,  # shape (C, A, N)
+        atom_surround_wrap_kind: Tensor,  # shape (C, A, N)
+        count_in_grid_max: int,  # scalar
     ) -> tp.Tuple[Tensor, Tensor]:
-        # neighbor_translation_types has shape (1 x A x N)
-        # 3) now I need the LOWER part
+        device = count_in_atom_surround.device
+        # Calculate "lower" part of the image_pairs between buckets
+
         # this gives, for each atom, for each neighbor bucket, all the
         # unpadded, unshifted atom neighbors
         # this is basically broadcasted to the shape of fna
-        # shape is (C, A, N, c-max)
-        atoms = neighbor_count.shape[1]
-        padded_atom_neighbors = torch.arange(
-            0, grid_count_max, device=neighbor_count.device
-        )
-        padded_atom_neighbors = padded_atom_neighbors.view(1, 1, 1, -1)
-        # repeat is needed instead of expand here due to += neighbor_cumcount
-        padded_atom_neighbors = padded_atom_neighbors.repeat(
-            1, atoms, self.num_neighbors, 1
-        )
+        mols, atoms, neighbors = count_in_atom_surround.shape
 
-        # repeat the neighbor translation types to account for all neighboring atoms
-        # repeat is needed instead of expand due to reshaping later
-        neighbor_translation_types = neighbor_translation_types.unsqueeze(-1).repeat(
-            1, 1, 1, padded_atom_neighbors.shape[-1]
+        # shape is (c-max)
+        padded_atom_neighbors = torch.arange(0, count_in_grid_max, device=device)
+        # shape (1, 1, 1, c-max)
+        padded_atom_neighbors = padded_atom_neighbors.view(1, 1, 1, -1)
+        # repeat is needed instead of expand here due to += neighbor_cumcount (?)
+        # shape (C, A, N, c-max)
+        padded_atom_neighbors = padded_atom_neighbors.repeat(mols, atoms, neighbors, 1)
+
+        # repeat the surround wrap kinds to account for all neighboring atoms
+        # repeat is needed instead of expand due to reshaping later (?)
+        # shape  (C, A, N, 1)
+        atom_surround_wrap_kind = atom_surround_wrap_kind.unsqueeze(-1)
+        # shape  (C, A, N, c-max)
+        atom_surround_wrap_kind = atom_surround_wrap_kind.repeat(
+            1, 1, 1, count_in_grid_max
         )
 
         # now I need to add A(f' < fna) shift the padded atom neighbors to get
@@ -767,23 +753,26 @@ class CellList(Neighborlist):
         # it was technically done with imidx so I need to check correctnes of
         # both counting schemes, but first I create the mask to unpad
         # and then I shift to the correct indices
-        mask = padded_atom_neighbors < neighbor_count.unsqueeze(-1)
-        padded_atom_neighbors.add_(neighbor_cumcount.unsqueeze(-1))
-        # the mask should have the same shape as padded_atom_neighbors, and
+        # shape (C, A, N, 1)
+        count_in_atom_surround = count_in_atom_surround.unsqueeze(-1)
+        # shape (C, A, N, c-max)
+        mask = padded_atom_neighbors < count_in_atom_surround
+        padded_atom_neighbors.add_(count_in_atom_surround)
+
         # now all that is left is to apply the mask in order to unpad
-        assert padded_atom_neighbors.shape == mask.shape
-        assert neighbor_translation_types.shape == mask.shape
+
         # NOTE:
         # x.view(-1).index_select(0, mask.view(-1).nonzero().view(-1)) is EQUIVALENT to:
         # torch.masked_select(x, mask) but FASTER
         # view(-1)...view(-1) is used to avoid reshape (not sure if that is faster)
-        lower = padded_atom_neighbors.view(-1).index_select(
+        lower_between = padded_atom_neighbors.view(-1).index_select(
             0, mask.view(-1).nonzero().view(-1)
         )
-        between_pairs_translation_types = neighbor_translation_types.view(
-            -1
-        ).index_select(0, mask.view(-1).nonzero().view(-1))
-        return lower, between_pairs_translation_types
+        wrap_kind_between = atom_surround_wrap_kind.view(-1).index_select(
+            0, mask.view(-1).nonzero().view(-1)
+        )
+        # Both shapes are (B,)
+        return lower_between, wrap_kind_between
 
     def _get_surround_idxs(self, atom_grid_idx3: Tensor) -> tp.Tuple[Tensor, Tensor]:
         # Calculate the grid_idx3 and grid_idx associated with the buckets
@@ -797,7 +786,7 @@ class CellList(Neighborlist):
         # should be shifted along 1, 2 or 3 dim respectively, since the central
         # bucket is up against a wall, an edge or a corner respectively.
         mols, atoms, _ = atom_grid_idx3.shape
-        neighbors, _ = self.vector_idx_displacement.shape
+        neighbors, _ = self.surround_offset_idx3.shape
 
         # This is actually strict neighbors, so it doesn't have
         # "the bucket itself"
@@ -810,10 +799,9 @@ class CellList(Neighborlist):
         # each pair and what amount to shift it
 
         # After this step some of the atom_surround_idx3 are negative
-        atom_surround_idx3 = (
-            atom_grid_idx3.view(mols, atoms, 1, 3)
-            + self.vector_idx_displacement.view(mols, 1, neighbors, 3)
-        )
+        atom_surround_idx3 = atom_grid_idx3.view(
+            mols, atoms, 1, 3
+        ) + self.surround_offset_idx3.view(mols, 1, neighbors, 3)
         atom_surround_idx3.add_(1)
         atom_surround_idx3 = atom_surround_idx3.view(-1, 3)
 
@@ -831,18 +819,16 @@ class CellList(Neighborlist):
             atom_surround_idx.view(mols, atoms, neighbors),
         )
 
-    def _get_neighbor_translation_types(self, neighbor_grid_idx3: Tensor) -> Tensor:
-        mols, atoms, neighbors, _ = neighbor_grid_idx3.shape
-        neighbor_grid_idx3 = neighbor_grid_idx3.view(-1, 3)
-        neighbor_translation_types = self.translation_cases[
-            neighbor_grid_idx3[:, 0],
-            neighbor_grid_idx3[:, 1],
-            neighbor_grid_idx3[:, 2],
+    def _wrap_kind_from_surround_idx3(self, atom_surround_idx3: Tensor) -> Tensor:
+        mols, atoms, neighbors, _ = atom_surround_idx3.shape
+        atom_surround_idx3 = atom_surround_idx3.view(-1, 3)
+        atom_surround_wrap_kind = self.wrap_kind_from_idx3[
+            atom_surround_idx3[:, 0],
+            atom_surround_idx3[:, 1],
+            atom_surround_idx3[:, 2],
         ]
-        neighbor_translation_types = neighbor_translation_types.view(
-            mols, atoms, neighbors
-        )
-        return neighbor_translation_types
+        atom_surround_wrap_kind = atom_surround_wrap_kind.view(mols, atoms, neighbors)
+        return atom_surround_wrap_kind
 
     def _cache_values(
         self,
@@ -921,6 +907,12 @@ def flatten_grid_idx3(grid_idx3: Tensor, grid_shape: Tensor) -> Tensor:
 
 
 def atom_image_converters(grid_idx: Tensor) -> tp.Tuple[Tensor, Tensor]:
+    # NOTE: Since sorting is not stable this may scramble the atoms
+    # so that the atidx you get after applying
+    # atidx_from_imidx[something] will not be the correct order
+    # since what we want is the pairs this is fine, pairs are agnostic to
+    # species. (?)
+
     # this are the "image indices", indices that sort atoms in the order of
     # the flattened bucket index.  Only occupied buckets are considered, so
     # if a bucket is unoccupied the index is not taken into account.  for
@@ -969,14 +961,14 @@ NeighborlistArg = tp.Union[
 ]
 
 
-def image_pairs_inside_buckets(
+def image_pairs_within(
     count_in_grid: Tensor,  # shape (G,)
     cumcount_in_grid: Tensor,  # shape (G,)
     count_in_grid_max: int,  # max number of atoms in any grid el
 ) -> Tensor:
     device = count_in_grid.device
-    # Calc all possible image-idx-pairs inside each central bucket ("I" in total)
-    # Output is shape (2, I) and holds neighbor_image_idxs
+    # Calc all possible image-idx-pairs within each central bucket ("W" in total)
+    # Output is shape (2, W) and holds neighbor_image_idxs
     #
     # NOTE: Inside each central bucket there are grid_count[g] num atoms.
     # These atoms are indexed with an "image idx", "i", different from the "atom idx"
@@ -1010,7 +1002,7 @@ def image_pairs_inside_buckets(
         offset=-1,
         device=device,
     )
-    _image_pairs_inside_buckets = (
+    _image_pairs_within = (
         image_pairs_in_fullest_bucket.view(2, 1, -1)
         + cumcount_in_haspairs.view(1, -1, 1)
     ).view(2, -1)
@@ -1031,8 +1023,8 @@ def image_pairs_inside_buckets(
     # x.view(-1).index_select(0, mask.view(-1).nonzero().view(-1)) is EQUIVALENT to:
     # torch.masked_select(x, mask) but FASTER
     # view(-1)...view(-1) is used to avoid reshape (not sure if that is faster)
-    # shape (2, H*cp-max) -> (2, I)
-    return _image_pairs_inside_buckets.index_select(1, mask.view(-1).nonzero().view(-1))
+    # shape (2, H*cp-max) -> (2, W)
+    return _image_pairs_within.index_select(1, mask.view(-1).nonzero().view(-1))
 
 
 def parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
