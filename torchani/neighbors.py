@@ -547,39 +547,37 @@ class CellList(Neighborlist):
         cell: Tensor,  # shape (3, 3)
         pbc: Tensor,  # shape (3,)
     ) -> tp.Tuple[Tensor, tp.Optional[Tensor]]:
-        # The central cell is spanned by a 3D grid of "buckets" or "grid elements"
-        #
-        # 1) Calculate the location of each atom in the 3D grid that spans the
-        # cell. This location is given by a by a grid_idx3 "g3", and by a
-        # single flat grid_idx "g"
-        # shapes (C, A, 3) and (C, A) for g3[a] and g[a]
+        # The cell is spanned by a 3D grid of "buckets" or "grid elements",
+        # which has grid_shape=(GX, GY, GZ) and grid_numel=G=(GX * GY * GZ)
+
+        # 1) Get location of each atom in the grid, given by a "grid_idx3"
+        # or by a single flat "grid_idx" (g).
+        # Shapes (C, A, 3) and (C, A)
         atom_grid_idx3 = coords_to_grid_idx3(coordinates, cell, self.grid_shape)
         atom_grid_idx = flatten_grid_idx3(atom_grid_idx3, self.grid_shape)
 
-        # 2) We want the image pairs 'inside' each central bucket
-        # To do this we first need to calculate:
-        # - The num of atoms in each bucket c[g]
-        # - The max num atoms in any bucket c*
-        # - The cumulative num of atoms BEFORE each bucket cc[g]
+        # 2) Get image pairs of atoms INSIDE each bucket
+        # To do this, first calculate:
+        # - Num atoms in each bucket "count_in_grid[g]", and the max, (c-max)
+        # - Cumulative num atoms *before* each bucket "comcount_in_grid[g]"
+        # Both shapes (G,)
         count_in_grid, cumcount_in_grid = count_atoms_in_buckets(
             atom_grid_idx, self.grid_numel
         )
         count_in_grid_max: int = int(count_in_grid.max())
+        # Shape (2, I)
         _image_pairs_inside_buckets = image_pairs_inside_buckets(
             count_in_grid,
             cumcount_in_grid,
             count_in_grid_max,
         )
 
-        # 3) We want the image pairs 'between' each central bucket
-        # and the surrounding (neighboring) buckets
-        #
-        # Get the vector indices of all strict neighbors of each atom
-        # this gives g3[a, n] and g[a, n]
+        # Now get image pairs BETWEEN atoms inside a bucket and its surrounding buckets
+
+        # 3) Get grid_idx3 of the surrounding buckets of each atom
+        # roughly: "grid_idx3[a, n, 3]" and "grid_idx[a, n]"
         # shapes (C, A, N, 3) and (C, A, N)
-        atom_neighbor_grid_idx3, atom_neighbor_grid_idx = self._get_neighbor_indices(
-            atom_grid_idx3
-        )
+        atom_surround_idx3, atom_surround_idx = self._get_surround_idxs(atom_grid_idx3)
 
         # 4) Upper and lower part of the external pairlist this is the
         # correct "unpadded" upper
@@ -593,14 +591,14 @@ class CellList(Neighborlist):
         # neighbor_translation_types
         # has the type of shift for T(a, n), atom a,
         # neighbor bucket n
-        neighbor_count = count_in_grid[atom_neighbor_grid_idx]
-        neighbor_cumcount = cumcount_in_grid[atom_neighbor_grid_idx]
+        count_in_atom_surround = count_in_grid[atom_surround_idx]
+        cumcount_in_atom_surround = cumcount_in_grid[atom_surround_idx]
         neighbor_translation_types = self._get_neighbor_translation_types(
-            atom_neighbor_grid_idx3
+            atom_surround_idx3
         )
         lower, between_pairs_translation_types = self._lower_between_image_pairs(
-            neighbor_count,
-            neighbor_cumcount,
+            count_in_atom_surround,
+            cumcount_in_atom_surround,
             neighbor_translation_types,
             count_in_grid_max,
         )
@@ -613,15 +611,17 @@ class CellList(Neighborlist):
         # shapes (A,) and (A,) for i[a] and a[i]
         atom_to_image, image_to_atom = atom_image_converters(atom_grid_idx)
 
-        neighborhood_count = neighbor_count.sum(-1).squeeze()
+        neighborhood_count = count_in_atom_surround.sum(-1).squeeze()
         upper = torch.repeat_interleave(atom_to_image, neighborhood_count)
         assert lower.shape == upper.shape
-        between_image_pairs = torch.stack((upper, lower), dim=0)
+        _image_pairs_between_buckets = torch.stack((upper, lower), dim=0)
 
         if not pbc.any():
             # select only the pairs that don't need any translation
             non_pbc_pairs = (between_pairs_translation_types == 0).nonzero().flatten()
-            between_image_pairs = between_image_pairs.index_select(1, non_pbc_pairs)
+            _image_pairs_between_buckets = _image_pairs_between_buckets.index_select(
+                1, non_pbc_pairs
+            )
             shift_indices = None
         else:
             between_pairs_shift_indices = (
@@ -640,9 +640,10 @@ class CellList(Neighborlist):
             shift_indices = -torch.cat(
                 (between_pairs_shift_indices, within_pairs_shift_indices), dim=0
             )
-        # concatenate within and between
+
+        # Concatenate 'INSIDE' and 'BETWEEN' image pairs
         image_pairs = torch.cat(
-            (between_image_pairs, _image_pairs_inside_buckets), dim=1
+            (_image_pairs_between_buckets, _image_pairs_inside_buckets), dim=1
         )
         atom_pairs = image_to_atom[image_pairs]
         return atom_pairs, shift_indices
@@ -690,8 +691,6 @@ class CellList(Neighborlist):
             raise RuntimeError("Cell is too small to perform pbc calculations")
 
         # 4) create the vector_index -> flat_index conversion tensor
-        # it is not really necessary to perform circular padding,
-        # since we can index the array using negative indices!
         vector_idx_to_flat = torch.arange(0, self.grid_numel, device=device)
         vector_idx_to_flat = vector_idx_to_flat.view(
             int(self.grid_shape[0]),
@@ -746,7 +745,7 @@ class CellList(Neighborlist):
         # this gives, for each atom, for each neighbor bucket, all the
         # unpadded, unshifted atom neighbors
         # this is basically broadcasted to the shape of fna
-        # shape is (C, A, N, c*)
+        # shape is (C, A, N, c-max)
         atoms = neighbor_count.shape[1]
         padded_atom_neighbors = torch.arange(
             0, grid_count_max, device=neighbor_count.device
@@ -774,7 +773,8 @@ class CellList(Neighborlist):
         # now all that is left is to apply the mask in order to unpad
         assert padded_atom_neighbors.shape == mask.shape
         assert neighbor_translation_types.shape == mask.shape
-        # x.view(-1).index_select(0, mask.view(-1).nonzero().view(-1)) is equivalent to:
+        # NOTE:
+        # x.view(-1).index_select(0, mask.view(-1).nonzero().view(-1)) is EQUIVALENT to:
         # torch.masked_select(x, mask) but FASTER
         # view(-1)...view(-1) is used to avoid reshape (not sure if that is faster)
         lower = padded_atom_neighbors.view(-1).index_select(
@@ -785,11 +785,21 @@ class CellList(Neighborlist):
         ).index_select(0, mask.view(-1).nonzero().view(-1))
         return lower, between_pairs_translation_types
 
-    def _get_neighbor_indices(self, atom_grid_idx3: Tensor) -> tp.Tuple[Tensor, Tensor]:
+    def _get_surround_idxs(self, atom_grid_idx3: Tensor) -> tp.Tuple[Tensor, Tensor]:
+        # Calculate the grid_idx3 and grid_idx associated with the buckets
+        # surrounding a given atom.
+        #
+        # The surrounding buckets will either lie inside the central cell
+        # directly, or wrap around one or more dimensions due to PBC. In the latter case
+        # the atom_surround_idx3 may be negative
+        #
+        # Depending on whether there is 1, 2 or 3 negative idxs, the buckets
+        # should be shifted along 1, 2 or 3 dim respectively, since the central
+        # bucket is up against a wall, an edge or a corner respectively.
         mols, atoms, _ = atom_grid_idx3.shape
         neighbors, _ = self.vector_idx_displacement.shape
 
-        # This is actually pure neighbors, so it doesn't have
+        # This is actually strict neighbors, so it doesn't have
         # "the bucket itself"
         # These are
         # - g(a, n),  shape 1 x A x N x 3
@@ -798,36 +808,39 @@ class CellList(Neighborlist):
         # neighbor buckets (neighbor buckets indexed by n).
         # these vector indices have the information that says whether to shift
         # each pair and what amount to shift it
-        neighbor_grid_idx3 = (
+
+        # After this step some of the atom_surround_idx3 are negative
+        atom_surround_idx3 = (
             atom_grid_idx3.view(mols, atoms, 1, 3)
             + self.vector_idx_displacement.view(mols, 1, neighbors, 3)
-        ) + 1
-        neighbor_grid_idx3 = neighbor_grid_idx3.view(-1, 3)
+        )
+        atom_surround_idx3.add_(1)
+        atom_surround_idx3 = atom_surround_idx3.view(-1, 3)
 
+        # atom_surround_idx contains only idxs that are positive, it indexes
+        # buckets inside the central cell
+        #
         # NOTE: This is needed instead of unbind due to torchscript bug
-        neighbor_grid_idx = self.vector_idx_to_flat[
+        atom_surround_idx = self.vector_idx_to_flat[
+            atom_surround_idx3[:, 0],
+            atom_surround_idx3[:, 1],
+            atom_surround_idx3[:, 2],
+        ]
+        return (
+            atom_surround_idx3.view(mols, atoms, neighbors, 3),
+            atom_surround_idx.view(mols, atoms, neighbors),
+        )
+
+    def _get_neighbor_translation_types(self, neighbor_grid_idx3: Tensor) -> Tensor:
+        mols, atoms, neighbors, _ = neighbor_grid_idx3.shape
+        neighbor_grid_idx3 = neighbor_grid_idx3.view(-1, 3)
+        neighbor_translation_types = self.translation_cases[
             neighbor_grid_idx3[:, 0],
             neighbor_grid_idx3[:, 1],
             neighbor_grid_idx3[:, 2],
         ]
-        return (
-            neighbor_grid_idx3.view(mols, atoms, neighbors, 3),
-            neighbor_grid_idx.view(mols, atoms, neighbors),
-        )
-
-    def _get_neighbor_translation_types(
-        self, neighbor_vector_indices: Tensor
-    ) -> Tensor:
-        atoms = neighbor_vector_indices.shape[1]
-        neighbors = neighbor_vector_indices.shape[2]
-        neighbor_vector_indices = neighbor_vector_indices.view(-1, 3)
-        neighbor_translation_types = self.translation_cases[
-            neighbor_vector_indices[:, 0],
-            neighbor_vector_indices[:, 1],
-            neighbor_vector_indices[:, 2],
-        ]
         neighbor_translation_types = neighbor_translation_types.view(
-            1, atoms, neighbors
+            mols, atoms, neighbors
         )
         return neighbor_translation_types
 
@@ -962,59 +975,64 @@ def image_pairs_inside_buckets(
     count_in_grid_max: int,  # max number of atoms in any grid el
 ) -> Tensor:
     device = count_in_grid.device
-    # Inside each grid element there is a given number of atoms grid_count[g]
-    # the atoms in each grid element are indexed with an "image idx"
-    # So, for instance:
-    # - grid element g=0 has atoms 0...grid_count[0]
-    # - grid element g=1 has atoms grid_count[0]...grid_count[1]
-    # - grid element g=2 has atoms grid_count[1]...grid_count[2], etc
-    # We want to calculate all possible idx-pairs within each grid element.
-    # The output of this function is i[2, within]
+    # Calc all possible image-idx-pairs inside each central bucket ("I" in total)
+    # Output is shape (2, I) and holds neighbor_image_idxs
+    #
+    # NOTE: Inside each central bucket there are grid_count[g] num atoms.
+    # These atoms are indexed with an "image idx", "i", different from the "atom idx"
+    # which indexes the atoms in the coords
+    # For instance:
+    # - central bucket g=0 has "image" atoms 0...grid_count[0]
+    # - central bucket g=1 has "image" atoms grid_count[0]...grid_count[1], etc
 
-    # 1) First get indices g that have atom-pairs inside, index them with 'w' g[w]
-    # From this, we get count_in_withpair[w] and cumcount_in_withpair[w]
-    # All three have shape (W,) (the num of grid el with pairs)
-    withpair_idx_to_grid_idx = (count_in_grid > 1).nonzero().view(-1)
-    count_in_withpair = count_in_grid.index_select(0, withpair_idx_to_grid_idx)
-    cumcount_in_withpair = cumcount_in_grid.index_select(0, withpair_idx_to_grid_idx)
+    # 1) Get idxs "g" that have atom pairs inside ("H" in total).
+    # Index them with 'h' using g[h], from this, get count_in_haspairs[h] and
+    # cumcount_in_haspairs[h].
+    # shapes are (H,)
+    haspairs_idx_to_grid_idx = (count_in_grid > 1).nonzero().view(-1)
+    count_in_haspairs = count_in_grid.index_select(0, haspairs_idx_to_grid_idx)
+    cumcount_in_haspairs = cumcount_in_grid.index_select(0, haspairs_idx_to_grid_idx)
 
-    # 2) Calculate all possible pairs assuming every grid element (bucket) with pairs
-    # has the maximum number of atoms possible.
-    # Get the image-idx-pairs for the fullest grid element
-    image_pairs_in_fullest_bucket = torch.tril_indices(  # shape (2, cp*)
+    # 2) Calculate all possible pairs assuming every bucket (with pairs) has
+    # the same num atoms as the fullest one. To do this:
+    # - First get the image-idx-pairs for the fullest grid element
+    # - Then repeat (view) the image pairs in the fullest buckets H-times,
+    # and add to each repeat the cumcount of atoms in all previous buckets.
+    #
+    # After this step:
+    # - There are more pairs than needed
+    # - Some of the extra pairs may be have out-of-bounds idxs
+    # Screen the incorrect, unneeded pairs in the next step.
+    # shapes are (2, cp-max) and (2, H*cp-max)
+    image_pairs_in_fullest_bucket = torch.tril_indices(
         count_in_grid_max,
         count_in_grid_max,
         offset=-1,
         device=device,
     )
-    # Upper bound in the number of image pairs in any grid element
-    num_image_pairs_in_fullest_bucket = image_pairs_in_fullest_bucket.shape[1]
-
-    # Repeat (view) the image pairs in the fullest buckets W times,
-    # and add to each the cumulative count of atoms in all previous buckets
-    # After these there are more pairs than needed, since we calc the pairs
-    # using the fullest bucket, but we screen the unneeded pairs afterwards
-    padded_image_pairs_inside_buckets = (
+    _image_pairs_inside_buckets = (
         image_pairs_in_fullest_bucket.view(2, 1, -1)
-        + cumcount_in_withpair.view(1, -1, 1)
+        + cumcount_in_haspairs.view(1, -1, 1)
     ).view(2, -1)
 
-    # The actual number of pairs in each bucket with pairs, which is lower
-    # or eaual to num_image_pairs_in_fullest_bucket (W,)
-    paircount_in_withpair = torch.div(
-        count_in_withpair * torch.sub(count_in_withpair, 1),
+    # 3) Calc the actual number of pairs in each bucket (with pairs), and get a
+    # mask that selects those from the previous pairs
+    # shapes (H,) (cp-max,), (H, cp-max)
+    paircount_in_haspairs = torch.div(
+        count_in_haspairs * torch.sub(count_in_haspairs, 1),
         2,
         rounding_mode="floor",
     )
+    mask = torch.arange(0, image_pairs_in_fullest_bucket.shape[1], device=device)
+    mask = mask.view(1, -1) < paircount_in_haspairs.view(-1, 1)
 
-    # Select only the number we actually have and get rid of the rest
-    mask = torch.arange(0, num_image_pairs_in_fullest_bucket, device=device)
-    mask = mask.expand(withpair_idx_to_grid_idx.shape[0], -1)
-    mask = (mask < paircount_in_withpair.view(-1, 1)).view(-1)
-    image_pairs_inside_buckets = padded_image_pairs_inside_buckets.index_select(
-        1, mask.nonzero().view(-1)
-    )
-    return image_pairs_inside_buckets
+    # 4) Screen the incorrect, unneeded pairs.
+    # NOTE:
+    # x.view(-1).index_select(0, mask.view(-1).nonzero().view(-1)) is EQUIVALENT to:
+    # torch.masked_select(x, mask) but FASTER
+    # view(-1)...view(-1) is used to avoid reshape (not sure if that is faster)
+    # shape (2, H*cp-max) -> (2, I)
+    return _image_pairs_inside_buckets.index_select(1, mask.view(-1).nonzero().view(-1))
 
 
 def parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
