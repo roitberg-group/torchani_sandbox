@@ -981,26 +981,26 @@ def image_pairs_inside_buckets(
     # 2) Calculate all possible pairs assuming every grid element (bucket) with pairs
     # has the maximum number of atoms possible.
     # Get the image-idx-pairs for the fullest grid element
-    image_pairs_in_fullest_bucket = torch.triu_indices(  # shape (2, cp*)
+    image_pairs_in_fullest_bucket = torch.tril_indices(  # shape (2, cp*)
         count_in_grid_max,
         count_in_grid_max,
-        offset=1,
+        offset=-1,
         device=device,
     )
-    # Upper bound in the nmber of image pairs in any grid element
+    # Upper bound in the number of image pairs in any grid element
     num_image_pairs_in_fullest_bucket = image_pairs_in_fullest_bucket.shape[1]
-    # sort along first row
-    padded_pairs = image_pairs_in_fullest_bucket.index_select(
-        1, torch.argsort(image_pairs_in_fullest_bucket[1])
-    )
-    # shape (2, pairs) + shape (wpairs, 1, 1) = shape (wpairs, 2, pairs)
 
-    # basically this repeats the padded pairs "wpairs" times and adds to
-    # all of them the cumulative counts, then we unravel all pairs, which
-    # remain in the correct order in the second row (the order within same
-    # numbers in the first row is actually not essential)
-    padded_pairs = padded_pairs.view(2, 1, -1) + cumcount_in_withpair.view(1, -1, 1)
-    padded_pairs = padded_pairs.view(2, -1)
+    # Repeat (view) the image pairs in the fullest buckets W times,
+    # and add to each the cumulative count of atoms in all previous buckets
+    # After these there are more pairs than needed, since we calc the pairs
+    # using the fullest bucket, but we screen the unneeded pairs afterwards
+    padded_image_pairs_inside_buckets = (
+        image_pairs_in_fullest_bucket.view(2, 1, -1)
+        + cumcount_in_withpair.view(1, -1, 1)
+    ).view(2, -1)
+
+    # The actual number of pairs in each bucket with pairs, which is lower
+    # or eaual to num_image_pairs_in_fullest_bucket (W,)
     paircount_in_withpair = torch.div(
         count_in_withpair * torch.sub(count_in_withpair, 1),
         2,
@@ -1011,7 +1011,9 @@ def image_pairs_inside_buckets(
     mask = torch.arange(0, num_image_pairs_in_fullest_bucket, device=device)
     mask = mask.expand(withpair_idx_to_grid_idx.shape[0], -1)
     mask = (mask < paircount_in_withpair.view(-1, 1)).view(-1)
-    image_pairs_inside_buckets = padded_pairs.index_select(1, mask.nonzero().squeeze())
+    image_pairs_inside_buckets = padded_image_pairs_inside_buckets.index_select(
+        1, mask.nonzero().view(-1)
+    )
     return image_pairs_inside_buckets
 
 

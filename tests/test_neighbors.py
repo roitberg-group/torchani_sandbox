@@ -150,8 +150,8 @@ class TestCellList(TestCase):
         )
         # some hand comparisons
         self.assertEqual(inside.shape, (2, 27))
-        self.assertEqual(inside[0], torch.arange(0, 54, 2))
-        self.assertEqual(inside[1], torch.arange(1, 55, 2))
+        self.assertEqual(inside[0], torch.arange(1, 55, 2))
+        self.assertEqual(inside[1], torch.arange(0, 54, 2))
 
     def testCellListInit(self):
         AEVComputer.like_1x(neighborlist="cell_list")
