@@ -932,7 +932,7 @@ def count_atoms_in_grid(
     # shape is total buckets F cumulative buckets count has the number of
     # atoms BEFORE a given bucket cumulative buckets count: 0 3 3 3 ... 3 5
     # 5 5 ... 5 6 6 7 ...
-    atom_grid_idx = atom_grid_idx.squeeze()  # shape (A,), get rid of C
+    atom_grid_idx = atom_grid_idx.view(-1)  # shape (A,), get rid of C
     # G = the total number of grid elements
     grid_count = torch.bincount(atom_grid_idx, minlength=grid_numel)  # shape (G,)
     grid_cumcount = cumsum_from_zero(grid_count)  # shape (G,)
