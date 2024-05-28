@@ -390,27 +390,23 @@ class CellList(Neighborlist):
         # from pmemd)
         # I choose all the displacements except for the zero
         # displacement that does nothing, which is the last one
-        # hand written order,
-        # this order is basically right-to-left, top-to-bottom
-        # using the middle buckets (leftmost lower corner + rightmost lower bucket)
-        # and the down buckets (all)
-        # so this looks like:
-        #  x--
-        #  xo-
-        #  xxx
-        # For the middle buckets and
-        #  xxx
-        #  xxx
-        #  xxx
-        # for the down buckets
+        # hand written order ("right-to-left, top-to-bottom")
+        # The selected grid elements in the planes are:
+        # ("x" selected elements, "-" non-selected and "o" reference element)
+        # top,   same,  bottom,
+        # |---|  |---|  |xxx|
+        # |---|  |xo-|  |xxx|
+        # |---|  |xxx|  |xxx|
 
         # NOTE: "0" corresponds to [0, 0, 0], but I don't really need that for
         # vector indices only for translation displacements
         grid_idx3_offsets = [
+            # Neighbor grid elements in the same plane (gz = 0)
             [-1, 0, 0],  # 1
             [-1, -1, 0],  # 2
             [0, -1, 0],  # 3
             [1, -1, 0],  # 4
+            # Neighbor grid elements in bottom plane (gz = -1)
             [-1, 1, -1],  # 5
             [0, 1, -1],  # 6
             [1, 1, -1],  # 7
@@ -426,9 +422,9 @@ class CellList(Neighborlist):
         # image atoms
         assert self.vector_idx_displacement.shape == (13, 3)
 
-        # I need some extra positions for the translation displacements, in
-        # particular, I need some positions for displacements that don't exist
-        # inside individual boxes
+        # The translation displacements need all possible displacements in the
+        # same plane, so I add the missing ones here (these ones don't exist
+        # inside the grid elements)
         grid_idx3_offsets.insert(0, [0, 0, 0])  # 0
         grid_idx3_offsets.extend(
             [
@@ -442,7 +438,7 @@ class CellList(Neighborlist):
             grid_idx3_offsets, dtype=torch.long
         )
         assert self.translation_displacement_indices.shape == (18, 3)
-        # This is 26 for 2 buckets and 17 for 1 bucket
+        # This is 26 for 2 buckets and 18 for 1 bucket
         # This is necessary for the image - atom map and atom - image map
         self.num_neighbors = len(self.vector_idx_displacement)
 
@@ -655,8 +651,8 @@ class CellList(Neighborlist):
 
     def _setup_variables(self, cell: Tensor, cutoff: float, extra_space: float = 1e-5):
         device = cell.device
-        # Get the size (Bx, By, Bz) of the buckets in the grid.
-        # extra space by default is consistent with Amber
+        # Get the shape (GX, GY, GZ) of the grid. Some extra space is used as slack
+        # (consistent with SANDER neighborlist by default)
         #
         # The spherical factor is different from 1 in the case of nonorthogonal
         # boxes and accounts for the "spherical protrusion", which is related
@@ -681,7 +677,7 @@ class CellList(Neighborlist):
         #
         # Gx, Gy, Gz is 1 + maximum index for vector g. Flat bucket indices are
         # indices for the buckets written in row major order (or equivalently
-        # dictionary order), the number F = Gx * Gy * Gz
+        # dictionary order), the number G = GX * GY * GZ
 
         # bucket_length_lower_bound = B, unit cell U_mu = B * 3 - epsilon this
         # means I can cover it with 3 buckets plus some extra space that is
@@ -747,12 +743,12 @@ class CellList(Neighborlist):
         neighbor_translation_types: Tensor,
         grid_count_max: int,
     ) -> tp.Tuple[Tensor, Tensor]:
-        # neighbor_translation_types has shape 1 x At x Eta
+        # neighbor_translation_types has shape (1 x A x N)
         # 3) now I need the LOWER part
         # this gives, for each atom, for each neighbor bucket, all the
         # unpadded, unshifted atom neighbors
         # this is basically broadcasted to the shape of fna
-        # shape is 1 x A x eta x A*
+        # shape is (C, A, N, c*)
         atoms = neighbor_count.shape[1]
         padded_atom_neighbors = torch.arange(
             0, grid_count_max, device=neighbor_count.device
@@ -780,16 +776,15 @@ class CellList(Neighborlist):
         # now all that is left is to apply the mask in order to unpad
         assert padded_atom_neighbors.shape == mask.shape
         assert neighbor_translation_types.shape == mask.shape
-        # the following calls are equivalent to masked select but significantly faster,
-        # since masked_select is slow
-        # y = torch.masked_select(x, mask) == y = x.view(-1).index_select(0,
-        # mask.view(-1).nonzero().squeeze())
+        # x.view(-1).index_select(0, mask.view(-1).nonzero().view(-1)) is equivalent to:
+        # torch.masked_select(x, mask) but FASTER
+        # view(-1)...view(-1) is used to avoid reshape (not sure if that is faster)
         lower = padded_atom_neighbors.view(-1).index_select(
-            0, mask.view(-1).nonzero().squeeze()
+            0, mask.view(-1).nonzero().view(-1)
         )
         between_pairs_translation_types = neighbor_translation_types.view(
             -1
-        ).index_select(0, mask.view(-1).nonzero().squeeze())
+        ).index_select(0, mask.view(-1).nonzero().view(-1))
         return lower, between_pairs_translation_types
 
     def _get_neighbor_indices(self, atom_grid_idx3: Tensor) -> tp.Tuple[Tensor, Tensor]:
@@ -805,9 +800,10 @@ class CellList(Neighborlist):
         # neighbor buckets (neighbor buckets indexed by n).
         # these vector indices have the information that says whether to shift
         # each pair and what amount to shift it
-        neighbor_grid_idx3 = (atom_grid_idx3.view(
-            mols, atoms, 1, 3
-        ) + self.vector_idx_displacement.view(mols, 1, neighbors, 3)) + 1
+        neighbor_grid_idx3 = (
+            atom_grid_idx3.view(mols, atoms, 1, 3)
+            + self.vector_idx_displacement.view(mols, 1, neighbors, 3)
+        ) + 1
         neighbor_grid_idx3 = neighbor_grid_idx3.view(-1, 3)
 
         # NOTE: This is needed instead of unbind due to torchscript bug
