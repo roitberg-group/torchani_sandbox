@@ -942,11 +942,11 @@ def count_atoms_in_buckets(
 def image_pairs_within(
     count_in_grid: Tensor,  # shape (G,)
     cumcount_in_grid: Tensor,  # shape (G,)
-    count_in_grid_max: int,  # max number of atoms in any grid el
+    count_in_grid_max: int,  # max number of atoms in any bucket
 ) -> Tensor:
     device = count_in_grid.device
     # Calc all possible image-idx-pairs within each central bucket ("W" in total)
-    # Output is shape (2, W) and holds neighbor_image_idxs
+    # Output is shape (2, W)
     #
     # NOTE: Inside each central bucket there are grid_count[g] num atoms.
     # These atoms are indexed with an "image idx", "i", different from the "atom idx"
@@ -963,15 +963,15 @@ def image_pairs_within(
     count_in_haspairs = count_in_grid.index_select(0, haspairs_idx_to_grid_idx)
     cumcount_in_haspairs = cumcount_in_grid.index_select(0, haspairs_idx_to_grid_idx)
 
-    # 2) Calculate all possible pairs assuming every bucket (with pairs) has
+    # 2) Get image pairs pairs assuming every bucket (with pairs) has
     # the same num atoms as the fullest one. To do this:
-    # - First get the image-idx-pairs for the fullest grid element
-    # - Then repeat (view) the image pairs in the fullest buckets H-times,
-    # and add to each repeat the cumcount of atoms in all previous buckets.
+    # - Get the image-idx-pairs for the fullest bucket
+    # - Repeat (view) the image pairs in the fullest bucket H-times,
+    # - Add to each repeat the cumcount of atoms in all previous buckets.
     #
     # After this step:
     # - There are more pairs than needed
-    # - Some of the extra pairs may be have out-of-bounds idxs
+    # - Some of the extra pairs may have out-of-bounds idxs
     # Screen the incorrect, unneeded pairs in the next step.
     # shapes are (2, cp-max) and (2, H*cp-max)
     image_pairs_in_fullest_bucket = torch.tril_indices(
@@ -985,8 +985,8 @@ def image_pairs_within(
         + cumcount_in_haspairs.view(1, -1, 1)
     ).view(2, -1)
 
-    # 3) Calc the actual number of pairs in each bucket (with pairs), and get a
-    # mask that selects those from the previous pairs
+    # 3) Get actual number of pairs in each bucket (with pairs), and a
+    # mask that selects those from the unscreened pairs
     # shapes (H,) (cp-max,), (H, cp-max)
     paircount_in_haspairs = torch.div(
         count_in_haspairs * torch.sub(count_in_haspairs, 1),
@@ -1002,7 +1002,6 @@ def image_pairs_within(
 
 
 def _masked_select(x: Tensor, mask: Tensor, idx: int) -> Tensor:
-    # NOTE:
     # x.index_select(0, mask.view(-1).nonzero().view(-1)) is EQUIVALENT to:
     # torch.masked_select(x, mask) but FASTER
     # view(-1)...view(-1) is used to avoid reshape (not sure if that is faster)
