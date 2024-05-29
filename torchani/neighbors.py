@@ -294,29 +294,13 @@ class FullPairwise(Neighborlist):
 
 
 class CellList(Neighborlist):
-    buckets_per_cutoff: int
-    extra_space: float
     surround_offset_idx3: Tensor
 
-    def __init__(
-        self,
-        buckets_per_cutoff: int = 1,
-        extra_space: float = 1e-5,
-    ):
+    def __init__(self):
         super().__init__()
-        # Currently unsupported but support is possible
-        assert buckets_per_cutoff == 1, "Cell list only supports one bucket per cutoff"
-
-        # Currently hardcoded to be consistent with SANDER
-        assert extra_space == 1e-5, "CellList only supports default extra space"
-        self.extra_space = extra_space
-
-        # This determines how fine grained the 3D grid is, with respect
-        # to the distance cutoff. This is 2 for amber, but 1 for torchani.
-        self.buckets_per_cutoff = buckets_per_cutoff
-
         # Get the grid_idx3 offsets for the surrounding buckets of an
         # arbitrary bucket (I think this is different from SANDER, not sure why)
+        # NOTE: This assumes "1-bucket-per-cutoff"
         #
         # In order to avoid double counting, consider only half of the
         # surrounding buckets.
@@ -325,7 +309,7 @@ class CellList(Neighborlist):
         # buckets in the same plane, not including the "self" bucket (maybe
         # other choices are possible).
         #
-        # Order is "right-to-left, top-to-bottom"
+        # Order is reading order: "left-to-right, top-to-bottom"
         #
         # The selected buckets in the planes are:
         # ("x" selected elements, "-" non-selected and "o" reference element)
@@ -333,7 +317,7 @@ class CellList(Neighborlist):
         # |---|  |---|  |xxx|
         # |---|  |xo-|  |xxx|
         # |---|  |xxx|  |xxx|
-
+        #
         # shape (neighbors=13, 3)
         self.register_buffer(
             "surround_offset_idx3",
@@ -393,8 +377,6 @@ class CellList(Neighborlist):
         grid_shape = setup_grid(
             cell.detach(),
             cutoff,
-            self.buckets_per_cutoff,
-            self.extra_space,
         )
 
         # Since coords will be fractionalized they can lie outside the cell
@@ -556,16 +538,12 @@ class CellList(Neighborlist):
 class VerletCellList(CellList):
     def __init__(
         self,
-        buckets_per_cutoff: int = 1,
-        extra_space: float = 1e-5,
         skin: float = 1.0,
     ):
-        super().__init__(buckets_per_cutoff=buckets_per_cutoff, extra_space=extra_space)
+        super().__init__()
         if skin <= 0.0:
             raise ValueError("skin must be a positive float")
-
         self.skin = skin
-
         self.register_buffer(
             "old_shift_indices",
             torch.zeros(1, dtype=torch.long),
@@ -587,6 +565,7 @@ class VerletCellList(CellList):
             persistent=False,
         )
         self._old_values_are_cached = False
+        raise ValueError("VerletCellList is currently unsupported")
 
     def forward(
         self,
@@ -616,8 +595,6 @@ class VerletCellList(CellList):
         grid_shape = setup_grid(
             cell.detach(),
             cutoff,
-            self.buckets_per_cutoff,
-            self.extra_space,
         )
         cell_lengths = torch.linalg.norm(cell.detach(), dim=0)
 
@@ -781,9 +758,17 @@ def count_atoms_in_buckets(
 def setup_grid(
     cell: Tensor,
     cutoff: float,
-    buckets_per_cutoff: int,
-    extra_space: float,
+    buckets_per_cutoff: int = 1,
+    extra_space: float = 1e-5,
 ) -> Tensor:
+    # "buckets_per_cutoff" determines how fine grained the 3D grid is, with
+    # respect to the distance cutoff, and is currently hardcoded to 1 in
+    # CellList and VerletList, but support for 2 may be possible. This may be 2
+    # for SANDER, not sure NOTE: If this is changed then the surround_offsets
+    # must also be changed
+    #
+    # extra_space is currently hardcoded to be consistent with SANDER
+
     # Get the shape (GX, GY, GZ) of the grid. Some extra space is used as slack
     # (consistent with SANDER neighborlist by default)
     #
