@@ -758,18 +758,9 @@ class CellList(Neighborlist):
         padded_atom_neighbors.add_(cumcount_in_atom_surround.unsqueeze(-1))
 
         # Now apply the mask in order to unpad
-
-        # NOTE:
-        # x.view(-1).index_select(0, mask.view(-1).nonzero().view(-1)) is EQUIVALENT to:
-        # torch.masked_select(x, mask) but FASTER
-        # view(-1)...view(-1) is used to avoid reshape (not sure if that is faster)
-        lower_between = padded_atom_neighbors.view(-1).index_select(
-            0, mask.view(-1).nonzero().view(-1)
-        )
-        wrap_kind_between = atom_surround_wrap_kind.view(-1).index_select(
-            0, mask.view(-1).nonzero().view(-1)
-        )
         # Both shapes are (B,)
+        lower_between = _masked_select(padded_atom_neighbors.view(-1), mask, 0)
+        wrap_kind_between = _masked_select(atom_surround_wrap_kind.view(-1), mask, 0)
         return lower_between, wrap_kind_between
 
     def _get_surround_idxs(self, atom_grid_idx3: Tensor) -> tp.Tuple[Tensor, Tensor]:
@@ -948,17 +939,6 @@ def count_atoms_in_buckets(
     return count_in_grid, cumsum_from_zero(count_in_grid)
 
 
-NeighborlistArg = tp.Union[
-    tp.Literal[
-        "full_pairwise",
-        "cell_list",
-        "verlet_cell_list",
-        "base",
-    ],
-    Neighborlist,
-]
-
-
 def image_pairs_within(
     count_in_grid: Tensor,  # shape (G,)
     cumcount_in_grid: Tensor,  # shape (G,)
@@ -1017,12 +997,27 @@ def image_pairs_within(
     mask = mask.view(1, -1) < paircount_in_haspairs.view(-1, 1)
 
     # 4) Screen the incorrect, unneeded pairs.
+    # shape (2, H*cp-max) -> (2, W)
+    return _masked_select(_image_pairs_within, mask, 1)
+
+
+def _masked_select(x: Tensor, mask: Tensor, idx: int) -> Tensor:
     # NOTE:
-    # x.view(-1).index_select(0, mask.view(-1).nonzero().view(-1)) is EQUIVALENT to:
+    # x.index_select(0, mask.view(-1).nonzero().view(-1)) is EQUIVALENT to:
     # torch.masked_select(x, mask) but FASTER
     # view(-1)...view(-1) is used to avoid reshape (not sure if that is faster)
-    # shape (2, H*cp-max) -> (2, W)
-    return _image_pairs_within.index_select(1, mask.view(-1).nonzero().view(-1))
+    return x.index_select(idx, mask.view(-1).nonzero().view(-1))
+
+
+NeighborlistArg = tp.Union[
+    tp.Literal[
+        "full_pairwise",
+        "cell_list",
+        "verlet_cell_list",
+        "base",
+    ],
+    Neighborlist,
+]
 
 
 def parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
