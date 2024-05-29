@@ -594,23 +594,31 @@ class CellList(Neighborlist):
             count_in_grid_max,
         )
 
-        # Both shapes (A,) for i[a] and a[i]
-        atom_to_image, image_to_atom = atom_image_converters(atom_grid_idx)
-
         # Total count of all atoms in buckets surrounding a given atom.
         # shape (C, A, N) -> (C, A) -> (C*A,) (get rid of C with view)
         total_count_in_atom_surround = count_in_atom_surround.sum(-1).view(-1)
 
-        # shape (B,)
-        upper = torch.repeat_interleave(atom_to_image, total_count_in_atom_surround)
+        # Both shapes (C*A,) for i[a] and a[i]
+        atom_to_image, image_to_atom = atom_image_converters(atom_grid_idx)
+
+        # For each atom we have one image_pair_between associated with each of
+        # the atoms in its surrounding buckets, so we repeat the image-idx of each
+        # atom that many times.
+        # shape (C*A,), (C*A) -> (B,)
+        upper_between = torch.repeat_interleave(
+            atom_to_image,
+            total_count_in_atom_surround,
+        )
         # shape (2, B)
-        _image_pairs_between = torch.stack((upper, lower_between), dim=0)
+        _image_pairs_between = torch.stack((upper_between, lower_between), dim=0)
 
         # 5) Get the necessary shifts. If no PBC is needed also get rid of the
         # image_pairs_between that need wrapping
         if not pbc.any():
-            _image_pairs_between = _image_pairs_between.index_select(
-                1, (wrap_kind_between == 0).view(-1).nonzero().view(-1)
+            _image_pairs_between = _masked_select(
+                _image_pairs_between,
+                (wrap_kind_between == 0),
+                1,
             )
             shift_idxs = None
         else:
@@ -675,12 +683,13 @@ class CellList(Neighborlist):
 
         # 4) create the vector_index -> flat_index conversion tensor
         vector_idx_to_flat = torch.arange(0, self.grid_numel, device=device)
+        # shape (GX, GY, GZ)
         vector_idx_to_flat = vector_idx_to_flat.view(
             int(self.grid_shape[0]),
             int(self.grid_shape[1]),
             int(self.grid_shape[2]),
         )
-        self.vector_idx_to_flat = self._pad_circular(vector_idx_to_flat)
+        self.vector_idx_to_flat = _pad_circular_3d(vector_idx_to_flat)
 
         # 5) I now create a tensor that when indexed with vector indices
         # gives the shifting case for that atom/neighbor bucket
@@ -688,6 +697,22 @@ class CellList(Neighborlist):
         # now I need to  fill the vector
         # in some smart way
         # this should fill the tensor in a smart way
+
+        # top plane
+        # [-1, 0, 0],  # 1
+        # [-1, -1, 0],  # 2
+        # [0, -1, 0],  # 3
+        # [1, -1, 0],  # 4
+        # # bottom plane
+        # [-1, 1, -1],  # 5
+        # [0, 1, -1],  # 6
+        # [1, 1, -1],  # 7
+        # [-1, 0, -1],  # 8
+        # [0, 0, -1],  # 9
+        # [1, 0, -1],  # 10
+        # [-1, -1, -1],  # 11
+        # [0, -1, -1],  # 12
+        # [1, -1, -1],  # 13
 
         self.wrap_kind_from_idx3[0, 1:-1, 1:-1] = 1
         self.wrap_kind_from_idx3[0, 0, 1:-1] = 2
@@ -709,12 +734,6 @@ class CellList(Neighborlist):
         self.wrap_kind_from_idx3[-1, 1:-1, 1:-1] = 17
 
         self.cell_variables_are_set = True
-
-    @staticmethod
-    def _pad_circular(x: Tensor) -> Tensor:
-        x = x.unsqueeze(0).unsqueeze(0)
-        x = torch.nn.functional.pad(x, (1, 1, 1, 1, 1, 1), mode="circular")
-        return x.squeeze()
 
     def _lower_image_pairs_between(
         self,
@@ -764,16 +783,18 @@ class CellList(Neighborlist):
         return lower_between, wrap_kind_between
 
     def _get_surround_idxs(self, atom_grid_idx3: Tensor) -> tp.Tuple[Tensor, Tensor]:
-        # Calculate the grid_idx3 and grid_idx associated with the buckets
+        # Calc the grid_idx3 and grid_idx associated with the buckets
         # surrounding a given atom.
         #
-        # The surrounding buckets will either lie inside the central cell
-        # directly, or wrap around one or more dimensions due to PBC. In the latter case
-        # the atom_surround_idx3 may be negative
+        # The surrounding buckets will either lie in the central cell or wrap
+        # around one or more dimensions due to PBC. In the latter case the
+        # atom_surround_idx3 may be negative, or larger than the corrseponding
+        # grid_shape dim
         #
-        # Depending on whether there is 1, 2 or 3 negative idxs, the buckets
-        # should be shifted along 1, 2 or 3 dim respectively, since the central
-        # bucket is up against a wall, an edge or a corner respectively.
+        # Depending on whether there is 1, 2 or 3 negative (or overflowing)
+        # idxs, the atoms in the bucket should be shifted along 1, 2 or 3 dim,
+        # since the central bucket is up against a wall, an edge or a corner
+        # respectively.
         mols, atoms, _ = atom_grid_idx3.shape
         neighbors, _ = self.surround_offset_idx3.shape
 
@@ -787,7 +808,8 @@ class CellList(Neighborlist):
         # these vector indices have the information that says whether to shift
         # each pair and what amount to shift it
 
-        # After this step some of the atom_surround_idx3 are negative
+        # After this step some of the atom_surround_idx3 are negative, and some
+        # may overflow
         atom_surround_idx3 = atom_grid_idx3.view(
             mols, atoms, 1, 3
         ) + self.surround_offset_idx3.view(mols, 1, neighbors, 3)
@@ -1006,6 +1028,15 @@ def _masked_select(x: Tensor, mask: Tensor, idx: int) -> Tensor:
     # torch.masked_select(x, mask) but FASTER
     # view(-1)...view(-1) is used to avoid reshape (not sure if that is faster)
     return x.index_select(idx, mask.view(-1).nonzero().view(-1))
+
+
+def _pad_circular_3d(x: Tensor) -> Tensor:
+    # pad a 3D tensor, (1-left, 1-right, 1-top, 1-bottom 1-back, 1-front)
+    assert x.ndim == 3
+    GX, GY, GZ = x.shape
+    x = x.view(1, 1, GX, GY, GZ)
+    x = torch.nn.functional.pad(x, (1, 1, 1, 1, 1, 1), mode="circular")
+    return x.view(GX + 2, GY + 2, GZ + 2)
 
 
 NeighborlistArg = tp.Union[
