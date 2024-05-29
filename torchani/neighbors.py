@@ -294,7 +294,7 @@ class FullPairwise(Neighborlist):
 
 
 class CellList(Neighborlist):
-    offset_idx3: Tensor
+    _offset_idx3: Tensor
 
     def __init__(self):
         super().__init__()
@@ -318,9 +318,9 @@ class CellList(Neighborlist):
         # |---|  |xo-|  |xxx|
         # |---|  |xxx|  |xxx|
         #
-        # shape (neighbors=13, 3)
+        # shape (surrounding=13, 3)
         self.register_buffer(
-            "offset_idx3",
+            "_offset_idx3",
             torch.tensor(
                 [
                     # Surrounding buckets in the same plane (gz-offset = 0)
@@ -346,7 +346,7 @@ class CellList(Neighborlist):
 
     @torch.jit.export
     def _recast_long_buffers(self) -> None:
-        self.offset_idx3 = self.offset_idx3.to(dtype=torch.long)
+        self._offset_idx3 = self._offset_idx3.to(dtype=torch.long)
 
     def _validate_and_parse_cell_and_pbc(
         self,
@@ -383,13 +383,9 @@ class CellList(Neighborlist):
     ) -> NeighborData:
         assert cutoff >= 0.0, "Cutoff must be a positive float"
         assert coordinates.shape[0] == 1, "Cell list doesn't support batches"
-
-        # If cell is None then a bounding cell for the molecule is obtained
-        # from the coordinates, in this case the coordinates are assumed to be
-        # mapped to the central cell, since anything else would be meaningless
-
-        # coordinates are displaced only if pbc=False, otherwise they are actually
-        # the same as the input coordinates, but detached from the graph.
+        # Coordinates are displaced only if (pbc=False, cell=None), in which
+        # case the displaced coordinates lie all inside the created cell.
+        # otherwise they are the same as the input coordinates, but "detached"
         displaced_coordinates, cell, pbc = self._validate_and_parse_cell_and_pbc(
             coordinates, cell, pbc
         )
@@ -465,7 +461,7 @@ class CellList(Neighborlist):
         # is given by the number and value of negative and overflowing
         # dimensions.
         # shape (C, A, N=13, 3) contains negative and overflowing idxs
-        atom_surround_idx3 = atom_grid_idx3.unsqueeze(-2) + self.offset_idx3.view(
+        atom_surround_idx3 = atom_grid_idx3.unsqueeze(-2) + self._offset_idx3.view(
             1, 1, -1, 3
         )
         # Modulo grid_shape is used to get rid of the negative and overflowing idxs
@@ -535,7 +531,13 @@ class CellList(Neighborlist):
         return atom_pairs, shift_idxs
 
 
+# TODO: Currently broken
 class VerletCellList(CellList):
+    _old_shift_indices: Tensor
+    _old_atom_pairs: Tensor
+    _old_coordinates: Tensor
+    _old_cell_lenghts: Tensor
+
     def __init__(
         self,
         skin: float = 1.0,
@@ -545,22 +547,22 @@ class VerletCellList(CellList):
             raise ValueError("skin must be a positive float")
         self.skin = skin
         self.register_buffer(
-            "old_shift_indices",
+            "_old_shift_indices",
             torch.zeros(1, dtype=torch.long),
             persistent=False,
         )
         self.register_buffer(
-            "old_atom_pairs",
+            "_old_atom_pairs",
             torch.zeros(1, dtype=torch.long),
             persistent=False,
         )
         self.register_buffer(
-            "old_coordinates",
+            "_old_coordinates",
             torch.zeros(1),
             persistent=False,
         )
         self.register_buffer(
-            "old_cell_lenghts",
+            "_old_cell_lenghts",
             torch.zeros(1),
             persistent=False,
         )
@@ -594,8 +596,8 @@ class VerletCellList(CellList):
         if self._can_use_old_list(displaced_coordinates, cell_lengths):
             # If a cell list is not needed use the old cached values
             # NOTE: Cached values should NOT be updated here
-            atom_pairs = self.old_atom_pairs
-            shift_indices: tp.Optional[Tensor] = self.old_shift_indices
+            atom_pairs = self._old_atom_pairs
+            shift_indices: tp.Optional[Tensor] = self._old_shift_indices
         else:
             # The cell list is calculated with a skin (?) here.
             atom_pairs, shift_indices = self._compute_cell_list(
@@ -630,15 +632,15 @@ class VerletCellList(CellList):
         cell_lengths: Tensor,
     ):
         if shift_indices is not None:
-            self.old_shift_indices = shift_indices.detach()
-        self.old_atom_pairs = atom_pairs.detach()
-        self.old_coordinates = coordinates.detach()
-        self.old_cell_lengths = cell_lengths.detach()
+            self._old_shift_indices = shift_indices.detach()
+        self._old_atom_pairs = atom_pairs.detach()
+        self._old_coordinates = coordinates.detach()
+        self._old_cell_lengths = cell_lengths.detach()
         self._old_values_are_cached = True
 
     @torch.jit.unused
     def reset_cached_values(self, dtype: torch.dtype = torch.float) -> None:
-        device = self.offset_idx3.device
+        device = self._offset_idx3.device
         self._cache_values(
             torch.zeros(1, dtype=torch.long, device=device),
             torch.zeros(1, dtype=torch.long, device=device),
@@ -654,8 +656,8 @@ class VerletCellList(CellList):
         cell_lengths.detach_()
         # Check if any coordinate moved more than half the skin depth,
         # If this happened, then the cell list has to be rebuilt
-        cell_scaling = cell_lengths / self.old_cell_lenghts
-        delta = coordinates - self.old_coordinates * cell_scaling
+        cell_scaling = cell_lengths / self._old_cell_lenghts
+        delta = coordinates - self._old_coordinates * cell_scaling
         dist_squared = delta.pow(2).sum(-1)
         return bool((dist_squared > (self.skin / 2) ** 2).all())
 
@@ -741,49 +743,41 @@ def setup_grid(
     buckets_per_cutoff: int = 1,
     extra_space: float = 1e-5,
 ) -> Tensor:
-    # "buckets_per_cutoff" determines how fine grained the 3D grid is, with
-    # respect to the distance cutoff, and is currently hardcoded to 1 in
-    # CellList and VerletList, but support for 2 may be possible. This may be 2
-    # for SANDER, not sure NOTE: If this is changed then the surround_offsets
+    # Get the shape (GX, GY, GZ) of the grid. Some extra space is used as slack.
+    #
+    # NOTE: "buckets_per_cutoff" determines how fine grained the 3D grid is,
+    # with respect to the distance cutoff, and is currently hardcoded to 1 in
+    # CellList and VerletCellList, but support for 2 may be possible. This may
+    # be 2 for SANDER, not sure. If this is changed then the surround_offsets
     # must also be changed
     #
-    # extra_space is currently hardcoded to be consistent with SANDER
-
-    # Get the shape (GX, GY, GZ) of the grid. Some extra space is used as slack
-    # (consistent with SANDER neighborlist by default)
+    # NOTE: extra_space is currently hardcoded to be consistent with SANDER
     #
     # The spherical factor is different from 1 in the case of nonorthogonal
     # boxes and accounts for the "spherical protrusion", which is related
     # to the fact that the sphere of radius "cutoff" around an atom needs
-    # some extra space in nonorthogonal boxes.
+    # some more room to fit in nonorthogonal boxes.
+
+    # To get the shape of the grid (number of "buckets" or "grid elements"
+    # in each direction) calculate first a lower bound, and afterwards
+    # perform floor division.
     #
     # NOTE: This is not actually the bucket length used in the grid,
-    # it is only a lower bound used to calculate the grid size
-    # TODO: calculate this correctly
+    # it is only a lower bound used to calculate the grid size, it is the minimum
+    # size that spawns a new bucket in the grid.
     spherical_factor = torch.tensor(
         [1.0, 1.0, 1.0], dtype=torch.float, device=cell.device
-    )
+    )  # TODO: calculate correctly
     bucket_length_lower_bound = (
         spherical_factor * cutoff / buckets_per_cutoff
     ) + extra_space
 
-    # 1) Update the cell diagonal and translation displacements
-    # sizes of each side are given by norm of each basis vector of the unit cell
+    # Lengths of each cell edge are given by norm of each cell basis vector
     cell_lengths = torch.linalg.norm(cell, dim=0)
 
-    # 2) Get max bucket index (Gx, Gy, Gz)
-    # which give the size of the grid of buckets that fully covers the
-    # whole volume of the unit cell U, given by "cell", and the number of
-    # flat buckets (G,) (equal to the total number of buckets, F )
-    #
-    # Gx, Gy, Gz is 1 + maximum index for vector g. Flat bucket indices are
-    # indices for the buckets written in row major order (or equivalently
-    # dictionary order), the number G = GX * GY * GZ
-
-    # bucket_length_lower_bound = B, unit cell U_mu = B * 3 - epsilon this
-    # means I can cover it with 3 buckets plus some extra space that is
-    # less than a bucket, so I just stretch the buckets a little bit. In
-    # this particular case grid_shape = (3, 3, 3)
+    # For example, if a cell length is "3 * bucket_length_lower_bound + eps" it
+    # can be covered with 3 buckets if they are stretched to be slightly larger
+    # than the lower bound.
     grid_shape = torch.div(
         cell_lengths,
         bucket_length_lower_bound,
@@ -863,40 +857,29 @@ def lower_image_pairs_between(
     shift_idxs_between: Tensor,  # shape (C, A, N, 3)
     count_in_grid_max: int,  # scalar
 ) -> tp.Tuple[Tensor, Tensor]:
+    # Calculate "lower" part of the image_pairs_between buckets
     device = count_in_atom_surround.device
-    # Calculate "lower" part of the image_pairs between buckets
-
-    # this gives, for each atom, for each neighbor bucket, all the
-    # unpadded, unshifted atom neighbors
-    # this is basically broadcasted to the shape of fna
     mols, atoms, neighbors = count_in_atom_surround.shape
-
     # shape is (c-max)
     padded_atom_neighbors = torch.arange(0, count_in_grid_max, device=device)
     # shape (1, 1, 1, c-max)
     padded_atom_neighbors = padded_atom_neighbors.view(1, 1, 1, -1)
-    # repeat is needed instead of expand here due to += neighbor_cumcount (?)
     # shape (C, A, N, c-max)
     padded_atom_neighbors = padded_atom_neighbors.repeat(mols, atoms, neighbors, 1)
 
-    # repeat the surround wrap kinds to account for all neighboring atoms
-    # repeat is needed instead of expand due to reshaping later (?)
+    # Create a mask to unpad the padded neighbors
+    # shape (C, A, N, c-max)
+    mask = padded_atom_neighbors < count_in_atom_surround.unsqueeze(-1)
+    padded_atom_neighbors.add_(cumcount_in_atom_surround.unsqueeze(-1))
+
+    # Pad the shift idxs
     # shape  (C, A, N, 1, 3)
     shift_idxs_between = shift_idxs_between.unsqueeze(-2)
     # shape  (C, A, N, c-max, 3)
     shift_idxs_between = shift_idxs_between.repeat(1, 1, 1, count_in_grid_max, 1)
 
-    # now I need to add A(f' < fna) shift the padded atom neighbors to get
-    # image indices I need to check here that the cumcount is correct since
-    # it was technically done with imidx so I need to check correctnes of
-    # both counting schemes, but first I create the mask to unpad
-    # and then I shift to the correct indices
-    # shape (C, A, N, c-max)
-    mask = padded_atom_neighbors < count_in_atom_surround.unsqueeze(-1)
-    padded_atom_neighbors.add_(cumcount_in_atom_surround.unsqueeze(-1))
-
-    # Now apply the mask in order to unpad
-    # Both shapes are (B,)
+    # Apply the mask
+    # Both shapes (B,)
     lower_between = _masked_select(padded_atom_neighbors.view(-1), mask, 0)
     shift_idxs_between = _masked_select(shift_idxs_between.view(-1, 3), mask, 0)
     return lower_between, shift_idxs_between
