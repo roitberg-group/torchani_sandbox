@@ -348,6 +348,31 @@ class CellList(Neighborlist):
     def _recast_long_buffers(self) -> None:
         self.offset_idx3 = self.offset_idx3.to(dtype=torch.long)
 
+    def _validate_and_parse_cell_and_pbc(
+        self,
+        coordinates: Tensor,
+        cell: tp.Optional[Tensor],
+        pbc: tp.Optional[Tensor],
+    ) -> tp.Tuple[Tensor, Tensor, Tensor]:
+        device = coordinates.device
+        if pbc is None:
+            pbc = torch.zeros(3, dtype=torch.bool, device=device)
+        assert pbc is not None
+
+        if not (pbc.any() or pbc.all()):
+            raise ValueError("Cell list only supports PBC in all or no directions")
+
+        if cell is None:
+            if pbc.any():
+                raise ValueError("Cell must be provided if PBC is required")
+            displaced_coordinates, cell = self._compute_bounding_cell(
+                coordinates.detach(), eps=1e-3
+            )
+            return displaced_coordinates, cell, pbc
+
+        assert cell is not None
+        return coordinates.detach(), cell, pbc
+
     def forward(
         self,
         species: Tensor,
@@ -358,21 +383,16 @@ class CellList(Neighborlist):
     ) -> NeighborData:
         assert cutoff >= 0.0, "Cutoff must be a positive float"
         assert coordinates.shape[0] == 1, "Cell list doesn't support batches"
-        if cell is None:
-            assert pbc is None or not pbc.any()
+
         # If cell is None then a bounding cell for the molecule is obtained
         # from the coordinates, in this case the coordinates are assumed to be
         # mapped to the central cell, since anything else would be meaningless
-        pbc = pbc if pbc is not None else self.default_pbc
-        assert pbc.all() or (not pbc.any()), "CellList supports PBC in all or no dirs"
 
-        if cell is None:
-            # Displaced coordinates only used for computation if pbc is not required
-            coordinates_displaced, cell = self._compute_bounding_cell(
-                coordinates.detach(), eps=1e-3
-            )
-        else:
-            coordinates_displaced = coordinates.detach()
+        # coordinates are displaced only if pbc=False, otherwise they are actually
+        # the same as the input coordinates, but detached from the graph.
+        displaced_coordinates, cell, pbc = self._validate_and_parse_cell_and_pbc(
+            coordinates, cell, pbc
+        )
 
         grid_shape = setup_grid(
             cell.detach(),
@@ -382,13 +402,13 @@ class CellList(Neighborlist):
         # Since coords will be fractionalized they can lie outside the cell
         # before this step
         atom_pairs, shift_indices = self._compute_cell_list(
-            coordinates_displaced.detach(),
+            displaced_coordinates.detach(),
             grid_shape,
             cell,
             pbc,
         )
 
-        if pbc.any():
+        if use_pbc:
             assert shift_indices is not None
             shift_values = shift_indices.to(cell.dtype) @ cell
             # Before the screening step we map the coordinates to the central cell,
@@ -557,18 +577,10 @@ class VerletCellList(CellList):
     ) -> NeighborData:
         assert cutoff >= 0.0, "Cutoff must be a positive float"
         assert coordinates.shape[0] == 1, "Cell list doesn't support batches"
-        if cell is None:
-            assert pbc is None or not pbc.any()
-        pbc = pbc if pbc is not None else self.default_pbc
-        assert pbc.all() or (not pbc.any()), "CellList supports PBC in all or no dirs"
 
-        if cell is None:
-            # Displaced coordinates only used for computation if pbc is not required
-            coordinates_displaced, cell = self._compute_bounding_cell(
-                coordinates.detach(), eps=1e-3
-            )
-        else:
-            coordinates_displaced = coordinates.detach()
+        displaced_coordinates, cell, pbc = self._validate_and_parse_cell_and_pbc(
+            coordinates, cell, pbc
+        )
 
         # It is not costly to set up the grid each step,
         # and it avoids keeping track of a lot of state
@@ -576,9 +588,10 @@ class VerletCellList(CellList):
             cell.detach(),
             cutoff,
         )
+
         cell_lengths = torch.linalg.norm(cell.detach(), dim=0)
 
-        if self._can_use_old_list(coordinates_displaced, cell_lengths):
+        if self._can_use_old_list(displaced_coordinates, cell_lengths):
             # If a cell list is not needed use the old cached values
             # NOTE: Cached values should NOT be updated here
             atom_pairs = self.old_atom_pairs
@@ -586,7 +599,7 @@ class VerletCellList(CellList):
         else:
             # The cell list is calculated with a skin (?) here.
             atom_pairs, shift_indices = self._compute_cell_list(
-                coordinates_displaced.detach(),
+                displaced_coordinates.detach(),
                 grid_shape,
                 cell,
                 pbc,
@@ -594,7 +607,7 @@ class VerletCellList(CellList):
             self._cache_values(
                 atom_pairs,
                 shift_indices,
-                coordinates_displaced.detach(),
+                displaced_coordinates.detach(),
                 cell_lengths,
             )
 
