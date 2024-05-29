@@ -376,7 +376,7 @@ class CellList(Neighborlist):
         assert coordinates.shape[0] == 1, "Cell list doesn't support batches"
         if cell is None:
             assert pbc is None or not pbc.any()
-        # if cell is None then a bounding cell for the molecule is obtained
+        # If cell is None then a bounding cell for the molecule is obtained
         # from the coordinates, in this case the coordinates are assumed to be
         # mapped to the central cell, since anything else would be meaningless
         pbc = pbc if pbc is not None else self.default_pbc
