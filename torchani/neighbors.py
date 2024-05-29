@@ -885,9 +885,9 @@ def coords_to_fractional(coordinates: Tensor, cell: Tensor) -> Tensor:
 
 
 def flatten_grid_idx3(grid_idx3: Tensor, grid_shape: Tensor) -> Tensor:
-    # Converts a tensor that holds vector idxs (idx3) to one that holds
-    # flat idxs (last dimension is removed).
-    # For row-major flattening the factors needed are: (GY * GZ, GZ, 1)
+    # Converts a tensor that holds idx3 (all of which lie inside the central
+    # grid) to one that holds flat idxs (last dimension is removed). For
+    # row-major flattening the factors needed are: (GY * GZ, GZ, 1)
     grid_factors = grid_shape.clone()
     grid_factors[0] = grid_shape[1] * grid_shape[2]
     grid_factors[1] = grid_shape[2]
