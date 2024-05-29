@@ -53,7 +53,7 @@ class TestCellList(TestCase):
         self.assertTrue(self.clist.surround_offset_idx3.shape == (13, 3))
 
     def testSetupGrid(self):
-        grid_shape, cell_lengths = setup_grid(
+        grid_shape = setup_grid(
             self.cell,
             self.cutoff,
             self.clist.buckets_per_cutoff,
@@ -73,7 +73,7 @@ class TestCellList(TestCase):
         self.assertTrue((frac >= 0.0).all())
 
     def testGridIdx3(self):
-        grid_shape, cell_lengths = setup_grid(
+        grid_shape = setup_grid(
             self.cell,
             self.cutoff,
             self.clist.buckets_per_cutoff,
@@ -86,7 +86,7 @@ class TestCellList(TestCase):
         self.assertEqual(atom_grid_idx3, atom_grid_idx3_expect)
 
     def testGridIdx(self):
-        grid_shape, cell_lengths = setup_grid(
+        grid_shape = setup_grid(
             self.cell,
             self.cutoff,
             self.clist.buckets_per_cutoff,
@@ -101,7 +101,7 @@ class TestCellList(TestCase):
 
     def testCounts(self):
         grid_numel_expect = 27
-        grid_shape, cell_lengths = setup_grid(
+        grid_shape = setup_grid(
             self.cell,
             self.cutoff,
             self.clist.buckets_per_cutoff,
@@ -119,7 +119,7 @@ class TestCellList(TestCase):
         self.assertEqual(grid_cumcount, torch.arange(0, 54, 2))
 
     def testImagePairsWithinBuckets(self):
-        grid_shape, cell_lengths = setup_grid(
+        grid_shape = setup_grid(
             self.cell,
             self.cutoff,
             self.clist.buckets_per_cutoff,
@@ -343,8 +343,11 @@ class TestCellListEnergiesCuda(TestCellListEnergies):
 class TestCellListLargeSystem(ANITest):
     def setUp(self):
         # JIT optimizations are avoided to prevent cuda bugs that make first
-        # evaluations extremely slow (?)
-        torch._C._jit_set_profiling_executor(False)
+        # evaluations extremely slow for old pytorch
+        # NOTE: This may not even happen anymore with the re-coding of the
+        # cell-list code
+        if tuple(map(int, torch.__version__.split("."))) < (2, 0):
+            torch._C._jit_set_profiling_executor(False)
         cut = 5.2
         cell_size = cut * 3 + 0.1
 
@@ -371,9 +374,9 @@ class TestCellListLargeSystem(ANITest):
 
     def tearDown(self) -> None:
         # JIT optimizations are reset since this generates bugs in the
-        # repulsion tests (!) for some reason TODO: Figure out why and see if
-        # this remains in pytorch 2
-        torch._C._jit_set_profiling_executor(True)
+        # on the repulsion tests, on old pytorch
+        if tuple(map(int, torch.__version__.split("."))) < (2, 0):
+            torch._C._jit_set_profiling_executor(True)
 
     def testRandomNoPBC(self):
         idxs = torch.randint(
