@@ -315,7 +315,6 @@ class CellList(Neighborlist):
     skin: float
     cell_diagonal: Tensor
     grid_shape: Tensor
-    vector_idx_to_flat: Tensor
     wrap_kind_from_idx3: Tensor
     surround_offset_idx3: Tensor
     wrap_offset_idx3: Tensor
@@ -346,9 +345,6 @@ class CellList(Neighborlist):
         self.register_buffer("cell_diagonal", torch.zeros(1), persistent=False)
         self.register_buffer(
             "grid_shape", torch.zeros(3, dtype=torch.long), persistent=False
-        )
-        self.register_buffer(
-            "vector_idx_to_flat", torch.zeros(1, dtype=torch.long), persistent=False
         )
         self.register_buffer(
             "wrap_kind_from_idx3", torch.zeros(1, dtype=torch.long), persistent=False
@@ -451,7 +447,6 @@ class CellList(Neighborlist):
     def _recast_long_buffers(self) -> None:
         # for cell list
         self.grid_shape = self.grid_shape.to(dtype=torch.long)
-        self.vector_idx_to_flat = self.vector_idx_to_flat.to(dtype=torch.long)
         self.wrap_kind_from_idx3 = self.wrap_kind_from_idx3.to(dtype=torch.long)
         self.surround_offset_idx3 = self.surround_offset_idx3.to(dtype=torch.long)
         self.wrap_offset_idx3 = self.wrap_offset_idx3.to(dtype=torch.long)
@@ -574,7 +569,13 @@ class CellList(Neighborlist):
         # To do this, first get a grid_idx3 of the surrounding buckets of each atom
         # roughly: "grid_idx3[a, n, 3]" and "grid_idx[a, n]"
         # shapes (C, A, N, 3) and (C, A, N) (N=13 for 1-bucket-per-cutoff)
-        atom_surround_idx3, atom_surround_idx = self._get_surround_idxs(atom_grid_idx3)
+        # "atom_surround_idx3" has some negative idxs and some overflowing
+        # idxs, so apply modulo grid_shape to flatten
+        atom_surround_idx3 = self.grid_idx3_to_surround_idx3(atom_grid_idx3)
+        # "atom_surround_idx" contains only positive idxs inside central cell
+        atom_surround_idx = flatten_grid_idx3(
+            atom_surround_idx3 % self.grid_shape, self.grid_shape
+        )
 
         # 4) Calc upper and lower part of the image_pairs_between.
         # The "unpadded" upper part of the pairlist repeats each image idx a
@@ -681,44 +682,20 @@ class CellList(Neighborlist):
         if self.grid_numel == 0:
             raise RuntimeError("Cell is too small to perform pbc calculations")
 
-        # 4) create the vector_index -> flat_index conversion tensor
-        vector_idx_to_flat = torch.arange(0, self.grid_numel, device=device)
-        # shape (GX, GY, GZ)
-        self.vector_idx_to_flat = vector_idx_to_flat.view(
-            int(self.grid_shape[0]),
-            int(self.grid_shape[1]),
-            int(self.grid_shape[2]),
-        )
-        GX, GY, GZ = self.vector_idx_to_flat.shape
-        # self.vector_idx_to_flat = _pad_circular_3d(vector_idx_to_flat)
+        GX = int(self.grid_shape[0])
+        GY = int(self.grid_shape[1])
+        GZ = int(self.grid_shape[2])
 
-        # 5) I now create a tensor that when indexed with vector indices
+        # 5) Create a tensor that when indexed with vector indices
         # gives the shifting case for that atom/neighbor bucket
         self.wrap_kind_from_idx3 = torch.zeros(
             (GX + 2, GY + 2, GZ + 2),
             device=device,
             dtype=torch.long,
         )
-        # self.wrap_kind_from_idx3 = torch.zeros_like(self.vector_idx_to_flat)
         # now I need to  fill the vector
-        # in some smart way
+        # in some smart way TODO: improve this
         # this should fill the tensor in a smart way
-
-        # top plane
-        # [-1, 0, 0],  # 1
-        # [-1, -1, 0],  # 2
-        # [0, -1, 0],  # 3
-        # [1, -1, 0],  # 4
-        # # bottom plane
-        # [-1, 1, -1],  # 5
-        # [0, 1, -1],  # 6
-        # [1, 1, -1],  # 7
-        # [-1, 0, -1],  # 8
-        # [0, 0, -1],  # 9
-        # [1, 0, -1],  # 10
-        # [-1, -1, -1],  # 11
-        # [0, -1, -1],  # 12
-        # [1, -1, -1],  # 13
 
         self.wrap_kind_from_idx3[0, 1:-1, 1:-1] = 1
         self.wrap_kind_from_idx3[0, 0, 1:-1] = 2
@@ -788,7 +765,7 @@ class CellList(Neighborlist):
         wrap_kind_between = _masked_select(atom_surround_wrap_kind.view(-1), mask, 0)
         return lower_between, wrap_kind_between
 
-    def _get_surround_idxs(self, atom_grid_idx3: Tensor) -> tp.Tuple[Tensor, Tensor]:
+    def grid_idx3_to_surround_idx3(self, atom_grid_idx3: Tensor) -> Tensor:
         # Calc the grid_idx3 and grid_idx associated with the buckets
         # surrounding a given atom.
         #
@@ -804,35 +781,17 @@ class CellList(Neighborlist):
         mols, atoms, _ = atom_grid_idx3.shape
         neighbors, _ = self.surround_offset_idx3.shape
 
-        # This is actually strict neighbors, so it doesn't have
-        # "the bucket itself"
-        # These are
-        # - g(a, n),  shape 1 x A x N x 3
-        # - f(a, n),  shape 1 x A x N
-        # These give, for each atom, the flat index or the vector index of its
-        # neighbor buckets (neighbor buckets indexed by n).
-        # these vector indices have the information that says whether to shift
-        # each pair and what amount to shift it
+        # This is actually strict surrounding buckets. "self bucket"
+        # is not counted.
 
         # After this step some of the atom_surround_idx3 are negative, and some
-        # may overflow, so we wrap the indices using modulo arithmetic
-        # with the grid shape
+        # will overflow. It is important to keep this information to see
+        # which buckets to wrap later.
         atom_surround_idx3 = atom_grid_idx3.view(
             mols, atoms, 1, 3
         ) + self.surround_offset_idx3.view(mols, 1, neighbors, 3)
-        # shape (C*A*N, 3)
-        wrapped_atom_surround_idx3 = atom_surround_idx3.view(-1, 3) % self.grid_shape
 
-        # atom_surround_idx contains only idxs that are positive, it indexes
-        # buckets inside the central cell
-        #
-        # NOTE: This is needed instead of unbind due to torchscript bug
-        atom_surround_idx = self.vector_idx_to_flat[
-            wrapped_atom_surround_idx3[:, 0],
-            wrapped_atom_surround_idx3[:, 1],
-            wrapped_atom_surround_idx3[:, 2],
-        ].view(mols, atoms, neighbors)
-        return atom_surround_idx3, atom_surround_idx
+        return atom_surround_idx3
 
     def _wrap_kind_from_surround_idx3(self, atom_surround_idx3: Tensor) -> Tensor:
         mols, atoms, neighbors, _ = atom_surround_idx3.shape
@@ -911,7 +870,10 @@ def coords_to_fractional(coordinates: Tensor, cell: Tensor) -> Tensor:
     return fractional_coords
 
 
-def flatten_grid_idx3(grid_idx3: Tensor, grid_shape: Tensor) -> Tensor:
+def flatten_grid_idx3(
+    grid_idx3: Tensor,
+    grid_shape: Tensor,
+) -> Tensor:
     # Converts a tensor that holds idx3 (all of which lie inside the central
     # grid) to one that holds flat idxs (last dimension is removed). For
     # row-major flattening the factors needed are: (GY * GZ, GZ, 1)
@@ -1033,15 +995,6 @@ def _masked_select(x: Tensor, mask: Tensor, idx: int) -> Tensor:
     # torch.masked_select(x, mask) but FASTER
     # view(-1)...view(-1) is used to avoid reshape (not sure if that is faster)
     return x.index_select(idx, mask.view(-1).nonzero().view(-1))
-
-
-def _pad_circular_3d(x: Tensor) -> Tensor:
-    # pad a 3D tensor, (1-left, 1-right, 1-top, 1-bottom 1-back, 1-front)
-    assert x.ndim == 3
-    GX, GY, GZ = x.shape
-    x = x.view(1, 1, GX, GY, GZ)
-    x = torch.nn.functional.pad(x, (1, 1, 1, 1, 1, 1), mode="circular")
-    return x.view(GX + 2, GY + 2, GZ + 2)
 
 
 NeighborlistArg = tp.Union[
