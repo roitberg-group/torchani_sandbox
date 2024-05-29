@@ -408,7 +408,7 @@ class CellList(Neighborlist):
             pbc,
         )
 
-        if use_pbc:
+        if pbc.any():
             assert shift_indices is not None
             shift_values = shift_indices.to(cell.dtype) @ cell
             # Before the screening step we map the coordinates to the central cell,
