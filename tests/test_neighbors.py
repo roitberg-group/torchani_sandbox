@@ -8,6 +8,7 @@ from torchani.testing import TestCase, expand, ANITest
 from torchani.aev import AEVComputer
 from torchani.neighbors import (
     CellList,
+    setup_grid,
     coords_to_fractional,
     coords_to_grid_idx3,
     flatten_grid_idx3,
@@ -51,14 +52,17 @@ class TestCellList(TestCase):
         self.assertTrue(self.clist.buckets_per_cutoff == 1)
         self.assertTrue(self.clist.surround_offset_idx3.shape == (13, 3))
 
-    def testSetupCell(self):
-        clist = self.clist
-        clist._setup_variables(self.cell, self.cutoff)
+    def testSetupGrid(self):
+        grid_shape, cell_lengths = setup_grid(
+            self.cell,
+            self.cutoff,
+            self.clist.buckets_per_cutoff,
+            self.clist.extra_space,
+        )
         # this creates a unit cell with 27 buckets
         # and a grid of 3 x 3 x 3 buckets (3 in each direction, GX == GY == GZ == 3)
         expect_shape = torch.tensor([3, 3, 3], dtype=torch.long, device=self.device)
-        self.assertEqual(clist.grid_numel, 27)
-        self.assertEqual(clist.grid_shape, expect_shape)
+        self.assertEqual(grid_shape, expect_shape)
 
     def testFractionalize(self):
         # Coordinate fractionalization
@@ -69,18 +73,26 @@ class TestCellList(TestCase):
         self.assertTrue((frac >= 0.0).all())
 
     def testGridIdx3(self):
-        clist = self.clist
-        clist._setup_variables(self.cell, self.cutoff)
+        grid_shape, cell_lengths = setup_grid(
+            self.cell,
+            self.cutoff,
+            self.clist.buckets_per_cutoff,
+            self.clist.extra_space,
+        )
         atom_grid_idx3 = coords_to_grid_idx3(
-            self.coordinates, self.cell, clist.grid_shape
+            self.coordinates, self.cell, grid_shape
         )
         self.assertTrue(atom_grid_idx3.shape == (1, 54, 3))
         self.assertEqual(atom_grid_idx3, atom_grid_idx3_expect)
 
     def testGridIdx(self):
-        clist = self.clist
-        clist._setup_variables(self.cell, self.cutoff)
-        grid_idx = flatten_grid_idx3(atom_grid_idx3_expect, clist.grid_shape)
+        grid_shape, cell_lengths = setup_grid(
+            self.cell,
+            self.cutoff,
+            self.clist.buckets_per_cutoff,
+            self.clist.extra_space,
+        )
+        grid_idx = flatten_grid_idx3(atom_grid_idx3_expect, grid_shape)
         # All flat grid indices are present in this test
         grid_idx_compare = torch.repeat_interleave(
             torch.arange(0, 27, dtype=torch.long), 2
@@ -89,12 +101,16 @@ class TestCellList(TestCase):
 
     def testCounts(self):
         grid_numel_expect = 27
-        clist = self.clist
-        clist._setup_variables(self.cell, self.cutoff)
-        atom_grid_idx = flatten_grid_idx3(atom_grid_idx3_expect, clist.grid_shape)
-        self.assertEqual(clist.grid_numel, grid_numel_expect)
+        grid_shape, cell_lengths = setup_grid(
+            self.cell,
+            self.cutoff,
+            self.clist.buckets_per_cutoff,
+            self.clist.extra_space,
+        )
+        atom_grid_idx = flatten_grid_idx3(atom_grid_idx3_expect, grid_shape)
+        self.assertEqual(int(grid_shape.prod()), grid_numel_expect)
         grid_count, grid_cumcount = count_atoms_in_buckets(
-            atom_grid_idx, clist.grid_numel
+            atom_grid_idx, grid_shape,
         )
         # these are all 2
         self.assertEqual(grid_count.shape, (grid_numel_expect,))
@@ -103,14 +119,18 @@ class TestCellList(TestCase):
         self.assertEqual(grid_cumcount, torch.arange(0, 54, 2))
 
     def testImagePairsWithinBuckets(self):
-        clist = self.clist
-        clist._setup_variables(self.cell, self.cutoff)
-        atom_grid_idx3 = coords_to_grid_idx3(
-            self.coordinates, self.cell, clist.grid_shape
+        grid_shape, cell_lengths = setup_grid(
+            self.cell,
+            self.cutoff,
+            self.clist.buckets_per_cutoff,
+            self.clist.extra_space,
         )
-        atom_grid_idx = flatten_grid_idx3(atom_grid_idx3, clist.grid_shape)
+        atom_grid_idx3 = coords_to_grid_idx3(
+            self.coordinates, self.cell, grid_shape
+        )
+        atom_grid_idx = flatten_grid_idx3(atom_grid_idx3, grid_shape)
         grid_count, grid_cumcount = count_atoms_in_buckets(
-            atom_grid_idx, clist.grid_numel
+            atom_grid_idx, grid_shape,
         )
         within = image_pairs_within(
             grid_count,
