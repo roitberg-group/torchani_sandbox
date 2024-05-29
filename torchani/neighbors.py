@@ -753,13 +753,11 @@ class CellList(Neighborlist):
         # it was technically done with imidx so I need to check correctnes of
         # both counting schemes, but first I create the mask to unpad
         # and then I shift to the correct indices
-        # shape (C, A, N, 1)
-        count_in_atom_surround = count_in_atom_surround.unsqueeze(-1)
         # shape (C, A, N, c-max)
-        mask = padded_atom_neighbors < count_in_atom_surround
-        padded_atom_neighbors.add_(count_in_atom_surround)
+        mask = padded_atom_neighbors < count_in_atom_surround.unsqueeze(-1)
+        padded_atom_neighbors.add_(cumcount_in_atom_surround.unsqueeze(-1))
 
-        # now all that is left is to apply the mask in order to unpad
+        # Now apply the mask in order to unpad
 
         # NOTE:
         # x.view(-1).index_select(0, mask.view(-1).nonzero().view(-1)) is EQUIVALENT to:
