@@ -684,16 +684,22 @@ class CellList(Neighborlist):
         # 4) create the vector_index -> flat_index conversion tensor
         vector_idx_to_flat = torch.arange(0, self.grid_numel, device=device)
         # shape (GX, GY, GZ)
-        vector_idx_to_flat = vector_idx_to_flat.view(
+        self.vector_idx_to_flat = vector_idx_to_flat.view(
             int(self.grid_shape[0]),
             int(self.grid_shape[1]),
             int(self.grid_shape[2]),
         )
-        self.vector_idx_to_flat = _pad_circular_3d(vector_idx_to_flat)
+        GX, GY, GZ = self.vector_idx_to_flat.shape
+        # self.vector_idx_to_flat = _pad_circular_3d(vector_idx_to_flat)
 
         # 5) I now create a tensor that when indexed with vector indices
         # gives the shifting case for that atom/neighbor bucket
-        self.wrap_kind_from_idx3 = torch.zeros_like(self.vector_idx_to_flat)
+        self.wrap_kind_from_idx3 = torch.zeros(
+            (GX + 2, GY + 2, GZ + 2),
+            device=device,
+            dtype=torch.long,
+        )
+        # self.wrap_kind_from_idx3 = torch.zeros_like(self.vector_idx_to_flat)
         # now I need to  fill the vector
         # in some smart way
         # this should fill the tensor in a smart way
@@ -809,37 +815,36 @@ class CellList(Neighborlist):
         # each pair and what amount to shift it
 
         # After this step some of the atom_surround_idx3 are negative, and some
-        # may overflow
+        # may overflow, so we wrap the indices using modulo arithmetic
+        # with the grid shape
         atom_surround_idx3 = atom_grid_idx3.view(
             mols, atoms, 1, 3
         ) + self.surround_offset_idx3.view(mols, 1, neighbors, 3)
-        atom_surround_idx3.add_(1)
-        atom_surround_idx3 = atom_surround_idx3.view(-1, 3)
+        # shape (C*A*N, 3)
+        wrapped_atom_surround_idx3 = atom_surround_idx3.view(-1, 3) % self.grid_shape
 
         # atom_surround_idx contains only idxs that are positive, it indexes
         # buckets inside the central cell
         #
         # NOTE: This is needed instead of unbind due to torchscript bug
         atom_surround_idx = self.vector_idx_to_flat[
-            atom_surround_idx3[:, 0],
-            atom_surround_idx3[:, 1],
-            atom_surround_idx3[:, 2],
-        ]
-        return (
-            atom_surround_idx3.view(mols, atoms, neighbors, 3),
-            atom_surround_idx.view(mols, atoms, neighbors),
-        )
+            wrapped_atom_surround_idx3[:, 0],
+            wrapped_atom_surround_idx3[:, 1],
+            wrapped_atom_surround_idx3[:, 2],
+        ].view(mols, atoms, neighbors)
+        return atom_surround_idx3, atom_surround_idx
 
     def _wrap_kind_from_surround_idx3(self, atom_surround_idx3: Tensor) -> Tensor:
         mols, atoms, neighbors, _ = atom_surround_idx3.shape
-        atom_surround_idx3 = atom_surround_idx3.view(-1, 3)
+        # Add 1 to make all indices positive, overflow will not ocurr since
+        # wrap_kind_from_idx3 has a larger shape
+        atom_surround_idx3 = atom_surround_idx3.view(-1, 3) + 1
         atom_surround_wrap_kind = self.wrap_kind_from_idx3[
             atom_surround_idx3[:, 0],
             atom_surround_idx3[:, 1],
             atom_surround_idx3[:, 2],
         ]
-        atom_surround_wrap_kind = atom_surround_wrap_kind.view(mols, atoms, neighbors)
-        return atom_surround_wrap_kind
+        return atom_surround_wrap_kind.view(mols, atoms, neighbors)
 
     def _cache_values(
         self,

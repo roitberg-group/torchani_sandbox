@@ -59,8 +59,7 @@ class TestCellList(TestCase):
         expect_shape = torch.tensor([3, 3, 3], dtype=torch.long, device=self.device)
         self.assertEqual(clist.grid_numel, 27)
         self.assertEqual(clist.grid_shape, expect_shape)
-        # since it is circularly padded, shape should be 5 5 5
-        self.assertEqual(clist.vector_idx_to_flat.shape, (5, 5, 5))
+        self.assertEqual(clist.vector_idx_to_flat.shape, (3, 3, 3))
 
     def testVectorIndexToFlat(self):
         clist = self.clist
@@ -68,13 +67,13 @@ class TestCellList(TestCase):
         # check some specific values of the tensor, it should be in row major
         # order so for instance the values in the z axis are 0 1 2 in the y
         # axis 0 3 6 and in the x axis 0 9 18
-        self.assertTrue(clist.vector_idx_to_flat[1, 1, 1] == 0)
-        self.assertTrue(clist.vector_idx_to_flat[2, 1, 1] == 9)
-        self.assertTrue(clist.vector_idx_to_flat[1, 2, 1] == 3)
-        self.assertTrue(clist.vector_idx_to_flat[1, 1, 2] == 1)
-        self.assertTrue(clist.vector_idx_to_flat[0, 1, 1] == 18)
-        self.assertTrue(clist.vector_idx_to_flat[1, 0, 1] == 6)
-        self.assertTrue(clist.vector_idx_to_flat[1, 1, 0] == 2)
+        self.assertTrue(clist.vector_idx_to_flat[0, 0, 0] == 0)
+        self.assertTrue(clist.vector_idx_to_flat[1, 0, 0] == 9)
+        self.assertTrue(clist.vector_idx_to_flat[0, 1, 0] == 3)
+        self.assertTrue(clist.vector_idx_to_flat[0, 0, 1] == 1)
+        self.assertTrue(clist.vector_idx_to_flat[-1, 0, 0] == 18)
+        self.assertTrue(clist.vector_idx_to_flat[0, -1, 0] == 6)
+        self.assertTrue(clist.vector_idx_to_flat[0, 0, -1] == 2)
 
     def testFractionalize(self):
         # Coordinate fractionalization
@@ -108,10 +107,8 @@ class TestCellList(TestCase):
         clist = self.clist
         clist._setup_variables(self.cell, self.cutoff)
         grid_idx = clist.vector_idx_to_flat[
-            (atom_grid_idx3_expect + torch.ones(1, dtype=torch.long))
-            .reshape(-1, 3)
-            .unbind(1)
-        ].reshape(1, -1)
+            atom_grid_idx3_expect.view(-1, 3).unbind(1)
+        ].view(1, -1)
         grid_idx_compare = torch.repeat_interleave(
             torch.arange(0, 27, dtype=torch.long), 2
         )
