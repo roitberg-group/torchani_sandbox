@@ -359,7 +359,7 @@ class CellList(Neighborlist):
             pbc = torch.zeros(3, dtype=torch.bool, device=device)
         assert pbc is not None
 
-        if not (pbc.any() or pbc.all()):
+        if not ((~pbc).all() or pbc.all()):
             raise ValueError("Cell list only supports PBC in all or no directions")
 
         if cell is None:
