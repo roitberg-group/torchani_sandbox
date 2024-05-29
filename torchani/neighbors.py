@@ -527,8 +527,7 @@ class CellList(Neighborlist):
         # is not counted.
 
         # After this step some of the atom_surround_idx3 are negative, and some
-        # will overflow. It is important to keep this information to see
-        # which buckets to wrap later.
+        # will overflow. This determines which buckets to wrap later.
         atom_surround_idx3 = atom_grid_idx3.view(
             mols, atoms, 1, 3
         ) + self.surround_offset_idx3.view(mols, 1, neighbors, 3)
