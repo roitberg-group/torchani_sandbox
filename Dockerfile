@@ -30,7 +30,7 @@ COPY . /torchani_sandbox
 ARG BUILD_EXT=0
 RUN \
 if [ "$BUILD_EXT" = "0" ]; then \
-    pip install -v --no-build-isolation --editable . \
+    pip install -v --no-build-isolation --editable . ; \
 else \
     pip install -v --no-build-isolation --editable . && \
     pip install -v --no-build-isolation --editable . --global-option="--ext"; \
