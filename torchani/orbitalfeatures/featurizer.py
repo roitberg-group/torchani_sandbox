@@ -5,7 +5,7 @@ from torch import Tensor
 
 from torchani.tuples import SpeciesAEV
 from torchani.aev import AEVComputer
-from torchani.orbitalfeatures.simple_orbital_aev import SimpleOrbitalAEVComputer
+from torchani.orbitalfeatures.orbital_aev import OrbitalAEVComputer
 
 
 class ExCorrAEVComputer(AEVComputer):
