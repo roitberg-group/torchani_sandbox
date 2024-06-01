@@ -30,6 +30,19 @@ class ExCorrAEVComputer(AEVComputer):
         use_angular_info_in_simple_orbital_aev: bool = False,
         basis_functions='spd',
         use_geometric_aev: bool = True,
+        NOShfS = 16,
+        NOShfR = 16,
+        NOShfA = 8,
+        NOShfZ = 4,
+        LowerOShfR = 0.00,
+        UpperOShfR = 0.50,
+        LowerOShfA = 0.00,
+        UpperOShfA = 0.30,
+        LowerOShfZ = 0.00,
+        UpperOShfZ = 5.00,
+        OEtaR = 20.0,
+        OEtaA = 12.0,
+        OZeta = 14.0,
     ) -> None:
         # forbid cuaev for now
         assert not use_cuda_extension
@@ -58,6 +71,18 @@ class ExCorrAEVComputer(AEVComputer):
         self.use_angular_info_in_simple_orbital_aev = use_angular_info_in_simple_orbital_aev
         self.basis_functions = basis_functions
         self.use_geometric_aev = use_geometric_aev
+        self.NOShfR = NOShfR
+        self.NOShfA = NOShfA
+        self.NOShfZ = NOShfZ
+        self.LowerOShfR = LowerOShfR
+        self.UpperOShfR = UpperOShfR
+        self.LowerOShfA = LowerOShfA
+        self.UpperOShfA = UpperOShfA
+        self.LowerOShfZ = LowerOShfZ
+        self.UpperOShfZ = UpperOShfZ
+        self.OEtaR = OEtaR
+        self.OEtaA = OEtaA
+        self.OZeta = OZeta
         if use_simple_orbital_aev:
             if basis_functions == 'spd':
                 orbital_aev_length = 21
@@ -103,11 +128,24 @@ class ExCorrAEVComputer(AEVComputer):
         # mapped into the central cell for pbc calculations,
         # and **in general are not**
 
-        if self.use_simple_orbital_aev:
-            aev = self.orbital_aev_computer(coefficients=coefficients,use_angular_info=self.use_angular_info_in_simple_orbital_aev,basis_functions=self.basis_functions)
-        else:
-            #To do -> Same but for an AEV-like expansion of the AOVs
-            aev = torch.tensor([])  # Placeholder until implemented
+        aev = self.orbital_aev_computer(
+                coefficients=coefficients,
+                use_simple_orbital_aev = self.use_simple_orbital_aev,
+                use_angular_info = self.use_angular_info_in_simple_orbital_aev,
+                basis_functions = self.basis_functions,
+                NOShfR = self.NOShfR,
+                NOShfA = self.NOShfA,
+                NOShfZ = self.NOShfZ,
+                LowerOShfR = self.LowerOShfR,
+                UpperOShfR = self.UpperOShfR,
+                LowerOShfA = self.LowerOShfA,
+                UpperOShfA = self.UpperOShfA,
+                LowerOShfZ = self.LowerOShfZ,
+                UpperOShfZ = self.UpperOShfZ,
+                OEtaR = self.OEtaR,
+                OEtaA = self.OEtaA,
+                OZeta = self.OZeta,
+            )
 
         if self.use_geometric_aev:
             neighbor_data = self.neighborlist(species, coordinates, self.radial_terms.cutoff, cell, pbc)
