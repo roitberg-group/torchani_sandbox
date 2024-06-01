@@ -20,6 +20,10 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 
+# Code coverage
+.coverage
+htmlcov/
+
 # logos and compressed downloads
 *.png
 *.zip
