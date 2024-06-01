@@ -26,5 +26,12 @@ RUN pip install -r dev_requirements.txt
 # Copy all other necessary repo files
 COPY . /torchani_sandbox
 
-# Install torchani + core requirements (no extensions)
-RUN pip install -v --no-build-isolation --editable .
+# Install torchani + core requirements (+ extensions if "ext" build arg is provided)
+ARG ext
+RUN \
+if [ -z "$ext" ]; then \
+    pip install -v --no-build-isolation --editable . \
+else \
+    pip install -v --no-build-isolation --editable . && \
+    pip install -v --no-build-isolation --editable . --global-option="--ext"; \
+fi
