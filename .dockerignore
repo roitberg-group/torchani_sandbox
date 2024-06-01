@@ -13,6 +13,8 @@ __pycache__/
 
 # Repo objects
 .git/
+# Workflows and github-specific stuff
+.github/
 
 # Mypy and test cache
 .mypy_cache/
