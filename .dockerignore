@@ -11,22 +11,31 @@ __pycache__/
 *.swp
 *.swo
 
-# Repo objects
-.git/
-# Workflows and github-specific stuff
-.github/
+# Binary files
+/*.h5
+/*.hdf5
+*.pt
+*.o
+*.so
+*.pckl
+*.zip
+a.out
 
 # Mypy and test cache
 .mypy_cache/
 .pytest_cache/
 
+# Ninja
+*.ninja
+*.ninja_log
+
 # Code coverage
 .coverage
 htmlcov/
 
-# logos and compressed downloads
-*.png
-*.zip
+# Notebooks
+.ipynb_checkpoints
+Untitled.ipynb
 
 # Full directories relative to project root
 /tests/runs/
@@ -36,3 +45,17 @@ htmlcov/
 /docs/build/
 # Build output of CUDA / C++ extensions
 /build/
+
+# Nvidia Nsight Systems profiling
+*.qdrep
+*.qdstrm
+*.nsys-rep
+report*.sqlite
+
+# Repo objects
+.git/
+# Workflows and github-specific stuff
+.github/
+
+# logos and compressed downloads
+*.png
