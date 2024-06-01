@@ -85,7 +85,6 @@ def cuda_extension(build_all=False):
     nvcc_args = ['--expt-extended-lambda']
     if TORCHANI_OPT:
         nvcc_args.append('-use_fast_math')
-    # nvcc_args.append('-Xptxas=-v')
 
     # use cub in a safe manner, see:
     # https://github.com/pytorch/pytorch/pull/55292
