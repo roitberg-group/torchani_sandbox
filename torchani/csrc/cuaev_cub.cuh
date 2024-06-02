@@ -1,7 +1,9 @@
 #pragma once
 
-#include <ATen/cuda/Exceptions.h>
+#include <cuda_runtime_api.h>
 #include <cub/cub.cuh>
+#include <ATen/cuda/Exceptions.h>
+#include <c10/cuda/CUDACachingAllocator.h>
 
 // handle the temporary storage and 'twice' calls for cub API
 #define CUB_WRAPPER(func, ...)                                   \
