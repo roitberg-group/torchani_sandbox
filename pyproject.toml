@@ -1,0 +1,83 @@
+[project]
+name = "torchani"
+authors = [
+    {name = "Ignacio Pickering", email = "ign.pickering@gmail.com"},
+    {name = "Xiang Gao", email = "qasdfgtyuiop@gmail.com"},
+    {name = "Jinze Xue", email = "jinzexue@chem.ufl.edu"},
+]
+description = "PyTorch implementation of the ANI neural network potential family"
+readme = "README.md"
+keywords = [
+    "machine-learning",
+    "neural-networks",
+    "deep-learning",
+    "chemistry",
+    "potential",
+    "torch",
+    "energy",
+    "computational-science",
+    "ani",
+]
+classifiers = ["License :: OSI Approved :: MIT License"]
+requires-python = ">=3.8"
+dependencies = [
+    "torch==2.3",
+    "numpy>=1.24",
+    "typing_extensions>=4.0.0",
+    "h5py",
+    "tqdm",
+]
+dynamic = ["version"]
+
+[project.urls]
+repository = "https://github.com/aiqm/torchani"
+
+# NOTE: If installed with build isolation torch can't be accessed and
+# the CUDA and C++ extensions can't be compiled
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+torchani = "torchani.cli:main"
+
+[tool.setuptools]
+packages = ["torchani"]
+
+[tool.setuptools_scm]
+version_file = "torchani/_version.py"
+
+[tool.mypy]
+ignore_missing_imports = true
+check_untyped_defs = true
+exclude = "(tests/.*|tools/.*|torchani/data/.*|docs/src/examples/.*|docs/build/.*)"
+
+[tool.pytest.ini_options]
+filterwarnings = "ignore:.*distutils Version classes are deprecated.*:DeprecationWarning"
+
+[project.optional-dependencies]
+dev = [
+  # Ase interface, used in ase test, ase docs example, tools, in the ase module
+  "ase"
+  # Legacy neurochem model loader, used in the neurochem module and tested in neurochem test
+  "lark-parser"
+  # Tests: tests-runner and class parametrization
+  "pytest",
+  "parameterized",
+  # Tests: Indirect dependency of torch.testing
+  "expecttest",
+  # Tests: Extra data backends (parquet and zarr)
+  "pandas",
+  "pyarrow",
+  "zarr",
+  # Docs: Sphinx-related, for building the docs
+  "sphinx",
+  "sphinx_rtd_theme",
+  "sphinx-gallery",
+  # Docs: For logging on training example
+  "tensorboard",
+  # Tools: Utils for running various scripts found in /torchani/tools/
+  "pynvml",
+  "matplotlib",
+  "rich",
+]
