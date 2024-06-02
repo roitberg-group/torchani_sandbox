@@ -39,7 +39,7 @@ jobs:
         run: >-
           docker run
           --rm
-          --gpus 3
+          --gpus '"device=3"'
           ${{ steps.meta.outputs.tags }}
           bash -c "nvidia-smi && pytest ./tests/test_cuaev.py ./tests/test_infer.py"
 
