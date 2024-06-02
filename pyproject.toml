@@ -58,9 +58,9 @@ filterwarnings = "ignore:.*distutils Version classes are deprecated.*:Deprecatio
 [project.optional-dependencies]
 dev = [
   # Ase interface, used in ase test, ase docs example, tools, in the ase module
-  "ase"
+  "ase",
   # Legacy neurochem model loader, used in the neurochem module and tested in neurochem test
-  "lark-parser"
+  "lark-parser",
   # Tests: tests-runner and class parametrization
   "pytest",
   "parameterized",
