@@ -196,6 +196,7 @@ else:
         setup()
     else:
         setup(
+            name="torchani",
             ext_modules=[
                 cuda_extension(sms, debug=debug, opt=opt),
                 mnp_extension(debug=debug),

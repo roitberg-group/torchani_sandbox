@@ -41,8 +41,10 @@ build-backend = "setuptools.build_meta"
 [project.scripts]
 torchani = "torchani.cli:main"
 
-[tool.setuptools]
-packages = ["torchani"]
+[tool.setuptools.packages.find]
+where = ["torchani"]
+include = ["torchani*"]
+namespaces = false
 
 [tool.setuptools_scm]
 version_file = "torchani/_version.py"
