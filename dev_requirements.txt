@@ -10,7 +10,7 @@ lark-parser
 pytest
 parameterized
 
-# Tests: Indirect dependencies of torch.testing
+# Tests: Indirect dependency of torch.testing
 expecttest
 
 # Tests: Extra data backends (parquet and zarr)
