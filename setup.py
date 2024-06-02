@@ -155,7 +155,7 @@ def ext_kwargs():
             mnp_extension()
         ],
         cmdclass={
-            'build_ext': BuildExtension,
+            'build_ext': BuildExtension.with_options(no_python_abi_suffix=True),
         })
     return kwargs
 
