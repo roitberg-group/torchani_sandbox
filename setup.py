@@ -191,7 +191,7 @@ else:
         sys.argv.remove("--no-opt")
         opt = False
 
-    if extension_requested:
+    if not extension_requested:
         display_build_warning()
         setup()
     else:
