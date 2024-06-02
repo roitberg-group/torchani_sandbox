@@ -4,15 +4,20 @@ import subprocess
 import sys
 import logging
 
-from setuptools import setup, find_packages
+from setuptools import setup
+try:
+    import torch  # noqa
+    from torch.utils.cpp_extension import CUDAExtension
+    from torch.utils.cpp_extension import BuildExtension
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("setup")
 
 
 def collect_all_sms() -> tp.Set[str]:
-    import torch
-
     print("-" * 75)
     print("Will add all SMs torch supports")
     sms = {"60", "61", "70"}
@@ -30,8 +35,6 @@ def collect_all_sms() -> tp.Set[str]:
 
 
 def collect_compatible_sms() -> tp.Set[str]:
-    import torch
-
     print("-" * 75)
     print("Will try to find compatible CUDA devices visible to torch")
     devices = torch.cuda.device_count()
@@ -53,8 +56,6 @@ def collect_compatible_sms() -> tp.Set[str]:
 
 
 def maybe_download_cub():
-    import torch
-
     dirs = torch.utils.cpp_extension.include_paths(cuda=True)
     for d in dirs:
         cubdir = os.path.join(d, "cub")
@@ -80,8 +81,6 @@ def maybe_download_cub():
 
 
 def cuda_extension(sms: tp.Set[str], debug: bool, opt: bool):
-    from torch.utils.cpp_extension import CUDAExtension
-
     print("-" * 75)
     print(f"Will build cuAEV with support for SMs: {', '.join(sms)}")
 
@@ -125,10 +124,6 @@ def mnp_extension(debug: bool):
     print("-" * 75)
     print("Will build MNP")
 
-    # This extension doesn't need nvcc to be compiled, but it still uses torch
-    # CUDA libraries. This means CUDAExtension is needed
-    from torch.utils.cpp_extension import CUDAExtension
-
     cxx_args = ["-std=c++17", "-fopenmp"]
     if debug:
         cxx_args.append("-DTORCHANI_DEBUG")
@@ -138,6 +133,9 @@ def mnp_extension(debug: bool):
         print(f"    {arg}")
     print("-" * 75)
     print()
+
+    # This extension doesn't need nvcc to be compiled, but it still uses torch
+    # CUDA libraries. This is why CUDAExtension is needed
     return CUDAExtension(
         name="torchani.mnp",
         sources=["torchani/csrc/mnp.cpp"],
@@ -145,78 +143,64 @@ def mnp_extension(debug: bool):
     )
 
 
-# Flags for requiresting specific SMs
-sms: tp.Set[str] = set()
-for sm in {"60", "61", "70", "75", "80", "86"}:
-    if f"--ext-sm{sm}" in sys.argv:
-        sys.argv.remove(f"--ext-sm{sm}")
-        sms.add(sm)
-# Flag for requesting compatible SMs detection
-if "--ext" in sys.argv:
-    sys.argv.remove("--ext")
-    sms.update(collect_compatible_sms())
-# Flag for requesting all sms
-if "--ext-all-sms" in sys.argv:
-    sys.argv.remove("--ext-all-sms")
-    sms.update(collect_all_sms())
-
-# Compile extensions with DEBUG infomation
-debug = False
-if "--debug" in sys.argv:
-    sys.argv.remove("--debug")
-    debug = True
-
-# Compile optimized extensions (intrinsic math fns and -use_fast_math nvcc flag)
-opt = True
-if "--no-opt" in sys.argv:
-    sys.argv.remove("--no-opt")
-    opt = False
+def display_build_warning() -> None:
+    log.warning("Will not install TorchANI extensions (cuAEV and MNP)")
+    log.warning("To build the extensions with the pip frontend:")
+    log.warning("- Make sure Torch binaries compiled with CUDA support are installed")
+    log.warning("- Make sure a compatible CUDA Toolkit version is available")
+    log.warning("- Add the --no-build-isolation flag to pip")
+    log.warning("- Add the --config-settings='--global-option=--ext' (verbatim, with quotes) flag to pip")  # noqa
 
 
-with open("README.md", "r") as fh:
-    long_description = fh.read()
-
-
-# At least 1 sm is always added to this set if extensions need to be built
-if not sms:
-    log.warning("Will not install TorchANI extensions")
-    ext_kwargs = dict()
+if not TORCH_AVAILABLE:
+    log.warning("Torch could not be imported")
+    display_build_warning()
+    setup()
 else:
-    from torch.utils.cpp_extension import BuildExtension
+    # Flags for requiresting specific SMs
+    sms: tp.Set[str] = set()
+    for sm in {"60", "61", "70", "75", "80", "86"}:
+        if f"--ext-sm{sm}" in sys.argv:
+            sys.argv.remove(f"--ext-sm{sm}")
+            sms.add(sm)
+    # Flag for requesting compatible SMs detection
+    if "--ext" in sys.argv:
+        sys.argv.remove("--ext")
+        sms.update(collect_compatible_sms())
+    # Flag for requesting all sms
+    if "--ext-all-sms" in sys.argv:
+        sys.argv.remove("--ext-all-sms")
+        sms.update(collect_all_sms())
 
-    ext_kwargs = {
-        "ext_modules": [
-            cuda_extension(sms, debug=debug, opt=opt),
-            mnp_extension(debug=debug),
-        ],
-        "cmdclass": {
-            "build_ext": BuildExtension.with_options(no_python_abi_suffix=True),
-        },
-    }
+    # At least 1 sm is always added to this set if extensions need to be built
+    extension_requested = bool(sms)
 
+    # Compile extensions with DEBUG infomation
+    debug = False
+    if "--debug" in sys.argv:
+        if not extension_requested:
+            log.warning("Extensions not being built, --debug flag will have no effect")
+        sys.argv.remove("--debug")
+        debug = True
 
-setup(
-    name="torchani",
-    description="PyTorch implementation of ANI",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    url="https://github.com/aiqm/torchani",
-    author="Xiang Gao",
-    author_email="qasdfgtyuiop@gmail.com",
-    license="MIT",
-    packages=find_packages(),
-    include_package_data=True,
-    use_scm_version={"fallback_version": "0.0.0"},
-    setup_requires=["setuptools>=61", "setuptools_scm>=8"],
-    install_requires=[
-        "numpy>=1.24",
-        "torch==2.3",
-        "typing_extensions>=4.0.0",
-        "h5py",
-        "tqdm",
-    ],
-    entry_points={
-        "console_scripts": ["torchani = torchani.cli:main"],
-    },
-    **ext_kwargs,
-)
+    # Compile optimized extensions (intrinsic math fns and -use_fast_math nvcc flag)
+    opt = True
+    if "--no-opt" in sys.argv:
+        if not extension_requested:
+            log.warning("Extensions not being built, --no-opt flag will have no effect")
+        sys.argv.remove("--no-opt")
+        opt = False
+
+    if extension_requested:
+        display_build_warning()
+        setup()
+    else:
+        setup(
+            ext_modules=[
+                cuda_extension(sms, debug=debug, opt=opt),
+                mnp_extension(debug=debug),
+            ],
+            cmdclass={
+                "build_ext": BuildExtension.with_options(no_python_abi_suffix=True)
+            }
+        )
