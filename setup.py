@@ -191,6 +191,8 @@ else:
         sys.argv.remove("--no-opt")
         opt = False
 
+    # TODO: For some reason setuptools tries to install extensions in
+    # repo-root/torchani/torchani/<name>.so instead of repo-root/<name>.so
     if not extension_requested:
         display_build_warning()
         setup()
