@@ -11,6 +11,7 @@ project(
     HOMEPAGE_URL "https://github.com/roitberg-group/torchani_sandbox.git"
 )
 
+# Export compilation database into compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(COMMON_CXX_WARNINGS
     -Wall
@@ -23,6 +24,9 @@ set(COMMON_CXX_WARNINGS
     -Woverloaded-virtual
     -Wredundant-decls
 )
+# If we are in a conda env, append the conda prefix so CMake detects the conda
+# packages
+list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
 
 execute_process(
     COMMAND python -c "import torch; from pathlib import Path; print(Path(torch.__file__).resolve().parent, end='')"
@@ -34,7 +38,6 @@ if(IMPORT_TORCH_FAILED)
 else()
     message(STATUS "Successfully imported PyTorch and found root dir")
 endif()
-list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
 list(APPEND CMAKE_PREFIX_PATH ${INSTALLED_TORCH_ROOT})
 
 find_package(Torch REQUIRED)
@@ -83,15 +86,19 @@ target_include_directories(mnp PRIVATE ${Python_INCLUDE_DIRS})
 
 list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
 
-get_filename_component(TORCHANI_ROOT ${CMAKE_CURRENT_LIST_DIR} DIRECTORY)
+# By default install to the torchani repo src directory, "repo-name/torchani/"
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    get_filename_component(TORCHANI_SRC ${CMAKE_CURRENT_LIST_DIR} DIRECTORY)
+    get_filename_component(TORCHANI_ROOT ${TORCHANI_SRC} DIRECTORY)
+    set(CMAKE_INSTALL_PREFIX ${TORCHANI_ROOT} CACHE PATH "Install location" FORCE)
+endif()
 
-# Install to absolute path
 install(
     TARGETS
         mnp
         cuaev
     LIBRARY
-        DESTINATION "${TORCHANI_ROOT}"
+        DESTINATION "torchani/"
     PERMISSIONS
         OWNER_READ
         OWNER_WRITE
@@ -102,4 +109,3 @@ install(
         WORLD_READ
         WORLD_EXECUTE
 )
-
