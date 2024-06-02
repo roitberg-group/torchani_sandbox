@@ -1,8 +1,8 @@
-#include <cuda_runtime_api.h>
-#include <torch/extension.h>
 #include <ATen/Context.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
+#include <cuda_runtime_api.h>
+#include <torch/extension.h>
 
 #include "aev.h"
 #include "cuaev_cub.cuh"
