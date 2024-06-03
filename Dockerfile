@@ -7,10 +7,11 @@ ENV CUDA_HOME=/usr/local/cuda/
 ENV PATH=${CUDA_HOME}/bin:$PATH
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
-# Get dependencies to:
+# Install dependencies to:
+# Get the program version from version control (git, needed by setuptools-scm)
 # Download test data and maybe CUB (wget, unzip)
 # Build C++/CUDA extensions faster (ninja-build)
-RUN apt update && apt install -y wget unzip ninja-build
+RUN apt update && apt install -y wget git unzip ninja-build
 
 # Download test data
 COPY ./download.sh .
@@ -25,6 +26,10 @@ RUN pip install -r dev_requirements.txt
 # Copy all other necessary repo files
 COPY . /torchani_sandbox
 
+# Init repo from scratch, faster than copying .git
+# setuptools-scm needs a Git repo to work properly
+RUN git init && git add . && git commit -m "Initial commit"
+
 # Install torchani + core requirements (+ extensions if BUILD_EXT build arg is provided)
 # Usage:
 # BUILD_EXT=0 -> Don't build extensions
@@ -33,10 +38,10 @@ COPY . /torchani_sandbox
 ARG BUILD_EXT=0
 RUN \
 if [ "$BUILD_EXT" = "0" ]; then \
-    pip install -v -e . ; \
+    pip install -v . ; \
 else \
     pip install \
         --no-build-isolation \
         --config-settings=--global-option=ext-"${BUILD_EXT}" \
-        -v -e . ; \
+        -v . ; \
 fi
