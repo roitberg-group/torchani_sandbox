@@ -1,4 +1,4 @@
-name: unittests
+name: build-conda-pkg
 
 on: pull_request
 
@@ -41,5 +41,5 @@ jobs:
         run: docker image rm ${{ steps.meta.outputs.tags }}
 
 concurrency:
-  group: unittests-${{ github.event.pull_request.number || github.sha }}
+  group: build-conda-pkg-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
