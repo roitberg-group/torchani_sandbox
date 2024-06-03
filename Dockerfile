@@ -1,6 +1,6 @@
 # This image has ubuntu 22.0, cuda 11.8, cudnn 8.7, python 3.10, pytorch 2.3.0
 FROM pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
-WORKDIR /torchani_sandbox
+WORKDIR /repo
 
 # Set cuda env vars
 ENV CUDA_HOME=/usr/local/cuda/
@@ -24,7 +24,7 @@ COPY dev_requirements.txt .
 RUN pip install -r dev_requirements.txt
 
 # Copy all other necessary repo files
-COPY . /torchani_sandbox
+COPY . /repo
 
 # Init repo from scratch, faster than copying .git
 # setuptools-scm needs a Git repo to work properly
