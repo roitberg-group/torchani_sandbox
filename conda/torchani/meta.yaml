@@ -14,12 +14,12 @@ requirements:
     - pip
     - setuptools
     - setuptools_scm
-    - python={{ environ.get('PYTHON_VERSION') }}
-    - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
-    - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
-    - nvidia::cuda-libraries-dev={{ environ.get('CUDA_VERSION') }}
-    - nvidia::cuda-nvcc={{ environ.get('CUDA_VERSION') }}
-    - nvidia::cuda-cccl={{ environ.get('CUDA_VERSION') }}
+    #- python={{ environ.get('PYTHON_VERSION') }}
+    #- pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
+    #- pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
+    #- nvidia::cuda-libraries-dev={{ environ.get('CUDA_VERSION') }}
+    #- nvidia::cuda-nvcc={{ environ.get('CUDA_VERSION') }}
+    #- nvidia::cuda-cccl={{ environ.get('CUDA_VERSION') }}
   run:
     - python={{ environ.get('PYTHON_VERSION') }}
     - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
@@ -35,14 +35,16 @@ build:
   script: "DISABLE_NINJA=1 {{ PYTHON }} -m pip install --no-deps --no-build-isolation --config-settings=--global-option=ext-all-sms -v ."
 
 test:
-  imports:
-    - torchani
+  # These are automatically added to the "run" requirements when testing
+  requires:
+    - parameterized
+    - expecttest
   source_files:
     - tests/*
     - dataset/*
     - download.sh
   commands:
-    - pip install parameterized expecttest
+    # Download test data
     - ./download.sh
     # Cuaev test only
     - python tests/test_cuaev.py
