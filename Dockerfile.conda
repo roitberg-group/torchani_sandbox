@@ -1,14 +1,43 @@
+# This image has ubuntu 22.0, cuda 11.8, cudnn 8.7, python 3.10, pytorch 2.3.0
 FROM pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
 WORKDIR /torchani_sandbox
 
-# Set default shell to /bin/bash (otherwise it is dash)
-SHELL ["/bin/bash", "-cu"]
+# Set cuda env vars
+ENV CUDA_HOME=/usr/local/cuda/
+ENV PATH=${CUDA_HOME}/bin:$PATH
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
-# Install packages to run download and to detect version using setuptools-scm
-RUN apt-get update && apt-get install -y git wget unzip
+# Install dependencies to:
+# Get the program version from version control (git, needed by setuptools-scm)
+# Download test data and maybe CUB (wget, unzip)
+# Build C++/CUDA extensions faster (ninja-build)
+RUN apt update && apt install -y wget git unzip ninja-build
 
-# Copy all repo files into the image
+# Copy requirements to build conda pkg, in case it is neded
+COPY conda/build_requirements.txt /torchani_sandbox/conda/build_requirements.txt
+
+# Install requirements to build conda pkg (first activate conda base env)
+# TODO: can the base env be activated just once?
+RUN \
+    source /opt/conda/etc/profile.d/conda.sh \
+    && conda activate \
+    && conda install --file conda/build_requirements.txt
+
+# Copy rest of the repo files
 COPY . /torchani_sandbox
 
-# Build conda
-RUN ./conda/build_conda.sh
+# Init repo from scratch, faster than copying .git
+# setuptools-scm needs a Git repo to work properly
+RUN \
+    git config --global user.email "user@domain.com" \
+    && git config --global user.name "User" \
+    && git config --global init.defaultBranch "main" \
+    && git init > /dev/null \
+    && git add . \
+    && git commit -m "Initial commit" > /dev/null
+
+# Build conda package (first activate conda base env)
+RUN \
+    source /opt/conda/etc/profile.d/conda.sh \
+    && conda activate \
+    && ./conda/build_conda_pkg.sh

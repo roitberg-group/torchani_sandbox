@@ -3,53 +3,48 @@ package:
   version: "{{ environ.get('BUILD_VERSION') }}"
 
 source:
-  path: "{{ environ.get('SOURCE_ROOT_DIR') }}"
+  path: "{{ environ.get('PACKAGE_ROOT') }}"
 
 requirements:
   build:
-    - python={{ environ.get('PYTHON_VERSION') }}
-    - pip
-    - git
-    - cmake
-    - ninja
-    - setuptools
-    - setuptools_scm
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
-    #- nvidia::cuda-libraries-dev={{ environ.get('CUDA_VERSION') }}
-    #- nvidia::cuda-compiler={{ environ.get('CUDA_VERSION') }}
-    #- pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
-    #- pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
-
+  host:
+    - git
+    - pip
+    - setuptools
+    - setuptools_scm
+    - python={{ environ.get('PYTHON_VERSION') }}
+    - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
+    - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
+    - nvidia::cuda-libraries-dev={{ environ.get('CUDA_VERSION') }}
+    - nvidia::cuda-nvcc={{ environ.get('CUDA_VERSION') }}
+    - nvidia::cuda-cccl={{ environ.get('CUDA_VERSION') }}
   run:
     - python={{ environ.get('PYTHON_VERSION') }}
-    - numpy >={{ environ.get('NUMPY_CONSTRAINT')}}
+    - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
+    - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
+    - numpy>=1.24
     - typing_extensions>=4.0.0
     - h5py
     - tqdm
-    - nvidia::cuda-libraries-dev={{ environ.get('CUDA_VERSION') }}
-    - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
-    - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
 
 build:
   number: 0
   string: py{{ environ.get('PYTHON_VERSION') }}_torch{{ environ.get('PYTORCH_VERSION') }}_cuda{{ environ.get('CUDA_VERSION')}}
-  script:
-    - "{{ PYTHON }} -m pip install . --global-option='--ext-all-sms' -vvv --no-deps"
+  script: "DISABLE_NINJA=1 {{ PYTHON }} -m pip install --no-deps --no-build-isolation --config-settings=--global-option=ext-all-sms -v ."
 
 test:
   imports:
     - torchani
-    - torchani.cuaev
-    - torchani.mnp
   source_files:
     - tests/*
-    - download.sh
     - dataset/*
+    - download.sh
   commands:
-    - pip install pytest ase parameterized expecttest
+    - pip install parameterized expecttest
     - ./download.sh
-    # cuaev test
+    # Cuaev test only
     - python tests/test_cuaev.py
 
 about:
