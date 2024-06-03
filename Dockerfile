@@ -36,5 +36,5 @@ RUN \
 if [ "$BUILD_EXT" = "0" ]; then \
     pip install --no-build-isolation -v -e . ; \
 else \
-    pip install --no-build-isolation --config-settings=--global-option=ext-${BUILD_EXT} -v -e . ; \
+    pip install --no-build-isolation --config-settings=--global-option=ext-"${BUILD_EXT}" -v -e . ; \
 fi
