@@ -86,28 +86,27 @@ cd ./torchani_sandbox
 
 # Create a conda (or mamba) environment
 # Note that dev_environment.yaml contains many optional dependencies needed to
-# build the extensions, build the documentation, and run tests and tools
+# build the compiled extensions, build the documentation, and run tests and tools
 # You can comment these out if you are not planning to do that
 conda env create -f ./dev_environment.yaml
 ```
 
-Instead of a `conda` environment you can use a python `venv`, and install
-the torchani optional dependencies using `pip install -r dev_requirements.txt`.
+Instead of using a `conda` (or `mamba`) environment you can use a python `venv`,
+and install the torchani optional dependencies
+running `pip install -r dev_requirements.txt`.
 
 Now you have two options, depending on whether you want to install the torchani
 compiled extensions. To install torchani with no compiled extensions run:
 
 ```bash
-# Omit --no-deps if you decided to use a venv
-pip install --no-deps -v -e .
+pip install -v -e .
 ```
 
 To install torchani with the cuAEV and MNP compiled extensions run instead:
 
 ```bash
-# Use 'ext-all-sms' instead of 'ext' if you want to build for all GPUs
-# Omit --no-deps if you decided to use a venv
-pip install --no-deps --config-settings=--global-option=ext --no-build-isolation -v -e .
+# Use 'ext-all-sms' instead of 'ext' if you want to build for all possible GPUs
+pip install --config-settings=--global-option=ext --no-build-isolation -v -e .
 ```
 
 After this you can perform some optional steps if you installed the required
