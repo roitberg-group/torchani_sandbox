@@ -12,11 +12,8 @@ keywords = [
     "neural-networks",
     "deep-learning",
     "chemistry",
-    "potential",
     "torch",
     "energy",
-    "computational-science",
-    "ani",
 ]
 classifiers = ["License :: OSI Approved :: MIT License"]
 requires-python = ">=3.8"
@@ -58,28 +55,7 @@ exclude = "(tests/.*|tools/.*|torchani/data/.*|docs/src/examples/.*|docs/build/.
 filterwarnings = "ignore:.*distutils Version classes are deprecated.*:DeprecationWarning"
 
 [project.optional-dependencies]
-dev = [
-  # Ase interface, used in ase test, ase docs example, tools, in the ase module
-  "ase",
-  # Legacy neurochem model loader, used in the neurochem module and tested in neurochem test
-  "lark-parser",
-  # Tests: tests-runner and class parametrization
-  "pytest",
-  "parameterized",
-  # Tests: Indirect dependency of torch.testing
-  "expecttest",
-  # Tests: Extra data backends (parquet and zarr)
-  "pandas",
-  "pyarrow",
-  "zarr",
-  # Docs: Sphinx-related, for building the docs
-  "sphinx",
-  "sphinx_rtd_theme",
-  "sphinx-gallery",
-  # Docs: For logging on training example
-  "tensorboard",
-  # Tools: Utils for running various scripts found in /torchani/tools/
-  "pynvml",
-  "matplotlib",
-  "rich",
-]
+ase = ["ase"]
+neurochem = ["lark-parser"]
+data = ["zarr", "pandas", "pyarrow"]
+all = ["ase", "lark-parser", "zarr", "pandas", "pyarrow"]
