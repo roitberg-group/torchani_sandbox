@@ -35,9 +35,3 @@ RUN \
     && git init > /dev/null \
     && git add . \
     && git commit -m "Initial commit" > /dev/null
-
-# Build conda package (first activate conda base env)
-RUN \
-    source /opt/conda/etc/profile.d/conda.sh \
-    && conda activate \
-    && ./conda/build_conda_pkg.sh
