@@ -1,6 +1,6 @@
 # <img src=https://raw.githubusercontent.com/aiqm/torchani/master/logo1.png width=180/>  Accurate Neural Network Potential on PyTorch
 
-Metrics: (UNTRACKED FOR PRIVATE REPO)
+Metrics: (UNTRACKED FOR PRIVATE)
 
 ![PyPI](https://img.shields.io/pypi/v/torchani.svg)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/torchani.svg)
@@ -99,18 +99,23 @@ Now you have two options, depending on whether you want to install the torchani
 compiled extensions. To install torchani with no compiled extensions run:
 
 ```bash
-pip install -v -e .
+pip install -v .
 ```
 
 To install torchani with the cuAEV and MNP compiled extensions run instead:
 
 ```bash
 # Use 'ext-all-sms' instead of 'ext' if you want to build for all possible GPUs
-pip install --config-settings=--global-option=ext --no-build-isolation -v -e .
+pip install --config-settings=--global-option=ext --no-build-isolation -v .
 ```
 
+In both cases you can add the editable, `-e`, flag after the verbose, `-v`,
+flag if you want an editable install (for developers). The `-v` flag can of
+course be omitted, but it is sometimes handy to have some extra information
+about the installation process.
+
 After this you can perform some optional steps if you installed the required
-dependencies:
+dev dependencies:
 
 ```bash
 # Download files needed for testing and building the docs (optional)
