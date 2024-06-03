@@ -111,10 +111,16 @@ def will_not_build_extensions_warning(torch_import_error: bool = False) -> None:
     print("-" * 75)
 
 
+TORCHANI_FLAGS = {"ext", "ext-all-sms", "ext-debug", "ext-no-opt"}
+SUPPORTED_SMS = {"60", "61", "70", "75", "80", "86"}
+for sm in SUPPORTED_SMS:
+    TORCHANI_FLAGS.add(f"ext-sm{sm}")
+
+
 def strip_argv():
     argv = deepcopy(sys.argv)
     for arg in argv:
-        if arg.startswith("ext"):
+        if arg in TORCHANI_FLAGS:
             sys.argv.remove(arg)
 
 
@@ -181,7 +187,7 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
 
     # Flags for requesting specific SMs
     sms: tp.Set[str] = set()
-    for sm in {"60", "61", "70", "75", "80", "86"}:
+    for sm in SUPPORTED_SMS:
         if f"ext-sm{sm}" in sys.argv:
             sys.argv.remove(f"ext-sm{sm}")
             sms.add(sm)
