@@ -28,7 +28,12 @@ COPY . /torchani_sandbox
 
 # Init repo from scratch, faster than copying .git
 # setuptools-scm needs a Git repo to work properly
-RUN git init && git add . && git commit -m "Initial commit"
+RUN \
+    git config --global user.email "user@domain.com" \
+    && git config --global user.name "User" \
+    && git init \
+    && git add . \
+    && git commit -m "Initial commit"
 
 # Install torchani + core requirements (+ extensions if BUILD_EXT build arg is provided)
 # Usage:
