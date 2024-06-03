@@ -1,5 +1,6 @@
 from copy import deepcopy
 import typing as tp
+import textwrap
 import os
 import subprocess
 import sys
@@ -30,8 +31,6 @@ def maybe_download_cub(torch_include_dirs: tp.Iterable[str]) -> str:
         rm -rf include/cub-main;
         """
         subprocess.run(commands, shell=True, check=True, universal_newlines=True)
-    print("-" * 75)
-    print()
     return os.path.abspath("./include")
 
 
@@ -67,9 +66,6 @@ def cuaev_extension_kwargs(
     print("C++ compiler args:")
     for arg in cxx_args:
         print(f"    {arg}")
-
-    print("-" * 75)
-    print()
     return dict(
         name="cuaev",
         sources=["torchani/csrc/cuaev.cpp", "torchani/csrc/aev.cu"],
@@ -89,8 +85,6 @@ def mnp_extension_kwargs(debug: bool) -> tp.Dict[str, tp.Any]:
     print("C++ compiler args:")
     for arg in cxx_args:
         print(f"    {arg}")
-    print("-" * 75)
-    print()
     return dict(
         name="mnp",
         sources=["torchani/csrc/mnp.cpp"],
@@ -103,16 +97,25 @@ def will_not_build_extensions_warning(torch_import_error: bool = False) -> None:
     if torch_import_error:
         print("Torch could not be imported")
     print(
-        """Will not install TorchANI extensions (cuAEV and MNP)
+        textwrap.dedent(
+            """
+            Will not install TorchANI extensions (cuAEV and MNP)
             To build the extensions with the pip frontend:
             - Make sure Torch binaries compiled with CUDA support are installed
             - Make sure a compatible CUDA Toolkit version is available
             - Add the --no-build-isolation flag to pip
             - Add --config-settings='--global-option=--ext' (verbatim) flag to pip
-        """
+            """
+        ).strip()
     )
     print("-" * 75)
-    print()
+
+
+def strip_argv():
+    argv = deepcopy(sys.argv)
+    for arg in argv:
+        if arg.startswith("--ext"):
+            sys.argv.remove(arg)
 
 
 def setup_kwargs() -> tp.Dict[str, tp.Any]:
@@ -127,10 +130,7 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
         # --global-option is passed to all stages of the build, but
         # we need the options only when building the wheel, so we strip sys.argv
         # of the options in other cases
-        argv = deepcopy(sys.argv)
-        for arg in argv:
-            if arg.startswith("--ext"):
-                sys.argv.remove(arg)
+        strip_argv()
         return dict()
 
     # Building the actual wheel, so attempt to import torch:
@@ -145,6 +145,7 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
 
     if not TORCH_AVAILABLE:
         will_not_build_extensions_warning(torch_import_error=True)
+        strip_argv()
         return dict()
 
     def collect_all_sms() -> tp.Set[str]:
@@ -159,8 +160,6 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
             sms.add("80")
         if cuda_version >= 11.1:
             sms.add("86")
-        print("-" * 75)
-        print()
         return sms
 
     def collect_compatible_sms() -> tp.Set[str]:
@@ -176,12 +175,8 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
                 print(f"   {torch.cuda.get_device_properties(i)}")
                 sms.add(f"{sm_tuple[0]}{sm_tuple[1]}")
         if sms:
-            print("-" * 75)
-            print()
             return sms
         print("No compatible devices found")
-        print("-" * 75)
-        print()
         return collect_all_sms()
 
     # Flags for requesting specific SMs
@@ -229,6 +224,7 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
 
     # MNP extension doesn't need nvcc to be compiled, but it still uses torch
     # CUDA libraries, so CUDAExtension is needed
+    print("-" * 75)
     return {
         "ext_modules": [CUDAExtension(**cuaev_kwargs), CUDAExtension(**mnp_kwargs)],
         "cmdclass": {
