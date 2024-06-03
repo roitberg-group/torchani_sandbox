@@ -14,7 +14,7 @@ requirements:
     - pip
     - setuptools
     - setuptools_scm
-    #- python={{ environ.get('PYTHON_VERSION') }}
+    - python={{ environ.get('PYTHON_VERSION') }}
     #- pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
     #- pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
     #- nvidia::cuda-libraries-dev={{ environ.get('CUDA_VERSION') }}
