@@ -104,7 +104,7 @@ def will_not_build_extensions_warning(torch_import_error: bool = False) -> None:
             - Make sure Torch binaries compiled with CUDA support are installed
             - Make sure a compatible CUDA Toolkit version is available
             - Add the --no-build-isolation flag to pip
-            - Add --config-settings='--global-option=--ext' (verbatim) flag to pip
+            - Add --config-settings=--global-option=ext (verbatim) flag to pip
             """
         ).strip()
     )
@@ -114,7 +114,7 @@ def will_not_build_extensions_warning(torch_import_error: bool = False) -> None:
 def strip_argv():
     argv = deepcopy(sys.argv)
     for arg in argv:
-        if arg.startswith("--ext"):
+        if arg.startswith("ext"):
             sys.argv.remove(arg)
 
 
@@ -182,29 +182,29 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
     # Flags for requesting specific SMs
     sms: tp.Set[str] = set()
     for sm in {"60", "61", "70", "75", "80", "86"}:
-        if f"--ext-sm{sm}" in sys.argv:
-            sys.argv.remove(f"--ext-sm{sm}")
+        if f"ext-sm{sm}" in sys.argv:
+            sys.argv.remove(f"ext-sm{sm}")
             sms.add(sm)
     # Flag for requesting compatible SMs detection
-    if "--ext" in sys.argv:
-        sys.argv.remove("--ext")
+    if "ext" in sys.argv:
+        sys.argv.remove("ext")
         sms.update(collect_compatible_sms())
     # Flag for requesting all sms
-    if "--ext-all-sms" in sys.argv:
-        sys.argv.remove("--ext-all-sms")
+    if "ext-all-sms" in sys.argv:
+        sys.argv.remove("ext-all-sms")
         sms.update(collect_all_sms())
 
     # Compile extensions with DEBUG infomation
     debug = False
-    if "--ext-debug" in sys.argv:
-        sys.argv.remove("--ext-debug")
+    if "ext-debug" in sys.argv:
+        sys.argv.remove("ext-debug")
         debug = True
 
     # Compile optimized extensions
     # (intrinsic math fns and -use_fast_math nvcc flag)
     opt = True
-    if "--ext-no-opt" in sys.argv:
-        sys.argv.remove("--ext-no-opt")
+    if "ext-no-opt" in sys.argv:
+        sys.argv.remove("ext-no-opt")
         opt = False
 
     # At least 1 SM is always added to the "sms" set if extensions need to be built

@@ -8,9 +8,9 @@ ENV PATH=${CUDA_HOME}/bin:$PATH
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
 # Get dependencies to:
-# Download test data (wget)
-# Get correct setuptools_scm version (git)
-# Build C++/CUDA extensions fast (ninja-build)
+# Download test data and maybe CUB (wget, unzip)
+# Get correct setuptools-scm version (git)
+# Build C++/CUDA extensions faster (ninja-build)
 RUN apt update && apt install -y git wget unzip ninja-build
 
 # Download test data
@@ -34,8 +34,7 @@ COPY . /torchani_sandbox
 ARG BUILD_EXT=0
 RUN \
 if [ "$BUILD_EXT" = "0" ]; then \
-    pip install -v --no-build-isolation --editable . ; \
+    pip install --no-build-isolation -v -e . ; \
 else \
-    pip install -v --no-build-isolation --editable . && \
-    pip install -v --no-build-isolation --editable . --global-option="--ext-${BUILD_EXT}"; \
+    pip install --no-build-isolation --config-settings=--global-option=ext-${BUILD_EXT} -v -e . ; \
 fi
