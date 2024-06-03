@@ -65,7 +65,8 @@ from torchani.tuples import (
     ForceStdev,
     ForceMagnitudes,
 )
-from torchani.nn import SpeciesConverter, Ensemble, ANIModel
+from torchani.atomics import AtomicContainer
+from torchani.nn import SpeciesConverter
 from torchani.utils import (
     PERIODIC_TABLE,
     ATOMIC_NUMBERS,
@@ -80,9 +81,6 @@ from torchani.potentials import (
 from torchani.neighbors import rescreen
 
 
-NN = tp.Union[ANIModel, Ensemble]
-
-
 class BuiltinModel(torch.nn.Module):
     r"""Private template for the builtin ANI models"""
 
@@ -91,10 +89,10 @@ class BuiltinModel(torch.nn.Module):
 
     def __init__(
         self,
+        symbols: tp.Sequence[str],
         aev_computer: AEVComputer,
-        neural_networks: NN,
+        neural_networks: AtomicContainer,
         energy_shifter: EnergyAdder,
-        elements: tp.Sequence[str],
         periodic_table_index: bool = True,
     ):
         super().__init__()
@@ -103,10 +101,10 @@ class BuiltinModel(torch.nn.Module):
         self.neural_networks = neural_networks
         self.energy_shifter = energy_shifter
         device = self.energy_shifter.self_energies.device
-        self.species_converter = SpeciesConverter(elements).to(device)
+        self.species_converter = SpeciesConverter(symbols).to(device)
 
         self.periodic_table_index = periodic_table_index
-        numbers = torch.tensor([ATOMIC_NUMBERS[e] for e in elements], dtype=torch.long)
+        numbers = torch.tensor([ATOMIC_NUMBERS[e] for e in symbols], dtype=torch.long)
         self.register_buffer("atomic_numbers", numbers)
 
         # checks are performed to make sure all modules passed support the
@@ -150,8 +148,7 @@ class BuiltinModel(torch.nn.Module):
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         species, energies = self.neural_networks(species_aevs)
-        energies += self.energy_shifter(species)
-        return SpeciesEnergies(species, energies)
+        return SpeciesEnergies(species, energies + self.energy_shifter(species))
 
     @torch.jit.export
     def _maybe_convert_species(
@@ -212,7 +209,13 @@ class BuiltinModel(torch.nn.Module):
         self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
         self.aev_computer.neighborlist._recast_long_buffers()
 
-    def ase(self, **kwargs):
+    def ase(
+        self,
+        overwrite: bool = False,
+        stress_partial_fdotr: bool = False,
+        stress_numerical: bool = False,
+        jit: bool = False,
+    ):
         """Get an ASE Calculator using this ANI model
 
         Arguments:
@@ -221,17 +224,22 @@ class BuiltinModel(torch.nn.Module):
         Returns:
             calculator (:class:`ase.Calculator`): A calculator to be used with ASE
         """
-        from . import ase
+        from torchani.ase import Calculator
 
-        return ase.Calculator(self, **kwargs)
+        return Calculator(
+            torch.jit.script(self) if jit else self,
+            overwrite=overwrite,
+            stress_partial_fdotr=stress_partial_fdotr,
+            stress_numerical=stress_numerical,
+        )
 
     def __getitem__(self, index: int) -> tpx.Self:
         return type(self)(
-            self.aev_computer,
-            self.neural_networks.member(index),
-            self.energy_shifter,
-            self.get_chemical_symbols(),
-            self.periodic_table_index,
+            symbols=self.get_chemical_symbols(),
+            aev_computer=self.aev_computer,
+            neural_networks=self.neural_networks.member(index),
+            energy_shifter=self.energy_shifter,
+            periodic_table_index=self.periodic_table_index,
         )
 
     @torch.jit.export
@@ -459,9 +467,21 @@ class BuiltinModel(torch.nn.Module):
 
 class PairPotentialsModel(BuiltinModel):
     def __init__(
-        self, *args, pairwise_potentials: tp.Iterable[PairPotential] = tuple(), **kwargs
+        self,
+        symbols: tp.Sequence[str],
+        aev_computer: AEVComputer,
+        neural_networks: AtomicContainer,
+        energy_shifter: EnergyAdder,
+        pairwise_potentials: tp.Iterable[PairPotential] = tuple(),
+        periodic_table_index: bool = True,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            symbols=symbols,
+            aev_computer=aev_computer,
+            neural_networks=neural_networks,
+            energy_shifter=energy_shifter,
+            periodic_table_index=periodic_table_index,
+        )
         potentials: tp.List[Potential] = list(pairwise_potentials)
         aev_potential = AEVPotential(self.aev_computer, self.neural_networks)
         potentials.append(aev_potential)
@@ -493,8 +513,9 @@ class PairPotentialsModel(BuiltinModel):
                 neighbor_data = rescreen(cutoff, neighbor_data)
                 previous_cutoff = cutoff
             energies += pot(element_idxs, neighbor_data)
-        energies += self.energy_shifter(element_idxs)
-        return SpeciesEnergies(element_idxs, energies)
+        return SpeciesEnergies(
+            element_idxs, energies + self.energy_shifter(element_idxs)
+        )
 
     @torch.jit.export
     def atomic_energies(
@@ -552,16 +573,15 @@ class PairPotentialsModel(BuiltinModel):
             atomic_energies = atomic_energies.mean(dim=0)
         return SpeciesEnergies(species_coordinates[0], atomic_energies)
 
-    # NOTE: members_energies does not need to be overriden, it works correctly as is
     def __getitem__(self, index: int) -> tpx.Self:
         non_aev_potentials = [
             p for p in self.potentials if not isinstance(p, AEVPotential)
         ]
         return type(self)(
+            symbols=self.get_chemical_symbols(),
             aev_computer=self.aev_computer,
             neural_networks=self.neural_networks.member(index),
             energy_shifter=self.energy_shifter,
-            elements=self.get_chemical_symbols(),
             periodic_table_index=self.periodic_table_index,
             pairwise_potentials=non_aev_potentials,
         )

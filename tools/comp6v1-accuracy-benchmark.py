@@ -5,15 +5,24 @@ from pathlib import Path
 import math
 import torch
 from tqdm import tqdm
+from rich.console import Console
 
 from torchani.models import ANI1x
-from torchani.datasets import COMP6v1, ANIDataset
+from torchani import datasets
+from torchani.datasets import ANIDataset
 from torchani.units import hartree2kcalpermol
 from torchani.grad import energies_and_forces
 
+console = Console()
 
-def main(subset: str, max_size: int, device: tp.Literal["cpu", "cuda"]) -> int:
-    ds = COMP6v1(verbose=False)
+
+def main(
+    subset: str,
+    max_size: int,
+    device: tp.Literal["cpu", "cuda"],
+    no_tqdm: bool,
+) -> int:
+    ds = getattr(datasets, "COMP6v1")(verbose=False)
     locations = [
         Path(p)
         for p in ds.store_locations
@@ -21,6 +30,9 @@ def main(subset: str, max_size: int, device: tp.Literal["cpu", "cuda"]) -> int:
     ]
     if not len(locations) == 1:
         raise ValueError(f"Subset {subset} could not be found")
+    console.print(
+        f"Benchmarking on subset {subset} on device {device.upper()}"
+    )
     ds = ANIDataset(locations=locations)
     model = ANI1x().to(device)
     count = 0
@@ -28,11 +40,12 @@ def main(subset: str, max_size: int, device: tp.Literal["cpu", "cuda"]) -> int:
     forces_rmse = 0.0
     energies_mae = 0.0
     forces_mae = 0.0
-    pbar = tqdm(total=ds.num_conformers, desc="COMP6v1 benchmark", leave=False)
+    pbar = tqdm(
+        total=ds.num_conformers, desc="COMP6v1 benchmark", leave=False, disable=no_tqdm
+    )
     for k, j, d in ds.chunked_items(max_size=max_size):
         size = d["species"].shape[0]
         count += size
-        pbar.update(size)
         d = {k: v.to(device) for k, v in d.items()}
         pred_energies, pred_forces = energies_and_forces(
             model, d["species"], d["coordinates"]
@@ -43,16 +56,18 @@ def main(subset: str, max_size: int, device: tp.Literal["cpu", "cuda"]) -> int:
         forces_rmse += forces_diff.pow(2).sum()
         energies_mae += energies_diff.sum()
         forces_mae += forces_diff.sum()
+        pbar.update(size)
+    pbar.close()
 
     energies_mae = energies_mae / count
     energies_rmse = math.sqrt(energies_rmse / count)
 
     forces_mae = forces_mae / 3 / count
     forces_rmse = math.sqrt(forces_rmse / 3 / count)
-    print(f"Energy RMSE (kcal/mol): {hartree2kcalpermol(energies_rmse)}")
-    print(f"Energy MAE (kcal/mol): {hartree2kcalpermol(energies_mae)}")
-    print(f"Force RMSE (kcal/mol/ang): {hartree2kcalpermol(forces_rmse)}")
-    print(f"Force MAE (kcal/mol/ang): {hartree2kcalpermol(forces_mae)}")
+    console.print(f"Energy RMSE (kcal/mol): {hartree2kcalpermol(energies_rmse)}")
+    console.print(f"Energy MAE (kcal/mol): {hartree2kcalpermol(energies_mae)}")
+    console.print(f"Force RMSE (kcal/mol/ang): {hartree2kcalpermol(forces_rmse)}")
+    console.print(f"Force MAE (kcal/mol/ang): {hartree2kcalpermol(forces_mae)}")
     return 0
 
 
@@ -79,5 +94,18 @@ if __name__ == "__main__":
         help="Device of modules and tensors",
         default=("cuda" if torch.cuda.is_available() else "cpu"),
     )
+    parser.add_argument(
+        "--no-tqdm",
+        dest="no_tqdm",
+        action="store_true",
+        help="Whether to disable tqdm to display progress",
+    )
     args = parser.parse_args()
-    sys.exit(main(device=args.device, subset=args.subset, max_size=args.max_size))
+    sys.exit(
+        main(
+            device=args.device,
+            subset=args.subset,
+            max_size=args.max_size,
+            no_tqdm=args.no_tqdm,
+        )
+    )

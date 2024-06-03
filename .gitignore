@@ -4,6 +4,9 @@ __pycache__/
 .eggs
 *.egg-info/
 
+# setuptools-scm version file
+_version.py
+
 # Vscode
 /.vscode
 
@@ -21,9 +24,10 @@ __pycache__/
 *.zip
 a.out
 
-# Mypy and pytest cache
+# Mypy, pytest and clangd cache
 .mypy_cache/
 .pytest_cache/
+.cache/
 
 # Ninja
 *.ninja
@@ -48,12 +52,15 @@ Untitled.ipynb
 /docs/src/sg_execution_times.rst
 # Build output of CUDA / C++ extensions
 /build/
+/torchani/csrc/build/
 # Data downloaded with download.sh
 /download/
 
 # Nvidia Nsight Systems profiling
 *.qdrep
 *.qdstrm
+*.nsys-rep
+report*.sqlite
 
 *.prof
 *checkpoint*
@@ -66,3 +73,6 @@ dist
 examples/dataset.pkl
 examples/batched_dataset_1x/*
 /tests/.hypothesis
+
+# Compile database for IDEs
+compile_commands.json

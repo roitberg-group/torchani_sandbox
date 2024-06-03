@@ -25,7 +25,6 @@ These pieces are assembled into a Model, which is a subclass of BuiltinModel
 Some of the Featurizers support custom made cuda operators that accelerate them
 """
 import functools
-from copy import deepcopy
 import math
 from dataclasses import dataclass
 from collections import OrderedDict
@@ -52,6 +51,7 @@ from torchani.aev.terms import (
     parse_angular_term,
 )
 from torchani.nn import ANIModel, Ensemble
+from torchani.atomics import AtomicContainer
 from torchani.utils import GSAES, sort_by_element
 from torchani.storage import STATE_DICTS_DIR
 
@@ -81,9 +81,9 @@ class FeaturizerWrapper:
         self.cutoff_fn = cutoff_fn
         self.radial_terms = parse_radial_term(radial_terms)
         self.angular_terms = parse_angular_term(angular_terms)
-        if angular_terms.cutoff > radial_terms.cutoff:  # type: ignore
+        if self.angular_terms.cutoff > self.radial_terms.cutoff:
             raise ValueError("Angular cutoff must be smaller or equal to radial cutoff")
-        if angular_terms.cutoff <= 0 or radial_terms.cutoff <= 0:  # type: ignore
+        if self.angular_terms.cutoff <= 0 or self.radial_terms.cutoff <= 0:
             raise ValueError("Cutoffs must be strictly positive")
         self.extra = extra
 
@@ -120,7 +120,6 @@ class Assembler:
         self._fn_for_networks: tp.Optional[
             tp.Callable[[str, int], torch.nn.Module]
         ] = None
-        self._atomic_networks: tp.Dict[str, torch.nn.Module] = {}
         self._shifter_type: ShifterType = shifter_type
         self._container_type: ContainerType = container_type
         self._symbols: tp.Tuple[str, ...] = tuple(symbols)
@@ -166,13 +165,6 @@ class Assembler:
             self._symbols = sort_by_element(symbols)
         else:
             self._symbols = tuple(symbols)
-
-    @property
-    def atomic_networks(self) -> tp.OrderedDict[str, torch.nn.Module]:
-        odict = OrderedDict()
-        for k in self.symbols:
-            odict[k] = deepcopy(self._atomic_networks[k])
-        return odict
 
     def set_atomic_maker(
         self,
@@ -276,6 +268,17 @@ class Assembler:
             )
         )
 
+    def build_atomic_networks(
+        self, in_dim: int
+    ) -> tp.OrderedDict[str, torch.nn.Module]:
+        if self._fn_for_networks is None:
+            raise RuntimeError(
+                "Atomic Network Maker not set. Call 'set_atomic_maker' before assembly"
+            )
+        return OrderedDict(
+            [(s, self._fn_for_networks(s, in_dim)) for s in self.symbols]
+        )
+
     def assemble(self) -> BuiltinModel:
         if not self.symbols:
             raise RuntimeError("Symbols not set. Call 'set_symbols' before assembly")
@@ -302,23 +305,20 @@ class Assembler:
             num_species=self.elements_num,
             **feat_kwargs,  # type: ignore
         )
-        # This fails because the attribute is marked as final, but it should not be
-        neural_networks: tp.Union[ANIModel, Ensemble]
-        if self._fn_for_networks is not None:
-            self._atomic_networks = {
-                s: self._fn_for_networks(s, featurizer.aev_length) for s in self.symbols
-            }
-        else:
-            raise RuntimeError(
-                "Atomic Network Maker not set. Call 'set_atomic_maker' before assembly"
-            )
+        neural_networks: AtomicContainer
         if self.ensemble_size > 1:
             containers = []
             for j in range(self.ensemble_size):
-                containers.append(self._container_type(self.atomic_networks))
+                containers.append(
+                    self._container_type(
+                        self.build_atomic_networks(featurizer.aev_length)
+                    )
+                )
             neural_networks = Ensemble(containers)
         else:
-            neural_networks = self._container_type(self.atomic_networks)
+            neural_networks = self._container_type(
+                self.build_atomic_networks(featurizer.aev_length)
+            )
         self_energies = self.self_energies
         shifter = self._shifter_type(
             symbols=self.symbols,
@@ -350,9 +350,9 @@ class Assembler:
         else:
             kwargs = {}
         return self._model_type(
+            symbols=self.symbols,
             aev_computer=featurizer,
             energy_shifter=shifter,
-            elements=self.symbols,
             neural_networks=neural_networks,
             periodic_table_index=self.periodic_table_index,
             **kwargs,

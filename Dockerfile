@@ -7,8 +7,11 @@ ENV CUDA_HOME=/usr/local/cuda/
 ENV PATH=${CUDA_HOME}/bin:$PATH
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
-# Get dependencies to extract data and get correct setuptools_scm version
-RUN apt update && apt install -y git wget unzip
+# Install dependencies to:
+# Get the program version from version control (git, needed by setuptools-scm)
+# Download test data and maybe CUB (wget, unzip)
+# Build C++/CUDA extensions faster (ninja-build)
+RUN apt update && apt install -y wget git unzip ninja-build
 
 # Download test data
 COPY ./download.sh .
@@ -23,5 +26,28 @@ RUN pip install -r dev_requirements.txt
 # Copy all other necessary repo files
 COPY . /torchani_sandbox
 
-# Install torchani + core requirements (no extensions)
-RUN pip install -v --no-build-isolation --editable .
+# Init repo from scratch, faster than copying .git
+# setuptools-scm needs a Git repo to work properly
+RUN \
+    git config --global user.email "user@domain.com" \
+    && git config --global user.name "User" \
+    && git config --global init.defaultBranch "main" \
+    && git init > /dev/null \
+    && git add . \
+    && git commit -m "Initial commit" > /dev/null
+
+# Install torchani + core requirements (+ extensions if BUILD_EXT build arg is provided)
+# Usage:
+# BUILD_EXT=0 -> Don't build extensions
+# BUILD_EXT=all-sms -> Build extensions for all sms
+# BUILD_EXT=smMajorMinor (e.g. BUILD_EXT=sm86)-> Build for specific Major.Minor SM
+ARG BUILD_EXT=0
+RUN \
+if [ "$BUILD_EXT" = "0" ]; then \
+    pip install -v . ; \
+else \
+    pip install \
+        --no-build-isolation \
+        --config-settings=--global-option=ext-"${BUILD_EXT}" \
+        -v . ; \
+fi
