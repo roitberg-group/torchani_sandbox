@@ -19,7 +19,7 @@ COPY conda/build_requirements.txt /repo/conda/build_requirements.txt
 # Install requirements to build conda pkg (first activate conda base env)
 # TODO: can the base env be activated just once?
 RUN \
-    source /opt/conda/etc/profile.d/conda.sh \
+    . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
     && conda install --file conda/build_requirements.txt
 
