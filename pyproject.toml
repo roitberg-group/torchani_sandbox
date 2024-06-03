@@ -48,6 +48,7 @@ namespaces = false
 
 [tool.setuptools_scm]
 version_file = "torchani/_version.py"
+fallback_version="0.0.0"
 
 [tool.mypy]
 ignore_missing_imports = true

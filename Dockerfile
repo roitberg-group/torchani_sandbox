@@ -9,9 +9,8 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
 # Get dependencies to:
 # Download test data and maybe CUB (wget, unzip)
-# Get correct setuptools-scm version (git)
 # Build C++/CUDA extensions faster (ninja-build)
-RUN apt update && apt install -y git wget unzip ninja-build
+RUN apt update && apt install -y wget unzip ninja-build
 
 # Download test data
 COPY ./download.sh .
