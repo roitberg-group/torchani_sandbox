@@ -1,38 +1,38 @@
 package:
-  name: torchani
+  name: sandbox
   version: "{{ environ.get('BUILD_VERSION', '0.0.0') }}"
 
 source:
-  path: "{{ environ.get('PACKAGE_ROOT') }}"
+  path: "{{ environ.get('REPO_ROOT') }}"
 
 requirements:
   build:
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
   host:
-    - git
-    - pip
-    - setuptools
-    - setuptools_scm
     - python={{ environ.get('PYTHON_VERSION') }}
-    #- pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
-    #- pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
+    - conda-forge::git
+    - conda-forge::pip
+    - conda-forge::setuptools
+    - conda-forge::setuptools_scm
+    - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
+    - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
     #- nvidia::cuda-libraries-dev={{ environ.get('CUDA_VERSION') }}
     #- nvidia::cuda-nvcc={{ environ.get('CUDA_VERSION') }}
     #- nvidia::cuda-cccl={{ environ.get('CUDA_VERSION') }}
   run:
     - python={{ environ.get('PYTHON_VERSION') }}
+    - typing_extensions>=4.0.0
     - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
     - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
-    - numpy>=1.24
-    - typing_extensions>=4.0.0
-    - h5py
-    - tqdm
+    - conda-forge::numpy>=1.24
+    - conda-forge::h5py
+    - conda-forge::tqdm
 
 build:
   number: 0
   string: py{{ environ.get('PYTHON_VERSION') }}_torch{{ environ.get('PYTORCH_VERSION') }}_cuda{{ environ.get('CUDA_VERSION')}}
-  script: "DISABLE_NINJA=1 {{ PYTHON }} -m pip install --no-deps --no-build-isolation --config-settings=--global-option=ext-all-sms -v ."
+  script: "DISABLE_NINJA=1 {{ PYTHON }} -m pip install --no-deps --no-build-isolation --config-settings=--global-option=ext-sm86 -v ."
 
 test:
   # These are automatically added to the "run" requirements when testing
