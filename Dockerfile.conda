@@ -14,14 +14,16 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 RUN apt update && apt install -y wget git unzip ninja-build
 
 # Copy requirements to build conda pkg, in case it is neded
-COPY conda/build_requirements.txt /repo/conda/build_requirements.txt
+COPY conda/build_pkg_requirements.txt /repo/conda/build_pkg_requirements.txt
 
 # Install requirements to build conda pkg (first activate conda base env)
-# TODO: can the base env be activated just once?
 RUN \
     . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
-    && conda install --file conda/build_requirements.txt
+    && conda install --file conda/build_pkg_requirements.txt
+
+# TODO: Maybe installing the environment here is useful since afterwards
+# conda-build can just use the cache?
 
 # Copy rest of the repo files
 COPY . /repo

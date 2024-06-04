@@ -16,10 +16,9 @@ set -ex
 # 3. Build and upload to Anaconda server
 # CONDA_TOKEN=TOKEN ./build_conda.sh release
 
-SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-RECIPE_PATH="$SCRIPT_DIR/torchani"
 
 # Set build version
+# TODO: It should be possible to do this inside meta.yaml
 BUILD_VERSION="2.3.dev$(TZ='America/New_York' date "+%Y%m%d")"
 
 # The following variables are used by meta.yaml too
@@ -27,7 +26,8 @@ export BUILD_VERSION
 
 # Build conda pkg, --output is used to output file name
 # TODO: does this work or is generating this file manually needed?
-BUILD_FILE="$(conda build --output --numpy 1.24 --no-anaconda-upload --no-copy-test-source-files "$RECIPE_PATH")"
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+BUILD_FILE="$(conda build --output --numpy 1.24 --no-anaconda-upload --no-copy-test-source-files "$SCRIPT_DIR/recipe")"
 echo "Build file is: $BUILD_FILE"
 
 # Upload to anaconda.org
