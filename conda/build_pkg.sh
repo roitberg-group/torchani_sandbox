@@ -1,7 +1,7 @@
 #!/bin/bash
 set -ex
 
-# Build packages of torchani
+# Build torchani conda pkg
 #
 # To run first install the 'build_conda_pkg_requirements.txt'
 #
@@ -15,13 +15,6 @@ set -ex
 #
 # 3. Build and upload to Anaconda server
 # CONDA_TOKEN=TOKEN ./build_conda.sh release
-
-
-# Set build version
-# TODO: It should be possible to do this inside meta.yaml,
-BUILD_VERSION="2.3.dev$(TZ='America/New_York' date "+%Y%m%d")"
-# BUILD_VERSION is used in meta.yaml
-export BUILD_VERSION
 
 # Build conda pkg, --output is used to output file name
 # TODO: does this work or is generating this file manually needed?
