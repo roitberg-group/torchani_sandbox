@@ -12,12 +12,12 @@ requirements:
   # Specifying the versions is useful for solving the env faster
   host:
     - conda-forge::python={{ python }}
-    - conda-forge::typing_extensions=4.11
-    - conda-forge::cmake=3.24
-    - conda-forge::git=2.34
-    - conda-forge::pip=24
-    - conda-forge::setuptools=69.5
-    - conda-forge::setuptools_scm=8.1
+    - conda-forge::typing_extensions>=4.0.0
+    - conda-forge::cmake
+    - conda-forge::git
+    - conda-forge::pip
+    - conda-forge::setuptools
+    - conda-forge::setuptools_scm
     - pytorch::pytorch={{ pytorch }}
     - pytorch::pytorch-cuda={{ cuda }}
     - nvidia::cuda-libraries-dev={{ cuda }}
