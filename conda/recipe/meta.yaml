@@ -6,10 +6,10 @@ source:
   path: "../.."
 
 requirements:
-  build:
-    - {{ compiler('c') }}
-    - {{ compiler('cxx') }}
-  # Specifying these dependencies is useful to make the environment solve faster
+  #build:
+    #- {{ compiler('c') }}
+    #- {{ compiler('cxx') }}
+  # Specifying the versions is useful for solving the env faster
   host:
     - conda-forge::python={{ python }}
     - conda-forge::typing_extensions=4.11
