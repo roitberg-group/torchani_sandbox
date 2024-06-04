@@ -13,8 +13,8 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 # Build C++/CUDA extensions faster (ninja-build)
 RUN apt update && apt install -y wget git unzip ninja-build
 
-# Copy requirements to build conda pkg, in case it is neded
-COPY conda/build_pkg_requirements.txt /repo/conda/build_pkg_requirements.txt
+# Copy recipe and requirements to build conda pkg
+COPY conda/build_pkg_requirements.txt /repo/conda/
 
 # Install requirements to build conda pkg (first activate conda base env)
 RUN \
@@ -22,8 +22,20 @@ RUN \
     && conda activate \
     && conda install --file conda/build_pkg_requirements.txt
 
-# TODO: Maybe installing the environment here is useful since afterwards
-# conda-build can just use the cache?
+# pre-render meta.yaml from the recipe to save time when actually building the package
+# NOTE: This fixes the versions and build-strings of all packages, but they
+# change if the cache is invalidated.
+# pre-rendered meta.yaml has to be filtered since the first few lines are
+# comments and can't be parsed by conda build
+RUN \
+    . /opt/conda/etc/profile.d/conda.sh \
+    && conda activate \
+    && cd conda/ \
+    && conda render ./recipe > meta.yaml \
+    && python filter_rendered_meta.py
+
+# TODO: Maybe installing the environment from the rendered meta.yaml here is
+# useful since afterwards conda-build can just use the cache?
 
 # Copy rest of the repo files
 COPY . /repo
