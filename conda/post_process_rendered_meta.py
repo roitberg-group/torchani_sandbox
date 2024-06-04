@@ -18,7 +18,7 @@ with open(_dir / "rendered_meta.yaml", mode="wt", encoding="utf-8") as f:
     # after the render
     filtered_lines[
         num
-    ] = "  version: {{ environ.get('GIT_DESCRIBE_TAG', '2.3') }}.{{ environ.get('GIT_BUILD_STR', 'dev') }}\n"
+    ] = "  version: {{ environ.get('GIT_DESCRIBE_TAG', '2.3') }}.{{ environ.get('GIT_BUILD_STR', 'dev') }}\n"  # noqa
     f.writelines(filtered_lines)
 
 # Parse the rendered and filtered file to also create an environment file
