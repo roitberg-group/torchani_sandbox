@@ -41,7 +41,7 @@ RUN \
 COPY . /repo
 
 # Overwrite meta.yaml with the rendered meta
-#RUN mv conda/rendered-meta.yaml conda/meta.yaml
+RUN mv conda/rendered-meta.yaml conda/recipe/meta.yaml
 
 
 # Init repo from scratch, faster than copying .git
