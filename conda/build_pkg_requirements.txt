@@ -2,4 +2,3 @@
 conda-build
 conda-verify
 anaconda-client
-rsync
