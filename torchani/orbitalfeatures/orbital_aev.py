@@ -42,7 +42,7 @@ class OrbitalAEVComputer(torch.nn.Module):
                 return self._reshape_coefficients(coefficients,basis_functions) # shape (nconf, natoms, simple_orbital_aevs_length)                       
             simple_orbital_aevs = torch.cat((s_coeffs, distances), dim=-1)
             if use_angular_info:
-                angles, _ = self._get_angles_from_orbital_matrix(orbital_matrix,distances,use_simple_orbital_aev)
+                angles = self._get_angles_from_orbital_matrix(orbital_matrix,distances,True)
                 simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles), dim=-1)
             return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
         
@@ -69,7 +69,7 @@ class OrbitalAEVComputer(torch.nn.Module):
             # Concatenate the s and radial contributions to the orbital aevs
             orbital_aev = torch.cat((s_orbital_aev, radial_orbital_aev), dim=-1)            
             if use_angular_info:
-                angles, avdistperangle = self._get_angles_from_orbital_matrix(orbital_matrix,distances,use_simple_orbital_aev)
+                angles, avdistperangle = self._get_angles_from_orbital_matrix(orbital_matrix,distances,False)
                 _, _, nangles = angles.shape
                 # Define r shifts for the angular component of the AEV and reshape for broadcasting
                 OShfA = torch.linspace(LowerOShfA, UpperOShfA, NOShfA)                
@@ -98,7 +98,7 @@ class OrbitalAEVComputer(torch.nn.Module):
                 factor2 = torch.exp(-OEtaA * (expanded_avdistperangle - OShfA)**2)
 
                 # Combine factors
-                angular_orbital_aev = 2 * factor1.unsqueeze(-1) * factor2.unsqueeze(3)  # Correct broadcasting
+                angular_orbital_aev = 2 * factor1.unsqueeze(-1) * factor2.unsqueeze(3)
 
                 # Reshape to the final desired shape
                 angular_orbital_aev = angular_orbital_aev.reshape(nconf, natoms, nangles * NOShfA * NOShfZ)
@@ -167,7 +167,8 @@ class OrbitalAEVComputer(torch.nn.Module):
     def _get_angles_from_orbital_matrix(
         self,
         orbital_matrix: Tensor,
-        distances: Tensor
+        distances: Tensor,
+        use_simple_orbital_aev: bool,
     ) -> Tensor:
         nconformers, natoms, naovs = distances.shape
         # Normalize the vectors using the provided distances
@@ -181,15 +182,24 @@ class OrbitalAEVComputer(torch.nn.Module):
         torch.zeros_like(orbital_matrix),
         orbital_matrix / distances.unsqueeze(-1)        
         )
-        # orbital_matrix_normalized = orbital_matrix / distances.unsqueeze(-1)
            
         # Calculate angles between each vector and the following vectors
         nangles = int((naovs-1)*naovs/2)
         angles = torch.zeros((nconformers, natoms,nangles))
         k = 0
-        for i in range(naovs):
-            for j in range(i+1, naovs):
-                cos_angles = torch.einsum('ijk,ijk->ij', orbital_matrix_normalized[:, :, i, :], orbital_matrix_normalized[:, :, j, :])
-                angles[:, :, k] = torch.acos(0.95 * cos_angles) # 0.95 is multiplied to the cos values to prevent acos from returning NaN.     
-                k = k + 1
-        return angles
+        if use_simple_orbital_aev:
+            for i in range(naovs):
+                for j in range(i+1, naovs):
+                    cos_angles = torch.einsum('ijk,ijk->ij', orbital_matrix_normalized[:, :, i, :], orbital_matrix_normalized[:, :, j, :])
+                    angles[:, :, k] = torch.acos(0.95 * cos_angles) # 0.95 is multiplied to the cos values to prevent acos from returning NaN.     
+                    k = k + 1
+            return angles
+        else:
+            avdistperangle = torch.zeros((nconformers, natoms, nangles))        
+            for i in range(naovs):
+                for j in range(i+1, naovs):
+                    cos_angles = torch.einsum('ijk,ijk->ij', orbital_matrix_normalized[:, :, i, :], orbital_matrix_normalized[:, :, j, :])
+                    angles[:, :, k] = torch.acos(0.95 * cos_angles) # 0.95 is multiplied to the cos values to prevent acos from returning NaN.     
+                    avdistperangle[:, :, k] = (distances[:, :, i]+distances[:, :, j])/2.0
+                    k = k + 1
+            return angles,avdistperangle

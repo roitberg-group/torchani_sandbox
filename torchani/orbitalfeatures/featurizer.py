@@ -96,7 +96,7 @@ class ExCorrAEVComputer(AEVComputer):
                 #If we calculate the number of angles as N(N-1)/2 (with N the number of s+d AOVs), we have:
                 nangles = int((orbital_aev_length-9)*(orbital_aev_length-10)/2)
                 orbital_aev_length = orbital_aev_length + nangles
-            self.orbital_aev_computer = SimpleOrbitalAEVComputer()   
+            self.orbital_aev_computer = OrbitalAEVComputer()   
         else:
             #To do -> Include an AEV-like expansion for the AOVs
             pass
