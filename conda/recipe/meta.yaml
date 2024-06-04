@@ -21,6 +21,9 @@ requirements:
     - conda-forge::setuptools_scm
     - pytorch::pytorch={{ pytorch }}
     - pytorch::pytorch-cuda={{ cuda }}
+    # NOTE: This script assumes by default that the extensions are built using
+    # the system's CUDA Toolkit, if this is not possible then the 3 lines
+    # should be added.
     #- nvidia::cuda-libraries-dev={{ cuda }}
     #- nvidia::cuda-nvcc={{ cuda }}
     #- nvidia::cuda-cccl={{ cuda }}
@@ -36,7 +39,9 @@ requirements:
 build:
   number: 0
   string: py{{ python }}_torch{{ pytorch }}_cuda{{ cuda }}
-  # The following can be used to build with the system's cuda
+  # The following is be used to build with the system's CUDA Toolkit,
+  # if the nvidia::cuda* packages are used instead, then the next 2 lines
+  # should be commented out
   script_env:
     - CUDA_HOME=/usr/local/cuda
 
