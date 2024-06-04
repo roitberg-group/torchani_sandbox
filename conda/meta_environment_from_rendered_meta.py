@@ -3,7 +3,7 @@ from pathlib import Path
 _dir = Path(__file__).resolve().parent
 
 
-with open(_dir / "rendered-meta.yaml", mode="rt", encoding="utf-8") as f:
+with open(_dir / "rendered_meta.yaml", mode="rt", encoding="utf-8") as f:
     dependencies = []
     # Collect all dependencies, from all environments
     in_requirements_section = False
