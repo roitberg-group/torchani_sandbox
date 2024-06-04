@@ -18,10 +18,9 @@ set -ex
 
 
 # Set build version
-# TODO: It should be possible to do this inside meta.yaml
+# TODO: It should be possible to do this inside meta.yaml,
 BUILD_VERSION="2.3.dev$(TZ='America/New_York' date "+%Y%m%d")"
-
-# The following variables are used by meta.yaml too
+# BUILD_VERSION is used in meta.yaml
 export BUILD_VERSION
 
 # Build conda pkg, --output is used to output file name

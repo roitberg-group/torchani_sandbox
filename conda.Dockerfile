@@ -30,8 +30,9 @@ RUN \
 RUN \
     . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
-    && conda render conda/recipe > conda/meta.yaml \
-    && python conda/filter_rendered_meta.py
+    && cd conda \
+    && conda render ./recipe > meta.yaml \
+    && python filter_rendered_meta.py
 
 # TODO: Maybe installing the environment from the rendered meta.yaml here is
 # useful since afterwards conda-build can just use the cache?
