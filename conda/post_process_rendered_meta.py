@@ -8,10 +8,18 @@ with open(_dir / "rendered_meta.yaml", mode="rt", encoding="utf-8") as f:
         if line.strip() == "meta.yaml:":
             break
     next(f)
-    filtered_file = f.read()
+    filtered_lines = f.readlines()
 
 with open(_dir / "rendered_meta.yaml", mode="wt", encoding="utf-8") as f:
-    f.write(filtered_file)
+    for num, line in enumerate(filtered_lines):
+        if line.strip().startswith("version:"):
+            break
+    # Revert this change so GIT_DESCRIBE_TAG and GIT_BUILD_STR can be used
+    # after the render
+    filtered_lines[
+        num
+    ] = "  version: {{ environ.get('GIT_DESCRIBE_TAG', '2.3') }}.{{ environ.get('GIT_BUILD_STR', 'dev') }}\n"
+    f.writelines(filtered_lines)
 
 # Parse the rendered and filtered file to also create an environment file
 with open(_dir / "rendered_meta.yaml", mode="rt", encoding="utf-8") as f:
