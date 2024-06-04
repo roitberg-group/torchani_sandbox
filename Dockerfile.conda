@@ -14,7 +14,7 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 RUN apt update && apt install -y wget git unzip ninja-build
 
 # Copy recipe and requirements to build conda pkg
-COPY conda/build_pkg_requirements.txt /repo/conda/
+COPY conda/ /repo/conda/
 
 # Install requirements to build conda pkg (first activate conda base env)
 RUN \
@@ -30,9 +30,8 @@ RUN \
 RUN \
     . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
-    && cd conda/ \
-    && conda render ./recipe > meta.yaml \
-    && python filter_rendered_meta.py
+    && conda render conda/recipe > conda/meta.yaml \
+    && python conda/filter_rendered_meta.py
 
 # TODO: Maybe installing the environment from the rendered meta.yaml here is
 # useful since afterwards conda-build can just use the cache?
