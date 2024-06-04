@@ -44,7 +44,7 @@ jobs:
           bash -c
           "source /opt/conda/etc/profile.d/conda.sh
           && conda activate
-          && ./conda/build_conda_pkg.sh"
+          conda build --numpy 1.24 --build-only ./conda/recipe"
 
       - name: Remove image
         if: ${{ always() }}
