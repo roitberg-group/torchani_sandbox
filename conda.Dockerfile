@@ -31,14 +31,18 @@ RUN \
     . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
     && cd conda \
-    && conda render ./recipe > meta.yaml \
+    && conda render ./recipe > rendered-meta.yaml \
     && python filter_rendered_meta.py
 
-# TODO: Maybe installing the environment from the rendered meta.yaml here is
+# TODO: Maybe installing the environment from rendered-meta.yaml here is
 # useful since afterwards conda-build can just use the cache?
 
-# Copy rest of the repo files
+# Copy all of the repo files
 COPY . /repo
+
+# Overwrite meta.yaml with the rendered meta
+RUN mv conda/rendred-meta.yaml conda/meta.yaml
+
 
 # Init repo from scratch, faster than copying .git
 # setuptools-scm needs a Git repo to work properly
