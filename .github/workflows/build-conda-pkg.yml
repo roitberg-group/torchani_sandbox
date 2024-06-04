@@ -1,13 +1,13 @@
-name: build-conda-pkg
+name: conda
 
 on: pull_request
 
 env:
   REGISTRY: ${{ github.repository }}
-  IMAGE_NAME: 'build-conda-pkg'
+  IMAGE_NAME: 'conda-pkg'
 
 jobs:
-  cpu-tests:
+  build-pkg:
     runs-on: [self-hosted, ipickering]
     permissions:
       contents: read
@@ -52,5 +52,5 @@ jobs:
         run: docker image rm ${{ steps.meta.outputs.tags }}
 
 concurrency:
-  group: build-conda-pkg-${{ github.event.pull_request.number || github.sha }}
+  group: conda-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
