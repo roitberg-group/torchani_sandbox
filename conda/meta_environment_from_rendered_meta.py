@@ -13,8 +13,7 @@ with open(_dir / "rendered_meta.yaml", mode="rt", encoding="utf-8") as f:
             # since 'conda render' does not attempt to resolve them
             break
         if in_requirements_section and line.strip() not in ("build:", "host:"):
-            if "::" not in line:
-                dependencies.append(line)
+            dependencies.append(line)
         if line.strip() == "requirements:":
             in_requirements_section = True
     # De-duplicate
