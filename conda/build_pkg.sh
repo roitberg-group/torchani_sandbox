@@ -29,7 +29,7 @@ export BUILD_VERSION
 # Or maybe just put the build file in a new dir as output of conda build, that
 # should be better
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-BUILD_FILE="$(conda build --output --numpy 1.24 --no-anaconda-upload --no-copy-test-source-files "$SCRIPT_DIR/recipe")"
+BUILD_FILE="$(conda build -c pytorch -c nvidia -c conda-forge --numpy 1.24 --no-anaconda-upload --no-copy-test-source-files "$SCRIPT_DIR/recipe")"
 echo "Build file is: $BUILD_FILE"
 
 # Upload to anaconda.org
