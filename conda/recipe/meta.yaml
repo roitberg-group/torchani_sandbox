@@ -3,25 +3,27 @@ package:
   version: "{{ environ.get('BUILD_VERSION', '0.0.0') }}"
 
 source:
-  path: "../.."
+  # git_url only captures committed code
+  git_url: ../../
 
 requirements:
   build:
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
+    # For source.git_url
+    - conda-forge::git
   host:
     - conda-forge::python={{ python }}
     - conda-forge::typing_extensions>=4.0.0
     - conda-forge::cmake
-    - conda-forge::git
     - conda-forge::pip
     - conda-forge::setuptools
     - conda-forge::setuptools_scm
     - pytorch::pytorch={{ pytorch }}
     - pytorch::pytorch-cuda={{ cuda }}
-    - nvidia::cuda-libraries-dev={{ cuda }}
-    - nvidia::cuda-nvcc={{ cuda }}
-    - nvidia::cuda-cccl={{ cuda }}
+    #- nvidia::cuda-libraries-dev={{ cuda }}
+    #- nvidia::cuda-nvcc={{ cuda }}
+    #- nvidia::cuda-cccl={{ cuda }}
   run:
     - conda-forge::python={{ python }}
     - conda-forge::typing_extensions>=4.0.0
@@ -35,8 +37,8 @@ build:
   number: 0
   string: py{{ python }}_torch{{ pytorch }}_cuda{{ cuda }}
   # The following can be used to build with the system's cuda
-  # script_env:
-  # - CUDA_HOME=path_to_cuda
+  script_env:
+    - CUDA_HOME=/usr/local/cuda
 
 test:
   # These are automatically added to the "run" requirements when testing
