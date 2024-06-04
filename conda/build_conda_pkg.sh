@@ -33,7 +33,7 @@ export CUDA_VERSION=11.8
 CONDA_ROOT="$(conda info --base)"
 
 # Build conda pkg
-conda build --no-anaconda-upload --no-copy-test-source-files "$RECIPE_PATH"
+conda build --numpy 1.24 --no-anaconda-upload --no-copy-test-source-files "$RECIPE_PATH"
 
 BUILD_FILE="${CONDA_ROOT}/conda-bld/linux-64/${PACKAGE_NAME}-${BUILD_VERSION}-py${PYTHON_VERSION//./}_torch${PYTORCH_VERSION}_cuda${CUDA_VERSION}.tar.bz2"
 echo "Build file is: $BUILD_FILE"

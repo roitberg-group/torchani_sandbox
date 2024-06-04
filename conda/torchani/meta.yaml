@@ -3,36 +3,36 @@ package:
   version: "{{ environ.get('BUILD_VERSION', '0.0.0') }}"
 
 source:
-  path: "{{ environ.get('REPO_ROOT') }}"
+  path: "{{ REPO_ROOT }}"
 
 requirements:
   build:
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
   host:
-    - conda-forge::python={{ environ.get('PYTHON_VERSION') }}
+    - conda-forge::python={{ PYTHON_VERSION }}
+    - conda-forge::cmake
     - conda-forge::git
     - conda-forge::pip
     - conda-forge::setuptools
     - conda-forge::setuptools_scm
-    - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
-    - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
-    #- nvidia::cuda-libraries-dev={{ environ.get('CUDA_VERSION') }}
-    #- nvidia::cuda-nvcc={{ environ.get('CUDA_VERSION') }}
-    #- nvidia::cuda-cccl={{ environ.get('CUDA_VERSION') }}
+    - pytorch::pytorch={{ PYTORCH_VERSION }}
+    - pytorch::pytorch-cuda={{ CUDA_VERSION }}
+    - nvidia::cuda-libraries-dev={{ CUDA_VERSION }}
+    - nvidia::cuda-nvcc={{ CUDA_VERSION }}
+    - nvidia::cuda-cccl={{ CUDA_VERSION }}
   run:
-    - conda-forge::python={{ environ.get('PYTHON_VERSION') }}
+    - conda-forge::python={{ PYTHON_VERSION }}
     - conda-forge::typing_extensions>=4.0.0
     - conda-forge::numpy>=1.24
     - conda-forge::h5py
     - conda-forge::tqdm
-    - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
-    - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
+    - pytorch::pytorch={{ PYTORCH_VERSION }}
+    - pytorch::pytorch-cuda={{ CUDA_VERSION }}
 
 build:
   number: 0
-  string: py{{ environ.get('PYTHON_VERSION') }}_torch{{ environ.get('PYTORCH_VERSION') }}_cuda{{ environ.get('CUDA_VERSION')}}
-  script: "DISABLE_NINJA=1 {{ PYTHON }} -m pip install --no-deps --no-build-isolation --config-settings=--global-option=ext-sm86 -v ."
+  string: py{{ PYTHON_VERSION }}_torch{{ PYTORCH_VERSION }}_cuda{{ CUDA_VERSION }}
 
 test:
   # These are automatically added to the "run" requirements when testing
