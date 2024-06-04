@@ -36,7 +36,7 @@ RUN \
     . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
     && cd conda \
-    && conda render ./recipe > rendered_meta.yaml \
+    && conda render -c nvidia -c pytorch -c conda-forge ./recipe > rendered_meta.yaml \
     && python filter_rendered_meta.py \
     && python meta_environment_from_rendered_meta.py
 
