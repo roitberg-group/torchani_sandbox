@@ -6,9 +6,9 @@ source:
   path: "../.."
 
 requirements:
-  #build:
-    #- {{ compiler('c') }}
-    #- {{ compiler('cxx') }}
+  build:
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
   # Specifying the versions is useful for solving the env faster
   host:
     - conda-forge::python={{ python }}
