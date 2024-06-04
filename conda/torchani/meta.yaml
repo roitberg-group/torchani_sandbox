@@ -10,7 +10,7 @@ requirements:
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
   host:
-    - python={{ environ.get('PYTHON_VERSION') }}
+    - conda-forge::python={{ environ.get('PYTHON_VERSION') }}
     - conda-forge::git
     - conda-forge::pip
     - conda-forge::setuptools
@@ -21,13 +21,13 @@ requirements:
     #- nvidia::cuda-nvcc={{ environ.get('CUDA_VERSION') }}
     #- nvidia::cuda-cccl={{ environ.get('CUDA_VERSION') }}
   run:
-    - python={{ environ.get('PYTHON_VERSION') }}
-    - typing_extensions>=4.0.0
-    - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
-    - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
+    - conda-forge::python={{ environ.get('PYTHON_VERSION') }}
+    - conda-forge::typing_extensions>=4.0.0
     - conda-forge::numpy>=1.24
     - conda-forge::h5py
     - conda-forge::tqdm
+    - pytorch::pytorch={{ environ.get('PYTORCH_VERSION') }}
+    - pytorch::pytorch-cuda={{ environ.get('CUDA_VERSION') }}
 
 build:
   number: 0
@@ -37,8 +37,8 @@ build:
 test:
   # These are automatically added to the "run" requirements when testing
   requires:
-    - parameterized
-    - expecttest
+    - conda-forge::parameterized
+    - conda-forge::expecttest
   source_files:
     - tests/*
     - dataset/*
