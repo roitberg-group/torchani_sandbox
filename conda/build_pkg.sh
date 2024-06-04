@@ -26,17 +26,15 @@ export BUILD_VERSION
 
 # Build conda pkg, --output is used to output file name
 # TODO: does this work or is generating this file manually needed?
+# Or maybe just put the build file in a new dir as output of conda build, that
+# should be better
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 BUILD_FILE="$(conda build --output --numpy 1.24 --no-anaconda-upload --no-copy-test-source-files "$SCRIPT_DIR/recipe")"
 echo "Build file is: $BUILD_FILE"
 
 # Upload to anaconda.org
 if [[ $1 == 'release' ]]; then
-    anaconda \
-        --token "$CONDA_TOKEN" \
-        upload \
-            --user roitberg-group \
-            --force "$BUILD_FILE"
+    anaconda --token "$CONDA_TOKEN" upload --user roitberg-group --force "$BUILD_FILE"
 # Upload to internal group server
 elif [[ $1 == 'internal' ]]; then
     mkdir -p /release/conda-packages/linux-64
@@ -44,10 +42,7 @@ elif [[ $1 == 'internal' ]]; then
     conda build purge-all
     conda index /release/conda-packages
     chown -R 1003:1003 /release/conda-packages
-    rsync \
-        --archive \
-        --verbose \
-        --delete \
+    rsync --archive --verbose --delete \
         -e "ssh -p $SERVER_PORT -o StrictHostKeyChecking=no" \
         /release/conda-packages/ \
         "$SERVER_USERNAME@roitberg.chem.ufl.edu:/home/statics/conda-packages/"
