@@ -40,9 +40,10 @@ jobs:
           --ulimit memlock=-1
           --ulimit stack=67108864
           ${{ steps.meta.outputs.tags }}
-          bash -c "source /opt/conda/etc/profile.d/conda.sh
+          bash -c "mkdir ./conda-pkgs/
+          && source /opt/conda/etc/profile.d/conda.sh
           && conda activate
-          && conda build -c nvidia -c pytorch -c conda-forge --no-anaconda-upload ./conda/recipe"
+          && conda build -c nvidia -c pytorch -c conda-forge --no-anaconda-upload --output-folder ./conda-pkgs/ ./conda/recipe"
 
       - name: Remove image
         if: ${{ always() }}
