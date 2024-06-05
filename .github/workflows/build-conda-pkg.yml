@@ -41,15 +41,9 @@ jobs:
           --rm
           --gpus '"device=all"'
           ${{ steps.meta.outputs.tags }}
-          bash -c
-          "source /opt/conda/etc/profile.d/conda.sh
+          bash -c "source /opt/conda/etc/profile.d/conda.sh
           && conda activate
-          && conda build
-            -c nvidia
-            -c pytorch
-            -c conda-forge
-            --no-anaconda-upload
-            ./conda/recipe"
+          && conda build -c nvidia -c pytorch -c conda-forge --no-anaconda-upload ./conda/recipe"
 
       - name: Remove image
         if: ${{ always() }}
