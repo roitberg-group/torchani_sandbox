@@ -27,9 +27,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           shm-size: 5g
-          ulimit:
-            - memlock=-1
-            - stack=67108864
+          ulimit: |
+            memlock=-1
+            stack=67108864
 
       - name: Build pkg locally
         run: >-
