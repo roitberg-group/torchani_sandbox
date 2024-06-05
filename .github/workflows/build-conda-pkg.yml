@@ -6,8 +6,10 @@ env:
   REGISTRY: ${{ github.repository }}
   IMAGE_NAME: 'conda-pkg'
 
+# This workflow only runs on pull_requests that start with 'conda/'
 jobs:
   build-pkg:
+    #if: ${{ startsWith(github.head_ref, 'conda/') || github.event_name == 'cron' }}
     runs-on: [self-hosted, ipickering]
     permissions:
       contents: read

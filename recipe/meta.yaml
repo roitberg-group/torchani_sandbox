@@ -9,14 +9,6 @@ source:
 build:
   number: 0
   string: py{{ python }}_torch{{ pytorch }}_cuda{{ cuda }}
-  script: >-
-    "export CUDA_HOME=/usr/local/cuda
-    && {{ PYTHON }} -m pip install --no-deps --no-build-isolation -v .
-    && cd ./torchani/csrc/
-    && mkdir ./build
-    && cmake -DTORCH_CUDA_ARCH_LIST='6.0;6.1;7.0;7.5;8.0;8.6' -S. -B./build/ -G Ninja
-    && cmake --build ./build
-    && cmake --install ./build"
   entry_points:
     - torchani = torchani.cli:main
 
