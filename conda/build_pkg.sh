@@ -31,7 +31,6 @@ if [[ $1 == 'release' ]]; then
 elif [[ $1 == 'internal' ]]; then
     mkdir -p /release/conda-packages/linux-64
     cp "$BUILD_FILE" /release/conda-packages/linux-64
-    conda build purge-all
     conda index /release/conda-packages
     chown -R 1003:1003 /release/conda-packages
     rsync --archive --verbose --delete \
