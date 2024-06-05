@@ -186,7 +186,7 @@ overwrite this repo to your build.
 
 ### Building the TorchANI conda package
 
-The conda package can be built using the recipe in `./recipe`, by calling:
+The conda package can be built using the recipe in `./recipe`, by running:
 
 ```bash
 cd ./torchani_sandbox
@@ -194,16 +194,20 @@ cd ./torchani_sandbox
 conda install conda-build conda-verify anaconda-client
 # This dir must exist before running conda build
 mkdir ./conda-pkgs/
-conda build --no-anaconda-upload --output-folder ./conda-pkgs/ ./recipe
+conda build \
+    -c pytorch -c nvidia -c conda-forge \
+    --no-anaconda-upload \
+    --output-folder ./conda-pkgs/ \
+    ./recipe
 ```
 
 The `meta.yaml` in the recipe assumes that the extensions are built using the
 system's CUDA Toolkit, located in `/usr/local/cuda`. If this is not possible
 then add the following dependencies to the `host` environment:
 
-- nvidia::cuda-libraries-dev={{ cuda }}
-- nvidia::cuda-nvcc={{ cuda }}
-- nvidia::cuda-cccl={{ cuda }}
+- `nvidia::cuda-libraries-dev={{ cuda }}`
+- `nvidia::cuda-nvcc={{ cuda }}`
+- `nvidia::cuda-cccl={{ cuda }}`
 
 and remove `cuda_home=/usr/local/cuda` from the build script. note that adding
 these necessary CUDA Toolkit libraries to the `host` env significantly
