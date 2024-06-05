@@ -235,3 +235,8 @@ anaconda \
 ```
 
 where `CONDA_TOKEN` is the group's `anaconda` account token.
+
+Note that the CI (GitHub Actions Workflow) that tests the conda pkg runs only:
+
+- on pull requests that contain the word 'conda' in the branch name
+- on the default branch, at 00:00:00 every day
