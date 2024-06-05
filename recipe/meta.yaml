@@ -9,6 +9,7 @@ source:
 build:
   number: 0
   string: py{{ python }}_torch{{ pytorch }}_cuda{{ cuda }}
+  script: "CUDA_HOME=/usr/local/cuda {{ PYTHON }} -m pip install --config-settings=--global-option=ext-all-sms --no-build-isolation -v ."
   entry_points:
     - torchani = torchani.cli:main
 
