@@ -4,7 +4,7 @@ on: pull_request
 
 env:
   REGISTRY: ${{ github.repository }}
-  IMAGE_NAME: 'docs'
+  IMAGE_NAME: docs
 
 jobs:
   docs:

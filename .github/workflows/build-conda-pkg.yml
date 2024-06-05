@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ${{ github.repository }}
-  IMAGE_NAME: 'conda-pkg'
+  IMAGE_NAME: conda-pkg
 
 jobs:
   build-pkg:
