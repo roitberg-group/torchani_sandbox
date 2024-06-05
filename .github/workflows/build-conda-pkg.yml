@@ -35,7 +35,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Build pkg
+      - name: Build pkg locally
         run: >-
           docker run
           --rm
@@ -49,7 +49,6 @@ jobs:
             -c pytorch
             -c conda-forge
             --no-anaconda-upload
-            --no-copy-test-source-files
             ./conda/recipe"
 
       - name: Remove image
