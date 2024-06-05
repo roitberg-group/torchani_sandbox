@@ -7,7 +7,6 @@ CUDA Toolkit, located in `/usr/local/cuda`. If this is not possible then the
 next 4 lines should be added, and remove CUDA_HOME=/usr/local/cuda in the build
 script.
 
-- pytorch::pytorch-cuda={{ cuda }}
 - nvidia::cuda-libraries-dev={{ cuda }}
 - nvidia::cuda-nvcc={{ cuda }}
 - nvidia::cuda-cccl={{ cuda }}

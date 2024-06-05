@@ -34,6 +34,7 @@ requirements:
     - conda-forge::setuptools=69.5.1
     - conda-forge::setuptools_scm=8.1.0
     - pytorch::pytorch={{ pytorch }}
+    - pytorch::pytorch-cuda={{ cuda }}
   run:
     - conda-forge::python={{ python }}
     - conda-forge::typing_extensions>=4.0.0
