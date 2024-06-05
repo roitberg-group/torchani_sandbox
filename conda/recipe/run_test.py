@@ -1,5 +1,15 @@
+import sys
+import os
+
 import torch
 from torchani.aev import AEVComputer
+
+# This test only runs as a conda test, and only if there is a cuda device
+if (not torch.cuda.is_available()) or (
+    os.environ.get("CONDA_BUILD_STATE", None) != "TEST"
+):
+    sys.exit(0)
+
 
 coordinates = torch.tensor(
     [
