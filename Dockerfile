@@ -26,16 +26,6 @@ RUN pip install -r dev_requirements.txt
 # Copy all other necessary repo files
 COPY . /repo
 
-# Init repo from scratch, faster than copying .git
-# setuptools-scm needs a Git repo to work properly
-RUN \
-    git config --global user.email "user@domain.com" \
-    && git config --global user.name "User" \
-    && git config --global init.defaultBranch "main" \
-    && git init > /dev/null \
-    && git add . \
-    && git commit -m "Initial commit" > /dev/null
-
 # Install torchani + core requirements (+ extensions if BUILD_EXT build arg is provided)
 # Usage:
 # BUILD_EXT=0 -> Don't build extensions

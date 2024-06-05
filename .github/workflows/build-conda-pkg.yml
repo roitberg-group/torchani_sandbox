@@ -22,10 +22,10 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          file: conda.Dockerfile
-          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
+          file: conda.Dockerfile
           shm-size: 2g
           ulimit: |
             memlock=-1
