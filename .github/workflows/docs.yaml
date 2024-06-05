@@ -2,10 +2,6 @@ name: docs
 
 on: pull_request
 
-env:
-  REGISTRY: ${{ github.repository }}
-  IMAGE_NAME: docs
-
 jobs:
   docs:
     runs-on: [self-hosted, ipickering]
@@ -17,7 +13,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ github.repository }}/docs
 
       - name: Build Docker image
         uses: docker/build-push-action@v5

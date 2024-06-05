@@ -2,10 +2,6 @@ name: tests-ext
 
 on: pull_request
 
-env:
-  REGISTRY: ${{ github.repository }}
-  IMAGE_NAME: tests-ext
-
 jobs:
   gpu-tests-ext:
     runs-on: [self-hosted, ipickering]
@@ -17,7 +13,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ github.repository }}/tests-ext
 
       - name: Build Docker image (with extensions)
         uses: docker/build-push-action@v5

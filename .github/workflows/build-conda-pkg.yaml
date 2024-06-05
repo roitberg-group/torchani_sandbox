@@ -8,10 +8,6 @@ on:
   schedule:
     - cron: '0 0 * * *'
 
-env:
-  REGISTRY: ${{ github.repository }}
-  IMAGE_NAME: conda-pkg
-
 jobs:
   build-pkg:
     if: ${{ contains(github.head_ref, 'conda') || github.event_name == 'schedule' }}
@@ -24,7 +20,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ github.repository }}/conda-pkg
 
       - name: Build Docker image
         uses: docker/build-push-action@v5
