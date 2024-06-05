@@ -13,17 +13,13 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 # Build C++/CUDA extensions faster (ninja-build)
 RUN apt update && apt install -y wget git unzip ninja-build
 
-# Copy recipe, scripts and requirements to build conda pkg
-COPY conda/recipe/ /repo/conda/recipe/
-COPY conda/build_pkg_requirements.txt /repo/conda/
-
 # Install requirements to build conda pkg (first activate conda base env)
 RUN \
     . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
     && conda update -n base conda \
     && cd conda \
-    && conda install --solver libmamba --file build_pkg_requirements.txt
+    && conda install conda-build conda-verify anaconda-client
 
 # Copy all of the repo files
 COPY . /repo

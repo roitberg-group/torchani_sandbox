@@ -4,7 +4,7 @@ package:
 
 source:
   # git_url only captures committed code
-  git_url: ../../
+  git_url: ../
 
 build:
   number: 0

@@ -1,4 +1,0 @@
-# Requirements to build the conda package should be installed in the (base) conda env
-conda-build
-conda-verify
-anaconda-client
