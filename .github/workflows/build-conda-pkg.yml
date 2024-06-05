@@ -23,6 +23,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           file: conda.Dockerfile
+          shm-size: 5g
+          ulimit: memlock=-1,stack=67108864
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -32,6 +34,9 @@ jobs:
           docker run
           --rm
           --gpus '"device=all"'
+          --shm-size=5g
+          --ulimit memlock=-1
+          --ulimit stack=67108864
           ${{ steps.meta.outputs.tags }}
           bash -c "source /opt/conda/etc/profile.d/conda.sh
           && conda activate
