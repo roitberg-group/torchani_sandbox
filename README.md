@@ -7,18 +7,18 @@ Metrics: (UNTRACKED FOR PRIVATE)
 
 CI:
 
-[![unittests workflow](
-    https://github.com/roitberg-group/torchani_sandbox/actions/workflows/unittests.yml/badge.svg
-)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/unittests.yml)
-[![unittests-ext workflow](
-    https://github.com/roitberg-group/torchani_sandbox/actions/workflows/unittests-ext.yml/badge.svg
-)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/unittests-ext.yml)
+[![tests workflow](
+    https://github.com/roitberg-group/torchani_sandbox/actions/workflows/tests.yaml/badge.svg
+)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/tests.yaml)
+[![tests-ext workflow](
+    https://github.com/roitberg-group/torchani_sandbox/actions/workflows/tests-ext.yaml/badge.svg
+)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/tests-ext.yaml)
 [![lint workflow](
-    https://github.com/roitberg-group/torchani_sandbox/actions/workflows/lint.yml/badge.svg
-)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/lint.yml)
+    https://github.com/roitberg-group/torchani_sandbox/actions/workflows/lint.yaml/badge.svg
+)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/lint.yaml)
 [![tools workflow](
-        https://github.com/roitberg-group/torchani_sandbox/actions/workflows/tools.yml/badge.svg
-)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/tools.yml)
+        https://github.com/roitberg-group/torchani_sandbox/actions/workflows/tools.yaml/badge.svg
+)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/tools.yaml)
 
 Deployment: (STOPPED FOR PRIVATE REPO)
 
