@@ -29,6 +29,7 @@ COPY conda/filter_rendered_meta.py /repo/conda/
 RUN \
     . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
+    && conda update -n base conda \
     && cd conda \
     && conda install --solver libmamba --file build_pkg_requirements.txt \
     && conda render -c nvidia -c pytorch -c conda-forge ./recipe > rendered_meta.yaml \
