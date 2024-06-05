@@ -230,11 +230,6 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
     if cub_include_dir:
         cuaev_kwargs["include_dirs"].append(cub_include_dir)
 
-    # In some cases Ninja eats up too many compute resources
-    use_ninja = True
-    if "DISABLE_NINJA" in os.environ:
-        use_ninja = False
-
     # MNP extension doesn't need nvcc to be compiled, but it still uses torch
     # CUDA libraries, so CUDAExtension is needed
     print("-" * 75)
@@ -242,7 +237,7 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
         "ext_modules": [CUDAExtension(**cuaev_kwargs), CUDAExtension(**mnp_kwargs)],
         "cmdclass": {
             "build_ext": BuildExtension.with_options(
-                no_python_abi_suffix=True, use_ninja=use_ninja
+                no_python_abi_suffix=True,
             )
         },
     }
