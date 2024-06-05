@@ -31,17 +31,10 @@ RUN \
     && conda activate \
     && conda update -n base conda \
     && cd conda \
-    && conda install --solver libmamba --file build_pkg_requirements.txt \
-    && conda render -c nvidia -c pytorch -c conda-forge ./recipe > rendered_meta.yaml \
-    && python filter_rendered_meta.py
+    && conda install --solver libmamba --file build_pkg_requirements.txt
 
 # Copy all of the repo files
 COPY . /repo
-
-# Overwrite meta.yaml with the rendered meta
-# NOTE: This must be done after copying the whole repo since that
-# copy overwrites meta.yaml again
-RUN mv conda/rendered_meta.yaml conda/recipe/meta.yaml
 
 # Init repo from scratch, faster than copying .git
 # setuptools-scm needs a Git repo to work properly
