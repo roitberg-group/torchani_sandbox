@@ -44,7 +44,13 @@ jobs:
           bash -c
           "source /opt/conda/etc/profile.d/conda.sh
           && conda activate
-          && conda build -c nvidia -c pytorch -c conda-forge --build-only ./conda/recipe"
+          && conda build
+            -c nvidia
+            -c pytorch
+            -c conda-forge
+            --no-anaconda-upload
+            --no-copy-test-source-files
+            ./conda/recipe"
 
       - name: Remove image
         if: ${{ always() }}
