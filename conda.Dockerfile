@@ -16,7 +16,7 @@ RUN apt update && apt install -y wget git unzip ninja-build
 # Copy recipe, scripts and requirements to build conda pkg
 COPY conda/recipe/ /repo/conda/recipe/
 COPY conda/build_pkg_requirements.txt /repo/conda/
-COPY conda/post_process_rendered_meta.py /repo/conda/
+COPY conda/filter_rendered_meta.py /repo/conda/
 
 # Install requirements to build conda pkg (first activate conda base env)
 #
@@ -26,22 +26,13 @@ COPY conda/post_process_rendered_meta.py /repo/conda/
 #
 # rendered_meta.yaml has to be filtered since the first few lines are
 # comments and can't be parsed by conda build as a meta.yaml file
-#
-# rendered_meta.yaml is converted into a meta_environment.yaml afterwards,
-# so that packages can be pre-installed and afterwards found in the cache
-#
-# Afterwards the environment is updated with the required packages so that later conda
-# can find them in the cache
-#
-# TODO: Make sure that conda-build actually uses the cache of the pre-installed
-# environment
 RUN \
     . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
     && cd conda \
     && conda install --solver libmamba --file build_pkg_requirements.txt \
     && conda render -c nvidia -c pytorch -c conda-forge ./recipe > rendered_meta.yaml \
-    && python post_process_rendered_meta.py
+    && python filter_rendered_meta.py
 
 # Copy all of the repo files
 COPY . /repo
