@@ -27,7 +27,9 @@ RUN pip install -r dev_requirements.txt
 COPY . /repo
 
 # Dummy tag
-RUN git tag -a "v2.3" -m "Version v2.3"
+RUN git config --global user.email "user@domain.com" \
+    && git config --global user.name "User" \
+    && git tag -a "v2.3" -m "Version v2.3"
 
 # Install torchani + core requirements (+ extensions if BUILD_EXT build arg is provided)
 # Usage:
