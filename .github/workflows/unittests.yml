@@ -4,7 +4,7 @@ on: pull_request
 
 env:
   REGISTRY: ${{ github.repository }}
-  IMAGE_NAME: 'unittests-ext'
+  IMAGE_NAME: 'unittests'
 
 jobs:
   cpu-tests:
