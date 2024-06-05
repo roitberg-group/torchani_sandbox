@@ -12,8 +12,7 @@ build:
   script: >-
     "export CUDA_HOME=/usr/local/cuda
     && {{ PYTHON }} -m pip install --no-deps --no-build-isolation -v .
-    && cd ./torchani/csrc
-    && cmake -DTORCH_CUDA_ARCH_LIST='6.0;6.1;7.0;7.5;8.0;8.6' -S./torchani/csrc -B./torchani/csrc/build/ -G Ninja
+    && cmake -DTORCH_CUDA_ARCH_LIST='6.0;6.1;7.0;7.5;8.0;8.6' -S. -B./torchani/csrc/build/ -G Ninja
     && cmake --build ./torchani/csrc/build
     && cmake --install ./torchani/csrc/build"
   entry_points:
