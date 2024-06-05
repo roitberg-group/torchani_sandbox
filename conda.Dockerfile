@@ -18,7 +18,6 @@ RUN \
     . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
     && conda update -n base conda \
-    && cd conda \
     && conda install conda-build conda-verify anaconda-client
 
 # Copy all of the repo files
