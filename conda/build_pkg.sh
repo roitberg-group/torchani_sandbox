@@ -21,20 +21,24 @@ set -ex
 # Or maybe just put the build file in a new dir as output of conda build, that
 # should be better
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-BUILD_FILE="$(conda build -c pytorch -c nvidia -c conda-forge --no-anaconda-upload "$SCRIPT_DIR/recipe")"
-echo "Build file is: $BUILD_FILE"
+OUTPUT_DIR="$SCRIPT_DIR/../conda-pkgs/"
+mkdir "$OUTPUT_DIR"
+conda build \
+    -c pytorch \
+    -c nvidia \
+    -c conda-forge \
+    --no-anaconda-upload \
+    --output-folder "${OUTPUT_DIR}" \
+    "$SCRIPT_DIR/recipe"
 
 # Upload to anaconda.org
 if [[ $1 == 'release' ]]; then
-    anaconda --token "$CONDA_TOKEN" upload --user roitberg-group --force "$BUILD_FILE"
+    anaconda --token "$CONDA_TOKEN" upload --user roitberg-group --force "${OUTPUT_DIR}/linux-64/sandbox*"
 # Upload to internal group server
 elif [[ $1 == 'internal' ]]; then
-    mkdir -p /release/conda-packages/linux-64
-    cp "$BUILD_FILE" /release/conda-packages/linux-64
-    conda index /release/conda-packages
-    chown -R 1003:1003 /release/conda-packages
+    chown -R 1003:1003 "${OUTPUT_DIR}"
     rsync --archive --verbose --delete \
         -e "ssh -p $SERVER_PORT -o StrictHostKeyChecking=no" \
-        /release/conda-packages/ \
+        "${OUTPUT_DIR}" \
         "$SERVER_USERNAME@roitberg.chem.ufl.edu:/home/statics/conda-packages/"
 fi
