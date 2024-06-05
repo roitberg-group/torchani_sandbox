@@ -22,7 +22,7 @@ COPY conda/build_pkg_requirements.txt /repo/conda/
 # Also pre-render meta.yaml from the recipe to save time when actually building
 # the package NOTE: This fixes the versions and build-strings of all packages,
 # but they change if the cache is invalidated.
-#
+
 # rendered_meta.yaml has to be filtered since the first few lines are
 # comments and can't be parsed by conda build as a meta.yaml file
 RUN \
@@ -34,3 +34,6 @@ RUN \
 
 # Copy all of the repo files
 COPY . /repo
+
+# Dummy tag
+RUN git tag -a "v2.3" -m "Version v2.3"

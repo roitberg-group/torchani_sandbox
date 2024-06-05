@@ -26,6 +26,9 @@ RUN pip install -r dev_requirements.txt
 # Copy all other necessary repo files
 COPY . /repo
 
+# Dummy tag
+RUN git tag -a "v2.3" -m "Version v2.3"
+
 # Install torchani + core requirements (+ extensions if BUILD_EXT build arg is provided)
 # Usage:
 # BUILD_EXT=0 -> Don't build extensions
