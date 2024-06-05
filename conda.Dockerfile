@@ -42,7 +42,7 @@ RUN \
     && conda install --solver libmamba --file build_pkg_requirements.txt \
     && conda render -c nvidia -c pytorch -c conda-forge ./recipe > rendered_meta.yaml \
     && python post_process_rendered_meta.py \
-    && conda env update -c nvidia -c pytorch -c conda-forge --solver libmamba --file meta_environment.yaml
+    && conda env update --solver libmamba --file meta_environment.yaml
 
 # Copy all of the repo files
 COPY . /repo
