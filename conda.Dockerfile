@@ -16,7 +16,6 @@ RUN apt update && apt install -y wget git unzip ninja-build
 # Copy recipe, scripts and requirements to build conda pkg
 COPY conda/recipe/ /repo/conda/recipe/
 COPY conda/build_pkg_requirements.txt /repo/conda/
-COPY conda/filter_rendered_meta.py /repo/conda/
 
 # Install requirements to build conda pkg (first activate conda base env)
 #
