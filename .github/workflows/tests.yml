@@ -1,10 +1,10 @@
-name: unittests
+name: tests
 
 on: pull_request
 
 env:
   REGISTRY: ${{ github.repository }}
-  IMAGE_NAME: 'unittests'
+  IMAGE_NAME: tests
 
 jobs:
   cpu-tests:
@@ -19,7 +19,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
-      - name: Build and push Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           tags: ${{ steps.meta.outputs.tags }}
@@ -40,5 +40,5 @@ jobs:
         run: docker image rm ${{ steps.meta.outputs.tags }}
 
 concurrency:
-  group: unittests-${{ github.event.pull_request.number || github.sha }}
+  group: tests-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true

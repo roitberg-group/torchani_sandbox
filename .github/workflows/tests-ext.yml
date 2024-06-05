@@ -1,10 +1,10 @@
-name: unittests-ext
+name: tests-ext
 
 on: pull_request
 
 env:
   REGISTRY: ${{ github.repository }}
-  IMAGE_NAME: 'unittests-ext'
+  IMAGE_NAME: tests-ext
 
 jobs:
   gpu-tests-ext:
@@ -19,7 +19,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
-      - name: Build and push Docker image (with extensions)
+      - name: Build Docker image (with extensions)
         uses: docker/build-push-action@v5
         with:
           tags: ${{ steps.meta.outputs.tags }}
@@ -42,5 +42,5 @@ jobs:
         run: docker image rm ${{ steps.meta.outputs.tags }}
 
 concurrency:
-  group: unittests-ext-${{ github.event.pull_request.number || github.sha }}
+  group: tests-ext-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
