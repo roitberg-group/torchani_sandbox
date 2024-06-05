@@ -20,6 +20,21 @@ RUN \
     && conda update -n base conda \
     && conda install conda-build conda-verify anaconda-client
 
+# Dirty hack to check if this is faster due to cache, TODO: remove it later
+RUN \
+    . /opt/conda/etc/profile.d/conda.sh \
+    && conda activate \
+    && conda update -n base conda \
+    && conda install -c nvidia -c pytorch -c conda-forge \
+        pytorch::pytorch=2.3.0 \
+        pytorch::pytorch-cuda=11.8 \
+        conda-forge::pip=24.0 \
+        conda-forge::setuptools=69.5.1 \
+        conda-forge::setuptools_scm=8.1.0 \
+        conda-forge::typing_extensions=4.11 \
+        conda-forge::python=3.10
+
+
 # Copy all of the repo files
 COPY . /repo
 
