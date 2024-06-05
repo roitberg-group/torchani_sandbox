@@ -26,7 +26,7 @@ RUN pip install -r dev_requirements.txt
 # Copy all other necessary repo files
 COPY . /repo
 
-# Dummy tag
+# Create dummy tag for setuptools scm
 RUN git config --global user.email "user@domain.com" \
     && git config --global user.name "User" \
     && git tag -a "v2.3" -m "Version v2.3"
