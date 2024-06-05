@@ -17,9 +17,6 @@ set -ex
 # CONDA_TOKEN=TOKEN ./build_conda.sh release
 
 # Build conda pkg, --output is used to output file name
-# TODO: does this work or is generating this file manually needed?
-# Or maybe just put the build file in a new dir as output of conda build, that
-# should be better
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 OUTPUT_DIR="$SCRIPT_DIR/../conda-pkgs/"
 mkdir "$OUTPUT_DIR"
