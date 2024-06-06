@@ -7,6 +7,8 @@ on:
   pull_request:
   schedule:
     - cron: '0 0 * * *'
+
+# Needed to upload pkg to internal server
 env:
   DOCKER_PVTKEY: ${{ secrets.DOCKER_PVTKEY }}
   MORIA_USERNAME: ${{ secrets.MORIA_USERNAME }}
@@ -25,7 +27,7 @@ jobs:
         with:
           images: ${{ github.repository }}/conda-pkg
 
-      - name: Build Docker image
+      - name: Build conda pkg locally in Docker image
         uses: docker/build-push-action@v5
         with:
           tags: ${{ steps.meta.outputs.tags }}
@@ -37,7 +39,8 @@ jobs:
             memlock=-1
             stack=67108864
 
-      - name: Build pkg locally
+      - name: Upload pkg to internal server
+        if: ${{ contains(github.head_ref, 'release') || github.event_name == 'schedule' }}
         run: >-
           docker run
           --rm
@@ -46,11 +49,7 @@ jobs:
           --ulimit memlock=-1
           --ulimit stack=67108864
           ${{ steps.meta.outputs.tags }}
-          bash -c "mkdir ./conda-pkgs/
-          && source /opt/conda/etc/profile.d/conda.sh
-          && conda activate
-          && conda build -c nvidia -c pytorch -c conda-forge --no-anaconda-upload --output-folder ./conda-pkgs/ ./recipe
-          && ./ci/upload_conda_pkg.sh"
+          bash -c "./ci/upload_conda_pkg.sh"
 
       - name: Remove image
         if: ${{ always() }}

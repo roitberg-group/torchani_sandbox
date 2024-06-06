@@ -28,3 +28,10 @@ RUN \
     git config --global user.email "user@domain.com" \
     && git config --global user.name "User" \
     && git tag -a "v2.3" -m "Version v2.3"
+
+# Build conda pkg locally
+RUN \
+    mkdir ./conda-pkgs/ \
+    && source /opt/conda/etc/profile.d/conda.sh \
+    && conda activate \
+    && conda build -c nvidia -c pytorch -c conda-forge --no-anaconda-upload --output-folder ./conda-pkgs/ ./recipe
