@@ -24,10 +24,13 @@ RUN \
 # Copy all of the repo files
 COPY . /repo
 
-# Create dummy tag for setuptools scm
+# Initialize a git repo and create dummy tag for setuptools scm
 RUN \
     git config --global user.email "user@domain.com" \
     && git config --global user.name "User" \
+    && git init \
+    && git add . \
+    && git commit -m "Initial commit" \
     && git tag -a "v2.3" -m "Version v2.3"
 
 # Build conda pkg locally

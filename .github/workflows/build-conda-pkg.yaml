@@ -28,7 +28,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
             INTERNAL_RELEASE=${{ contains(github.head_ref, 'release') || github.event_name == 'schedule' }}
             PUBLIC_RELEASE=0
           file: conda.Dockerfile
