@@ -38,20 +38,24 @@ RUN \
     && conda build -c nvidia -c pytorch -c conda-forge \
         --no-anaconda-upload --output-folder ./conda-pkgs/ ./recipe
 
-# Usage: --build-arg=INTERNAL_RELEASE=1 uploads pkg to internal server
+# Usage: To upload pkg to internal server
+# --build-arg=INTERNAL_RELEASE=1 (or --build-arg=INTERNAL_RELEASE="true")
+# DOCKER_PVTKEY must be passed as a secret
 ARG INTERNAL_RELEASE=0
 RUN --mount=type=secret,id=DOCKER_PVTKEY,target=/.ssh/id_rsa \
-if [ "${INTERNAL_RELEASE}" = "1" ]; then \
+if [ "${INTERNAL_RELEASE}" = "1" ] || [ "${INTERNAL_RELEASE}" = "true" ] ; then \
     printf "Uploading to internal server" \
     rsync -av --delete ./conda-pkgs/ "ipickering@moria.chem.ufl.edu:/data/conda-pkgs/" \
 else \
     printf "Not uploading to internal server" \
 fi
 
-# Usage: --build-arg=PUBLIC_RELEASE=1 uploads pkg to anaconda.org
+# Usage: To upload pkg to anaconda.org
+# --build-arg=PUBLIC_RELEASE=1 (or --build-arg=PUBLIC_RELEASE="true")
+# CONDA_TOKEN must be passed as a secret
 ARG PUBLIC_RELEASE=0
 RUN --mount=type=secret,id=CONDA_TOKEN \
-if [ "${PUBLIC_RELEASE}" = "1" ]; then \
+if [ "${PUBLIC_RELEASE}" = "1" ] || [ "${PUBLIC_RELEASE}" = "truej" ]; then \
     printf "Uploading to anaconda server" \
     CONDA_TOKEN=`cat /run/secrets/CONDA_TOKEN` \
     anaconda --token "${CONDA_TOKEN}" \

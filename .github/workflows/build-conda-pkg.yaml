@@ -36,6 +36,8 @@ jobs:
           ulimit: |
             memlock=-1
             stack=67108864
+          # DOCKER_PVTKEY is needed to upload to internal server
+          # CONDA_TOKEN is needed to upload to anaconda.org
           secrets: |
             "DOCKER_PVTKEY=${{ secrets.DOCKER_PVTKEY }}"
             "CONDA_TOKEN=${{ secrets.CONDA_TOKEN }}"
