@@ -45,7 +45,9 @@ ARG INTERNAL_RELEASE=0
 RUN --mount=type=secret,id=DOCKER_PVTKEY,target=/.ssh/id_rsa \
 if [ "${INTERNAL_RELEASE}" = "1" ] || [ "${INTERNAL_RELEASE}" = "true" ] ; then \
     printf "Uploading to internal server" \
-    rsync -av --delete ./conda-pkgs/ "ipickering@moria.chem.ufl.edu:/data/conda-pkgs/" \
+    rsync -av --delete \
+    -e "ssh -o StrictHostKeyChecking=no" \
+    ./conda-pkgs/ "ipickering@moria.chem.ufl.edu:/data/conda-pkgs/" \
 else \
     printf "Not uploading to internal server" \
 fi
