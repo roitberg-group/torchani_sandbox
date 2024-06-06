@@ -7,6 +7,9 @@ on:
   pull_request:
   schedule:
     - cron: '0 0 * * *'
+env:
+  DOCKER_PVTKEY: ${{ secrets.DOCKER_PVTKEY }}
+  MORIA_USERNAME: ${{ secrets.MORIA_USERNAME }}
 
 jobs:
   build-pkg:
@@ -46,7 +49,8 @@ jobs:
           bash -c "mkdir ./conda-pkgs/
           && source /opt/conda/etc/profile.d/conda.sh
           && conda activate
-          && conda build -c nvidia -c pytorch -c conda-forge --no-anaconda-upload --output-folder ./conda-pkgs/ ./recipe"
+          && conda build -c nvidia -c pytorch -c conda-forge --no-anaconda-upload --output-folder ./conda-pkgs/ ./recipe
+          && ./ci/upload_conda_pkg.sh"
 
       - name: Remove image
         if: ${{ always() }}

@@ -5,4 +5,4 @@
 # All secrets should be passed as envvars
 
 echo "${DOCKER_PVTKEY}"  > ~/.ssh/id_rsa.pub && chmod 400 ~/.ssh/id_rsa
-rsync -av --delete ./conda-pkgs/ "${MORIA_USERNAME}@moria.chem.ufl.edu:/conda-pkgs/"
+rsync -av --delete ./conda-pkgs/ "${MORIA_USERNAME}@moria.chem.ufl.edu:/data/conda-pkgs/"
