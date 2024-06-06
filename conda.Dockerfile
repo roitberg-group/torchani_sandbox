@@ -46,9 +46,9 @@ RUN --mount=type=secret,id=DOCKER_PVTKEY,target=/.ssh/id_rsa \
 if [ "${INTERNAL_RELEASE}" = "1" ] || [ "${INTERNAL_RELEASE}" = "true" ] ; then \
     rsync -av --delete \
         -e "ssh -o StrictHostKeyChecking=no" \
-        ./conda-pkgs/ "ipickering@moria.chem.ufl.edu:/data/conda-pkgs/" \
+        ./conda-pkgs/ "ipickering@moria.chem.ufl.edu:/data/conda-pkgs/" ; \
 else \
-    printf "Not uploading to internal server" \
+    printf "Not uploading to internal server" ; \
 fi
 
 # Usage: To upload pkg to anaconda.org
@@ -59,7 +59,7 @@ RUN --mount=type=secret,id=CONDA_TOKEN \
 if [ "${PUBLIC_RELEASE}" = "1" ] || [ "${PUBLIC_RELEASE}" = "truej" ]; then \
     CONDA_TOKEN=`cat /run/secrets/CONDA_TOKEN` \
     && anaconda --token "${CONDA_TOKEN}" \
-        upload --user roitberg-group --force ./conda-pkgs/linux-64/*.tar.gz \
+        upload --user roitberg-group --force ./conda-pkgs/linux-64/*.tar.gz ; \
 else \
-    printf "Not uploading to anaconda server" \
+    printf "Not uploading to anaconda server" ; \
 fi
