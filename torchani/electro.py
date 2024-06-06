@@ -19,7 +19,10 @@ class ChargeNormalizer(torch.nn.Module):
 
         normalizer = ChargeNormalizer()
         total_charge = 0.0
-        norm_charges = normalizer(species, raw_charges, total_charge)
+        element_idxs = torch.tensor([[0, 0, 0, 1, 1]], dtype=torch.long)
+        raw_charges = torch.tensor([[0.3, 0.5, -0.5]], dtype=torch.float)
+        norm_charges = normalizer(element_idxs, raw_charges, total_charge)
+        # norm_charges will sum to zero
     """
 
     atomic_numbers: Tensor
