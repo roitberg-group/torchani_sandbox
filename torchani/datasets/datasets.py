@@ -15,12 +15,11 @@ import numpy as np
 from numpy.typing import DTypeLike, NDArray
 from tqdm import tqdm
 
+from torchani.constants import ATOMIC_NUMBER, PERIODIC_TABLE
 from torchani.utils import (
     species_to_formula,
-    PERIODIC_TABLE,
-    ATOMIC_NUMBERS,
-    PADDING,
     sort_by_element,
+    PADDING,
 )
 from torchani.datasets.backends import (
     _StoreWrapper,
@@ -127,7 +126,7 @@ def _to_strpath_list(obj: tp.Union[tp.Iterable[StrPath], StrPath]) -> tp.List[St
 
 
 # convert to / from symbols and atomic numbers properties
-_symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBERS[x])
+_symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBER[x])
 _numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
 

@@ -5,9 +5,8 @@ import typing as tp
 import torch
 from torch import Tensor
 
-from torchani.utils import ATOMIC_NUMBERS
 from torchani.geometry import Displacer, Reference
-from torchani.constants import ELECTRONEGATIVITY, HARDNESS
+from torchani.constants import ELECTRONEGATIVITY, HARDNESS, ATOMIC_NUMBER
 
 __all__ = ["DipoleComputer", "compute_dipole", "ChargeNormalizer"]
 
@@ -34,7 +33,7 @@ class ChargeNormalizer(torch.nn.Module):
     ):
         super().__init__()
         self.atomic_numbers = torch.tensor(
-            [ATOMIC_NUMBERS[e] for e in symbols], dtype=torch.long
+            [ATOMIC_NUMBER[e] for e in symbols], dtype=torch.long
         )
         if not weights:
             weights = [1.0] * len(symbols)
@@ -53,7 +52,7 @@ class ChargeNormalizer(torch.nn.Module):
         electronegativity: tp.Sequence[float] = (),
         hardness: tp.Sequence[float] = (),
     ) -> tpx.Self:
-        atomic_numbers = [ATOMIC_NUMBERS[e] for e in symbols]
+        atomic_numbers = [ATOMIC_NUMBER[e] for e in symbols]
         # Get constant values from literature if not provided
         if not electronegativity:
             electronegativity = [ELECTRONEGATIVITY[j] for j in atomic_numbers]

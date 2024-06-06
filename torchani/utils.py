@@ -362,7 +362,7 @@ class ChemicalSymbolsToAtomicNumbers(torch.nn.Module):
     def __init__(self, atomic_numbers: tp.Optional[tp.Dict[str, int]] = None):
         super().__init__()
         if atomic_numbers is None:
-            atomic_numbers = ATOMIC_NUMBERS
+            atomic_numbers = ATOMIC_NUMBER
         self.atomics_dict = atomic_numbers
         # dummy tensor to hold output device
         self.register_buffer("_dummy", torch.empty(0), persistent=False)
@@ -477,7 +477,7 @@ def sort_by_element(it: tp.Iterable[str]) -> tp.Tuple[str, ...]:
     """
     if isinstance(it, str):
         it = (it,)
-    return tuple(sorted(it, key=lambda x: ATOMIC_NUMBERS[x]))
+    return tuple(sorted(it, key=lambda x: ATOMIC_NUMBER[x]))
 
 
 def merge_state_dicts(paths: tp.Iterable[Path]) -> tp.OrderedDict[str, Tensor]:
