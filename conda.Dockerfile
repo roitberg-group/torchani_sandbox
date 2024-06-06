@@ -32,6 +32,6 @@ RUN \
 # Build conda pkg locally
 RUN \
     mkdir ./conda-pkgs/ \
-    && source /opt/conda/etc/profile.d/conda.sh \
+    && . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
     && conda build -c nvidia -c pytorch -c conda-forge --no-anaconda-upload --output-folder ./conda-pkgs/ ./recipe
