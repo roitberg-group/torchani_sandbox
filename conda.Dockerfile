@@ -44,10 +44,9 @@ RUN \
 ARG INTERNAL_RELEASE=0
 RUN --mount=type=secret,id=DOCKER_PVTKEY,target=/.ssh/id_rsa \
 if [ "${INTERNAL_RELEASE}" = "1" ] || [ "${INTERNAL_RELEASE}" = "true" ] ; then \
-    printf "Uploading to internal server" \
     rsync -av --delete \
-    -e "ssh -o StrictHostKeyChecking=no" \
-    ./conda-pkgs/ "ipickering@moria.chem.ufl.edu:/data/conda-pkgs/" \
+        -e "ssh -o StrictHostKeyChecking=no" \
+        ./conda-pkgs/ "ipickering@moria.chem.ufl.edu:/data/conda-pkgs/" \
 else \
     printf "Not uploading to internal server" \
 fi
@@ -58,9 +57,8 @@ fi
 ARG PUBLIC_RELEASE=0
 RUN --mount=type=secret,id=CONDA_TOKEN \
 if [ "${PUBLIC_RELEASE}" = "1" ] || [ "${PUBLIC_RELEASE}" = "truej" ]; then \
-    printf "Uploading to anaconda server" \
     CONDA_TOKEN=`cat /run/secrets/CONDA_TOKEN` \
-    anaconda --token "${CONDA_TOKEN}" \
+    && anaconda --token "${CONDA_TOKEN}" \
         upload --user roitberg-group --force ./conda-pkgs/linux-64/*.tar.gz \
 else \
     printf "Not uploading to anaconda server" \
