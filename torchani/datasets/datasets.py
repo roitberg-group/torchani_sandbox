@@ -223,7 +223,7 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
                     splits = tuple(torch.split(conformers.pop(k), max_size))
                 else:
                     splits = tuple(
-                        conformers[k][j : j + max_size]
+                        conformers[k][j:j + max_size]
                         for j in range(0, len(conformers[k]), max_size)
                     )
                 splitted_conformers.update({k: splits})
