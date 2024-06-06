@@ -22,7 +22,7 @@ jobs:
         with:
           images: ${{ github.repository }}/conda-pkg
 
-      - name: Build conda pkg locally in Docker image
+      - name: Build conda pkg in Docker image, release if needed
         uses: docker/build-push-action@v5
         with:
           tags: ${{ steps.meta.outputs.tags }}
