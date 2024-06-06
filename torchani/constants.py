@@ -23,7 +23,7 @@ import typing as tp
 import math
 
 __all__ = [
-    "ATOMIC_CONSTANTS"
+    "ATOMIC_CONSTANTS",
     "ATOMIC_NUMBER",
     "ATOMIC_MASS",
     "ATOMIC_HARDNESS",
@@ -60,12 +60,12 @@ for symbol, values in ATOMIC_CONSTANTS.items():
     if mass is not None:
         ATOMIC_MASS[symbol] = float(mass)
 
-ATOMIC_NUMBERS = ATOMIC_NUMBER
-
-# Periodic-table, when indexed with the corresponding atomic number, gives the
+# When indexed with the corresponding atomic number, PERIODIC_TABLE gives the
 # element associated with it. Note that there is no element with atomic number
 # 0, so an empty string is returned in this case.
-PERIODIC_TABLE.append(symbol)
+PERIODIC_TABLE = ("",) + tuple(
+    kv[0] for kv in sorted(ATOMIC_NUMBER.items(), key=lambda x: x[1])
+)
 
 
 def mapping_to_znumber_indexed_seq(
