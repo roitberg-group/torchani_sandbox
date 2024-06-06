@@ -11,7 +11,8 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 # Get the program version from version control (git, needed by setuptools-scm)
 # Download test data and maybe CUB (wget, unzip)
 # Build C++/CUDA extensions faster (ninja-build)
-RUN apt update && apt install -y wget git unzip ninja-build
+# Upload pkg to internal server (rsync)
+RUN apt update && apt install -y wget git unzip ninja-build rsync
 
 # Install requirements to build conda pkg (first activate conda base env)
 RUN \
@@ -34,4 +35,27 @@ RUN \
     mkdir ./conda-pkgs/ \
     && . /opt/conda/etc/profile.d/conda.sh \
     && conda activate \
-    && conda build -c nvidia -c pytorch -c conda-forge --no-anaconda-upload --output-folder ./conda-pkgs/ ./recipe
+    && conda build -c nvidia -c pytorch -c conda-forge \
+        --no-anaconda-upload --output-folder ./conda-pkgs/ ./recipe
+
+# Usage: --build-arg=INTERNAL_RELEASE=1 uploads pkg to internal server
+ARG INTERNAL_RELEASE=0
+RUN --mount=type=secret,id=DOCKER_PVTKEY,target=/.ssh/id_rsa \
+if [ "${INTERNAL_RELEASE}" = "1" ]; then \
+    printf "Uploading to internal server" \
+    rsync -av --delete ./conda-pkgs/ "ipickering@moria.chem.ufl.edu:/data/conda-pkgs/" \
+else \
+    printf "Not uploading to internal server" \
+fi
+
+# Usage: --build-arg=PUBLIC_RELEASE=1 uploads pkg to anaconda.org
+ARG PUBLIC_RELEASE=0
+RUN --mount=type=secret,id=CONDA_TOKEN \
+if [ "${PUBLIC_RELEASE}" = "1" ]; then \
+    printf "Uploading to anaconda server" \
+    CONDA_TOKEN=`cat /run/secrets/CONDA_TOKEN` \
+    anaconda --token "${CONDA_TOKEN}" \
+        upload --user roitberg-group --force ./conda-pkgs/linux-64/*.tar.gz \
+else \
+    printf "Not uploading to anaconda server" \
+fi

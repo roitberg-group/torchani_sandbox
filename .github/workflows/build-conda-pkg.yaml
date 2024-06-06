@@ -8,11 +8,6 @@ on:
   schedule:
     - cron: '0 0 * * *'
 
-# Needed to upload pkg to internal server
-env:
-  DOCKER_PVTKEY: ${{ secrets.DOCKER_PVTKEY }}
-  MORIA_USERNAME: ${{ secrets.MORIA_USERNAME }}
-
 jobs:
   build-pkg:
     if: ${{ contains(github.head_ref, 'conda') || github.event_name == 'schedule' }}
@@ -32,28 +27,18 @@ jobs:
         with:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
+          build-args: |
+            BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
+            INTERNAL_RELEASE=${{ contains(github.head_ref, 'release') || github.event_name == 'schedule' }}
+            PUBLIC_RELEASE=0
           file: conda.Dockerfile
           shm-size: 2g
           ulimit: |
             memlock=-1
             stack=67108864
-
-      - name: Upload pkg to internal server
-        if: ${{ contains(github.head_ref, 'release') || github.event_name == 'schedule' }}
-        run: >-
-          docker run
-          --rm
-          ${{ steps.meta.outputs.tags }}
-          bash -c "./ci/upload_conda_pkg.sh internal"
-
-      - name: Upload pkg to anaconda.org
-        if: ${{ contains(github.head_ref, 'public-release') }}
-        run: >-
-          docker run
-          --rm
-          ${{ steps.meta.outputs.tags }}
-          bash -c "./ci/upload_conda_pkg.sh public"
+          secrets: |
+            "DOCKER_PVTKEY=${{ secrets.DOCKER_PVTKEY }}"
+            "CONDA_TOKEN=${{ secrets.CONDA_TOKEN }}"
 
       - name: Remove image
         if: ${{ always() }}
