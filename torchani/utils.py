@@ -12,7 +12,7 @@ import torch
 from torch import Tensor
 import torch.utils.data
 
-from torchani.constants import ATOMIC_MASSES, ATOMIC_NUMBERS, PERIODIC_TABLE
+from torchani.constants import MASSES, ATOMIC_NUMBERS, PERIODIC_TABLE
 from torchani.tuples import SpeciesEnergies
 
 
@@ -430,11 +430,13 @@ class AtomicNumbersToMasses(torch.nn.Module):
 
     def __init__(
         self,
-        masses: tp.Iterable[float] = ATOMIC_MASSES,
+        masses: tp.Iterable[float] = (),
         device: tp.Union[torch.device, tp.Literal["cpu", "cuda"]] = "cpu",
         dtype: torch.dtype = torch.float,
     ) -> None:
         super().__init__()
+        if not masses:
+            masses = MASSES
         self.register_buffer(
             "atomic_masses",
             torch.tensor(masses, device=device, dtype=dtype),

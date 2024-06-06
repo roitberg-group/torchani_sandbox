@@ -8,12 +8,89 @@ Hardness for Atoms and Atomic Ions (Including Unstable Ions) from the Energies
 of Isoelectronic Series.
 
 DOI: 10.1039/C6CP04533B
+
+Atomic masses supported are the first 119 elements, and are taken from:
+
+Atomic weights of the elements 2013 (IUPAC Technical Report). Meija, J.,
+Coplen, T., Berglund, M., et al. (2016). Pure and Applied Chemistry, 88(3), pp.
+265-291. Retrieved 30 Nov. 2016, from doi:10.1515/pac-2015-0305
+
+They are all consistent with those used in ASE
 """
-from scipy import constants
-from torchani.utils import mapping_to_znumber_indexed_seq
+import typing as tp
+import math
+
+__all__ = [
+    "PERIODIC_TABLE",
+    "ELECTRONEGATIVITY",
+    "HARDNESS",
+    "ATOMIC_NUMBERS",
+    "MASSES",
+]
+
+# This constant, when indexed with the corresponding atomic number, gives the
+# element associated with it. Note that there is no element with atomic number
+# 0, so 'Dummy' returned in this case.
+PERIODIC_TABLE = (
+    ["Dummy"]
+    + """
+    H                                                                                                                           He
+    Li  Be                                                                                                  B   C   N   O   F   Ne
+    Na  Mg                                                                                                  Al  Si  P   S   Cl  Ar
+    K   Ca  Sc                                                          Ti  V   Cr  Mn  Fe  Co  Ni  Cu  Zn  Ga  Ge  As  Se  Br  Kr
+    Rb  Sr  Y                                                           Zr  Nb  Mo  Tc  Ru  Rh  Pd  Ag  Cd  In  Sn  Sb  Te  I   Xe
+    Cs  Ba  La  Ce  Pr  Nd  Pm  Sm  Eu  Gd  Tb  Dy  Ho  Er  Tm  Yb  Lu  Hf  Ta  W   Re  Os  Ir  Pt  Au  Hg  Tl  Pb  Bi  Po  At  Rn
+    Fr  Ra  Ac  Th  Pa  U   Np  Pu  Am  Cm  Bk  Cf  Es  Fm  Md  No  Lr  Rf  Db  Sg  Bh  Hs  Mt  Ds  Rg  Cn  Nh  Fl  Mc  Lv  Ts  Og
+    """.strip().split()  # noqa
+)
+
+ATOMIC_NUMBERS = {symbol: z for z, symbol in enumerate(PERIODIC_TABLE)}
 
 
-ATOMIC_MASSES = (
+def mapping_to_znumber_indexed_seq(
+    symbols_map: tp.Mapping[str, float]
+) -> tp.Tuple[float, ...]:
+    r"""
+    Sort the values of {symbol: value} mapping by atomic number and output a
+    tuple with the sorted values.
+
+    All elements up to the highest present atomic number element must in the mapping.
+
+    The first element (index 0) of the output will be NaN. Example:
+
+    .. code-block:: python
+        mapping = {"H": 3.0, "Li": 1.0, "He": 0.5 }
+        znumber_indexed_seq = mapping_to_znumber_indexed_seq(mapping)
+        # znumber_indexed_seq will be (NaN, 3.0, 0.5, 1.0)
+    """
+    _symbols_map = dict(symbols_map)
+    seq = [math.nan] * (len(symbols_map) + 1)
+    try:
+        for k, v in _symbols_map.items():
+            seq[ATOMIC_NUMBERS[k]] = v
+    except IndexError:
+        raise ValueError(f"There are missing elements in {symbols_map}") from None
+    return tuple(seq)
+
+
+def znumber_indexed_seq_to_mapping(
+    seq: tp.Sequence[float],
+) -> tp.Dict[str, float]:
+    r"""
+    Inverse of mapping_to_znumber_indexed_list. The first element of the input
+    must be NaN. Example:
+
+    .. code-block:: python
+        znumber_indexed_seq = (math.nan, 3.0, 0.5, 1.0)
+        mapping = znumber_indexed_seq_to_mapping(znumber_indexed_seq)
+        # mapping will be {"H": 3.0, "Li": 1.0, "He": 0.5 }
+    """
+    if not math.isnan(seq[0]):
+        raise ValueError("The first element of the input iterable must be NaN")
+    return {PERIODIC_TABLE[j]: v for j, v in enumerate(seq) if j != 0}
+
+
+MASSES = (
     0.0,
     1.008,
     4.002602,
@@ -146,7 +223,7 @@ ATOMIC_MASSES = (
 
 # Where I and EA are in eV
 # and also E_homo ~ -I, E_lumo ~ -EA
-HARDNESS_MAP = {
+ATOMIC_HARDNESS = {
     "H": 12.84,
     "He": 24.59,
     "Li": 4.77,
@@ -246,7 +323,7 @@ HARDNESS_MAP = {
     "Bk": 6.17,
 }
 
-ELECTRONEGATIVITY_MAP = {
+ATOMIC_ELECTRONEGATIVITY = {
     "H": 7.18,
     "He": 12.27,
     "Li": 3.0,
@@ -346,5 +423,5 @@ ELECTRONEGATIVITY_MAP = {
     "Bk": 3.12,
 }
 
-ELECTRONEGATIVITY = mapping_to_znumber_indexed_seq(ELECTRONEGATIVITY_MAP)
-HARDNESS = mapping_to_znumber_indexed_seq(HARDNESS_MAP)
+ELECTRONEGATIVITY = mapping_to_znumber_indexed_seq(ATOMIC_ELECTRONEGATIVITY)
+HARDNESS = mapping_to_znumber_indexed_seq(ATOMIC_HARDNESS)

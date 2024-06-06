@@ -7,7 +7,7 @@ from torch import Tensor
 
 from torchani.utils import ATOMIC_NUMBERS
 from torchani.geometry import Displacer, Reference
-from torchani.constants import ELECTRONEGATIVITY, HARDNESS, ATOMIC_MASSES
+from torchani.constants import ELECTRONEGATIVITY, HARDNESS
 
 __all__ = ["DipoleComputer", "compute_dipole", "ChargeNormalizer"]
 
@@ -98,7 +98,7 @@ class DipoleComputer(torch.nn.Module):
 
     def __init__(
         self,
-        masses: tp.Iterable[float] = ATOMIC_MASSES,
+        masses: tp.Iterable[float] = (),
         reference: Reference = "center_of_mass",
         device: tp.Union[torch.device, tp.Literal["cpu", "cuda"]] = "cpu",
         dtype: torch.dtype = torch.float,
