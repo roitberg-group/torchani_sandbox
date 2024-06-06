@@ -22,18 +22,16 @@ import math
 
 __all__ = [
     "PERIODIC_TABLE",
+    "ATOMIC_NUMBERS",
     "ELECTRONEGATIVITY",
     "HARDNESS",
-    "ATOMIC_NUMBERS",
     "MASSES",
 ]
 
 # This constant, when indexed with the corresponding atomic number, gives the
 # element associated with it. Note that there is no element with atomic number
-# 0, so 'Dummy' returned in this case.
-PERIODIC_TABLE = (
-    ["Dummy"]
-    + """
+# 0, so an empty string is returned in this case.
+PERIODIC_TABLE = """
     H                                                                                                                           He
     Li  Be                                                                                                  B   C   N   O   F   Ne
     Na  Mg                                                                                                  Al  Si  P   S   Cl  Ar
@@ -42,7 +40,7 @@ PERIODIC_TABLE = (
     Cs  Ba  La  Ce  Pr  Nd  Pm  Sm  Eu  Gd  Tb  Dy  Ho  Er  Tm  Yb  Lu  Hf  Ta  W   Re  Os  Ir  Pt  Au  Hg  Tl  Pb  Bi  Po  At  Rn
     Fr  Ra  Ac  Th  Pa  U   Np  Pu  Am  Cm  Bk  Cf  Es  Fm  Md  No  Lr  Rf  Db  Sg  Bh  Hs  Mt  Ds  Rg  Cn  Nh  Fl  Mc  Lv  Ts  Og
     """.strip().split()  # noqa
-)
+PERIODIC_TABLE.insert(0, "")
 
 ATOMIC_NUMBERS = {symbol: z for z, symbol in enumerate(PERIODIC_TABLE)}
 
