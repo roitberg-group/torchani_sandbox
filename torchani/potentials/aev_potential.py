@@ -4,7 +4,7 @@ from torch import Tensor
 
 from torchani.neighbors import NeighborData
 from torchani.atomics import AtomicContainer
-from torchani.utils import PERIODIC_TABLE
+from torchani.constants import PERIODIC_TABLE
 from torchani.aev.computer import AEVComputer
 from torchani.potentials.core import Potential
 

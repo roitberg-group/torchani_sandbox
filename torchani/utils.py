@@ -24,11 +24,8 @@ __all__ = [
     "get_atomic_masses",
     "GSAES",
     "PERIODIC_TABLE",
-    "ATOMIC_NUMBERS",
+    "ATOMIC_NUMBER",
 ]
-
-# For backwards compatibility
-ATOMIC_NUMBERS = ATOMIC_NUMBER
 
 
 PADDING = {

@@ -16,11 +16,7 @@ from numpy.typing import DTypeLike, NDArray
 from tqdm import tqdm
 
 from torchani.constants import ATOMIC_NUMBER, PERIODIC_TABLE
-from torchani.utils import (
-    species_to_formula,
-    sort_by_element,
-    PADDING,
-)
+from torchani.utils import species_to_formula, sort_by_element, PADDING
 from torchani.datasets.backends import (
     _StoreWrapper,
     StoreFactory,
@@ -227,7 +223,7 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
                     splits = tuple(torch.split(conformers.pop(k), max_size))
                 else:
                     splits = tuple(
-                        conformers[k][j:j + max_size]
+                        conformers[k][j : j + max_size]
                         for j in range(0, len(conformers[k]), max_size)
                     )
                 splitted_conformers.update({k: splits})
@@ -359,6 +355,7 @@ class _ANISubdataset(_ANIDatasetBase):
         if self.grouping == "legacy":
             if self.properties & _LEGACY_BROKEN_KEYS:
                 import warnings
+
                 warnings.warn(
                     f"{_LEGACY_BROKEN_KEYS & self.properties}"
                     " found in legacy dataset, this will generate"
