@@ -152,8 +152,6 @@ Optimizing Models for Inference
     :members:
 .. autoclass:: torchani.infer.InferModel
     :members:
-.. autoclass:: torchani.infer.PythonMNP
-    :members:
 
 ASE Interface
 =============
