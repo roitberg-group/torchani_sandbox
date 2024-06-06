@@ -12,7 +12,7 @@ import torch
 from torch import Tensor
 import torch.utils.data
 
-from torchani.constants import MASSES, ATOMIC_NUMBERS, PERIODIC_TABLE
+from torchani.constants import MASS, ATOMIC_NUMBER, PERIODIC_TABLE
 from torchani.tuples import SpeciesEnergies
 
 
@@ -26,6 +26,9 @@ __all__ = [
     "PERIODIC_TABLE",
     "ATOMIC_NUMBERS",
 ]
+
+# For backwards compatibility
+ATOMIC_NUMBERS = ATOMIC_NUMBER
 
 
 PADDING = {
@@ -436,7 +439,7 @@ class AtomicNumbersToMasses(torch.nn.Module):
     ) -> None:
         super().__init__()
         if not masses:
-            masses = MASSES
+            masses = MASS
         self.register_buffer(
             "atomic_masses",
             torch.tensor(masses, device=device, dtype=dtype),
