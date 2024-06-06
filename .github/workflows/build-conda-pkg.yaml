@@ -44,12 +44,16 @@ jobs:
         run: >-
           docker run
           --rm
-          --gpus '"device=all"'
-          --shm-size=2g
-          --ulimit memlock=-1
-          --ulimit stack=67108864
           ${{ steps.meta.outputs.tags }}
-          bash -c "./ci/upload_conda_pkg.sh"
+          bash -c "./ci/upload_conda_pkg.sh internal"
+
+      - name: Upload pkg to anaconda.org
+        if: ${{ contains(github.head_ref, 'public-release') }}
+        run: >-
+          docker run
+          --rm
+          ${{ steps.meta.outputs.tags }}
+          bash -c "./ci/upload_conda_pkg.sh public"
 
       - name: Remove image
         if: ${{ always() }}
