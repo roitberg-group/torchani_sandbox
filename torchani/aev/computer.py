@@ -18,6 +18,7 @@ from torchani.aev.terms import (
     AngularTermArg,
 )
 from torchani.csrc import CUAEV_IS_INSTALLED
+from torchani.tuples import NeighborData
 
 
 def jit_unused_if_no_cuaev():
@@ -185,12 +186,7 @@ class AEVComputer(torch.nn.Module):
             neighbors = self.neighborlist(
                 species, coordinates, self.radial_terms.cutoff, cell, pbc
             )
-            aev = self._compute_aev(
-                element_idxs=species,
-                neighbor_idxs=neighbors.indices,
-                distances=neighbors.distances,
-                diff_vectors=neighbors.diff_vectors,
-            )
+            aev = self._compute_aev(element_idxs=species, neighbors=neighbors)
             return SpeciesAEV(species, aev)
 
         # cuAEV code path:
@@ -218,10 +214,11 @@ class AEVComputer(torch.nn.Module):
     def _compute_aev(
         self,
         element_idxs: Tensor,  # shape (C, A)
-        neighbor_idxs: Tensor,  # shape (2, P)
-        distances: Tensor,  # shape (P,)
-        diff_vectors: Tensor,  # shape (P, 3)
+        neighbors: NeighborData,
     ) -> Tensor:
+        neighbor_idxs = neighbors.indices  # shape (2, P)
+        distances = neighbors.distances  # shape (P,)
+        diff_vectors = neighbors.diff_vectors  # shape (P, 3)
         num_molecules, num_atoms = element_idxs.shape
         # shape (2, P)
         neighbor_element_idxs = element_idxs.view(-1)[neighbor_idxs]

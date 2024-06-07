@@ -30,12 +30,7 @@ class AEVPotential(Potential):
         neighbors: NeighborData,
         ghost_flags: tp.Optional[Tensor] = None,
     ) -> Tensor:
-        aevs = self.aev_computer._compute_aev(
-            element_idxs=element_idxs,
-            neighbor_idxs=neighbors.indices,
-            distances=neighbors.distances,
-            diff_vectors=neighbors.diff_vectors,
-        )
+        aevs = self.aev_computer._compute_aev(element_idxs, neighbors)
         energies = self.neural_networks((element_idxs, aevs)).energies
         return energies
 
@@ -46,12 +41,7 @@ class AEVPotential(Potential):
         ghost_flags: tp.Optional[Tensor] = None,
         average: bool = False,
     ) -> Tensor:
-        aevs = self.aev_computer._compute_aev(
-            element_idxs=element_idxs,
-            neighbor_idxs=neighbors.indices,
-            distances=neighbors.distances,
-            diff_vectors=neighbors.diff_vectors,
-        )
+        aevs = self.aev_computer._compute_aev(element_idxs, neighbors)
         atomic_energies = self.neural_networks._atomic_energies((element_idxs, aevs))
         if atomic_energies.dim() == 2:
             atomic_energies = atomic_energies.unsqueeze(0)
