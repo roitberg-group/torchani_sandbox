@@ -65,7 +65,7 @@ class SeparateChargesNNPotential(NNPotential):
         if charge_normalizer is None:
             charge_normalizer = ChargeNormalizer(self.get_chemical_symbols())
         self.charge_networks = charge_networks
-        self.normalizer = charge_normalizer
+        self.charge_normalizer = charge_normalizer
 
     @torch.jit.export
     def energies_and_atomic_charges(
@@ -78,5 +78,7 @@ class SeparateChargesNNPotential(NNPotential):
         aevs = self.aev_computer._compute_aev(element_idxs, neighbors)
         energies = self.neural_networks((element_idxs, aevs))[1]
         raw_atomic_charges = self.charge_networks((element_idxs, aevs))[1]
-        atomic_charges = self.normalizer(element_idxs, raw_atomic_charges, total_charge)
+        atomic_charges = self.charge_normalizer(
+            element_idxs, raw_atomic_charges, total_charge
+        )
         return EnergiesAtomicCharges(energies, atomic_charges)
