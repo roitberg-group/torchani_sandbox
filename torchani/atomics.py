@@ -190,4 +190,29 @@ def like_dr(
     )
 
 
+def like_mbis_charges(
+    atom: str = "H",
+    feat_dim: int = 1008,
+    activation: tp.Optional[torch.nn.Module] = None,
+    bias: bool = False,
+    classifier_out: int = 2,
+):
+    r"""Makes an atomic network. The defaults are the ones used in the ANI-dr model"""
+    dims_for_atoms = {
+        "H": (feat_dim, 256, 192, 160),
+        "C": (feat_dim, 224, 192, 160),
+        "N": (feat_dim, 192, 160, 128),
+        "O": (feat_dim, 192, 160, 128),
+        "S": (feat_dim, 160, 128, 96),
+        "F": (feat_dim, 160, 128, 96),
+        "Cl": (feat_dim, 160, 128, 96),
+    }
+    return standard(
+        dims_for_atoms[atom],
+        activation=activation,
+        bias=bias,
+        classifier_out=classifier_out,
+    )
+
+
 like_1ccx = like_1x

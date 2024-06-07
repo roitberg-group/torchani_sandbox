@@ -560,7 +560,7 @@ def ANImbis(
     asm.set_atomic_networks(ANIModel, atomics.like_2x)
     asm.set_charge_networks(
         _AdaptedChargesContainer,
-        atomics.like_2x,
+        atomics.like_mbis_charges,
         normalizer=ChargeNormalizer.from_electronegativity_and_hardness(
             asm.symbols, scale_weights_by_charges_squared=True
         ),
