@@ -668,7 +668,8 @@ class PairPotentialsChargesModel(PairPotentialsModel):
                     output = pot.energies_and_atomic_charges(
                         element_idxs,
                         neighbor_data,
-                        total_charge,
+                        ghost_flags=None,
+                        total_charge=total_charge,
                     )
                     energies += output.energies
                     atomic_charges += output.atomic_charges
