@@ -116,6 +116,16 @@ Creation of 3D Geometries
     :members:
 .. autofunction:: torchani.geometry.tile_into_tight_cell
 
+Electrostatics
+==============
+
+.. automodule:: torchani.electro
+.. autoclass:: torchani.electro.DipoleComputer
+    :members:
+.. autofunction:: torchani.electro.compute_dipole
+.. autoclass:: torchani.electro.ChargeNormalizer
+    :members:
+
 General Utilities
 =================
 
