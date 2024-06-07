@@ -352,7 +352,7 @@ class Assembler:
                 self.build_atomic_networks(self.fn_for_atomics, featurizer.aev_length)
             )
 
-        charge_networks: tp.Optional[AtomicContainer]
+        charge_networks: tp.Optional[AtomicContainer] = None
         if self._charge_container_type is not None:
             charge_networks = self._charge_container_type(
                 self.build_atomic_networks(self.fn_for_charges, featurizer.aev_length)
