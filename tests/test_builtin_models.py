@@ -33,6 +33,22 @@ class TestBuiltinModels(ANITest):
         _, e2 = torch.jit.script(model)(input_)
         self.assertEqual(e, e2)
 
+    def _test_ensemble_charges(self, ensemble):
+        self._test_model_charges(ensemble)
+        for m in ensemble:
+            self._test_model_charges(m)
+
+    def _test_model_charges(self, model):
+        properties = next(iter(self.ds))
+        input_ = (
+            properties["species"].to(self.device),
+            properties["coordinates"].to(self.device, dtype=torch.float),
+        )
+        _, e, q = model.energies_and_atomic_charges(input_)
+        _, e2, q2 = torch.jit.script(model).energies_and_atomic_charges(input_)
+        self.assertEqual(e, e2)
+        self.assertEqual(q, q2)
+
     def _test_ensemble(self, ensemble):
         self._test_model(ensemble)
         for m in ensemble:
@@ -46,6 +62,9 @@ class TestBuiltinModels(ANITest):
 
     def testANImbis(self):
         self._test_ensemble(ANImbis().to(self.device))
+
+    def testANImbis_charges(self):
+        self._test_ensemble_charges(ANImbis().to(self.device))
 
 
 if __name__ == "__main__":
