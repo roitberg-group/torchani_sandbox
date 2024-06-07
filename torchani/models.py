@@ -686,7 +686,7 @@ class PairPotentialsChargesModel(PairPotentialsModel):
             aev_computer=self.charges_nnp.aev_computer,
             neural_networks=self.charges_nnp.neural_networks.member(index),
             charge_networks=self.charges_nnp.charge_networks,
-            charge_normalizer=self.charge_normalizer,
+            charge_normalizer=self.charges_nnp.charge_normalizer,
             energy_shifter=self.energy_shifter,
             periodic_table_index=self.periodic_table_index,
             pairwise_potentials=non_nn_potentials,
