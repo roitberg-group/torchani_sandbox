@@ -70,7 +70,7 @@ from torchani.nn import SpeciesConverter
 from torchani.constants import PERIODIC_TABLE, ATOMIC_NUMBER
 from torchani.aev import AEVComputer
 from torchani.potentials import (
-    AEVPotential,
+    NNPotential,
     Potential,
     PairPotential,
     EnergyAdder,
@@ -129,6 +129,7 @@ class BuiltinModel(torch.nn.Module):
         species_coordinates: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
+        total_charge: float = 0.0,
     ) -> SpeciesEnergies:
         """Calculates predicted energies for minibatch of configurations
 
@@ -165,7 +166,7 @@ class BuiltinModel(torch.nn.Module):
         pbc: tp.Optional[Tensor] = None,
         average: bool = True,
         shift_energy: bool = True,
-        include_non_aev_potentials: bool = True,
+        only_trainable_potentials: bool = False,
     ) -> SpeciesEnergies:
         """Calculates predicted atomic energies of all atoms in a molecule
 
@@ -245,6 +246,7 @@ class BuiltinModel(torch.nn.Module):
         species_coordinates: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
+        only_trainable_potentials: bool = False,
     ) -> SpeciesEnergies:
         """Calculates predicted energies of all member modules
 
@@ -265,7 +267,7 @@ class BuiltinModel(torch.nn.Module):
             pbc=pbc,
             shift_energy=True,
             average=False,
-            include_non_aev_potentials=True,
+            only_trainable_potentials=only_trainable_potentials,
         )
         return SpeciesEnergies(species, members_energies.sum(-1))
 
@@ -480,7 +482,7 @@ class PairPotentialsModel(BuiltinModel):
             periodic_table_index=periodic_table_index,
         )
         potentials: tp.List[Potential] = list(pairwise_potentials)
-        aev_potential = AEVPotential(self.aev_computer, self.neural_networks)
+        aev_potential = NNPotential(self.aev_computer, self.neural_networks)
         potentials.append(aev_potential)
 
         # We want to check the cutoffs of the potentials, and sort them
@@ -495,6 +497,7 @@ class PairPotentialsModel(BuiltinModel):
         species_coordinates: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
+        total_charge: float = 0,
     ) -> SpeciesEnergies:
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         previous_cutoff = self.potentials[0].cutoff
@@ -522,14 +525,13 @@ class PairPotentialsModel(BuiltinModel):
         pbc: tp.Optional[Tensor] = None,
         average: bool = True,
         shift_energy: bool = True,
-        include_non_aev_potentials: bool = True,
+        only_trainable_potentials: bool = False,
     ) -> SpeciesEnergies:
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         previous_cutoff = self.potentials[0].cutoff
-        neighbor_data = self.aev_computer.neighborlist(
+        neighbors = self.aev_computer.neighborlist(
             element_idxs, coordinates, previous_cutoff, cell, pbc
         )
-
         # Here we add an extra axis to account for different models,
         # some potentials output atomic energies with shape (M, N, A), where
         # M is all models in the ensemble
@@ -542,26 +544,15 @@ class PairPotentialsModel(BuiltinModel):
             dtype=coordinates.dtype,
             device=coordinates.device,
         )
-        if torch.jit.is_scripting():
-            assert (
-                include_non_aev_potentials
-            ), "Scripted models must include non aev potentials in atomic energies"
-            for pot in self.potentials:
-                cutoff = pot.cutoff
-                if cutoff < previous_cutoff:
-                    neighbor_data = rescreen(cutoff, neighbor_data)
-                    previous_cutoff = cutoff
-                atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
-        else:
-            for pot in self.potentials:
-                if not isinstance(pot, AEVPotential) and not include_non_aev_potentials:
-                    continue
-                cutoff = pot.cutoff
-                if pot.cutoff < previous_cutoff:
-                    cutoff
-                    neighbor_data = rescreen(cutoff, neighbor_data)
-                    previous_cutoff = cutoff
-                atomic_energies += pot.atomic_energies(element_idxs, neighbor_data)
+        for pot in self.potentials:
+            if only_trainable_potentials and not pot.is_trainable:
+                continue
+            cutoff = pot.cutoff
+            if pot.cutoff < previous_cutoff:
+                cutoff
+                neighbors = rescreen(cutoff, neighbors)
+                previous_cutoff = cutoff
+            atomic_energies += pot.atomic_energies(element_idxs, neighbors)
 
         if shift_energy:
             atomic_energies += self.energy_shifter.atomic_energies(element_idxs)
@@ -571,8 +562,8 @@ class PairPotentialsModel(BuiltinModel):
         return SpeciesEnergies(species_coordinates[0], atomic_energies)
 
     def __getitem__(self, index: int) -> tpx.Self:
-        non_aev_potentials = [
-            p for p in self.potentials if not isinstance(p, AEVPotential)
+        non_nn_potentials = [
+            p for p in self.potentials if not isinstance(p, NNPotential)
         ]
         return type(self)(
             symbols=self.get_chemical_symbols(),
@@ -580,7 +571,72 @@ class PairPotentialsModel(BuiltinModel):
             neural_networks=self.neural_networks.member(index),
             energy_shifter=self.energy_shifter,
             periodic_table_index=self.periodic_table_index,
-            pairwise_potentials=non_aev_potentials,
+            pairwise_potentials=non_nn_potentials,
+        )
+
+
+class PairPotentialsAtomicChargesModel(PairPotentialsModel):
+    r"""
+    Calculates energies and atomic charges. Charge networks share the
+    features with the energy networks, but are otherwise independent from them
+    """
+    def __init__(
+        self,
+        symbols: tp.Sequence[str],
+        aev_computer: AEVComputer,
+        neural_networks: AtomicContainer,
+        charge_networks: AtomicContainer,
+        energy_shifter: EnergyAdder,
+        pairwise_potentials: tp.Iterable[PairPotential] = tuple(),
+        periodic_table_index: bool = True,
+    ):
+        super().__init__(
+            symbols=symbols,
+            aev_computer=aev_computer,
+            neural_networks=neural_networks,
+            energy_shifter=energy_shifter,
+            pairwise_potentials=pairwise_potentials,
+            periodic_table_index=periodic_table_index,
+        )
+        self.charge_networks = charge_networks
+
+    def forward(
+        self,
+        species_coordinates: tp.Tuple[Tensor, Tensor],
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None,
+        total_charge: float = 0,
+    ) -> SpeciesEnergies:
+        element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
+        previous_cutoff = self.potentials[0].cutoff
+        neighbor_data = self.aev_computer.neighborlist(
+            element_idxs, coordinates, previous_cutoff, cell, pbc
+        )
+        energies = torch.zeros(
+            element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype
+        )
+        for pot in self.potentials:
+            cutoff = pot.cutoff
+            if cutoff < previous_cutoff:
+                neighbor_data = rescreen(cutoff, neighbor_data)
+                previous_cutoff = cutoff
+            energies += pot(element_idxs, neighbor_data)
+        return SpeciesEnergies(
+            element_idxs, energies + self.energy_shifter(element_idxs)
+        )
+
+    def __getitem__(self, index: int) -> tpx.Self:
+        non_nn_potentials = [
+            p for p in self.potentials if not isinstance(p, NNPotential)
+        ]
+        return type(self)(
+            symbols=self.get_chemical_symbols(),
+            aev_computer=self.aev_computer,
+            neural_networks=self.neural_networks.member(index),
+            charge_networks=self.charge_networks,
+            energy_shifter=self.energy_shifter,
+            periodic_table_index=self.periodic_table_index,
+            pairwise_potentials=non_nn_potentials,
         )
 
 

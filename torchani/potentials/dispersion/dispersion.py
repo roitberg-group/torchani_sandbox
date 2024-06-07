@@ -47,7 +47,9 @@ class TwoBodyDispersionD3(PairPotential):
         cutoff=math.inf,
         **kwargs,
     ):
-        super().__init__(*args, cutoff=cutoff, cutoff_fn=cutoff_fn, **kwargs)
+        super().__init__(
+            *args, cutoff=cutoff, is_trainable=False, cutoff_fn=cutoff_fn, **kwargs
+        )
 
         self._damp_fn_6 = damp_fn_6
         self._damp_fn_8 = damp_fn_8

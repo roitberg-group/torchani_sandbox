@@ -16,11 +16,13 @@ class Potential(torch.nn.Module):
     """
 
     cutoff: float
+    is_trainable: bool
     atomic_numbers: Tensor
 
     def __init__(
         self,
         *args,
+        is_trainable: bool = False,
         cutoff: float = 5.2,
         symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
         **kwargs
@@ -30,6 +32,7 @@ class Potential(torch.nn.Module):
             [ATOMIC_NUMBER[e] for e in symbols], dtype=torch.long
         )
         self.cutoff = cutoff
+        self.is_trainable = is_trainable
 
     @torch.jit.unused
     def get_chemical_symbols(self) -> tp.Tuple[str, ...]:
@@ -82,11 +85,12 @@ class PairPotential(Potential):
         self,
         *args,
         cutoff: float = 5.2,
+        is_trainable: bool = False,
         symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
         cutoff_fn: CutoffArg = "dummy",
         **kwargs
     ):
-        super().__init__(cutoff=cutoff, symbols=symbols)
+        super().__init__(cutoff=cutoff, is_trainable=is_trainable, symbols=symbols)
         self.cutoff_fn = parse_cutoff_fn(cutoff_fn)
 
     def pair_energies(
