@@ -615,19 +615,19 @@ class PairPotentialsChargesModel(PairPotentialsModel):
             raise NotImplementedError(
                 "Model with fused charge-energy networks not yet implemented"
             )
+        super().__init__(
+            symbols=symbols,
+            aev_computer=aev_computer,
+            neural_networks=neural_networks,
+            energy_shifter=energy_shifter,
+            pairwise_potentials=pairwise_potentials,
+            periodic_table_index=periodic_table_index,
+        )
         self.charges_nnp = SeparateChargesNNPotential(
             aev_computer,
             neural_networks,
             charge_networks,
             charge_normalizer,
-        )
-        super().__init__(
-            symbols=symbols,
-            aev_computer=self.charges_nnp.aev_computer,
-            neural_networks=self.charges_nnp.neural_networks,
-            energy_shifter=energy_shifter,
-            pairwise_potentials=pairwise_potentials,
-            periodic_table_index=periodic_table_index,
         )
         # Check which index has the NNPotential
         potentials = [pot for pot in self.potentials]
