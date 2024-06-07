@@ -631,7 +631,7 @@ class PairPotentialsChargesModel(PairPotentialsModel):
         )
         # Check which index has the NNPotential
         potentials = [pot for pot in self.potentials]
-        for j, pot in potentials:
+        for j, pot in enumerate(potentials):
             if pot.is_trainable:
                 break
         # Replace with the ChargesNNPotential
