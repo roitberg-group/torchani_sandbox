@@ -1,7 +1,10 @@
 import typing as tp
 
+import torch
 from torch import Tensor
 
+from torchani.electro import ChargeNormalizer
+from torchani.tuples import EnergiesAtomicCharges
 from torchani.neighbors import NeighborData
 from torchani.atomics import AtomicContainer
 from torchani.constants import PERIODIC_TABLE
@@ -32,8 +35,7 @@ class NNPotential(Potential):
         ghost_flags: tp.Optional[Tensor] = None,
     ) -> Tensor:
         aevs = self.aev_computer._compute_aev(element_idxs, neighbors)
-        energies = self.neural_networks((element_idxs, aevs)).energies
-        return energies
+        return self.neural_networks((element_idxs, aevs))[1]
 
     def atomic_energies(
         self,
@@ -49,3 +51,32 @@ class NNPotential(Potential):
         if average:
             return atomic_energies.sum(0)
         return atomic_energies
+
+
+class SeparateChargesNNPotential(NNPotential):
+    def __init__(
+        self,
+        aev_computer: AEVComputer,
+        neural_networks: AtomicContainer,
+        charge_networks: AtomicContainer,
+        charge_normalizer: tp.Optional[ChargeNormalizer] = None,
+    ):
+        super().__init__(aev_computer, neural_networks)
+        if charge_normalizer is None:
+            charge_normalizer = ChargeNormalizer(self.get_chemical_symbols())
+        self.charge_networks = charge_networks
+        self.normalizer = charge_normalizer
+
+    @torch.jit.export
+    def energies_and_atomic_charges(
+        self,
+        element_idxs: Tensor,
+        neighbors: NeighborData,
+        ghost_flags: tp.Optional[Tensor] = None,
+        total_charge: float = 0.0,
+    ) -> EnergiesAtomicCharges:
+        aevs = self.aev_computer._compute_aev(element_idxs, neighbors)
+        energies = self.neural_networks((element_idxs, aevs))[1]
+        raw_atomic_charges = self.charge_networs(element_idxs, aevs)[1]
+        atomic_charges = self.normalizer(element_idxs, raw_atomic_charges, total_charge)
+        return EnergiesAtomicCharges(energies, atomic_charges)

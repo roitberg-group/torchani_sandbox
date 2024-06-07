@@ -104,7 +104,7 @@ class Ensemble(AtomicContainer):
                 state_dict["".join((prefix, "members.", suffix))] = state_dict.pop(k)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
-    def __init__(self, modules: tp.Sequence[ANIModel]):
+    def __init__(self, modules: tp.Sequence[AtomicContainer]):
         super().__init__()
         self.members = torch.nn.ModuleList(modules)
         self.num_networks = len(self.members)
@@ -123,7 +123,7 @@ class Ensemble(AtomicContainer):
         species, input = species_input
         sum_ = torch.zeros(species.shape[0], dtype=input.dtype, device=input.device)
         for x in self.members:
-            sum_ += x((species, input)).energies
+            sum_ += x((species, input))[1]
         return SpeciesEnergies(species, sum_ / self.num_networks)
 
     def member(self, idx: int) -> AtomicContainer:

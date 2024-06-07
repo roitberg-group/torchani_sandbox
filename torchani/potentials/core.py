@@ -3,6 +3,7 @@ import typing as tp
 import torch
 from torch import Tensor
 
+from torchani.tuples import EnergiesAtomicCharges
 from torchani.constants import ATOMIC_NUMBER, PERIODIC_TABLE
 from torchani.cutoffs import parse_cutoff_fn, CutoffArg
 from torchani.neighbors import NeighborData
@@ -13,6 +14,10 @@ class Potential(torch.nn.Module):
 
     Potentials may be many-body potentials or pairwise potentials
     Subclasses must override 'forward' and 'atomic_energies'
+
+    Optionally, if the potential also assigns atomic charges to atoms,
+    subclasses may override energies_and_atomic_charges, by default this
+    function makes all atomic charges zero.
     """
 
     cutoff: float
@@ -21,11 +26,9 @@ class Potential(torch.nn.Module):
 
     def __init__(
         self,
-        *args,
-        is_trainable: bool = False,
-        cutoff: float = 5.2,
         symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
-        **kwargs
+        cutoff: float = 5.2,
+        is_trainable: bool = False,
     ):
         super().__init__()
         self.atomic_numbers = torch.tensor(
@@ -49,7 +52,23 @@ class Potential(torch.nn.Module):
 
         All distances are assumed to lie inside self.cutoff (which may be infinite).
         """
-        raise NotImplementedError
+        return torch.zeros(
+            element_idxs.shape[0],
+            dtype=neighbors.distances.dtype,
+            device=element_idxs.device,
+        )
+
+    @torch.jit.export
+    def energies_and_atomic_charges(
+        self,
+        element_idxs: Tensor,
+        neighbors: NeighborData,
+        ghost_flags: tp.Optional[Tensor] = None,
+        total_charge: float = 0.0,
+    ) -> EnergiesAtomicCharges:
+        energies = self(element_idxs, neighbors, ghost_flags)
+        atomic_charges = torch.zeros_like(element_idxs, dtype=energies.dtype)
+        return EnergiesAtomicCharges(energies, atomic_charges)
 
     @torch.jit.export
     def atomic_energies(
@@ -72,7 +91,7 @@ class Potential(torch.nn.Module):
         Potentials that don't have an ensemble of models output shape (1, N, A)
         if average=False.
         """
-        raise NotImplementedError
+        return torch.zeros_like(element_idxs, dtype=neighbors.distances.dtype)
 
 
 class PairPotential(Potential):
@@ -83,12 +102,10 @@ class PairPotential(Potential):
 
     def __init__(
         self,
-        *args,
         cutoff: float = 5.2,
         is_trainable: bool = False,
         symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
         cutoff_fn: CutoffArg = "dummy",
-        **kwargs
     ):
         super().__init__(cutoff=cutoff, is_trainable=is_trainable, symbols=symbols)
         self.cutoff_fn = parse_cutoff_fn(cutoff_fn)

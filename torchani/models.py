@@ -59,18 +59,21 @@ import typing_extensions as tpx
 
 from torchani.tuples import (
     SpeciesEnergies,
+    SpeciesEnergiesAtomicCharges,
     SpeciesEnergiesQBC,
     AtomicStdev,
     SpeciesForces,
     ForceStdev,
     ForceMagnitudes,
 )
+from torchani.electro import ChargeNormalizer
 from torchani.atomics import AtomicContainer
 from torchani.nn import SpeciesConverter
 from torchani.constants import PERIODIC_TABLE, ATOMIC_NUMBER
 from torchani.aev import AEVComputer
 from torchani.potentials import (
     NNPotential,
+    SeparateChargesNNPotential,
     Potential,
     PairPotential,
     EnergyAdder,
@@ -143,6 +146,7 @@ class BuiltinModel(torch.nn.Module):
             species_energies: tuple of tensors, species and energies for the
                 given configurations
         """
+        assert total_charge == 0.0, "Model only supports neutral molecules"
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         species, energies = self.neural_networks(species_aevs)
@@ -497,8 +501,9 @@ class PairPotentialsModel(BuiltinModel):
         species_coordinates: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        total_charge: float = 0,
+        total_charge: float = 0.0,
     ) -> SpeciesEnergies:
+        assert total_charge == 0.0, "Model only supports neutral molecules"
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         previous_cutoff = self.potentials[0].cutoff
         neighbor_data = self.aev_computer.neighborlist(
@@ -575,38 +580,62 @@ class PairPotentialsModel(BuiltinModel):
         )
 
 
-class PairPotentialsAtomicChargesModel(PairPotentialsModel):
+class PairPotentialsChargesModel(PairPotentialsModel):
     r"""
-    Calculates energies and atomic charges. Charge networks share the
-    features with the energy networks, but are otherwise independent from them
+    Calculates energies and atomic charges. Charge networks share the input
+    features with the energy networks, but are otherwise fully independent from them.
+
+    WARNING: This model is an experimental feature and will probably be removed
+    in the future.
     """
+
     def __init__(
         self,
         symbols: tp.Sequence[str],
         aev_computer: AEVComputer,
         neural_networks: AtomicContainer,
-        charge_networks: AtomicContainer,
         energy_shifter: EnergyAdder,
         pairwise_potentials: tp.Iterable[PairPotential] = tuple(),
         periodic_table_index: bool = True,
+        charge_networks: tp.Optional[AtomicContainer] = None,
+        charge_normalizer: tp.Optional[ChargeNormalizer] = None,
     ):
+        if charge_networks is None:
+            raise NotImplementedError(
+                "Model with fused charge-energy networks not yet implemented"
+            )
+        self.charges_nnp = SeparateChargesNNPotential(
+            aev_computer,
+            neural_networks,
+            charge_networks,
+            charge_normalizer,
+        )
         super().__init__(
             symbols=symbols,
-            aev_computer=aev_computer,
-            neural_networks=neural_networks,
+            aev_computer=self.charges_nnp.aev_computer,
+            neural_networks=self.charges_nnp.neural_networks,
             energy_shifter=energy_shifter,
             pairwise_potentials=pairwise_potentials,
             periodic_table_index=periodic_table_index,
         )
-        self.charge_networks = charge_networks
+        # Check which index has the NNPotential
+        potentials = [pot for pot in self.potentials]
+        for j, pot in potentials:
+            if pot.is_trainable:
+                break
+        # Replace with the ChargesNNPotential
+        potentials[j] = self.charges_nnp
+        # Re-register the ModuleList
+        self.potentials = torch.nn.ModuleList(potentials)
 
-    def forward(
+    def energies_and_atomic_charges(
         self,
         species_coordinates: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        total_charge: float = 0,
-    ) -> SpeciesEnergies:
+        total_charge: float = 0.0,
+    ) -> SpeciesEnergiesAtomicCharges:
+        assert total_charge == 0.0, "Model only supports neutral molecules"
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
         previous_cutoff = self.potentials[0].cutoff
         neighbor_data = self.aev_computer.neighborlist(
@@ -615,14 +644,26 @@ class PairPotentialsAtomicChargesModel(PairPotentialsModel):
         energies = torch.zeros(
             element_idxs.shape[0], device=element_idxs.device, dtype=coordinates.dtype
         )
+        atomic_charges = torch.zeros(
+            element_idxs.shape, device=element_idxs.device, dtype=coordinates.dtype
+        )
         for pot in self.potentials:
             cutoff = pot.cutoff
             if cutoff < previous_cutoff:
                 neighbor_data = rescreen(cutoff, neighbor_data)
                 previous_cutoff = cutoff
-            energies += pot(element_idxs, neighbor_data)
-        return SpeciesEnergies(
-            element_idxs, energies + self.energy_shifter(element_idxs)
+                if pot.is_trainable:
+                    output = pot.energies_and_atomic_charges(
+                        element_idxs,
+                        neighbor_data,
+                        total_charge,
+                    )
+                    energies += output.energies
+                    atomic_charges += output.atomic_charges
+                else:
+                    energies += pot(element_idxs, neighbor_data)
+        return SpeciesEnergiesAtomicCharges(
+            element_idxs, energies + self.energy_shifter(element_idxs), atomic_charges
         )
 
     def __getitem__(self, index: int) -> tpx.Self:
@@ -634,6 +675,7 @@ class PairPotentialsAtomicChargesModel(PairPotentialsModel):
             aev_computer=self.aev_computer,
             neural_networks=self.neural_networks.member(index),
             charge_networks=self.charge_networks,
+            charge_normalizer=self.charge_normalizer,
             energy_shifter=self.energy_shifter,
             periodic_table_index=self.periodic_table_index,
             pairwise_potentials=non_nn_potentials,

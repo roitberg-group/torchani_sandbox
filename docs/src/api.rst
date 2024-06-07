@@ -102,7 +102,7 @@ Potentials
     :members:
 .. autoclass:: torchani.potentials.StandaloneTwoBodyDispersionD3
     :members:
-.. autoclass:: torchani.potentials.elemental.EnergyAdder
+.. autoclass:: torchani.potentials.EnergyAdder
     :members:
 .. autoclass:: torchani.potentials.wrapper.PotentialWrapper
     :members:
