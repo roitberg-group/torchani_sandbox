@@ -721,3 +721,9 @@ def ANIdr(**kwargs) -> BuiltinModel:
     from . import assembler  # noqa
 
     return assembler.ANIdr(**kwargs)
+
+
+def ANImbis(**kwargs) -> BuiltinModel:
+    from . import assembler  # noqa
+
+    return assembler.ANImbis(**kwargs)

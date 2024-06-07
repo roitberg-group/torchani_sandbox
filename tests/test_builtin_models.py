@@ -3,7 +3,7 @@ import unittest
 import torch
 
 from torchani.testing import ANITest, expand
-from torchani.models import ANI1x, ANI2x
+from torchani.models import ANI1x, ANI2x, ANImbis
 from torchani.datasets import create_batched_dataset, TestData
 
 
@@ -39,12 +39,13 @@ class TestBuiltinModels(ANITest):
             self._test_model(m)
 
     def testANI1x(self):
-        ani1x = ANI1x().to(self.device)
-        self._test_ensemble(ani1x)
+        self._test_ensemble(ANI1x().to(self.device))
 
     def testANI2x(self):
-        ani1ccx = ANI2x().to(self.device)
-        self._test_ensemble(ani1ccx)
+        self._test_ensemble(ANI2x().to(self.device))
+
+    def testANImbis(self):
+        self._test_ensemble(ANImbis().to(self.device))
 
 
 if __name__ == "__main__":

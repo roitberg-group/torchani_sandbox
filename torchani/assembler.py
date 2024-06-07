@@ -228,15 +228,15 @@ class Assembler:
 
     def set_atomic_networks(
         self,
-        container: ContainerType,
+        container_type: ContainerType,
         fn: tp.Callable[[str, int], torch.nn.Module],
     ) -> None:
-        self._container_type = container
+        self._container_type = container_type
         self._fn_for_atomics = fn
 
     def set_charge_networks(
         self,
-        container: ContainerType,
+        container_type: ContainerType,
         fn: tp.Callable[[str, int], torch.nn.Module],
         normalizer: tp.Optional[ChargeNormalizer] = None,
     ) -> None:
@@ -246,7 +246,7 @@ class Assembler:
             raise ValueError(
                 "The model class must support charges to add a charge maker"
             )
-        self._charge_container = container
+        self._charge_container_type = container_type
         self._charge_normalizer = normalizer
         self._fn_for_charges = fn
 
