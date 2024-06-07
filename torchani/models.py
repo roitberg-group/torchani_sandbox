@@ -639,6 +639,7 @@ class PairPotentialsChargesModel(PairPotentialsModel):
         # Re-register the ModuleList
         self.potentials = torch.nn.ModuleList(potentials)
 
+    @torch.jit.export
     def energies_and_atomic_charges(
         self,
         species_coordinates: tp.Tuple[Tensor, Tensor],
