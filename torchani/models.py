@@ -282,6 +282,7 @@ class BuiltinModel(torch.nn.Module):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
         average: bool = False,
+        only_trainable_potentials: bool = False,
     ) -> SpeciesForces:
         """Calculates predicted forces from ensemble members
 
@@ -300,7 +301,10 @@ class BuiltinModel(torch.nn.Module):
         """
         coordinates = species_coordinates[1].requires_grad_()
         members_energies = self.members_energies(
-            species_coordinates, cell, pbc
+            species_coordinates,
+            cell,
+            pbc,
+            only_trainable_potentials=only_trainable_potentials,
         ).energies
         forces_list = []
         for energy in members_energies:
@@ -321,6 +325,7 @@ class BuiltinModel(torch.nn.Module):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
         unbiased: bool = True,
+        only_trainable_potentials: bool = False,
     ) -> SpeciesEnergiesQBC:
         """Calculates predicted predicted energies and qbc factors
 
@@ -344,7 +349,12 @@ class BuiltinModel(torch.nn.Module):
                 factors for the given configurations. The shapes of qbcs and
                 energies are equal.
         """
-        species, energies = self.members_energies(species_coordinates, cell, pbc)
+        species, energies = self.members_energies(
+            species_coordinates,
+            cell,
+            pbc,
+            only_trainable_potentials=only_trainable_potentials,
+        )
 
         if self.neural_networks.num_networks == 1:
             qbc_factors = torch.zeros_like(energies).squeeze(0)
@@ -551,13 +561,14 @@ class PairPotentialsModel(BuiltinModel):
         )
         for pot in self.potentials:
             if only_trainable_potentials and not pot.is_trainable:
-                continue
-            cutoff = pot.cutoff
-            if pot.cutoff < previous_cutoff:
-                cutoff
-                neighbors = rescreen(cutoff, neighbors)
-                previous_cutoff = cutoff
-            atomic_energies += pot.atomic_energies(element_idxs, neighbors)
+                pass  # JIT does not support "continue"
+            else:
+                cutoff = pot.cutoff
+                if pot.cutoff < previous_cutoff:
+                    cutoff
+                    neighbors = rescreen(cutoff, neighbors)
+                    previous_cutoff = cutoff
+                atomic_energies += pot.atomic_energies(element_idxs, neighbors)
 
         if shift_energy:
             atomic_energies += self.energy_shifter.atomic_energies(element_idxs)
