@@ -143,8 +143,19 @@ def compute_dipole(
     )(species, coordinates, charges)
 
 
-# Hack: This is
+# Hack: Grab a network with "bad energies", discard them and only outputs the
+# charges
 class _AdaptedChargesContainer(AtomicContainer):
+
+    # Needed for bw compatibility
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
+        old_keys = list(state_dict.keys())
+        for k in old_keys:
+            suffix = k.split(prefix)[-1] if prefix else k
+            if not suffix.startswith("atomics."):
+                state_dict["".join((prefix, "atomics.", suffix))] = state_dict.pop(k)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
     @staticmethod
     def ensureOrderedDict(modules):
         if isinstance(modules, OrderedDict):
@@ -170,7 +181,7 @@ class _AdaptedChargesContainer(AtomicContainer):
         element_idxs_ = element_idxs.flatten()
         aevs = aevs.flatten(0, 1)
         output = aevs.new_zeros(element_idxs_.shape)
-        for i, module in enumerate(self.values()):
+        for i, module in enumerate(self.atomics.values()):
             selected_idx = (element_idxs_ == i).nonzero().view(-1)
             if selected_idx.shape[0] > 0:
                 input_ = aevs.index_select(0, selected_idx)

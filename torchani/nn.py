@@ -38,7 +38,7 @@ class ANIModel(AtomicContainer):
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
         old_keys = list(state_dict.keys())
         for k in old_keys:
-            suffix = k.split(prefix)[-1]
+            suffix = k.split(prefix)[-1] if prefix else k
             if not suffix.startswith("atomics."):
                 state_dict["".join((prefix, "atomics.", suffix))] = state_dict.pop(k)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
@@ -99,7 +99,7 @@ class Ensemble(AtomicContainer):
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
         old_keys = list(state_dict.keys())
         for k in old_keys:
-            suffix = k.split(prefix)[-1]
+            suffix = k.split(prefix)[-1] if prefix else k
             if not suffix.startswith("members."):
                 state_dict["".join((prefix, "members.", suffix))] = state_dict.pop(k)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)

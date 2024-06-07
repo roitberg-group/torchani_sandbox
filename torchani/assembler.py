@@ -585,10 +585,10 @@ def ANImbis(
             "self_energies": ani2x_state_dict["energy_shifter.self_energies"]
         }
         charge_nn_state_dict = fetch_state_dict("charge_nn_state_dict.pt", private=True)
-        model.aev_computer.load_state_dict(aev_state_dict)
         model.energy_shifter.load_state_dict(shifter_state_dict)
-        model.neural_networks.load_state_dict(energy_nn_state_dict)
-        model.charge_networks.load_state_dict(charge_nn_state_dict)
+        model.charges_nnp.aev_computer.load_state_dict(aev_state_dict)
+        model.charges_nnp.neural_networks.load_state_dict(energy_nn_state_dict)
+        model.charges_nnp.charge_networks.load_state_dict(charge_nn_state_dict)
     return model if model_index is None else model[model_index]
 
 
