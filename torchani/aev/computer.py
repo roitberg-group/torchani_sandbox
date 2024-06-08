@@ -625,7 +625,7 @@ class AEVComputer(torch.nn.Module):
         neighborlist: NeighborlistArg = "full_pairwise",
         # Radial args
         radial_start: float = 0.8,
-        radial_cutoff: float = 5.2,
+        radial_cutoff: float = 5.1,
         radial_eta: float = 19.7,
         radial_num_shifts: int = 16,
         # Angular args
