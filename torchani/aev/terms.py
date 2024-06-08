@@ -76,12 +76,15 @@ class StandardRadial(RadialTerm):
         self.sublength = len(shifts)
 
     def extra_repr(self) -> str:
+        _shifts = [f"{s:.4f}" for s in self.shifts]
         parts = [
-            f"eta={self.eta.item()}",
-            f"shifts={self.shifts.tolist()}",
-            f"cutoff={self.cutoff}",
+            r"#  "f"sublength={self.sublength}",
+            r"#  "f"num_shifts={len(self.shifts)}",
+            f"eta={self.eta.item():.4f},",
+            f"shifts=[{', '.join(_shifts)}],",
+            f"cutoff={self.cutoff:.4f},",
         ]
-        return ", ".join(parts)
+        return " \n".join(parts)
 
     def forward(self, distances: Tensor) -> Tensor:
         distances = distances.view(-1, 1)
@@ -201,14 +204,19 @@ class StandardAngular(AngularTerm):
         self.sublength = len(shifts) * len(angle_sections)
 
     def extra_repr(self) -> str:
+        _shifts = [f"{s:.4f}" for s in self.shifts]
+        _angle_sections = [f"{s:.4f}" for s in self.angle_sections]
         parts = [
-            f"eta={self.eta.item()}",
-            f"zeta={self.zeta.item()}",
-            f"shifts={self.shifts.tolist()}",
-            f"angle_sections={self.angle_sections.tolist()}",
-            f"cutoff={self.cutoff}",
+            r"#  "f"sublength={self.sublength}",
+            r"#  "f"num_shifts={len(self.shifts)}",
+            r"#  "f"num_angle_sections={len(self.angle_sections)}",
+            f"eta={self.eta.item():.4f},",
+            f"zeta={self.zeta.item():.4f},",
+            f"shifts=[{', '.join(_shifts)}],",
+            f"angle_sections=[{', '.join(_angle_sections)}],",
+            f"cutoff={self.cutoff:.4f},",
         ]
-        return ", ".join(parts)
+        return " \n".join(parts)
 
     def forward(self, vectors12: Tensor, distances12: Tensor) -> Tensor:
         vectors12 = vectors12.view(2, -1, 3, 1, 1)

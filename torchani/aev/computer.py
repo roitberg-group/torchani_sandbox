@@ -60,8 +60,8 @@ class AEVComputer(torch.nn.Module):
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
 
-        self.angular_terms = parse_angular_term(angular_terms)
         self.radial_terms = parse_radial_term(radial_terms)
+        self.angular_terms = parse_angular_term(angular_terms)
         if not (self.angular_terms.cutoff_fn.is_same(self.radial_terms.cutoff_fn)):
             raise ValueError("Cutoff fn must be the same for angular and radial terms")
         if self.angular_terms.cutoff > self.radial_terms.cutoff:
@@ -118,12 +118,17 @@ class AEVComputer(torch.nn.Module):
                 )
 
     def extra_repr(self) -> str:
+        radial_perc = f"{self.radial_length / self.aev_length * 100:.2f}% of features"
+        angular_perc = f"{self.angular_length / self.aev_length * 100:.2f}% of features"
         parts = [
-            f"num_species={self.num_species}",
-            f"use_cuda_extension={self.use_cuda_extension}",
-            f"use_cuaev_interface={self.use_cuaev_interface}",
+            r"#  "f"aev_length={self.aev_length}",
+            r"#  "f"radial_length={self.radial_length} ({radial_perc})",
+            r"#  "f"angular_length={self.angular_length} ({angular_perc})",
+            f"num_species={self.num_species},",
+            f"use_cuda_extension={self.use_cuda_extension},",
+            f"use_cuaev_interface={self.use_cuaev_interface},",
         ]
-        return ", ".join(parts)
+        return " \n".join(parts)
 
     @staticmethod
     def _calculate_triu_index(num_species: int) -> Tensor:
