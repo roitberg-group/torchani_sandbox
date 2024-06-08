@@ -78,8 +78,8 @@ class StandardRadial(RadialTerm):
     def extra_repr(self) -> str:
         _shifts = [f"{s:.4f}" for s in self.shifts]
         parts = [
-            r"#  "f"sublength={self.sublength}",
-            r"#  "f"num_shifts={len(self.shifts)}",
+            r"#  " f"sublength={self.sublength}",
+            r"#  " f"num_shifts={len(self.shifts)}",
             f"eta={self.eta.item():.4f},",
             f"shifts=[{', '.join(_shifts)}],",
             f"cutoff={self.cutoff:.4f},",
@@ -207,9 +207,9 @@ class StandardAngular(AngularTerm):
         _shifts = [f"{s:.4f}" for s in self.shifts]
         _angle_sections = [f"{s:.4f}" for s in self.angle_sections]
         parts = [
-            r"#  "f"sublength={self.sublength}",
-            r"#  "f"num_shifts={len(self.shifts)}",
-            r"#  "f"num_angle_sections={len(self.angle_sections)}",
+            r"#  " f"sublength={self.sublength}",
+            r"#  " f"num_shifts={len(self.shifts)}",
+            r"#  " f"num_angle_sections={len(self.angle_sections)}",
             f"eta={self.eta.item():.4f},",
             f"zeta={self.zeta.item():.4f},",
             f"shifts=[{', '.join(_shifts)}],",
@@ -261,9 +261,10 @@ class StandardAngular(AngularTerm):
         ANI.
         """
         shifts = linspace(start, cutoff, num_shifts)
-        angle_start = math.pi / (2 * int(num_angle_sections))
-        angle_sections = linspace(0, math.pi, num_angle_sections)
-        angle_sections = tuple(v + angle_start for v in angle_sections)
+        angle_start = math.pi / num_angle_sections / 2
+        angle_sections = linspace(
+            angle_start, math.pi + angle_start, num_angle_sections
+        )
         return cls(eta, zeta, shifts, angle_sections, cutoff, cutoff_fn)
 
     @classmethod
