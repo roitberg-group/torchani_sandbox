@@ -6,6 +6,7 @@ from torch import Tensor
 import typing_extensions as tpx
 
 from torchani.cutoffs import parse_cutoff_fn, CutoffArg
+from torchani.utils import linspace
 
 
 class _Term(torch.nn.Module):
@@ -21,11 +22,6 @@ class _Term(torch.nn.Module):
         self.cutoff_fn = parse_cutoff_fn(cutoff_fn)
         self.cutoff = cutoff
         self.sublength = 0
-
-
-# Pure python linspace to ensure reproducibility
-def _linspace(start: float, stop: float, steps: int) -> tp.Tuple[float, ...]:
-    return tuple(start + ((stop - start) / steps) * j for j in range(steps))
 
 
 class AngularTerm(_Term):
@@ -111,7 +107,7 @@ class StandardRadial(RadialTerm):
         excluding it. This similar to the way angular and radial shifts were
         originally created for the ANI models
         """
-        shifts = _linspace(start, cutoff, num_shifts)
+        shifts = linspace(start, cutoff, num_shifts)
         return cls(eta, shifts, cutoff, cutoff_fn)
 
     @classmethod
@@ -256,9 +252,9 @@ class StandardAngular(AngularTerm):
         This is the way angular and radial shifts were originally created in
         ANI.
         """
-        shifts = _linspace(start, cutoff, num_shifts)
+        shifts = linspace(start, cutoff, num_shifts)
         angle_start = math.pi / (2 * int(num_angle_sections))
-        angle_sections = _linspace(0, math.pi, num_angle_sections)
+        angle_sections = linspace(0, math.pi, num_angle_sections)
         angle_sections = tuple(v + angle_start for v in angle_sections)
         return cls(eta, zeta, shifts, angle_sections, cutoff, cutoff_fn)
 
