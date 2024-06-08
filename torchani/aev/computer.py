@@ -572,7 +572,7 @@ class AEVComputer(torch.nn.Module):
         )
 
     @classmethod
-    def style_1x(
+    def like_1x(
         cls,
         num_species: int = 4,
         use_cuda_extension: bool = False,
@@ -616,7 +616,7 @@ class AEVComputer(torch.nn.Module):
         )
 
     @classmethod
-    def style_2x(
+    def like_2x(
         cls,
         num_species: int = 7,
         use_cuda_extension: bool = False,
@@ -654,54 +654,6 @@ class AEVComputer(torch.nn.Module):
                 cutoff_fn=cutoff_fn,
             ),
             num_species=num_species,
-            use_cuda_extension=use_cuda_extension,
-            use_cuaev_interface=use_cuaev_interface,
-            neighborlist=neighborlist,
-        )
-
-    @classmethod
-    def like_1x(
-        cls,
-        use_cuda_extension: bool = False,
-        use_cuaev_interface: bool = False,
-        neighborlist: NeighborlistArg = "full_pairwise",
-    ) -> tpx.Self:
-        return cls(
-            angular_terms="ani1x",
-            radial_terms="ani1x",
-            num_species=4,
-            use_cuda_extension=use_cuda_extension,
-            use_cuaev_interface=use_cuaev_interface,
-            neighborlist=neighborlist,
-        )
-
-    @classmethod
-    def like_1ccx(
-        cls,
-        use_cuda_extension: bool = False,
-        use_cuaev_interface: bool = False,
-        neighborlist: NeighborlistArg = "full_pairwise",
-    ) -> tpx.Self:
-        return cls(
-            angular_terms="ani1ccx",
-            radial_terms="ani1ccx",
-            num_species=4,
-            use_cuda_extension=use_cuda_extension,
-            use_cuaev_interface=use_cuaev_interface,
-            neighborlist=neighborlist,
-        )
-
-    @classmethod
-    def like_2x(
-        cls,
-        use_cuda_extension: bool = False,
-        use_cuaev_interface: bool = False,
-        neighborlist: NeighborlistArg = "full_pairwise",
-    ) -> tpx.Self:
-        return cls(
-            angular_terms="ani2x",
-            radial_terms="ani2x",
-            num_species=7,
             use_cuda_extension=use_cuda_extension,
             use_cuaev_interface=use_cuaev_interface,
             neighborlist=neighborlist,

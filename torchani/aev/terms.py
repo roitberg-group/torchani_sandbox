@@ -115,7 +115,7 @@ class StandardRadial(RadialTerm):
         return cls(eta, shifts, cutoff, cutoff_fn)
 
     @classmethod
-    def style_1x(
+    def like_1x(
         cls,
         start: float = 0.9,
         cutoff: float = 5.2,
@@ -132,7 +132,7 @@ class StandardRadial(RadialTerm):
         )
 
     @classmethod
-    def style_2x(
+    def like_2x(
         cls,
         start: float = 0.8,
         cutoff: float = 5.1,
@@ -147,66 +147,6 @@ class StandardRadial(RadialTerm):
             num_shifts=num_shifts,
             cutoff_fn=cutoff_fn,
         )
-
-    @classmethod
-    def like_1x(cls) -> tpx.Self:
-        dtype = torch.float
-        ob = cls.style_1x()
-        ob.eta = torch.tensor([16.0], dtype=dtype)
-        ob.shifts = torch.tensor(
-            [
-                0.9,
-                1.1687500,
-                1.4375000,
-                1.7062500,
-                1.9750000,
-                2.2437500,
-                2.5125000,
-                2.7812500,
-                3.0500000,
-                3.3187500,
-                3.5875000,
-                3.8562500,
-                4.1250000,
-                4.3937500,
-                4.6625000,
-                4.9312500,
-            ],
-            dtype=dtype,
-        )
-        return ob
-
-    @classmethod
-    def like_1ccx(cls) -> tpx.Self:
-        return cls.like_1x()
-
-    @classmethod
-    def like_2x(cls) -> tpx.Self:
-        dtype = torch.float
-        ob = cls.style_2x()
-        ob.eta = torch.tensor([19.7], dtype=dtype)
-        ob.shifts = torch.tensor(
-            [
-                0.8,
-                1.0687500,
-                1.3375000,
-                1.6062500,
-                1.8750000,
-                2.1437500,
-                2.4125000,
-                2.6812500,
-                2.9500000,
-                3.2187500,
-                3.4875000,
-                3.7562500,
-                4.0250000,
-                4.2937500,
-                4.5625000,
-                4.8312500,
-            ],
-            dtype=dtype,
-        )
-        return ob
 
 
 class StandardAngular(AngularTerm):
@@ -323,7 +263,7 @@ class StandardAngular(AngularTerm):
         return cls(eta, zeta, shifts, angle_sections, cutoff, cutoff_fn)
 
     @classmethod
-    def style_1x(
+    def like_1x(
         cls,
         start: float = 0.9,
         cutoff: float = 3.5,
@@ -344,7 +284,7 @@ class StandardAngular(AngularTerm):
         )
 
     @classmethod
-    def style_2x(
+    def like_2x(
         cls,
         start: float = 0.8,
         cutoff: float = 3.5,
@@ -364,62 +304,6 @@ class StandardAngular(AngularTerm):
             cutoff_fn=cutoff_fn,
         )
 
-    @classmethod
-    def like_1x(cls) -> tpx.Self:
-        dtype = torch.float
-        ob = cls.style_1x()
-        ob.eta = torch.tensor([8.0], dtype=dtype)
-        ob.zeta = torch.tensor([32.0], dtype=dtype)
-        ob.shifts = torch.tensor([0.9, 1.5500000, 2.2000000, 2.8500000], dtype=dtype)
-        ob.angle_sections = torch.tensor(
-            [
-                0.19634954,
-                0.58904862,
-                0.98174770,
-                1.3744468,
-                1.7671459,
-                2.1598449,
-                2.5525440,
-                2.9452431,
-            ],
-            dtype=dtype,
-        )
-        return ob
-
-    @classmethod
-    def like_1ccx(cls) -> tpx.Self:
-        return cls.like_1x()
-
-    @classmethod
-    def like_2x(cls) -> tpx.Self:
-        dtype = torch.float
-        ob = cls.style_1x()
-        ob.eta = torch.tensor([12.5], dtype=dtype)
-        ob.zeta = torch.tensor([14.1], dtype=dtype)
-        ob.shifts = torch.tensor(
-            [
-                0.8,
-                1.1375000,
-                1.4750000,
-                1.8125000,
-                2.1500000,
-                2.4875000,
-                2.8250000,
-                3.1625000,
-            ],
-            dtype=dtype,
-        )
-        ob.angle_sections = torch.tensor(
-            [
-                0.39269908,
-                1.1780972,
-                1.9634954,
-                2.7488936,
-            ],
-            dtype=dtype,
-        )
-        return ob
-
 
 _Models = tp.Literal["ani1x", "ani2x", "ani1ccx"]
 AngularTermArg = tp.Union[_Models, AngularTerm]
@@ -427,24 +311,20 @@ RadialTermArg = tp.Union[_Models, RadialTerm]
 
 
 def parse_angular_term(angular_term: AngularTermArg) -> AngularTerm:
-    if angular_term == "ani1x":
+    if angular_term in ["ani1x", "ani1ccx"]:
         angular_term = StandardAngular.like_1x()
     elif angular_term == "ani2x":
         angular_term = StandardAngular.like_2x()
-    elif angular_term == "ani1ccx":
-        angular_term = StandardAngular.like_1ccx()
     elif not isinstance(angular_term, AngularTerm):
         raise ValueError(f"Unsupported angular term: {angular_term}")
     return tp.cast(AngularTerm, angular_term)
 
 
 def parse_radial_term(radial_term: RadialTermArg) -> RadialTerm:
-    if radial_term == "ani1x":
+    if radial_term in ["ani1x", "ani1ccx"]:
         radial_term = StandardRadial.like_1x()
     elif radial_term == "ani2x":
         radial_term = StandardRadial.like_2x()
-    elif radial_term == "ani1ccx":
-        radial_term = StandardRadial.like_1ccx()
     elif not isinstance(radial_term, RadialTerm):
         raise ValueError(f"Unsupported radial term: {radial_term}")
     return tp.cast(RadialTerm, radial_term)
