@@ -624,12 +624,12 @@ class AEVComputer(torch.nn.Module):
         cutoff_fn: CutoffArg = "cosine",
         neighborlist: NeighborlistArg = "full_pairwise",
         # Radial args
-        radial_start: float = 0.9,
+        radial_start: float = 0.8,
         radial_cutoff: float = 5.2,
         radial_eta: float = 19.7,
         radial_num_shifts: int = 16,
         # Angular args
-        angular_start: float = 0.9,
+        angular_start: float = 0.8,
         angular_cutoff: float = 3.5,
         angular_eta: float = 12.5,
         angular_zeta: float = 14.1,

@@ -79,6 +79,14 @@ class StandardRadial(RadialTerm):
         self.register_buffer("shifts", torch.tensor(shifts, dtype=dtype))
         self.sublength = len(shifts)
 
+    def extra_repr(self) -> str:
+        parts = [
+            f"eta={self.eta.item()}",
+            f"shifts={self.shifts.tolist()}",
+            f"cutoff={self.cutoff}",
+        ]
+        return ", ".join(parts)
+
     def forward(self, distances: Tensor) -> Tensor:
         distances = distances.view(-1, 1)
         # Note that in the equation in the paper there is no 0.25
@@ -255,6 +263,16 @@ class StandardAngular(AngularTerm):
             "angle_sections", torch.tensor(angle_sections, dtype=dtype)
         )
         self.sublength = len(shifts) * len(angle_sections)
+
+    def extra_repr(self) -> str:
+        parts = [
+            f"eta={self.eta.item()}",
+            f"zeta={self.zeta.item()}",
+            f"shifts={self.shifts.tolist()}",
+            f"angle_sections={self.angle_sections.tolist()}",
+            f"cutoff={self.cutoff}",
+        ]
+        return ", ".join(parts)
 
     def forward(self, vectors12: Tensor, distances12: Tensor) -> Tensor:
         vectors12 = vectors12.view(2, -1, 3, 1, 1)
