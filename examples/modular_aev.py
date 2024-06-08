@@ -113,7 +113,7 @@ class AngularCosDiff(AngularTerm):
         self.register_buffer(
             "angle_sections", torch.tensor(angle_sections, dtype=dtype)
         )
-        assert len(shifts) == len(gamma)
+        assert len(angle_sections) == len(gamma)
 
         # set the sublength
         self.sublength = len(shifts) * len(angle_sections)
