@@ -14,15 +14,18 @@ class _Term(torch.nn.Module):
 
     def __init__(
         self,
-        *args: tp.Any,
         cutoff: float,
         cutoff_fn: CutoffArg = "cosine",
-        **kwargs: tp.Any,
     ) -> None:
         super().__init__()
         self.cutoff_fn = parse_cutoff_fn(cutoff_fn)
         self.cutoff = cutoff
         self.sublength = 0
+
+
+# Pure python linspace to ensure reproducibility
+def _linspace(start: float, stop: float, steps: int) -> tp.Tuple[float, ...]:
+    return tuple(start + ((stop - start) / steps) * j for j in range(steps))
 
 
 class AngularTerm(_Term):
@@ -48,38 +51,42 @@ class StandardRadial(RadialTerm):
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
 
-    EtaR: Tensor
-    ShfR: Tensor
+    # Needed for bw compatibility
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
+        old_keys = list(state_dict.keys())
+        for k in old_keys:
+            suffix = k.split(prefix)[-1] if prefix else k
+            if suffix == "EtaR":
+                value = state_dict.pop(k).view(-1)
+                if value.numel() > 1:
+                    raise RuntimeError("Only single 'eta' supported in standard terms")
+                state_dict["".join((prefix, "eta"))] = value
+            if suffix == "ShfR":
+                state_dict["".join((prefix, "shifts"))] = state_dict.pop(k).view(-1)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def __init__(
         self,
-        EtaR: Tensor,
-        ShfR: Tensor,
+        eta: float,
+        shifts: tp.Sequence[float],
         cutoff: float,
         cutoff_fn: CutoffArg = "cosine",
     ):
         super().__init__(cutoff=cutoff, cutoff_fn=cutoff_fn)
-        # initialize the cutoff function
+        dtype = torch.float
         self.cutoff_fn = parse_cutoff_fn(cutoff_fn)
-
-        # convert constant tensors to a ready-to-broadcast shape
-        # shape convension (..., EtaR, ShfR)
-        self.register_buffer("EtaR", EtaR.view(-1, 1))
-        self.register_buffer("ShfR", ShfR.view(1, -1))
-        self.sublength = self.EtaR.numel() * self.ShfR.numel()
+        self.register_buffer("eta", torch.tensor([eta], dtype=dtype))
+        self.register_buffer("shifts", torch.tensor(shifts, dtype=dtype))
+        self.sublength = len(shifts)
 
     def forward(self, distances: Tensor) -> Tensor:
-        distances = distances.view(-1, 1, 1)
-        fc = self.cutoff_fn(distances, self.cutoff)
+        distances = distances.view(-1, 1)
         # Note that in the equation in the paper there is no 0.25
         # coefficient, but in NeuroChem there is such a coefficient.
         # We choose to be consistent with NeuroChem instead of the paper here.
-        ret = 0.25 * torch.exp(-self.EtaR * (distances - self.ShfR) ** 2) * fc
-        # At this point, ret now has shape
-        # (pairs, ?, ?) where ? depend on constants.
-        # We then should flat the last 2 dimensions to view the sub-AEV as a two
-        # dimensional tensor (onnx doesn't support negative indices in flatten)
-        return ret.view(-1, self.sublength)
+        ret = 0.25 * torch.exp(-self.eta * (distances - self.shifts.view(1, -1)) ** 2)
+        ret *= self.cutoff_fn(distances, self.cutoff)
+        return ret  # shape(P, radial_sublenght)
 
     @classmethod
     def cover_linearly(
@@ -96,9 +103,8 @@ class StandardRadial(RadialTerm):
         excluding it. This similar to the way angular and radial shifts were
         originally created for the ANI models
         """
-        ShfR = torch.linspace(start, cutoff, int(num_shifts) + 1)[:-1].to(torch.float)
-        EtaR = torch.tensor([eta], dtype=torch.float)
-        return cls(EtaR, ShfR, cutoff, cutoff_fn)
+        shifts = _linspace(start, cutoff, num_shifts)
+        return cls(eta, shifts, cutoff, cutoff_fn)
 
     @classmethod
     def style_1x(
@@ -136,32 +142,31 @@ class StandardRadial(RadialTerm):
 
     @classmethod
     def like_1x(cls) -> tpx.Self:
-        return cls(
-            EtaR=torch.tensor([16.0], dtype=torch.float),
-            ShfR=torch.tensor(
-                [
-                    0.9,
-                    1.1687500,
-                    1.4375000,
-                    1.7062500,
-                    1.9750000,
-                    2.2437500,
-                    2.5125000,
-                    2.7812500,
-                    3.0500000,
-                    3.3187500,
-                    3.5875000,
-                    3.8562500,
-                    4.1250000,
-                    4.3937500,
-                    4.6625000,
-                    4.9312500,
-                ],
-                dtype=torch.float,
-            ),
-            cutoff=5.2,
-            cutoff_fn="cosine",
+        dtype = torch.float
+        ob = cls.style_1x()
+        ob.eta = torch.tensor([16.0], dtype=dtype)
+        ob.shifts = torch.tensor(
+            [
+                0.9,
+                1.1687500,
+                1.4375000,
+                1.7062500,
+                1.9750000,
+                2.2437500,
+                2.5125000,
+                2.7812500,
+                3.0500000,
+                3.3187500,
+                3.5875000,
+                3.8562500,
+                4.1250000,
+                4.3937500,
+                4.6625000,
+                4.9312500,
+            ],
+            dtype=dtype,
         )
+        return ob
 
     @classmethod
     def like_1ccx(cls) -> tpx.Self:
@@ -169,32 +174,31 @@ class StandardRadial(RadialTerm):
 
     @classmethod
     def like_2x(cls) -> tpx.Self:
-        return cls(
-            EtaR=torch.tensor([19.7], dtype=torch.float),
-            ShfR=torch.tensor(
-                [
-                    0.8,
-                    1.0687500,
-                    1.3375000,
-                    1.6062500,
-                    1.8750000,
-                    2.1437500,
-                    2.4125000,
-                    2.6812500,
-                    2.9500000,
-                    3.2187500,
-                    3.4875000,
-                    3.7562500,
-                    4.0250000,
-                    4.2937500,
-                    4.5625000,
-                    4.8312500,
-                ],
-                dtype=torch.float,
-            ),
-            cutoff=5.1,
-            cutoff_fn="cosine",
+        dtype = torch.float
+        ob = cls.style_2x()
+        ob.eta = torch.tensor([19.7], dtype=dtype)
+        ob.shifts = torch.tensor(
+            [
+                0.8,
+                1.0687500,
+                1.3375000,
+                1.6062500,
+                1.8750000,
+                2.1437500,
+                2.4125000,
+                2.6812500,
+                2.9500000,
+                3.2187500,
+                3.4875000,
+                3.7562500,
+                4.0250000,
+                4.2937500,
+                4.5625000,
+                4.8312500,
+            ],
+            dtype=dtype,
         )
+        return ob
 
 
 class StandardAngular(AngularTerm):
@@ -210,54 +214,69 @@ class StandardAngular(AngularTerm):
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
 
-    EtaA: Tensor
-    Zeta: Tensor
-    ShfA: Tensor
-    ShfZ: Tensor
+    # Needed for bw compatibility
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
+        old_keys = list(state_dict.keys())
+        for k in old_keys:
+            suffix = k.split(prefix)[-1] if prefix else k
+            if suffix == "EtaA":
+                value = state_dict.pop(k).view(-1)
+                if value.numel() > 1:
+                    raise RuntimeError("Only single 'eta' supported in standard terms")
+                state_dict["".join((prefix, "eta"))] = value
+            if suffix == "Zeta":
+                value = state_dict.pop(k).view(-1)
+                if value.numel() > 1:
+                    raise RuntimeError("Only single 'zeta' supported in standard terms")
+                state_dict["".join((prefix, "zeta"))] = value
+            if suffix == "ShfA":
+                state_dict["".join((prefix, "shifts"))] = state_dict.pop(k).view(-1)
+            if suffix == "ShfZ":
+                state_dict["".join((prefix, "angle_sections"))] = state_dict.pop(
+                    k
+                ).view(-1)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def __init__(
         self,
-        EtaA: Tensor,
-        Zeta: Tensor,
-        ShfA: Tensor,
-        ShfZ: Tensor,
+        eta: float,
+        zeta: float,
+        shifts: tp.Sequence[float],
+        angle_sections: tp.Sequence[float],
         cutoff: float,
         cutoff_fn: CutoffArg = "cosine",
     ):
         super().__init__(cutoff=cutoff, cutoff_fn=cutoff_fn)
-        # convert constant tensors to a ready-to-broadcast shape
-        # shape convension (..., EtaA, Zeta, ShfA, ShfZ)
-        self.register_buffer("EtaA", EtaA.view(-1, 1, 1, 1))
-        self.register_buffer("Zeta", Zeta.view(1, -1, 1, 1))
-        self.register_buffer("ShfA", ShfA.view(1, 1, -1, 1))
-        self.register_buffer("ShfZ", ShfZ.view(1, 1, 1, -1))
-        self.sublength = (
-            self.EtaA.numel()
-            * self.Zeta.numel()
-            * self.ShfA.numel()
-            * self.ShfZ.numel()
+        dtype = torch.float
+        self.register_buffer("eta", torch.tensor([eta], dtype=dtype))
+        self.register_buffer("zeta", torch.tensor([zeta], dtype=dtype))
+        self.register_buffer("shifts", torch.tensor(shifts, dtype=dtype))
+        self.register_buffer(
+            "angle_sections", torch.tensor(angle_sections, dtype=dtype)
         )
+        self.sublength = len(shifts) * len(angle_sections)
 
     def forward(self, vectors12: Tensor, distances12: Tensor) -> Tensor:
-        vectors12 = vectors12.view(2, -1, 3, 1, 1, 1, 1)
-        distances12 = distances12.view(2, -1, 1, 1, 1, 1)
+        vectors12 = vectors12.view(2, -1, 3, 1, 1)
+        distances12 = distances12.view(2, -1, 1, 1)
         cos_angles = vectors12.prod(0).sum(1) / torch.clamp(
             distances12.prod(0), min=1e-10
         )
         # 0.95 is multiplied to the cos values to prevent acos from returning NaN.
         angles = torch.acos(0.95 * cos_angles)
+        angle_deviations = angles - self.angle_sections.view(1, -1)
+        factor1 = ((1 + torch.cos(angle_deviations)) / 2) ** self.zeta
+
+        mean_distance_deviations = distances12.sum(0) / 2 - self.shifts.view(-1, 1)
+        factor2 = torch.exp(-self.eta * mean_distance_deviations**2)
 
         fcj12 = self.cutoff_fn(distances12, self.cutoff)
-        factor1 = ((1 + torch.cos(angles - self.ShfZ)) / 2) ** self.Zeta
-        factor2 = torch.exp(-self.EtaA * (distances12.sum(0) / 2 - self.ShfA) ** 2)
         # Use `fcj12[0] * fcj12[1]` instead of `fcj12.prod(0)` to avoid the INFs/NaNs
         # problem for smooth cutoff function, for more detail please check issue:
         # https://github.com/roitberg-group/torchani_sandbox/issues/178
+        # shape (T, shifts, sections)
         ret = 2 * factor1 * factor2 * (fcj12[0] * fcj12[1])
-        # At this point, ret now has shape
-        # (triples, ?, ?, ?, ?) where ? depend on constants.
-        # We then should flat the last 4 dimensions to view the sub-AEV as a two
-        # dimensional tensor (onnx doesn't support negative indices in flatten)
+        # shape (T, sublength)
         return ret.view(-1, self.sublength)
 
     @classmethod
@@ -279,14 +298,11 @@ class StandardAngular(AngularTerm):
         This is the way angular and radial shifts were originally created in
         ANI.
         """
-        EtaA = torch.tensor([eta], dtype=torch.float)
-        ShfA = torch.linspace(start, cutoff, int(num_shifts) + 1)[:-1].to(torch.float)
-        Zeta = torch.tensor([zeta], dtype=torch.float)
+        shifts = _linspace(start, cutoff, num_shifts)
         angle_start = math.pi / (2 * int(num_angle_sections))
-        ShfZ = (torch.linspace(0, math.pi, int(num_angle_sections) + 1) + angle_start)[
-            :-1
-        ].to(torch.float)
-        return cls(EtaA, Zeta, ShfA, ShfZ, cutoff, cutoff_fn)
+        angle_sections = _linspace(0, math.pi, num_angle_sections)
+        angle_sections = tuple(v + angle_start for v in angle_sections)
+        return cls(eta, zeta, shifts, angle_sections, cutoff, cutoff_fn)
 
     @classmethod
     def style_1x(
@@ -332,34 +348,25 @@ class StandardAngular(AngularTerm):
 
     @classmethod
     def like_1x(cls) -> tpx.Self:
-        return cls(
-            EtaA=torch.tensor([8.0], dtype=torch.float),
-            Zeta=torch.tensor([32.0], dtype=torch.float),
-            ShfA=torch.tensor(
-                [
-                    0.9,
-                    1.5500000,
-                    2.2000000,
-                    2.8500000,
-                ],
-                dtype=torch.float,
-            ),
-            ShfZ=torch.tensor(
-                [
-                    0.19634954,
-                    0.58904862,
-                    0.98174770,
-                    1.3744468,
-                    1.7671459,
-                    2.1598449,
-                    2.5525440,
-                    2.9452431,
-                ],
-                dtype=torch.float,
-            ),
-            cutoff=3.5,
-            cutoff_fn="cosine",
+        dtype = torch.float
+        ob = cls.style_1x()
+        ob.eta = torch.tensor([8.0], dtype=dtype)
+        ob.zeta = torch.tensor([32.0], dtype=dtype)
+        ob.shifts = torch.tensor([0.9, 1.5500000, 2.2000000, 2.8500000], dtype=dtype)
+        ob.angle_sections = torch.tensor(
+            [
+                0.19634954,
+                0.58904862,
+                0.98174770,
+                1.3744468,
+                1.7671459,
+                2.1598449,
+                2.5525440,
+                2.9452431,
+            ],
+            dtype=dtype,
         )
+        return ob
 
     @classmethod
     def like_1ccx(cls) -> tpx.Self:
@@ -367,34 +374,33 @@ class StandardAngular(AngularTerm):
 
     @classmethod
     def like_2x(cls) -> tpx.Self:
-        return cls(
-            EtaA=torch.tensor([12.5], dtype=torch.float),
-            Zeta=torch.tensor([14.1], dtype=torch.float),
-            ShfA=torch.tensor(
-                [
-                    0.8,
-                    1.1375000,
-                    1.4750000,
-                    1.8125000,
-                    2.1500000,
-                    2.4875000,
-                    2.8250000,
-                    3.1625000,
-                ],
-                dtype=torch.float,
-            ),
-            ShfZ=torch.tensor(
-                [
-                    0.39269908,
-                    1.1780972,
-                    1.9634954,
-                    2.7488936,
-                ],
-                dtype=torch.float,
-            ),
-            cutoff=3.5,
-            cutoff_fn="cosine",
+        dtype = torch.float
+        ob = cls.style_1x()
+        ob.eta = torch.tensor([12.5], dtype=dtype)
+        ob.zeta = torch.tensor([14.1], dtype=dtype)
+        ob.shifts = torch.tensor(
+            [
+                0.8,
+                1.1375000,
+                1.4750000,
+                1.8125000,
+                2.1500000,
+                2.4875000,
+                2.8250000,
+                3.1625000,
+            ],
+            dtype=dtype,
         )
+        ob.angle_sections = torch.tensor(
+            [
+                0.39269908,
+                1.1780972,
+                1.9634954,
+                2.7488936,
+            ],
+            dtype=dtype,
+        )
+        return ob
 
 
 _Models = tp.Literal["ani1x", "ani2x", "ani1ccx"]

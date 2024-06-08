@@ -117,6 +117,14 @@ class AEVComputer(torch.nn.Module):
                     "For non default neighborlists set 'use_cuaev_interface=True'"
                 )
 
+    def extra_repr(self) -> str:
+        parts = [
+            f"num_species={self.num_species}",
+            f"use_cuda_extension={self.use_cuda_extension}",
+            f"use_cuaev_interface={self.use_cuaev_interface}",
+        ]
+        return ", ".join(parts)
+
     @staticmethod
     def _calculate_triu_index(num_species: int) -> Tensor:
         # Helper method for initialization
@@ -379,12 +387,12 @@ class AEVComputer(torch.nn.Module):
         self.cuaev_computer = torch.classes.cuaev.CuaevComputer(
             self.radial_terms.cutoff,
             self.angular_terms.cutoff,
-            self.radial_terms.EtaR.flatten(),
-            self.radial_terms.ShfR.flatten(),
-            self.angular_terms.EtaA.flatten(),
-            self.angular_terms.Zeta.flatten(),
-            self.angular_terms.ShfA.flatten(),
-            self.angular_terms.ShfZ.flatten(),
+            self.radial_terms.eta,
+            self.radial_terms.shifts,
+            self.angular_terms.eta,
+            self.angular_terms.zeta,
+            self.angular_terms.shifts,
+            self.angular_terms.angle_sections,
             self.num_species,
             (self._cuaev_cutoff_fn == "cosine"),
         )
@@ -502,14 +510,14 @@ class AEVComputer(torch.nn.Module):
     @classmethod
     def from_constants(
         cls,
-        Rcr: float,
-        Rca: float,
-        EtaR: Tensor,
-        ShfR: Tensor,
-        EtaA: Tensor,
-        Zeta: Tensor,
-        ShfA: Tensor,
-        ShfZ: Tensor,
+        radial_cutoff: float,
+        angular_cutoff: float,
+        radial_eta: float,
+        radial_shifts: tp.Sequence[float],
+        angular_eta: float,
+        angular_zeta: float,
+        angular_shifts: tp.Sequence[float],
+        angle_sections: tp.Sequence[float],
         num_species: int,
         use_cuda_extension: bool = False,
         use_cuaev_interface: bool = False,
@@ -519,21 +527,21 @@ class AEVComputer(torch.nn.Module):
         r"""Initialize the AEV computer from the following constants:
 
         Arguments:
-            Rcr (float): :math:`R_C` in equation (2) when used at equation (3)
+            radial_cutoff (float): :math:`R_C` in equation (2) when used at equation (3)
                 in the `ANI paper`_.
             Rca (float): :math:`R_C` in equation (2) when used at equation (4)
                 in the `ANI paper`_.
-            EtaR (:class:`torch.Tensor`): The 1D tensor of :math:`\eta` in
+            radial_eta (:class:`torch.Tensor`): The 1D tensor of :math:`\eta` in
                 equation (3) in the `ANI paper`_.
-            ShfR (:class:`torch.Tensor`): The 1D tensor of :math:`R_s` in
+            radial_shifts (:class:`torch.Tensor`): The 1D tensor of :math:`R_s` in
                 equation (3) in the `ANI paper`_.
-            EtaA (:class:`torch.Tensor`): The 1D tensor of :math:`\eta` in
+            angluar_eta (:class:`torch.Tensor`): The 1D tensor of :math:`\eta` in
                 equation (4) in the `ANI paper`_.
-            Zeta (:class:`torch.Tensor`): The 1D tensor of :math:`\zeta` in
+            angular_zeta (:class:`torch.Tensor`): The 1D tensor of :math:`\zeta` in
                 equation (4) in the `ANI paper`_.
-            ShfA (:class:`torch.Tensor`): The 1D tensor of :math:`R_s` in
+            angular_shifts (:class:`torch.Tensor`): The 1D tensor of :math:`R_s` in
                 equation (4) in the `ANI paper`_.
-            ShfZ (:class:`torch.Tensor`): The 1D tensor of :math:`\theta_s` in
+            angle_sections (:class:`torch.Tensor`): The 1D tensor of :math:`\theta_s` in
                 equation (4) in the `ANI paper`_.
             num_species (int): Number of supported atom types.
             use_cuda_extension (bool): Whether to use cuda extension for faster
@@ -544,17 +552,17 @@ class AEVComputer(torch.nn.Module):
         """
         return cls(
             radial_terms=StandardRadial(
-                EtaR,
-                ShfR,
-                Rcr,
+                radial_eta,
+                radial_shifts,
+                radial_cutoff,
                 cutoff_fn=cutoff_fn,
             ),
             angular_terms=StandardAngular(
-                EtaA,
-                Zeta,
-                ShfA,
-                ShfZ,
-                Rca,
+                angular_eta,
+                angular_zeta,
+                angular_shifts,
+                angle_sections,
+                angular_cutoff,
                 cutoff_fn=cutoff_fn,
             ),
             num_species=num_species,
