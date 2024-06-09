@@ -57,3 +57,7 @@ report*.sqlite
 
 # logos and compressed downloads
 *.png
+
+# Dockerfiles
+conda.Dockerfile
+Dockerfile
