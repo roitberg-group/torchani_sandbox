@@ -187,7 +187,7 @@ AtomicMakerArg = tp.Union[str, AtomicMaker]
 def parse_atomics(module: AtomicMakerArg) -> AtomicMaker:
     if module in ["ani1x", "ani1ccx"]:
         return like_1x
-    elif module == ["ani2x", "aniala"]:
+    elif module in ["ani2x", "aniala"]:
         return like_2x
     elif module == "anidr":
         return like_dr
