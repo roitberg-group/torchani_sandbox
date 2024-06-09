@@ -66,7 +66,7 @@ class AtomicNetwork(torch.nn.Module):
         layer_dims = [layer.in_features for layer in self.layers]
         layer_dims.append(self.layers[-1].out_features)
         parts = [
-            f"layer_dims={tuple(self.layer_dims)},",
+            f"layer_dims={tuple(layer_dims)},",
             f"activation={self.activation},",
             f"bias={self.has_biases},",
         ]
