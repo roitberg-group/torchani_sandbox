@@ -107,7 +107,7 @@ if torch.cuda.is_available():
             " To suppress warning set the env var TORCHANI_NO_WARN_TF32 to any value"
         )
 
-# Optional submodules, depend on 'ase' and 'lark-parser' being available
+# Optional submodule, depends on 'ase' being available
 try:
     from . import ase  # noqa: F401
     __all__.append('ase')
