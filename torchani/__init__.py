@@ -1,10 +1,10 @@
 """`TorchANI`_ is a PyTorch implementation of `ANI`_, created and maintained by
-the `Roitberg group`_.  TorchANI contains classes like
-:class:`AEVComputer`, :class:`ANIModel`, and :class:`EnergyShifter` that can
-be pipelined to compute molecular energies from the 3D coordinates of
-molecules.  It also include tools to: deal with ANI datasets(e.g. `ANI-1`_,
-`ANI-1x`_, `ANI-1ccx`_, `ANI-2x`_) at :attr:`torchani.data`, import various file
-formats of NeuroChem at :attr:`torchani.neurochem`, and more at :attr:`torchani.utils`.
+the `Roitberg group`_.  TorchANI contains classes like :class:`AEVComputer`,
+:class:`ANIModel`, and :class:`EnergyShifter` that can be pipelined to compute
+molecular energies from the 3D coordinates of molecules.  It also include tools
+to: deal with ANI datasets(e.g. `ANI-1`_, `ANI-1x`_, `ANI-1ccx`_, `ANI-2x`_) at
+:attr:`torchani.data`, import various file formats of NeuroChem at
+:attr:`torchani.neurochem`, and more at :attr:`torchani.utils`.
 
 .. _TorchANI:
     https://doi.org/10.26434/chemrxiv.12218294.v1
@@ -27,39 +27,49 @@ formats of NeuroChem at :attr:`torchani.neurochem`, and more at :attr:`torchani.
 .. _ANI-2x:
     https://doi.org/10.26434/chemrxiv.11819268.v1
 """
-
-from .utils import EnergyShifter
-from .nn import ANIModel, Ensemble, SpeciesConverter
-from .aev import AEVComputer
-from . import utils
-from . import neurochem
-from . import models
-from . import units
-from . import datasets
-from . import transforms
-from . import cli
-from . import geometry
-from . import calc
-from . import neighbors
-from . import cutoffs
-from pkg_resources import get_distribution, DistributionNotFound
+import os
 import warnings
+from importlib.metadata import version, PackageNotFoundError
+
 import torch
 
+from torchani.utils import EnergyShifter
+from torchani.nn import ANIModel, Ensemble, SpeciesConverter
+from torchani.aev import AEVComputer
+from torchani import (
+    assembler,
+    utils,
+    models,
+    units,
+    datasets,
+    transforms,
+    cli,
+    geometry,
+    electro,
+    neighbors,
+    cutoffs,
+    sae,
+    infer,
+    constants,
+    grad,
+    data,  # TODO: Get rid of this
+    io,
+)
+# NOTE: ase and neurochem are optional dependencies so we don't import those here
+
 try:
-    __version__ = get_distribution(__name__).version
-except DistributionNotFound:
-    # package is not installed
-    pass
+    __version__ = version("torchani")
+except PackageNotFoundError:
+    pass  # package is not installed
 
 __all__ = [
     'AEVComputer',
     'EnergyShifter',
     'ANIModel',
     'Ensemble',
+    'grad',
     'SpeciesConverter',
     'utils',
-    'neurochem',  # TODO: Get rid of this
     'models',
     'units',
     'potentials',
@@ -68,29 +78,44 @@ __all__ = [
     'datasets',
     'transforms',
     'cli',
+    'io',
     'geometry',
-    'calc',
+    'electro',
+    'assembler',
+    "sae",
+    "infer",
+    "constants",
+    'data',  # TODO: Get rid of this
 ]
 
-# disable tf32
+# Disable TF32 since it catastrophically degrades accuracy
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
-# show warnings to users with ampere or newer gpu
+
+# Warn about disabling TF3 only if an Ampere (or newer) GPU is detected
+# (suppressed by setting TORCHANI_NO_WARN_TF32)
 if torch.cuda.is_available():
     num_devices = torch.cuda.device_count()
-    max_sm_major = max([torch.cuda.get_device_capability(i)[0] for i in range(num_devices)])
-    if (max_sm_major >= 8):
+    max_sm_major = max(
+        [torch.cuda.get_device_capability(i)[0] for i in range(num_devices)]
+    )
+    if (max_sm_major >= 8) and ("TORCHANI_NO_WARN_TF32" not in os.environ):
         warnings.warn(
-            "TF32 (TensorFloat 32) is disabled for accuracy reason")
+            "Torchani disables TF32 (supported by your GPU) to prevent accuracy loss."
+            " To suppress warning set the env var TORCHANI_NO_WARN_TF32 to any value"
+        )
 
+# Optional submodules, depend on 'ase' and 'lark-parser' being available
 try:
     from . import ase  # noqa: F401
     __all__.append('ase')
+    ASE_IS_AVAILABLE = True
 except ImportError:
-    warnings.warn("Dependency not satisfied, torchani.ase will not be available")
+    ASE_IS_AVAILABLE = False
 
 try:
-    from . import data  # noqa: F401
-    __all__.append('data')
+    from . import neurochem  # noqa: F401
+    __all__.append('neurochem')
+    NEUROCHEM_IS_AVAILABLE = True
 except ImportError:
-    warnings.warn("Dependency not satisfied, torchani.data will not be available")
+    NEUROCHEM_IS_AVAILABLE = False

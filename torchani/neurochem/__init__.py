@@ -1,8 +1,32 @@
-# type: ignore
-# legacy module, should not be type-checked
-r"""Tools for loading/running NeuroChem input files."""
-from .neurochem import Constants, load_sae, load_atomic_network, load_model, load_model_ensemble, Trainer
-from .parse_resources import parse_neurochem_resources
+r"""Tools for interfacing with legacy NeuroChem files"""
+from torchani.neurochem.neurochem import (
+    load_aev_computer_and_symbols,
+    load_aev_constants_and_symbols,
+    load_sae,
+    load_energy_adder,
+    load_atomic_network,
+    load_model,
+    load_model_ensemble,
+)
+from torchani.neurochem.files import (
+    modules_from_builtin_name,
+    modules_from_info_file,
+    download_model_parameters,
+    load_builtin_from_name,
+    load_builtin_from_info_file,
+)
 
-__all__ = ['Constants', 'load_sae', 'load_model', 'load_model_ensemble',
-           'Trainer', 'parse_neurochem_resources', 'load_atomic_network']
+__all__ = [
+    "load_aev_computer_and_symbols",
+    "load_aev_constants_and_symbols",
+    "load_sae",
+    "load_energy_adder",
+    "load_model",
+    "load_model_ensemble",
+    "load_atomic_network",
+    "download_model_parameters",
+    "modules_from_builtin_name",
+    "modules_from_info_file",
+    "load_builtin_from_name",
+    "load_builtin_from_info_file",
+]

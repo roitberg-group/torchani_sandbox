@@ -1,34 +1,20 @@
-r"""Mypy type aliases"""
-import sys
-from os import PathLike
-from typing import Union, Callable, Iterable, MutableMapping, TypeVar
-from collections import OrderedDict
+r"""Type aliases"""
+import typing as tp
+from pathlib import Path
 
+import numpy as np
 from torch import Tensor
-from numpy import ndarray, dtype
-
-# This is needed for compatibility with python 3.6, where numpy typing doesn't
-# work correctly
-if sys.version_info[:2] < (3, 7):
-    # This doesn't really matter anyways since it is only for mypy
-    DTypeLike = dtype
-else:
-    from numpy import typing as numpy_typing
-    DTypeLike = numpy_typing.DTypeLike
+from numpy.typing import NDArray
 
 
-_MutMapSubtype = TypeVar('_MutMapSubtype', bound=MutableMapping[str, Tensor])
+# Any of these should be interpretable as a 1D index sequence
+IdxLike = tp.Union[Tensor, NDArray[np.int_], None, tp.Iterable[int], int]
 
-# Transform = Callable[[MutableMapping[str, Tensor]], MutableMapping[str, Tensor]]
-Transform = Callable[[_MutMapSubtype], _MutMapSubtype]
-
-# any of these should be interpretable as a 1D index sequence
-IdxLike = Union[Tensor, ndarray, None, Iterable[int], int]
-
-Conformers = MutableMapping[str, Tensor]
-NumpyConformers = MutableMapping[str, ndarray]
-MixedConformers = MutableMapping[str, Union[Tensor, ndarray]]
+Conformers = tp.MutableMapping[str, Tensor]
+NumberOrStrArray = tp.Union[NDArray[np.int_], NDArray[np.float_], NDArray[np.str_]]
+NumpyConformers = tp.MutableMapping[str, NumberOrStrArray]
+MixedConformers = tp.MutableMapping[str, tp.Union[Tensor, NumberOrStrArray]]
 
 # mimic typeshed
-StrPath = Union[str, 'PathLike[str]']
-StrPathODict = Union['OrderedDict[str, str]', 'OrderedDict[str, PathLike[str]]']
+StrPath = tp.Union[str, Path]
+StrPathODict = tp.Union[tp.OrderedDict[str, str], tp.OrderedDict[str, Path]]

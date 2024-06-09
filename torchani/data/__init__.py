@@ -13,17 +13,16 @@ transformation.
 Available transformations are listed below:
 
 - `species_to_indices` accepts two different kinds of arguments. It converts
-    species from elements (e. g. "H", "C", "Cl", etc) into internal torchani
-    indices (as returned by :class:`torchani.utils.ChemicalSymbolsToInts` or
-    the ``species_to_tensor`` method of a :class:`torchani.models.BuiltinModel`
-    and :class:`torchani.neurochem.Constants`), if its argument is an iterable
-    of species. By default species_to_indices behaves this way, with an
-    argument of ``('H', 'C', 'N', 'O', 'F', 'S', 'Cl')``  However, if its
-    argument is the string "periodic_table", then elements are converted into
-    atomic numbers ("periodic table indices") instead. This last option is
-    meant to be used when training networks that already perform a forward pass
-    of :class:`torchani.nn.SpeciesConverter` on their inputs in order to
-    convert elements to internal indices, before processing the coordinates.
+  species from elements (e. g. "H", "C", "Cl", etc) into internal torchani
+  indices (as returned by :class:`torchani.utils.ChemicalSymbolsToInts`), if
+  its argument is an iterable of species. By default species_to_indices behaves
+  this way, with an argument of ``('H', 'C', 'N', 'O', 'F', 'S', 'Cl')``
+  However, if its argument is the string "periodic_table", then elements are
+  converted into atomic numbers ("periodic table indices") instead. This last
+  option is meant to be used when training networks that already perform a
+  forward pass of :class:`torchani.nn.SpeciesConverter` on their inputs in
+  order to convert elements to internal indices, before processing the
+  coordinates.
 
 - `subtract_self_energies` subtracts self energies from all molecules of the
     dataset. It accepts two different kinds of arguments: You can pass a dict
@@ -82,7 +81,13 @@ Example:
 .. code-block:: python
 
     energy_shifter = torchani.utils.EnergyShifter(None)
-    training, validation = torchani.data.load(dspath).subtract_self_energies(energy_shifter).species_to_indices().shuffle().split(int(0.8 * size), None)
+    training, validation = (
+        torchani.data.load(dspath)
+        .subtract_self_energies(energy_shifter)
+        .species_to_indices()
+        .shuffle()
+        .split(int(0.8 * size), None)
+    )
     training = training.collate(batch_size).cache()
     validation = validation.collate(batch_size).cache()
 
@@ -91,13 +96,28 @@ with multiprocessing to achieve comparable performance with less memory usage:
 
 .. code-block:: python
 
-    training, validation = torchani.data.load(dspath).subtract_self_energies(energy_shifter).species_to_indices().shuffle().split(0.8, None)
-    training = torch.utils.data.DataLoader(list(training), batch_size=batch_size, collate_fn=torchani.data.collate_fn, num_workers=64)
-    validation = torch.utils.data.DataLoader(list(validation), batch_size=batch_size, collate_fn=torchani.data.collate_fn, num_workers=64)
+    training, validation = (
+        torchani.data.load(dspath)
+        .subtract_self_energies(energy_shifter)
+        .species_to_indices()
+        .shuffle()
+        .split(0.8, None)
+    )
+    training = torch.utils.data.DataLoader(
+        list(training),
+        batch_size=batch_size,
+        collate_fn=torchani.data.collate_fn,
+        num_workers=64,
+    )
+    validation = torch.utils.data.DataLoader(
+        list(validation),
+        batch_size=batch_size,
+        collate_fn=torchani.data.collate_fn,
+        num_workers=64,
+    )
 """
 from os.path import join, isfile, isdir
 import os
-import importlib
 import functools
 import math
 import random
@@ -106,24 +126,16 @@ import gc
 
 import numpy
 import torch
+from tqdm import tqdm
 
-from torchani.data._pyanitools import anidataloader
 from torchani import utils
-
-PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None  # type: ignore
-if PKBAR_INSTALLED:
-    import pkbar
+from torchani.data._pyanitools import anidataloader
 
 verbose = True
 
-PROPERTIES = ('energies',)
+PROPERTIES = ("energies",)
 
-PADDING = {
-    'species': -1,
-    'coordinates': 0.0,
-    'forces': 0.0,
-    'energies': 0.0
-}
+PADDING = {"species": -1, "coordinates": 0.0, "forces": 0.0, "energies": 0.0}
 
 
 def stack_with_padding(properties, padding):
@@ -148,6 +160,7 @@ def collate_fn(samples, padding=None):
 
 class IterableAdapter:
     """https://stackoverflow.com/a/39564774"""
+
     def __init__(self, iterable_factory, length=None):
         self.iterable_factory = iterable_factory
         self.length = length
@@ -157,7 +170,6 @@ class IterableAdapter:
 
 
 class IterableAdapterWithLength(IterableAdapter):
-
     def __init__(self, iterable_factory, length):
         super().__init__(iterable_factory)
         self.length = length
@@ -170,22 +182,29 @@ class Transformations:
     """Convert one reenterable iterable to another reenterable iterable"""
 
     @staticmethod
-    def species_to_indices(reenterable_iterable, species_order=('H', 'C', 'N', 'O', 'F', 'S', 'Cl')):
-        if species_order == 'periodic_table':
+    def species_to_indices(
+        reenterable_iterable, species_order=("H", "C", "N", "O", "F", "S", "Cl")
+    ):
+        if species_order == "periodic_table":
             species_order = utils.PERIODIC_TABLE
         idx = {k: i for i, k in enumerate(species_order)}
 
         def reenterable_iterable_factory():
             for d in reenterable_iterable:
-                d['species'] = numpy.array([idx[s] for s in d['species']], dtype='i8')
+                d["species"] = numpy.array([idx[s] for s in d["species"]], dtype="i8")
                 yield d
+
         try:
-            return IterableAdapterWithLength(reenterable_iterable_factory, len(reenterable_iterable))
+            return IterableAdapterWithLength(
+                reenterable_iterable_factory, len(reenterable_iterable)
+            )
         except TypeError:
             return IterableAdapter(reenterable_iterable_factory)
 
     @staticmethod
-    def subtract_self_energies(reenterable_iterable, self_energies=None, species_order=None):
+    def subtract_self_energies(
+        reenterable_iterable, self_energies=None, species_order=None
+    ):
         intercept = 0.0
         shape_inference = False
         if isinstance(self_energies, utils.EnergyShifter):
@@ -195,7 +214,7 @@ class Transformations:
             counts = {}
             Y = []
             for n, d in enumerate(reenterable_iterable):
-                species = d['species']
+                species = d["species"]
                 count = Counter()
                 for s in species:
                     count[s] += 1
@@ -206,7 +225,7 @@ class Transformations:
                 for s in counts:
                     if len(counts[s]) != n + 1:
                         counts[s].append(0)
-                Y.append(d['energies'])
+                Y.append(d["energies"])
 
             # sort based on the order in periodic table by default
             if species_order is None:
@@ -220,8 +239,11 @@ class Transformations:
             X = numpy.array(X).transpose()
             Y = numpy.array(Y)
             if Y.shape[0] == 0:
-                raise RuntimeError("subtract_self_energies could not find any energies in the provided dataset.\n"
-                                   "Please make sure the path provided to data.load() points to a dataset has energies and is not empty or corrupted.")
+                raise RuntimeError(
+                    "subtract_self_energies could not find energies in the dataset.\n"
+                    "Make sure the path provided to data.load() points to a dataset"
+                    " that *has energies* and *is not corrupted*."
+                )
             sae, _, _, _ = numpy.linalg.lstsq(X, Y, rcond=None)
             sae_ = sae
             if shifter.fit_intercept:
@@ -235,23 +257,29 @@ class Transformations:
         def reenterable_iterable_factory():
             for d in reenterable_iterable:
                 e = intercept
-                for s in d['species']:
+                for s in d["species"]:
                     e += self_energies[s]
-                d['energies'] -= e
+                d["energies"] -= e
                 yield d
+
         if shape_inference:
             return IterableAdapterWithLength(reenterable_iterable_factory, n)
         return IterableAdapter(reenterable_iterable_factory)
 
     @staticmethod
     def remove_outliers(reenterable_iterable, threshold1=15.0, threshold2=8.0):
-        assert 'subtract_self_energies', "Transformation remove_outliers can only run after subtract_self_energies"
+        assert (
+            "subtract_self_energies"
+        ), "Transformation remove_outliers can only run after subtract_self_energies"
 
         # pass 1: remove everything that has per-atom energy > threshold1
         def scaled_energy(x):
-            num_atoms = len(x['species'])
-            return abs(x['energies']) / math.sqrt(num_atoms)
-        filtered = IterableAdapter(lambda: (x for x in reenterable_iterable if scaled_energy(x) < threshold1))
+            num_atoms = len(x["species"])
+            return abs(x["energies"]) / math.sqrt(num_atoms)
+
+        filtered = IterableAdapter(
+            lambda: (x for x in reenterable_iterable if scaled_energy(x) < threshold1)
+        )
 
         # pass 2: compute those that are outside the mean by threshold2 * std
         n = 0
@@ -259,12 +287,16 @@ class Transformations:
         std = 0
         for m in filtered:
             n += 1
-            mean += m['energies']
-            std += m['energies'] ** 2
+            mean += m["energies"]
+            std += m["energies"] ** 2
         mean /= n
-        std = math.sqrt(std / n - mean ** 2)
+        std = math.sqrt(std / n - mean**2)
 
-        return IterableAdapter(lambda: filter(lambda x: abs(x['energies'] - mean) < threshold2 * std, filtered))
+        return IterableAdapter(
+            lambda: filter(
+                lambda x: abs(x["energies"] - mean) < threshold2 * std, filtered
+            )
+        )
 
     @staticmethod
     def shuffle(reenterable_iterable):
@@ -301,8 +333,9 @@ class Transformations:
             if len(batch) > 0:
                 yield collate_fn(batch, padding)
 
-        reenterable_iterable_factory = functools.partial(reenterable_iterable_factory,
-                                                         padding)
+        reenterable_iterable_factory = functools.partial(
+            reenterable_iterable_factory, padding
+        )
         try:
             length = (len(reenterable_iterable) + batch_size - 1) // batch_size
             return IterableAdapterWithLength(reenterable_iterable_factory, length)
@@ -314,8 +347,11 @@ class Transformations:
         def reenterable_iterable_factory():
             for d in reenterable_iterable:
                 yield {k: d[k].pin_memory() for k in d}
+
         try:
-            return IterableAdapterWithLength(reenterable_iterable_factory, len(reenterable_iterable))
+            return IterableAdapterWithLength(
+                reenterable_iterable_factory, len(reenterable_iterable)
+            )
         except TypeError:
             return IterableAdapter(reenterable_iterable_factory)
 
@@ -335,7 +371,8 @@ class TransformableIterable:
         def f(*args, **kwargs):
             return TransformableIterable(
                 transformation(self.wrapped_iterable, *args, **kwargs),
-                self.transformations + (name,))
+                self.transformations + (name,),
+            )
 
         return f
 
@@ -351,7 +388,9 @@ class TransformableIterable:
             else:
                 for i in self_iter:
                     list_.append(i)
-            iters.append(TransformableIterable(list_, self.transformations + ('split',)))
+            iters.append(
+                TransformableIterable(list_, self.transformations + ("split",))
+            )
         del self_iter
         gc.collect()
         return iters
@@ -369,27 +408,29 @@ def load(path, additional_properties=()):
             for f in os.listdir(path):
                 f = join(path, f)
                 yield from h5_files(f)
-        elif isfile(path) and (path.endswith('.h5') or path.endswith('.hdf5')):
+        elif isfile(path) and (path.endswith(".h5") or path.endswith(".hdf5")):
             yield path
 
     def molecules():
         for f in h5_files(path):
             anidata = anidataloader(f)
             anidata_size = anidata.group_size()
-            use_pbar = PKBAR_INSTALLED and verbose
-            if use_pbar:
-                pbar = pkbar.Pbar('=> loading {}, total molecules: {}'.format(f, anidata_size), anidata_size)
+            if verbose:
+                pbar = tqdm(
+                    desc=f"=> loading {f}, total_molecules: {anidata_size}",
+                    total=anidata_size,
+                )
             for i, m in enumerate(anidata):
                 yield m
-                if use_pbar:
-                    pbar.update(i)
+                if verbose:
+                    pbar.update()
 
     def conformations():
         for m in molecules():
-            species = m['species']
-            coordinates = m['coordinates']
+            species = m["species"]
+            coordinates = m["coordinates"]
             for i in range(coordinates.shape[0]):
-                ret = {'species': species, 'coordinates': coordinates[i]}
+                ret = {"species": species, "coordinates": coordinates[i]}
                 for k in properties:
                     if k in m:
                         ret[k] = m[k][i]
@@ -398,4 +439,4 @@ def load(path, additional_properties=()):
     return TransformableIterable(IterableAdapter(lambda: conformations()))
 
 
-__all__ = ['load', 'collate_fn']
+__all__ = ["load", "collate_fn"]

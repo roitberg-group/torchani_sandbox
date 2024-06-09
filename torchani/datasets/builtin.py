@@ -1,3 +1,5 @@
+import json
+
 r"""Torchani Builtin Datasets
 
 This module provides access to the following datasets, calculated with specific
@@ -270,6 +272,13 @@ Iso17 dataset:
 
     For more information consult the corresponding paper
 
+- ANI-ExCorr, with LoT:
+    - PBE/DZVP
+
+    This dataset has "coefficients" which correspond to atomic
+    coefficients for the fitting density, and "energies-xc", the
+    exchange-correlation energies.
+
 
 Note that the conformations present in datasets with different LoT may be
 different.
@@ -286,76 +295,78 @@ of GDB-10to13 were recalculated using ORCA 5.0 instead of 4.2 so the
 integration grids may be slightly different, but the difference should not be
 significant.
 """
+import typing as tp
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any, List
 from collections import OrderedDict
 
-import yaml
+from tqdm import tqdm
 
-from torchani.utils import tqdm
 from torchani.datasets.download import _download_and_extract_archive, _check_integrity
 from torchani.datasets.datasets import ANIDataset
 from torchani.datasets._annotations import StrPath
+from torchani.storage import DATASETS_DIR
 
-_BASE_URL = 'http://moria.chem.ufl.edu/animodel/ground_truth_data/'
-_DEFAULT_DATA_PATH = Path.home().joinpath('.local/torchani/Datasets')
-_DATASETS_YAML_PATH = Path(__file__).parent / "builtin-datasets.yaml"
+_BASE_URL = "http://moria.chem.ufl.edu/animodel/ground_truth_data/"
+_DATASETS_JSON_PATH = Path(__file__).parent / "builtin-datasets.json"
 
-with open(_DATASETS_YAML_PATH, mode="rt", encoding="utf-8") as f:
-    _BUILTIN_DATASETS_SPEC = yaml.safe_load(f)
+with open(_DATASETS_JSON_PATH, mode="rt", encoding="utf-8") as f:
+    _BUILTIN_DATASETS_SPEC = json.load(f)
 
 # Convert csv file with format "file_name, MD5-hash" into a dictionary
-_MD5S: Dict[str, str] = dict()
+_MD5S: tp.Dict[str, str] = dict()
 with open(Path(__file__).resolve().parent / "md5s.csv") as f:
     lines = f.readlines()
     for line in lines[1:]:
-        file_, md5 = line.split(',')
+        file_, md5 = line.split(",")
         _MD5S[file_.strip()] = md5.strip()
 
-_BUILTIN_DATASETS: List[str] = list(_BUILTIN_DATASETS_SPEC.keys())
-_BUILTIN_DATASETS_LOT: List[str] = list(
+_BUILTIN_DATASETS: tp.List[str] = list(_BUILTIN_DATASETS_SPEC.keys())
+_BUILTIN_DATASETS_LOT: tp.List[str] = list(
     {
-        lot for name in _BUILTIN_DATASETS_SPEC.keys()
+        lot
+        for name in _BUILTIN_DATASETS_SPEC.keys()
         for lot in _BUILTIN_DATASETS_SPEC[name]["lot"]
     }
 )
 
 
-def download_builtin_dataset(dataset: str, lot: str, root=None):
+def download_builtin_dataset(dataset: str, lot: str, root=None, verbose: bool = True):
     """
     Download dataset at specified root folder, or at the default folder:
     ./datasets/{dataset}-{lot}/
     """
-    assert dataset in _BUILTIN_DATASETS, f"{dataset} is not avaiable"
-    assert lot in _BUILTIN_DATASETS_LOT, f"{lot} is not avaiable"
+    if dataset not in _BUILTIN_DATASETS:
+        raise ValueError(f"{dataset} is not avaiable")
+    if lot not in _BUILTIN_DATASETS_LOT:
+        raise ValueError(f"{lot} is not avaiable")
 
-    parts = lot.split('-')
-    assert len(parts) == 2, f"bad LoT format: {lot}"
+    parts = lot.split("-")
+    if len(parts) != 2:
+        raise ValueError(f"'lot' format {lot} incorrect. It should be <fnal>-<basis>")
 
     functional = parts[0]
     basis_set = parts[1]
-    location = f'./datasets/{dataset}-{lot}/' if root is None else root
-    if Path(location).exists():
+    location = f"./datasets/{dataset}-{lot}/" if root is None else root
+    if Path(location).exists() and verbose:
         print(
-            f"Found existing dataset at {Path(location).absolute().as_posix()},"
-            f" will check files integrality."
+            f"Found existing dataset at {str(Path(location).resolve())},"
+            f" will check files integraity."
         )
     else:
-        print(f"Will download dataset at {Path(location).absolute().as_posix()}")
+        print(f"Will download dataset at {str(Path(location).resolve())}")
     getattr(sys.modules[__name__], dataset)(
-        location,
-        download=True,
-        functional=functional,
-        basis_set=basis_set
+        location, download=True, functional=functional, basis_set=basis_set
     )
 
 
 def _check_files_integrity(
-    files_and_md5s: 'OrderedDict[str, str]',
+    files_and_md5s: tp.OrderedDict[str, str],
     root: Path,
     suffix: str = ".h5",
     name: str = "Dataset",
+    skip_hash_check: bool = False,
+    verbose: bool = True,
 ) -> None:
     # Checks that:
     # (1) There are files in the dataset
@@ -367,13 +378,20 @@ def _check_files_integrity(
     expected_file_names = set(files_and_md5s.keys())
     present_file_names = set([f.name for f in present_files])
     if not present_files:
-        raise RuntimeError(f'Dataset not found in path {str(root)}')
+        raise RuntimeError(f"Dataset not found in path {str(root)}")
     if expected_file_names != present_file_names:
         raise RuntimeError(
             f"Wrong files found for dataset {name} in provided path,"
             f" expected {expected_file_names} but found {present_file_names}"
         )
-    for f in tqdm(present_files, desc=f'Checking integrity of dataset {name}'):
+    if skip_hash_check:
+        return
+    for f in tqdm(
+        present_files,
+        desc=f"Checking integrity of dataset {name}",
+        disable=not verbose,
+        leave=False,
+    ):
         if not _check_integrity(f, files_and_md5s[f.name]):
             raise RuntimeError(
                 f"All expected files for dataset {name}"
@@ -384,7 +402,7 @@ def _check_files_integrity(
 
 # This Function is a Builder Factory that creates builder functions
 # that instantiate builtin ani datasets.
-# Functions are created using a yaml file as a template, their names are:
+# Functions are created using a json file as a template, their names are:
 #   - COMP6V1
 #   - ANI1x
 #   - ANI2x
@@ -401,12 +419,13 @@ def _register_dataset_builder(name: str) -> None:
     default_fn, default_basis = _BUILTIN_DATASETS_SPEC[name]["default-lot"].split("-")
 
     def builder(
-        root: Optional[StrPath] = None,
+        root: tp.Optional[StrPath] = None,
         functional: str = default_fn,
         basis_set: str = default_basis,
         verbose: bool = True,
         download: bool = True,
-        dummy_properties: Optional[Dict[str, Any]] = None
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        skip_check: bool = False,
     ) -> ANIDataset:
         lot = f"{functional}-{basis_set}".lower()
         try:
@@ -418,7 +437,7 @@ def _register_dataset_builder(name: str) -> None:
             ) from None
         suffix = ".h5"
 
-        _root = root or _DEFAULT_DATA_PATH / archive.replace(".tar.gz", "")
+        _root = root or DATASETS_DIR / archive.replace(".tar.gz", "")
         _root = Path(_root).resolve()
 
         _files_and_md5s = OrderedDict([(k, _MD5S[k]) for k in data[lot]["files"]])
@@ -426,13 +445,18 @@ def _register_dataset_builder(name: str) -> None:
         # If the dataset is not found we download it
         if download and ((not _root.is_dir()) or (not any(_root.glob(f"*{suffix}")))):
             _download_and_extract_archive(
-                base_url=_BASE_URL,
-                file_name=archive,
-                dest_dir=_root
+                base_url=_BASE_URL, file_name=archive, dest_dir=_root
             )
 
         # Check for corruption
-        _check_files_integrity(_files_and_md5s, _root, suffix, name)
+        _check_files_integrity(
+            _files_and_md5s,
+            _root,
+            suffix,
+            name,
+            skip_hash_check=skip_check,
+            verbose=verbose,
+        )
 
         # Order dataset paths using the order given in "files and md5s"
         filenames_order = {
@@ -440,7 +464,7 @@ def _register_dataset_builder(name: str) -> None:
         }
         _filenames_and_paths = sorted(
             [(p.stem, p) for p in sorted(_root.glob(f"*{suffix}"))],
-            key=lambda tup: filenames_order[tup[0]]
+            key=lambda tup: filenames_order[tup[0]],
         )
         filenames_and_paths = OrderedDict(_filenames_and_paths)
         ds = ANIDataset(

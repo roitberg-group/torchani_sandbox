@@ -1,51 +1,80 @@
-*.prof
-/tools/benchmark/*
-__pycache__
-nohup.out
-/data
-a.out
-/test.py
-/.vscode
-/build*
+# Python cache and build
+__pycache__/
+*.pyc
 .eggs
-*.egg-info
-*.ninja
-/torchani.egg-info
+*.egg-info/
+
+# setuptools-scm version file
+_version.py
+
+# Vscode
+/.vscode
+
+# Vim
+*.swp
+*.swo
+
+# Binary files
 /*.h5
 /*.hdf5
-.ipynb_checkpoints
-benchmark_xyz
-*.pyc
-*checkpoint*
 *.pt
-/tests/runs
-/quicktest.py
+*.o
+*.so
+*.pckl
+*.zip
+a.out
+
+# Mypy, pytest and clangd cache
+.mypy_cache/
+.pytest_cache/
+.cache/
+
+# Ninja
+*.ninja
+*.ninja_log
+
+# Code coverage
+.coverage
+htmlcov/
+
+# Notebooks
+.ipynb_checkpoints
+Untitled.ipynb
+
+# Full directories relative to project root
+/tests/runs/
+/tools/plots/
+/tools/benchmark/
+# Used for CUB when building CUDA / C++ extensions
+/include/
+# Build output of Sphinx docs
+/docs/build/
+/docs/src/sg_execution_times.rst
+# Build output of CUDA / C++ extensions
+/build/
+/torchani/csrc/build/
+# Data downloaded with download.sh
+/download/
+# Dest dir of built conda pkgs
+/conda-pkgs/
+
+# Nvidia Nsight Systems profiling
+*.qdrep
+*.qdstrm
+*.nsys-rep
+report*.sqlite
+
+*.prof
+*checkpoint*
 /*.ipt
 /*.params
 /*.dat
-*.o
-*.so
-*.ninja_log
 /tmp
-*_cache
 datacache
 dist
-*.pckl
-# No vim swap files
-*.swp
-*.swo
-/download
-/download.tar.xz
-*.qdrep
-*.qdstrm
-*.zip
-Untitled.ipynb
-/nnp_training.py
-/test*.py
-.coverage
-htmlcov/
-/include
-training_outputs/
 examples/dataset.pkl
-/tools/plots/*
+examples/batched_dataset_1x/*
 /tests/.hypothesis
+
+# Compile database for IDEs
+compile_commands.json

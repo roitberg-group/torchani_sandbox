@@ -1,57 +1,50 @@
-import os
-import math
+from pathlib import Path
 import unittest
+
 import torch
-import torchani
-import ase
-import ase.optimize
-import ase.vibrations
-import numpy
-from torchani.testing import TestCase
+import numpy as np
+
+from torchani.models import ANI1x
+from torchani.testing import ANITest, expand
+from torchani.grad import vibrational_analysis, energies_forces_and_hessians
+from torchani.utils import get_atomic_masses
 
 
-path = os.path.dirname(os.path.realpath(__file__))
-path = os.path.join(path, '../dataset/xyz_files/H2O.xyz')
-
-
-class TestVibrational(TestCase):
-
-    def testVibrationalWavenumbers(self):
-        model = torchani.models.ANI1x().double()
-        d = 0.9575
-        t = math.pi / 180 * 104.51
-        molecule = ase.Atoms('H2O', positions=[
-            (d, 0, 0),
-            (d * math.cos(t), d * math.sin(t), 0),
-            (0, 0, 0),
-        ], calculator=model.ase())
-        opt = ase.optimize.BFGS(molecule)
-        opt.run(fmax=1e-6)
-        # compute vibrational frequencies by ASE
-        vib = ase.vibrations.Vibrations(molecule)
-        vib.run()
-        freq = torch.tensor([numpy.real(x) for x in vib.get_frequencies()[6:]])
-        modes = []
-        for j in range(6, 6 + len(freq)):
-            modes.append(vib.get_mode(j))
-        vib.clean()
-        modes = torch.tensor(modes)
-        # compute vibrational by torchani
-        species = torch.tensor(molecule.get_atomic_numbers()).unsqueeze(0)
-        masses = torchani.utils.get_atomic_masses(species, dtype=torch.double)
-        coordinates = torch.from_numpy(molecule.get_positions()).unsqueeze(0).requires_grad_(True)
-        _, energies = model((species, coordinates))
-        hessian = torchani.utils.hessian(coordinates, energies=energies)
-        freq2, modes2, _, _ = torchani.utils.vibrational_analysis(masses, hessian)
+@expand(jit=False, device="cpu")
+class TestVibrational(ANITest):
+    def testWater(self):
+        model = self._setup(ANI1x().double())
+        # Expected results
+        data_path = (Path(__file__).parent / "test_data") / "water-vib-expect.npz"
+        with np.load(data_path) as data:
+            coordinates = torch.tensor(
+                np.expand_dims(data["coordinates"], 0),
+                dtype=torch.float,
+                device=self.device,
+            )
+            species = torch.tensor(
+                np.expand_dims(data["species"], 0), dtype=torch.long, device=self.device
+            )
+            modes_expect = torch.tensor(
+                data["modes"], dtype=torch.float, device=self.device
+            )
+            freqs_expect = torch.tensor(
+                data["freqs"], dtype=torch.float, device=self.device
+            )
+        masses = get_atomic_masses(species, dtype=torch.double)
+        energies, forces, hessians = energies_forces_and_hessians(
+            model, species, coordinates
+        )
+        freq2, modes2, _, _ = vibrational_analysis(masses, hessians)
         freq2 = freq2[6:].float()
         modes2 = modes2[6:]
-        self.assertEqual(freq, freq2, atol=0, rtol=0.02, exact_dtype=False)
+        self.assertEqual(freqs_expect, freq2, atol=0, rtol=0.02, exact_dtype=False)
 
-        diff1 = (modes - modes2).abs().max(dim=-1).values.max(dim=-1).values
-        diff2 = (modes + modes2).abs().max(dim=-1).values.max(dim=-1).values
+        diff1 = (modes_expect - modes2).abs().max(dim=-1).values.max(dim=-1).values
+        diff2 = (modes_expect + modes2).abs().max(dim=-1).values.max(dim=-1).values
         diff = torch.where(diff1 < diff2, diff1, diff2)
-        self.assertLess(diff.max(), 0.02)
+        self.assertLess(float(diff.max().item()), 0.02)
 
 
-if __name__ == '__main__':
-    unittest.main()
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
