@@ -73,6 +73,7 @@ class Calculator(ase.calculators.calculator.Calculator):
         system_changes=ase.calculators.calculator.all_changes,
     ):
         super().calculate(atoms, properties, system_changes)
+        assert self.atoms is not None  # mypy
         cell = torch.tensor(
             self.atoms.get_cell(complete=True).array,
             dtype=self.dtype,
