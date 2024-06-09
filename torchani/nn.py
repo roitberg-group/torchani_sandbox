@@ -45,8 +45,11 @@ class ANIModel(AtomicContainer):
                 new_key = "".join((prefix, "atomics.", suffix))
             if "layers" not in k:
                 parts = new_key.split(".")
-                parts.insert(-2, "layers")
-                parts[-2] = str(even.index(int(parts[-2])))
+                if int(parts[-2]) == 6:
+                    parts[-2] = "final_layer"
+                else:
+                    parts.insert(-2, "layers")
+                    parts[-2] = str(even.index(int(parts[-2])))
                 new_key = ".".join(parts)
 
             state_dict[new_key] = state_dict.pop(k)

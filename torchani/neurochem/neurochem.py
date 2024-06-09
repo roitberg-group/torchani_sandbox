@@ -1,3 +1,4 @@
+import itertools
 from pathlib import Path
 from dataclasses import dataclass
 import typing as tp
@@ -27,6 +28,7 @@ from torchani.neighbors import NeighborlistArg
 from torchani.potentials import EnergyAdder
 from torchani.tuples import SpeciesEnergies
 from torchani.neurochem.utils import model_dir_from_prefix
+from torchani.utils import TightCELU
 from torchani.atomics import AtomicNetwork
 
 
@@ -174,7 +176,7 @@ def _get_activation(activation_index: int) -> torch.nn.Module:
     # https://github.com/Jussmith01/NeuroChem/blob
     #   /stable1/src-atomicnnplib/cunetwork/cuannlayer_t.cu#L920
     if activation_index == 9:  # CELU
-        return torch.nn.CELU(alpha=0.1)
+        return TightCELU()
     elif activation_index == 5:  # Gaussian
         raise NeurochemParseError(
             "Activation index 5 corresponds to a Gaussian which is not supported"
@@ -340,7 +342,9 @@ def load_atomic_network(filename: tp.Union[Path, str]) -> AtomicNetwork:
     )
 
     # Load pretrained parameters
-    for linear, wfile, bfile in zip(network.layers, weight_files, bias_files):
+    for linear, wfile, bfile in zip(
+        itertools.chain(network.layers, [network.final_layer]), weight_files, bias_files
+    ):
         _in = linear.in_features
         _out = linear.out_features
         with open(wfile, mode="rb") as wf:

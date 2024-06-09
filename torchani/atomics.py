@@ -4,6 +4,8 @@ import typing as tp
 import torch
 from torch import Tensor
 
+from torchani.utils import TightCELU
+
 
 class AtomicContainer(torch.nn.Module):
     r"""Base class for ANI modules that contain atomic neural networks"""
@@ -50,20 +52,20 @@ class AtomicNetwork(torch.nn.Module):
         if any(d <= 0 for d in layer_dims):
             raise ValueError("Layer dims must be strict positive integers")
 
-        self.has_biases = bias
         dims = tuple(layer_dims)
         self.layers = torch.nn.ModuleList(
             [
                 torch.nn.Linear(_in, _out, bias=bias, dtype=torch.float)
-                for _in, _out in zip(dims[:-1], dims[1:])
+                for _in, _out in zip(dims[:-2], dims[1:-1])
             ]
         )
+        self.final_layer = torch.nn.Linear(dims[-2], dims[-1], bias=bias)
         self.activation = parse_activation(activation)
-        self.num_layers = len(self.layers)
+        self.has_biases = bias
 
     def extra_repr(self) -> str:
         layer_dims = [layer.in_features for layer in self.layers]
-        layer_dims.append(self.layers[-1].out_features)
+        layer_dims.extend([self.final_layer.in_features, self.final_layer.out_features])
         parts = [
             f"layer_dims={tuple(layer_dims)},",
             f"activation={self.activation},",
@@ -72,18 +74,16 @@ class AtomicNetwork(torch.nn.Module):
         return " \n".join(parts)
 
     def forward(self, features: Tensor) -> Tensor:
-        for i, layer in enumerate(self.layers):
-            features = layer(features)
-            if i != (self.num_layers - 1):
-                features = self.activation(features)
-        return features
+        for layer in self.layers:
+            features = self.activation(layer(features))
+        return self.final_layer(features)
 
 
 def parse_activation(module: tp.Union[str, torch.nn.Module]) -> torch.nn.Module:
     if module == "gelu":
         return torch.nn.GELU()
     if module == "celu":
-        return torch.nn.CELU(0.1)
+        return TightCELU()
     assert isinstance(module, torch.nn.Module)  # mypy
     return module
 
