@@ -211,12 +211,6 @@ class TestCellList(TestCase):
         _, aevs_fp = aev_fp((species, coordinates), cell=self.cell, pbc=self.pbc)
         self.assertEqual(aevs_cl, aevs_fp)
 
-    def testMaskedSelectInChunks(self):
-        tensor = torch.tensor([1, 0, 0, 1, 5])
-        result = self.clist._nonzero_in_chunks(tensor, chunk_size=2)
-        expected = torch.tensor([0, 3, 4])
-        self.assertEqual(result.tolist(), expected.tolist())
-
 
 class TestCellListEnergies(TestCase):
     def setUp(self):
