@@ -78,3 +78,6 @@ examples/batched_dataset_1x/*
 
 # Compile database for IDEs
 compile_commands.json
+
+# Pre commit config
+.pre-commit-config.yaml
