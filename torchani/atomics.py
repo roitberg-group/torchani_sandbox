@@ -40,7 +40,6 @@ class AtomicContainer(torch.nn.Module):
 
 
 class AtomicNetwork(torch.nn.Module):
-
     def __init__(
         self,
         layer_dims: tp.Sequence[int],

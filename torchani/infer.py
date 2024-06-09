@@ -7,7 +7,7 @@ from torch import Tensor
 from torchani.utils import check_openmp_threads
 from torchani.tuples import SpeciesEnergies
 from torchani.csrc import MNP_IS_INSTALLED
-from torchani.atomics import AtomicContainer
+from torchani.atomics import AtomicContainer, AtomicNetwork
 
 
 def jit_unused_if_no_mnp():
@@ -146,27 +146,36 @@ class BmmAtomicNetwork(torch.nn.Module):
     and avoid iterating over the ensemble members.
     """
 
-    def __init__(self, networks: tp.Sequence[torch.nn.Sequential]):
+    def __init__(self, networks: tp.Sequence[AtomicNetwork]):
         super().__init__()
         self.num_batched_networks = len(networks)
+        self.has_biases = networks[0].has_biases
+        self.num_layers = networks[0].num_layers
+        self.activation = networks[0].activation
+        alpha = getattr(self.activation, "alpha", 0)
+        for network in networks[1:]:
+            if network.num_layers != self.num_layers:
+                raise ValueError("All networks must have the same number of layers")
+            if not isinstance(network.activation, type(self.activation)):
+                raise ValueError("All networks must have the same activation type")
+            if getattr(network.activation, "alpha", 0) != alpha:
+                raise ValueError("All networks must have the same alpha")
 
-        layers = []
-        for layer_idx, layer in enumerate(networks[0]):
-            if type(layer) is torch.nn.Linear:
-                layers.append(BmmLinear([net[layer_idx] for net in networks]))
-            elif type(layer) in (torch.nn.CELU, torch.nn.GELU):
-                layers.append(layer)
-            else:
-                raise ValueError("Only GELU/CELU act. fn and Linear layers supported")
+        # "layers" is now a sequence of BmmLinear
+        self.layers = torch.nn.ModuleList(
+            [
+                BmmLinear([network.layers[j] for network in networks])
+                for j in range(self.num_layers)
+            ]
+        )
 
-        # "layers" is now a sequence of BmmLinear interleaved with activation functions
-        self.layers = torch.nn.ModuleList(layers)
-
-    def forward(self, input_: Tensor) -> Tensor:
-        input_ = input_.expand(self.num_batched_networks, -1, -1)
-        for layer in self.layers:
-            input_ = layer(input_)
-        return input_.mean(0)
+    def forward(self, features: Tensor) -> Tensor:
+        features = features.expand(self.num_batched_networks, -1, -1)
+        for i, layer in enumerate(self.layers):
+            features = layer(features)
+            if i != (self.num_layers - 1):
+                features = self.activation(features)
+        return features.mean(0)
 
     def __iter__(self) -> tp.Iterator[torch.nn.Module]:
         return iter(self.layers)
@@ -204,10 +213,10 @@ class BmmLinear(torch.nn.Module):
 
     def extra_repr(self):
         return (
-            f"batch={self.weight.shape[0]},"
-            f" in_features={self.weight.shape[1]},"
-            f" out_features={self.weight.shape[2]},"
-            f" bias={self.bias is not None}"
+            f"batch_size={self.weight.shape[0]},"
+            f"in_features={self.weight.shape[1]},"
+            f"out_features={self.weight.shape[2]},"
+            f"bias={self.bias is not None}"
         )
 
 
@@ -307,18 +316,16 @@ class InferModel(AtomicContainer):
         weights: tp.List[Tensor] = []  # len: sum(num_species * num_layers[j])
         biases: tp.List[Tensor] = []  # len: sum(num_species * num_layers[j])
         for atomic_network in self.atomic_networks:
-            num_layers.append(0)
-            for layer in atomic_network:
+            num_layers.append(atomic_network.num_layers)
+            for layer in atomic_network.layers:
                 layer_type = type(layer)
                 # *.clone().detach() converts torch.nn.Parameter into Tensor
                 if layer_type is torch.nn.Linear and not self._is_bmm:
                     weights.append(layer.weight.clone().detach().transpose(0, 1))
                     biases.append(layer.bias.clone().detach().unsqueeze(0))
-                    num_layers[-1] += 1
                 elif layer_type is BmmLinear and self._is_bmm:
                     weights.append(layer.weight.clone().detach())
                     biases.append(layer.bias.clone().detach())
-                    num_layers[-1] += 1
                 elif layer_type is torch.nn.CELU:
                     if self._celu_alpha == 0.0:
                         self._celu_alpha = layer.alpha
