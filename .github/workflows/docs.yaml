@@ -28,7 +28,7 @@ jobs:
           --gpus '"device=none"'
           ${{ steps.meta.outputs.tags }}
           bash -c
-          "sphinx-build docs/src docs/build"
+          "sphinx-build -W docs/src docs/build"
 
       - name: Remove image
         if: ${{ always() }}
