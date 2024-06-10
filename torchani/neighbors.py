@@ -202,8 +202,7 @@ class FullPairwise(Neighborlist):
                 cutoff, coordinates, atom_index12, shift_values, mask
             )
         else:
-            num_molecules = species.shape[0]
-            num_atoms = species.shape[1]
+            num_molecules, num_atoms = species.shape
             # Create a pairwise neighborlist for all molecules and all atoms,
             # assuming that there are no atoms at all. Dummy species will be
             # screened later

@@ -153,6 +153,53 @@ class BuiltinModel(torch.nn.Module):
         return SpeciesEnergies(species, energies + self.energy_shifter(species))
 
     @torch.jit.export
+    def from_neighborlist(
+        self,
+        species_coordinates: tp.Tuple[Tensor, Tensor],
+        neighbor_idxs: Tensor,
+        shift_values: Tensor,
+        total_charge: float = 0.0,
+        input_needs_screening: bool = True,
+    ) -> SpeciesEnergies:
+        # This entrypoint supports input from an external neighborlist
+
+        # Check shapes
+        num_pairs = neighbor_idxs.shape[0]
+        assert neighbor_idxs.shape == (2, num_pairs)
+        assert shift_values.shape == (num_pairs, 3)
+
+        species, coordinates = self._maybe_convert_species(species_coordinates)
+        num_molecules, num_atoms = species.shape
+        assert coordinates.shape == (num_molecules, num_atoms, 3)
+
+        if input_needs_screening:
+            # First screen the input neighbors in case some of the
+            # values are at distances larger than the radial cutoff, or some of
+            # the values are masked with dummy atoms. The first may happen if
+            # the neighborlist uses some sort of skin value to rebuild itself
+            # (as in Loup Verlet lists), which is common in MD programs.
+            cutoff = self.aev_computer.radial_terms.cutoff
+            neighbors = self.aev_computer.neighborlist._screen_with_cutoff(cutoff,
+                                                           coordinates,
+                                                           neighbors,
+                                                           shift_values,
+                                                           (species == -1))
+            neighbors, _, diff_vectors, distances = nl_out
+        else:
+            # If the input neighbors is pre screened then
+            # directly calculate the distances and diff_vectors
+            coordinates = coordinates.view(-1, 3)
+            coords0 = coordinates.index_select(0, neighbors[0])
+            coords1 = coordinates.index_select(0, neighbors[1])
+            diff_vectors = coords0 - coords1 + shift_values
+            distances = diff_vectors.norm(2, -1)
+
+        assert neighbors is not None
+        aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
+        species, energies = self.neural_networks((species, aevs))
+        return SpeciesEnergies(species, energies + self.energy_shifter(species))
+
+    @torch.jit.export
     def _maybe_convert_species(
         self, species_coordinates: tp.Tuple[Tensor, Tensor]
     ) -> tp.Tuple[Tensor, Tensor]:
