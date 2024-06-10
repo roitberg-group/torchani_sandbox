@@ -34,12 +34,14 @@ RUN \
     && git tag -a "v2.3" -m "Version v2.3"
 
 # Build conda pkg locally
-RUN \
-    mkdir ./conda-pkgs/ \
-    && . /opt/conda/etc/profile.d/conda.sh \
-    && conda activate \
-    && conda build -c nvidia -c pytorch -c conda-forge \
-        --no-anaconda-upload --output-folder ./conda-pkgs/ ./recipe
+RUN mkdir ./test-conda-pkgs/ \
+    && touch ./test-conda-pkgs/fake-data \
+    && printf "fake data" > ./test-conda-pkgs/fake-data
+
+    #&& . /opt/conda/etc/profile.d/conda.sh \
+    #&& conda activate \
+    #&& conda build -c nvidia -c pytorch -c conda-forge \
+        #--no-anaconda-upload --output-folder ./conda-pkgs/ ./recipe
 
 # Usage: To upload pkg to internal server
 # --build-arg=INTERNAL_RELEASE=1 (or --build-arg=INTERNAL_RELEASE="true")
@@ -49,7 +51,7 @@ RUN --mount=type=secret,id=DOCKER_PVTKEY \
 if [ "${INTERNAL_RELEASE}" = "1" ] || [ "${INTERNAL_RELEASE}" = "true" ] ; then \
     rsync -av --delete \
         -e "ssh -i /run/secrets/DOCKER_PVTKEY -o StrictHostKeyChecking=no -o ConnectTimeout=10" \
-        ./conda-pkgs/ "ipickering@moria.chem.ufl.edu:/data/conda-pkgs/" ; \
+        ./test-conda-pkgs/ "ipickering@moria.chem.ufl.edu:/data/test-conda-pkgs/" ; \
 else \
     printf "Not uploading to internal server" ; \
 fi
