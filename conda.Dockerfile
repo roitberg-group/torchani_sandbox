@@ -12,26 +12,26 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 # Download test data and maybe CUB (wget, unzip)
 # Build C++/CUDA extensions faster (ninja-build)
 # Upload pkg to internal server (rsync)
-RUN apt update && apt install -y wget git unzip ninja-build rsync
+#RUN apt update && apt install -y wget git unzip ninja-build rsync
 
 # Install requirements to build conda pkg (first activate conda base env)
-RUN \
-    . /opt/conda/etc/profile.d/conda.sh \
-    && conda activate \
-    && conda update -n base conda \
-    && conda install conda-build conda-verify anaconda-client
+#RUN \
+    #. /opt/conda/etc/profile.d/conda.sh \
+    #&& conda activate \
+    #&& conda update -n base conda \
+    #&& conda install conda-build conda-verify anaconda-client
 
 # Copy all of the repo files
-COPY . /repo
+#COPY . /repo
 
-# Initialize a git repo and create dummy tag for setuptools scm
-RUN \
-    git config --global user.email "user@domain.com" \
-    && git config --global user.name "User" \
-    && git init \
-    && git add . \
-    && git commit -m "Initial commit" \
-    && git tag -a "v2.3" -m "Version v2.3"
+## Initialize a git repo and create dummy tag for setuptools scm
+#RUN \
+    #git config --global user.email "user@domain.com" \
+    #&& git config --global user.name "User" \
+    #&& git init \
+    #&& git add . \
+    #&& git commit -m "Initial commit" \
+    #&& git tag -a "v2.3" -m "Version v2.3"
 
 # Build conda pkg locally
 RUN mkdir ./test-conda-pkgs/ \
