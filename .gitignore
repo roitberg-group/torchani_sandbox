@@ -73,8 +73,7 @@ report*.sqlite
 /tmp
 datacache
 dist
-examples/dataset.pkl
-examples/batched_dataset_1x/*
+examples/batched_dataset/
 /tests/.hypothesis
 
 # Compile database for IDEs
