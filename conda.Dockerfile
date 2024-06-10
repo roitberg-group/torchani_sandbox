@@ -45,10 +45,10 @@ RUN \
 # --build-arg=INTERNAL_RELEASE=1 (or --build-arg=INTERNAL_RELEASE="true")
 # DOCKER_PVTKEY must be passed as a secret
 ARG INTERNAL_RELEASE=0
-RUN --mount=type=secret,id=DOCKER_PVTKEY,target=/.ssh/id_rsa \
+RUN --mount=type=secret,id=DOCKER_PVTKEY \
 if [ "${INTERNAL_RELEASE}" = "1" ] || [ "${INTERNAL_RELEASE}" = "true" ] ; then \
     rsync -av --delete \
-        -e "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10" \
+        -e "ssh -i /run/secrets/DOCKER_PVTKEY -o StrictHostKeyChecking=no -o ConnectTimeout=10" \
         ./conda-pkgs/ "ipickering@moria.chem.ufl.edu:/data/conda-pkgs/" ; \
 else \
     printf "Not uploading to internal server" ; \
