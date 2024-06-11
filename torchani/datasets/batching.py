@@ -52,7 +52,11 @@ class BatchedDataset(torch.utils.data.Dataset[Conformers]):
         if pin_memory is None:
             pin_memory = torch.cuda.is_available()
         return torch.utils.data.DataLoader(
-            self, num_workers=num_workers, pin_memory=pin_memory, shuffle=shuffle
+            self,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            shuffle=shuffle,
+            batch_size=None,
         )
 
     def __len__(self) -> int:
@@ -99,7 +103,11 @@ class ANIBatchedInMemoryDataset(BatchedDataset):
         if pin_memory:
             self.pin_memory(verbose=False)
         return torch.utils.data.DataLoader(
-            self, num_workers=0, pin_memory=False, shuffle=shuffle
+            self,
+            num_workers=0,
+            pin_memory=False,
+            shuffle=shuffle,
+            batch_size=None,
         )
 
     def __getitem__(self, idx: int) -> Conformers:
@@ -405,7 +413,7 @@ class Batcher:
         conformer_blocks = torch.chunk(conformer_idxs, folds)
         for i in range(folds):
             ith_valid_div = conformer_blocks[i]
-            ith_train_div = torch.cat(conformer_blocks[:i] + conformer_blocks[i + 1:])
+            ith_train_div = torch.cat(conformer_blocks[:i] + conformer_blocks[i + 1 :])
             train = f"training{i}"
             valid = f"validation{i}"
             divs.extend(
@@ -464,7 +472,7 @@ class Batcher:
                 for j in range(0, num_batches, step):
                     packets.append(
                         torch.cat(
-                            batches[j:j + step],
+                            batches[j : j + step],
                             dim=0,
                         )
                     )

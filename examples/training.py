@@ -5,7 +5,6 @@ Train An ANI-Style Neural Network Potential
 This example shows how to use TorchANI to train a neural network potential.
 """
 # To begin with, let's first import the modules and setup devices we will use:
-import typing as tp
 import math
 from pathlib import Path
 
@@ -40,9 +39,6 @@ valid_ds: BatchedDataset = ANIBatchedDataset(batched_dataset_path, split="valida
 
 # We use the pytorch DataLoader with multiprocessing to load the batches while we train
 #
-# NOTE: it is very important here to pass batch_size = None since the dataset
-# is already batched!
-#
 # NOTE: for more info about the DataLoader and multiprocessing read
 # https://pytorch.org/docs/stable/data.html
 #
@@ -53,23 +49,9 @@ CACHE: bool = False
 if CACHE:
     train_ds = train_ds.cache()
     valid_ds = valid_ds.cache()
-    kwargs: tp.Dict[str, tp.Any] = {"pin_memory": False}
-else:
-    kwargs = {
-        "num_workers": 2, "prefetch_factor": 2, "pin_memory": True}
 
-training = torch.utils.data.DataLoader(
-    train_ds,
-    shuffle=True,
-    batch_size=None,
-    **kwargs,
-)
-validation = torch.utils.data.DataLoader(
-    valid_ds,
-    shuffle=False,
-    batch_size=None,
-    **kwargs,
-)
+training = train_ds.as_dataloader()
+validation = valid_ds.as_dataloader()
 
 # We can use the transforms module to modify the batches, the API for transforms is
 # very similar to torchvision https://pytorch.org/vision/stable/transforms.html
