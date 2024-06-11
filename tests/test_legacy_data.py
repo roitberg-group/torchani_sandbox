@@ -87,7 +87,6 @@ class TestData(TestCase):
         entered = False
         for d in ds:
             entered = True
-            pass
         self.assertTrue(entered)
         entered = False
         for d in ds:
@@ -98,7 +97,6 @@ class TestData(TestCase):
         entered = False
         for d in ds:
             entered = True
-            pass
         self.assertTrue(entered)
         entered = False
         for d in ds:
@@ -109,7 +107,6 @@ class TestData(TestCase):
         entered = False
         for d in ds:
             entered = True
-            pass
         self.assertTrue(entered)
         entered = False
         for d in ds:
