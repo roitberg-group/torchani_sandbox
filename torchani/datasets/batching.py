@@ -19,7 +19,19 @@ from torchani.datasets._annotations import Conformers, StrPath
 from torchani.storage import DATASETS_DIR
 
 
-class ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
+class _ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
+    # Explicit implementation of __iter__ to not rely on python's legacy behavior
+    def __iter__(self) -> tp.Iterator[Conformers]:
+        j = 0
+        while True:
+            try:
+                yield self[j]
+                j += 1
+            except IndexError:
+                break
+
+
+class ANIBatchedDataset(_ANIBatchedDataset):
     _batch_paths: tp.Optional[tp.List[Path]]
 
     def __init__(
