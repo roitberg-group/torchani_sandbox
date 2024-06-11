@@ -20,18 +20,18 @@ from torchani.assembler import FlexANI2
 
 # Explanation of how to train an ANI model
 # Device and dataset to run the training
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-ds = ANIDataset('../dataset/ani-1x/sample.h5')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+ds = ANIDataset("../dataset/ani-1x/sample.h5")
 
 # We prebatch the dataset to train with memory efficiency, keeping a good
 # performance.
-batched_dataset_path = Path('./batched_dataset').resolve()
+batched_dataset_path = Path("./batched_dataset").resolve()
 if not batched_dataset_path.exists():
     torchani.datasets.create_batched_dataset(
         ds,
         dest_path=batched_dataset_path,
         batch_size=2560,
-        splits={'training': 0.8, 'validation': 0.2}
+        splits={"training": 0.8, "validation": 0.2},
     )
 
 train_ds: BatchedDataset = ANIBatchedDataset(batched_dataset_path, split="training")
@@ -96,13 +96,13 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
 # We first read the checkpoint files to restart training. We use `latest_traininig.pt`
 # to store current training state.
 
-latest_training_state_checkpoint_path = Path('./latest_training_state.pt').resolve()
-best_model_state_checkpoint_path = Path('./best_model_state.pt').resolve()
+latest_training_state_checkpoint_path = Path("./latest_training_state.pt").resolve()
+best_model_state_checkpoint_path = Path("./best_model_state.pt").resolve()
 if latest_training_state_checkpoint_path.exists():
     checkpoint = torch.load(latest_training_state_checkpoint_path)
-    model.load_state_dict(checkpoint['model'])
-    scheduler.load_state_dict(checkpoint['scheduler'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
+    model.load_state_dict(checkpoint["model"])
+    scheduler.load_state_dict(checkpoint["scheduler"])
+    optimizer.load_state_dict(checkpoint["optimizer"])
 
 model = model.to(torch.float)
 model = model.to(device)
@@ -118,12 +118,11 @@ def validate(model: BuiltinModel, validation: torch.utils.data.DataLoader) -> fl
     with torch.no_grad():
         for properties in validation:
             properties = {
-                k: v.to(device, non_blocking=True)
-                for k, v in properties.items()
+                k: v.to(device, non_blocking=True) for k, v in properties.items()
             }
-            species = properties['species']
-            coordinates = properties['coordinates'].float()
-            target_energies = properties['energies'].float()
+            species = properties["species"]
+            coordinates = properties["coordinates"].float()
+            target_energies = properties["energies"].float()
             output = model((species, coordinates))
             predicted_energies = output.energies
             squared_error += (predicted_energies - target_energies).pow(2).sum().item()
@@ -139,7 +138,7 @@ tensorboard = torch.utils.tensorboard.SummaryWriter()
 
 ###############################################################################
 # Finally, we come to the training loop.
-mse = torch.nn.MSELoss(reduction='none')
+mse = torch.nn.MSELoss(reduction="none")
 
 # Criteria for stopping training
 max_epochs = 5
@@ -150,12 +149,17 @@ if scheduler.last_epoch == 0:
     rmse = validate(model, validation)
     print(f"Before training starts: Validation RMSE (kcal/mol) {rmse}")
     scheduler.step(rmse)
-    torch.save({
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'scheduler': scheduler.state_dict(),
-    }, latest_training_state_checkpoint_path)
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "scheduler": scheduler.state_dict(),
+        },
+        latest_training_state_checkpoint_path,
+    )
 
+force_training = False
+force_coefficient = 0.1
 for epoch in range(scheduler.last_epoch, max_epochs + 1):
     # Stop training if the lr is below a given threshold
     if optimizer.param_groups[0]["lr"] < min_learning_rate:
@@ -168,14 +172,37 @@ for epoch in range(scheduler.last_epoch, max_epochs + 1):
         desc=f"Epoch {epoch}",
     ):
         batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
-        species = batch['species']
-        coordinates = batch['coordinates'].float()
-        target_energies = batch['energies'].float()
+        species = batch["species"]
+        coordinates = batch["coordinates"].float()
+        target_energies = batch["energies"].float()
         num_atoms = (species >= 0).sum(dim=1, dtype=target_energies.dtype)
         output = model((species, coordinates))
         predicted_energies = output.energies
+        if force_training:
+            # Force training:
+            #
+            # We can use torch.autograd.grad to compute force. Remember to
+            # create graph so that the loss of the force can contribute to
+            # the gradient of parameters, and also to retain graph so that
+            # we can backward through it a second time when computing gradient
+            # w.r.t. parameters.
+            target_forces = batch["forces"].float()
+            predicted_forces = -torch.autograd.grad(
+                predicted_energies.sum(),
+                coordinates,
+                create_graph=True,
+                retain_graph=True,
+            )[0]
+            energy_loss = (
+                mse(predicted_energies, target_energies) / num_atoms.sqrt()
+            ).mean()
+            force_loss = (
+                mse(predicted_forces, target_forces).sum(dim=(1, 2)) / num_atoms
+            ).mean()
+            loss = energy_loss + force_coefficient * force_loss
+        else:
+            loss = (mse(predicted_energies, target_energies) / num_atoms.sqrt()).mean()
 
-        loss = (mse(predicted_energies, target_energies) / num_atoms.sqrt()).mean()
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -192,14 +219,17 @@ for epoch in range(scheduler.last_epoch, max_epochs + 1):
     scheduler.step(rmse)
 
     # Checkpoint the training state
-    torch.save({
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'scheduler': scheduler.state_dict(),
-    }, latest_training_state_checkpoint_path)
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "scheduler": scheduler.state_dict(),
+        },
+        latest_training_state_checkpoint_path,
+    )
 
     # Log scalars
-    tensorboard.add_scalar('validation_rmse_kcalpermol', rmse, epoch)
-    tensorboard.add_scalar('best_validation_rmse_kcalpermol', scheduler.best, epoch)
-    tensorboard.add_scalar('learning_rate', optimizer.param_groups[0]["lr"], epoch)
-    tensorboard.add_scalar('epoch_loss_square_ha', loss, epoch)
+    tensorboard.add_scalar("validation_rmse_kcalpermol", rmse, epoch)
+    tensorboard.add_scalar("best_validation_rmse_kcalpermol", scheduler.best, epoch)
+    tensorboard.add_scalar("learning_rate", optimizer.param_groups[0]["lr"], epoch)
+    tensorboard.add_scalar("epoch_loss_square_ha", loss, epoch)
