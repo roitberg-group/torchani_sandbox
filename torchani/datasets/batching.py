@@ -67,6 +67,9 @@ class ANIBatchedInMemoryDataset(BatchedDataset):
             ]
 
 
+# NOTE: This is suceptible to allocating a lot of memory if multiporcessing,
+# since it stores batch patchs in a list, but as long as the number of batches
+# is not huge it should not be an issue
 class ANIBatchedDataset(BatchedDataset):
     def __init__(
         self,
