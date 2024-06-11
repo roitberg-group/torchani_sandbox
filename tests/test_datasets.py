@@ -577,12 +577,12 @@ class TestANIBatchedDataset(TestCase):
         self.valid = ANIBatchedDataset(self.tmp_dir_batched.name, split="validation")
 
     def testInit(self):
-        self.assertTrue(self.train.split == "training")
-        self.assertTrue(self.valid.split == "validation")
+        self.assertTrue(self.train.div == "training")
+        self.assertTrue(self.valid.div == "validation")
         self.assertEqual(len(self.train), 3)
         self.assertEqual(len(self.valid), 3)
-        self.assertEqual(self.train.batch_size(0), self.batch_size)
-        self.assertEqual(self.valid.batch_size(0), self.batch_size)
+        self.assertEqual(self.train._batch_size(self.train[0]), self.batch_size)
+        self.assertEqual(self.valid._batch_size(self.valid[0]), self.batch_size)
         # transform does nothing if no transform was passed
         self.assertTrue(self.train.transform(None) is None)
 
@@ -595,8 +595,12 @@ class TestANIBatchedDataset(TestCase):
         )
         self.assertEqual(len(train_drop_last), 2)
         self.assertEqual(len(valid_drop_last), 2)
-        self.assertEqual(train_drop_last.batch_size(-1), self.batch_size)
-        self.assertEqual(valid_drop_last.batch_size(-1), self.batch_size)
+        self.assertEqual(
+            train_drop_last._batch_size(train_drop_last[-1]), self.batch_size
+        )
+        self.assertEqual(
+            valid_drop_last._batch_size(valid_drop_last[-1]), self.batch_size
+        )
         for b in train_drop_last:
             self.assertTrue(len(b["coordinates"]), self.batch_size)
         for b in valid_drop_last:
