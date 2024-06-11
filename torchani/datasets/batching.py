@@ -37,6 +37,9 @@ class BatchedDataset(torch.utils.data.Dataset[Conformers]):
     def _batch_size(batch: tp.Mapping[str, Tensor]) -> int:
         return batch[next(iter(batch.keys()))].shape[0]
 
+    def cache(self, verbose: bool = True, pin_memory: bool = False) -> "BatchedDataset":
+        return self
+
     def __len__(self) -> int:
         return 0
 
@@ -65,6 +68,14 @@ class ANIBatchedInMemoryDataset(BatchedDataset):
             self._batches = [
                 {k: v.pin_memory() for k, v in batch.items()} for batch in self._batches
             ]
+
+    def __getitem__(self, idx: int) -> Conformers:
+        with torch.no_grad():
+            batch = self.transform(self._batches[idx])
+        return batch
+
+    def __len__(self) -> int:
+        return len(self._batches)
 
 
 # NOTE: This is suceptible to allocating a lot of memory if multiporcessing,
