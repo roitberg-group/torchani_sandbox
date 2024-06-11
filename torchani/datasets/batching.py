@@ -1,4 +1,5 @@
 r"""Functions for creating batched datasets"""
+import os
 from dataclasses import dataclass
 import typing_extensions as tpx
 import typing as tp
@@ -40,6 +41,20 @@ class BatchedDataset(torch.utils.data.Dataset[Conformers]):
     def cache(self, verbose: bool = True, pin_memory: bool = False) -> "BatchedDataset":
         return self
 
+    def as_dataloader(
+        self,
+        num_workers: tp.Optional[int] = None,
+        pin_memory: tp.Optional[bool] = None,
+        shuffle: bool = True,
+    ) -> torch.utils.data.DataLoader:
+        if num_workers is None:
+            num_workers = len(os.sched_getaffinity(0)) - 1
+        if pin_memory is None:
+            pin_memory = torch.cuda.is_available()
+        return torch.utils.data.DataLoader(
+            self, num_workers=num_workers, pin_memory=pin_memory, shuffle=shuffle
+        )
+
     def __len__(self) -> int:
         return 0
 
@@ -55,7 +70,6 @@ class ANIBatchedInMemoryDataset(BatchedDataset):
         batches: tp.Sequence[Conformers],
         transform: Transform = identity,
         split: str = "division",
-        pin_memory: bool = False,
         drop_last: bool = False,
     ) -> None:
         self.div = split
@@ -64,10 +78,29 @@ class ANIBatchedInMemoryDataset(BatchedDataset):
         if drop_last and self._batch_size(batches[0]) > self._batch_size(batches[-1]):
             batches.pop()
         self._batches = batches
+
+    def pin_memory(self, verbose: bool = True) -> None:
+        if verbose:
+            print("Pinning memory ...")
+        self._batches = [
+            {k: v.pin_memory() for k, v in batch.items()} for batch in self._batches
+        ]
+
+    def as_dataloader(
+        self,
+        num_workers: tp.Optional[int] = None,
+        pin_memory: tp.Optional[bool] = None,
+        shuffle: bool = True,
+    ) -> torch.utils.data.DataLoader:
+        if num_workers is not None:
+            raise ValueError("multiprocessing not supported for in-memory datasets")
+        if pin_memory is None:
+            pin_memory = torch.cuda.is_available()
         if pin_memory:
-            self._batches = [
-                {k: v.pin_memory() for k, v in batch.items()} for batch in self._batches
-            ]
+            self.pin_memory(verbose=False)
+        return torch.utils.data.DataLoader(
+            self, num_workers=0, pin_memory=False, shuffle=shuffle
+        )
 
     def __getitem__(self, idx: int) -> Conformers:
         with torch.no_grad():
@@ -127,7 +160,7 @@ class ANIBatchedDataset(BatchedDataset):
     def cache(
         self,
         verbose: bool = True,
-        pin_memory: bool = False,
+        pin_memory: tp.Optional[bool] = None,
     ) -> ANIBatchedInMemoryDataset:
         r"""Saves the full dataset into RAM"""
         desc = f"Cacheing {self.div}, Warning: this may use a lot of RAM!"
@@ -141,7 +174,12 @@ class ANIBatchedDataset(BatchedDataset):
                 leave=False,
             )
         ]
-        return ANIBatchedInMemoryDataset(batches, self.transform, pin_memory=pin_memory)
+        ds = ANIBatchedInMemoryDataset(batches, self.transform)
+        if pin_memory is None:
+            pin_memory = torch.cuda.is_available()
+        if pin_memory:
+            ds.pin_memory(verbose=verbose)
+        return ds
 
     def _extract_batch(self, idx: int) -> Conformers:
         with h5py.File(self._batch_paths[idx], "r") as f:
@@ -490,11 +528,13 @@ class Batcher:
                         store_dir=div.path.parent, split=div.name
                     )
                 else:
-                    batched_datasets[div.name] = ANIBatchedInMemoryDataset(
+                    batched_ds = ANIBatchedInMemoryDataset(
                         batches=in_memory_batches,
                         split=div.name,
-                        pin_memory=torch.cuda.is_available(),
                     )
+                    if torch.cuda.is_available():
+                        batched_ds.pin_memory(verbose=self.verbose)
+                    batched_datasets[div.name] = batched_ds
         return batched_datasets
 
     def _log_creation_data(
