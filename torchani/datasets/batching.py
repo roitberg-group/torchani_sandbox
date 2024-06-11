@@ -14,13 +14,16 @@ from tqdm import tqdm
 
 from torchani.utils import pad_atomic_properties, PADDING
 from torchani.datasets.datasets import ANIDataset
-from torchani.transforms import Transform, Identity
+from torchani.transforms import Transform, identity
 from torchani.datasets._annotations import Conformers, StrPath
 from torchani.storage import DATASETS_DIR
 
 
-class _ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
-    # Explicit implementation of __iter__ to not rely on python's legacy behavior
+class BatchedDataset(torch.utils.data.Dataset[Conformers]):
+    split: str
+    transform: Transform
+
+    # Explicit implementation of __iter__ to avoid relying on python's legacy behavior
     def __iter__(self) -> tp.Iterator[Conformers]:
         j = 0
         while True:
@@ -30,57 +33,56 @@ class _ANIBatchedDataset(torch.utils.data.Dataset[Conformers]):
             except IndexError:
                 break
 
+    @staticmethod
+    def _batch_size(batch: tp.Mapping[str, Tensor]) -> int:
+        return batch[next(iter(batch.keys()))].shape[0]
 
-class ANIBatchedDataset(_ANIBatchedDataset):
-    _batch_paths: tp.Optional[tp.List[Path]]
+    def __len__(self) -> int:
+        return 0
+
+
+class ANIBatchedInMemoryDataset(BatchedDataset):
+    r"""
+    This dataset does not support multiprocessing or pin_memory=True in
+    dataloader (num_workers>0)
+    """
 
     def __init__(
         self,
-        store_dir: tp.Optional[StrPath] = None,
-        batches: tp.Optional[tp.List[Conformers]] = None,
-        file_format: tp.Optional[str] = None,
-        split: str = "training",
-        transform: tp.Optional[Transform] = None,
-        properties: tp.Optional[tp.Sequence[str]] = None,
+        batches: tp.Sequence[Conformers],
+        transform: Transform = identity,
+        split: str = "division",
+        pin_memory: bool = False,
+        drop_last: bool = False,
+    ) -> None:
+        self.div = split
+        batches = list(batches)
+        self.transform = transform
+        if drop_last and self._batch_size(batches[0]) > self._batch_size(batches[-1]):
+            batches.pop()
+        self._batches = batches
+        if pin_memory:
+            self._batches = [
+                {k: v.pin_memory() for k, v in batch.items()} for batch in self._batches
+            ]
+
+
+class ANIBatchedDataset(BatchedDataset):
+    def __init__(
+        self,
+        store_dir: StrPath,
+        split: str = "division",
+        transform: Transform = identity,
+        properties: tp.Sequence[str] = (),
         drop_last: bool = False,
     ):
-        # (store_dir or file_format or transform) and batches are mutually
-        # exclusive options, batches is passed if the dataset directly lives in
-        # memory and has no backing store, otherwise there should be a backing
-        # store in store_dir/split
-        if batches is not None and any(
-            v is not None for v in (file_format, store_dir, transform)
-        ):
-            raise ValueError(
-                "Batches is mutually exclusive with file_format/store_dir/transform"
-            )
-        self.split = split
+        self.div = split
         self.properties = properties
-        self.transform = Identity() if transform is None else transform
-        container: tp.Union[tp.List[Path], tp.List[Conformers]]
-        if not batches:
-            if store_dir is None:
-                raise ValueError("One of batches or store_dir must be specified")
-            store_dir = Path(store_dir).resolve()
-            self._batch_paths = self._get_batch_paths(store_dir / split)
-            self._extractor = self._hdf5_extractor
-            container = self._batch_paths
-        else:
-            self._data = batches
-            self._batch_paths = None
-            self._extractor = self._memory_extractor
-            container = self._data
-        # Drops last batch only if requested and if its smaller than the rest
-        if drop_last and self.batch_size(-1) < self.batch_size(0):
-            container.pop()
-        self._len = len(container)
+        self.transform = transform
+        self._batch_paths = self._get_batch_paths(Path(store_dir).resolve() / split)
 
-    def _memory_extractor(self, idx: int) -> Conformers:
-        return self._data[idx]
-
-    def batch_size(self, idx: int) -> int:
-        batch = self[idx]
-        return batch[next(iter(batch.keys()))].shape[0]
+        if drop_last and self._batch_size(self[0]) > self._batch_size(self[-1]):
+            self._batch_paths.pop()
 
     def _get_batch_paths(self, batches_dir: Path) -> tp.List[Path]:
         # We assume batch names are prefixed by a zero-filled number so that
@@ -91,40 +93,32 @@ class ANIBatchedDataset(_ANIBatchedDataset):
             # notadirectory error is handled
         except FileNotFoundError:
             raise FileNotFoundError(
-                f"The dir {batches_dir.parent.as_posix()} exists,"
-                f" but the split {batches_dir.as_posix()} does not"
+                f"The dir {str(batches_dir.parent)} exists,"
+                f" but the division {str(batches_dir)} does not"
             ) from None
         except IndexError:
             raise FileNotFoundError(
-                f"The dir {batches_dir.as_posix()} has no files"
+                f"The dir {str(batches_dir)} has no files"
             ) from None
 
         if any(f.suffix != first_batch.suffix for f in batch_paths):
             raise RuntimeError(
-                f"Files with different extensions found in {batches_dir.as_posix()}"
+                f"Files with different extensions found in {str(batches_dir)}"
             )
 
         if any(f.is_dir() for f in batch_paths):
-            raise RuntimeError(f"Subdirectories found in {batches_dir.as_posix()}")
+            raise RuntimeError(f"Subdirectories found in {str(batches_dir)}")
         return batch_paths
-
-    def _hdf5_extractor(self, idx: int) -> Conformers:
-        with h5py.File(self._batch_paths[idx], "r") as f:  # type: ignore
-            return {
-                k: torch.as_tensor(v[()])
-                for k, v in f["/"].items()
-                if self.properties is None or k in self.properties
-            }
 
     def cache(
         self,
-        pin_memory: bool = True,
         verbose: bool = True,
-    ) -> "ANIBatchedDataset":
+        pin_memory: bool = False,
+    ) -> ANIBatchedInMemoryDataset:
         r"""Saves the full dataset into RAM"""
-        desc = f"Cacheing {self.split}, Warning: this may use a lot of RAM!"
-        self._data = [
-            self._extractor(idx)
+        desc = f"Cacheing {self.div}, Warning: this may use a lot of RAM!"
+        batches = [
+            self._extract_batch(idx)
             for idx in tqdm(
                 range(len(self)),
                 total=len(self),
@@ -133,44 +127,24 @@ class ANIBatchedDataset(_ANIBatchedDataset):
                 leave=False,
             )
         ]
-        desc = "Applying transforms once and discarding"
-        with torch.no_grad():
-            self._data = [
-                self.transform(p)
-                for p in tqdm(
-                    self._data,
-                    total=len(self),
-                    disable=not verbose,
-                    desc=desc,
-                    leave=False,
-                )
-            ]
-            self.transform = Identity()
-        if pin_memory:
-            desc = "Pinning memory; don't pin memory in torch DataLoader!"
-            self._data = [
-                {k: v.pin_memory() for k, v in batch.items()}
-                for batch in tqdm(
-                    self._data,
-                    total=len(self),
-                    disable=not verbose,
-                    desc=desc,
-                    leave=False,
-                )
-            ]
-        self._extractor = self._memory_extractor
-        return self
+        return ANIBatchedInMemoryDataset(batches, self.transform, pin_memory=pin_memory)
+
+    def _extract_batch(self, idx: int) -> Conformers:
+        with h5py.File(self._batch_paths[idx], "r") as f:
+            batch = {
+                k: torch.from_numpy(v[()])
+                for k, v in f["/"].items()
+                if not self.properties or k in self.properties
+            }
+        return batch
 
     def __getitem__(self, idx: int) -> Conformers:
-        # integral indices must be provided for compatibility with pytorch
-        # DataLoader API
-        batch = self._extractor(idx)
         with torch.no_grad():
-            batch = self.transform(batch)
+            batch = self.transform(self._extract_batch(idx))
         return batch
 
     def __len__(self) -> int:
-        return self._len
+        return len(self._batch_paths)
 
 
 @dataclass
@@ -216,14 +190,13 @@ class Batcher:
         folds: tp.Optional[int] = None,
         batch_size: int = 2560,
         padding: tp.Optional[tp.Dict[str, float]] = None,
-        transform: tp.Optional[Transform] = None,
+        transform: Transform = identity,
         properties: tp.Iterable[str] = (),
         # rng seeds
         divs_seed: tp.Optional[int] = None,
         batch_seed: tp.Optional[int] = None,
-    ) -> tp.Dict[str, ANIBatchedDataset]:
+    ) -> tp.Dict[str, BatchedDataset]:
         padding = PADDING if padding is None else padding
-        transform = Identity() if transform is None else transform
         if (not self.store_on_disk) and dest_dir:
             raise ValueError("dest_dir can't be passed if saving in ram")
 
@@ -414,9 +387,9 @@ class Batcher:
         padding: tp.Dict[str, float],
         transform: Transform,
         properties: tp.Sequence[str],
-    ) -> tp.Dict[str, ANIBatchedDataset]:
+    ) -> tp.Dict[str, BatchedDataset]:
         group_names = list(dataset.keys())
-        batched_datasets: tp.Dict[str, ANIBatchedDataset] = dict()
+        batched_datasets: tp.Dict[str, BatchedDataset] = dict()
         with dataset.keep_open() as readonly_ds:
             for div in divs:
                 # Attach a batch index to each batch of the split div indices
@@ -497,15 +470,17 @@ class Batcher:
                                     f.create_dataset(k, data=v.numpy())
                         else:
                             in_memory_batches.append(batch)
+
                 if self.store_on_disk:
-                    batched_ds = ANIBatchedDataset(
+                    batched_datasets[div.name] = ANIBatchedDataset(
                         store_dir=div.path.parent, split=div.name
                     )
                 else:
-                    batched_ds = ANIBatchedDataset(
-                        batches=in_memory_batches, split=div.name
-                    ).cache(verbose=False, pin_memory=torch.cuda.is_available())
-                batched_datasets[div.name] = batched_ds
+                    batched_datasets[div.name] = ANIBatchedInMemoryDataset(
+                        batches=in_memory_batches,
+                        split=div.name,
+                        pin_memory=torch.cuda.is_available(),
+                    )
         return batched_datasets
 
     def _log_creation_data(
@@ -548,7 +523,7 @@ def create_batched_dataset(
     padding: tp.Optional[tp.Dict[str, float]] = None,
     splits: tp.Optional[tp.Dict[str, float]] = None,
     folds: tp.Optional[int] = None,
-    transform: tp.Optional[Transform] = None,
+    transform: Transform = identity,
     # rng seeds
     divs_seed: tp.Optional[int] = None,
     batch_seed: tp.Optional[int] = None,
@@ -558,7 +533,7 @@ def create_batched_dataset(
     # Verbosity
     verbose: bool = True,
     _shuffle: bool = True,
-) -> tp.Dict[str, ANIBatchedDataset]:
+) -> tp.Dict[str, BatchedDataset]:
     dest_root: tp.Union[Path, tp.Literal["ram"]]
 
     if direct_cache:
@@ -599,14 +574,14 @@ def batch_all_in_ram(
     batch_size: int = 2560,
     properties: tp.Iterable[str] = (),
     padding: tp.Optional[tp.Dict[str, float]] = None,
-    transform: tp.Optional[Transform] = None,
+    transform: Transform = identity,
     # rng seeds
     divs_seed: tp.Optional[int] = None,
     batch_seed: tp.Optional[int] = None,
     verbose: bool = True,
-) -> ANIBatchedDataset:
+) -> ANIBatchedInMemoryDataset:
     batcher = Batcher.in_ram(verbose)
     splits = batcher.divide_and_batch(
         src, padding=padding, transform=transform, properties=properties
     )
-    return splits["training"]
+    return tp.cast(ANIBatchedInMemoryDataset, splits["training"])
