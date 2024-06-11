@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 import torchani
 from torchani.models import BuiltinModel
-from torchani.datasets import ANIDataset, ANIBatchedDataset
+from torchani.datasets import ANIDataset, ANIBatchedDataset, BatchedDataset
 from torchani.units import hartree2kcalpermol
 from torchani.assembler import FlexANI2
 
@@ -35,8 +35,8 @@ if not batched_dataset_path.exists():
         splits={'training': 0.8, 'validation': 0.2}
     )
 
-train_ds = ANIBatchedDataset(batched_dataset_path, split="training")
-valid_ds = ANIBatchedDataset(batched_dataset_path, split="validation")
+train_ds: BatchedDataset = ANIBatchedDataset(batched_dataset_path, split="training")
+valid_ds: BatchedDataset = ANIBatchedDataset(batched_dataset_path, split="validation")
 
 # We use the pytorch DataLoader with multiprocessing to load the batches while we train
 #
