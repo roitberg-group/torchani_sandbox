@@ -7,6 +7,7 @@ import zipfile
 import shutil
 from pathlib import Path
 
+from torchani.annotations import StrPath
 from torchani.aev import AEVComputer
 from torchani.atomics import AtomicContainer
 from torchani.models import BuiltinModel
@@ -173,7 +174,7 @@ def modules_from_info_file(
 
 
 def load_builtin_from_info_file(
-    info_file: tp.Union[Path, str],
+    info_file: StrPath,
     model_index: tp.Optional[int] = None,
     use_cuda_extension: bool = False,
     use_cuaev_interface: bool = False,
