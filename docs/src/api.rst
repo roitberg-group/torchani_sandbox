@@ -121,7 +121,6 @@ Potentials
 ===========
 
 .. automodule:: torchani.geometry
-.. autofunction:: torchani.geometry.displace
 .. autoclass:: torchani.geometry.Displacer
     :members:
 

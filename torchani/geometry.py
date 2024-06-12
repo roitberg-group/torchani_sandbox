@@ -50,21 +50,3 @@ class Displacer(torch.nn.Module):
         centered_coordinates = coordinates - com_coordinates
         centered_coordinates[mask, :] = 0.0
         return centered_coordinates
-
-
-# Convenience fn around Displacer that is non-jittable
-def displace(
-    atomic_numbers: Tensor,
-    coordinates: Tensor,
-    reference: Reference = "center_of_mass",
-) -> Tensor:
-    if torch.jit.is_scripting():
-        raise RuntimeError(
-            "'torchani.geometry.displace' doesn't support JIT, "
-            " consider using torchani.geometry.Displacer instead"
-        )
-    return Displacer(
-        device=atomic_numbers.device,
-        dtype=coordinates.dtype,
-        reference=reference,
-    )(atomic_numbers, coordinates)
