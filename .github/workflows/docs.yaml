@@ -22,16 +22,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Build docs (GTX 1080 Ti)
-        run: >-
-          docker run
-          --rm
-          --gpus '"device=0"'
-          --shm-size 1g
-          --ulimit memlock=-1
-          --ulimit stack=67108864
-          ${{ steps.meta.outputs.tags }}
-          bash -c
-          "nvidia-smi && sphinx-build -W docs/src docs/build"
+        run: docker run --rm --gpus '"device=0"' --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ steps.meta.outputs.tags }} bash -c "nvidia-smi && sphinx-build -W docs/src docs/build"
 
       - name: Remove image
         if: ${{ always() }}

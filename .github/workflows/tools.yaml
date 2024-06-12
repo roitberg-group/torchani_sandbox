@@ -22,48 +22,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Inference benchmark
-        run: >-
-          docker run
-          --rm
-          --gpus all
-          --shm-size 1g
-          --ulimit memlock=-1
-          --ulimit stack=67108864
-          ${{ steps.meta.outputs.tags }}
-          bash -c "python tools/inference-benchmark.py --no-tqdm"
+        run: docker run --rm --gpus all --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ steps.meta.outputs.tags }} bash -c "python tools/inference-benchmark.py --no-tqdm"
 
       - name: COMP6v1 accuracy benchmark
-        run: >-
-          docker run
-          --rm
-          --gpus all
-          --shm-size 1g
-          --ulimit memlock=-1
-          --ulimit stack=67108864
-          ${{ steps.meta.outputs.tags }}
-          bash -c "python tools/comp6v1-accuracy-benchmark.py --no-tqdm"
-
+        run: docker run --rm --gpus all --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ steps.meta.outputs.tags }} bash -c "python tools/comp6-accuracy-benchmark.py --no-tqdm"
       - name: Training benchmark (with Nsight dry run)
-        run: >-
-          docker run
-          --rm
-          --gpus all
-          --shm-size 1g
-          --ulimit memlock=-1
-          --ulimit stack=67108864
-          ${{ steps.meta.outputs.tags }}
-          bash -c "python tools/training-benchmark.py --nvtx --no-tqdm"
-
-      - name: MD benchmark (with Nsight dry run)
-        run: >-
-          docker run
-          --rm
-          --gpus all
-          --shm-size 1g
-          --ulimit memlock=-1
-          --ulimit stack=67108864
-          ${{ steps.meta.outputs.tags }}
-          bash -c "python tools/md-benchmark.py --nvtx --no-tqdm"
+        run: docker run --rm --gpus all --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ steps.meta.outputs.tags }} bash -c "python tools/training-benchmark.py --nvtx --no-tqdm"
+      - name: MD Benchmark (with Nsight dry run)
+        run: docker run --rm --gpus all --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ steps.meta.outputs.tags }} bash -c "python tools/md-benchmark.py --nvtx --no-tqdm"
 
       - name: Remove image
         if: ${{ always() }}

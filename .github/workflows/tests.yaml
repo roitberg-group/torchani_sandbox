@@ -22,15 +22,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Run unit tests (CPU)
-        run: >-
-          docker run
-          --rm
-          --gpus '"device=none"'
-          --shm-size 1g
-          --ulimit memlock=-1
-          --ulimit stack=67108864
-          ${{ steps.meta.outputs.tags }}
-          bash -c "pytest ."
+        run: docker run --rm --gpus '"device=3"' --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ steps.meta.outputs.tags }} bash -c "pytest ."
 
       - name: Remove image
         if: ${{ always() }}
