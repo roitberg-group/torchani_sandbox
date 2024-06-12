@@ -1,4 +1,5 @@
 r"""Type aliases"""
+import torch
 import typing as tp
 from pathlib import Path
 
@@ -18,3 +19,5 @@ MixedConformers = tp.MutableMapping[str, tp.Union[Tensor, NumberOrStrArray]]
 # mimic typeshed
 StrPath = tp.Union[str, Path]
 StrPathODict = tp.Union[tp.OrderedDict[str, str], tp.OrderedDict[str, Path]]
+
+Device = tp.Union[torch.device, tp.Literal["cpu", "cuda"]]
