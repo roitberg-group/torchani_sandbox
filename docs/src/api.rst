@@ -124,7 +124,6 @@ Potentials
 .. autofunction:: torchani.geometry.displace
 .. autoclass:: torchani.geometry.Displacer
     :members:
-.. autofunction:: torchani.geometry.tile_into_tight_cell
 
 Electrostatics
 ==============
