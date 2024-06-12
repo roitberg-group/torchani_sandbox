@@ -50,8 +50,8 @@ if CACHE:
     train_ds = train_ds.cache()
     valid_ds = valid_ds.cache()
 
-training = train_ds.as_dataloader(num_workers=1)
-validation = valid_ds.as_dataloader(num_workers=1)
+training = train_ds.as_dataloader(num_workers=0)
+validation = valid_ds.as_dataloader(num_workers=0)
 
 # We can use the transforms module to modify the batches, the API for transforms is
 # very similar to torchvision https://pytorch.org/vision/stable/transforms.html
