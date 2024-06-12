@@ -8,7 +8,7 @@ __pycache__/
 _version.py
 
 # Vscode
-/.vscode
+.vscode
 
 # Vim swap files
 *.swp
