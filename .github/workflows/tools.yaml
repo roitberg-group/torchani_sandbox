@@ -26,6 +26,9 @@ jobs:
           docker run
           --rm
           --gpus all
+          --shm-size 1g
+          --ulimit memlock=-1
+          --ulimit stack=67108864
           ${{ steps.meta.outputs.tags }}
           bash -c "python tools/inference-benchmark.py --no-tqdm"
 
@@ -34,6 +37,9 @@ jobs:
           docker run
           --rm
           --gpus all
+          --shm-size 1g
+          --ulimit memlock=-1
+          --ulimit stack=67108864
           ${{ steps.meta.outputs.tags }}
           bash -c "python tools/comp6v1-accuracy-benchmark.py --no-tqdm"
 
@@ -42,6 +48,9 @@ jobs:
           docker run
           --rm
           --gpus all
+          --shm-size 1g
+          --ulimit memlock=-1
+          --ulimit stack=67108864
           ${{ steps.meta.outputs.tags }}
           bash -c "python tools/training-benchmark.py --nvtx --no-tqdm"
 
@@ -50,6 +59,9 @@ jobs:
           docker run
           --rm
           --gpus all
+          --shm-size 1g
+          --ulimit memlock=-1
+          --ulimit stack=67108864
           ${{ steps.meta.outputs.tags }}
           bash -c "python tools/md-benchmark.py --nvtx --no-tqdm"
 

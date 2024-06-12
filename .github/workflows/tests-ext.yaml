@@ -27,6 +27,9 @@ jobs:
           docker run
           --rm
           --gpus '"device=3"'
+          --shm-size 1g
+          --ulimit memlock=-1
+          --ulimit stack=67108864
           ${{ steps.meta.outputs.tags }}
           bash -c "nvidia-smi && pytest ./tests/test_cuaev.py ./tests/test_infer.py"
 

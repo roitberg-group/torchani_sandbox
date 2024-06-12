@@ -26,6 +26,9 @@ jobs:
           docker run
           --rm
           --gpus '"device=none"'
+          --shm-size 1g
+          --ulimit memlock=-1
+          --ulimit stack=67108864
           ${{ steps.meta.outputs.tags }}
           bash -c
           "sphinx-build -W docs/src docs/build"

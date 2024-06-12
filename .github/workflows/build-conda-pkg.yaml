@@ -31,7 +31,7 @@ jobs:
             INTERNAL_RELEASE=${{ contains(github.head_ref, 'release') || github.event_name == 'schedule' }}
             PUBLIC_RELEASE=0
           file: conda.Dockerfile
-          shm-size: 2g
+          shm-size: 1g
           ulimit: |
             memlock=-1
             stack=67108864
