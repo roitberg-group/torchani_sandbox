@@ -15,10 +15,14 @@ from torchani.cutoffs import CutoffArg
 from torchani.neighbors import NeighborlistArg
 from torchani.potentials import EnergyAdder
 from torchani.tuples import SpeciesEnergies
-from torchani.neurochem.utils import model_dir_from_prefix
 from torchani.utils import TightCELU
 from torchani.atomics import AtomicNetwork
 from torchani.annotations import StrPath
+
+
+def model_dir_from_prefix(prefix: Path, idx: int) -> Path:
+    network_path = (prefix.parent / f"{prefix.name}{idx}") / "networks"
+    return network_path
 
 
 class NeurochemParseError(RuntimeError):

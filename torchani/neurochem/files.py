@@ -13,12 +13,12 @@ from torchani.atomics import AtomicContainer
 from torchani.models import BuiltinModel
 from torchani.storage import NEUROCHEM_DIR
 from torchani.potentials import EnergyAdder
-from torchani.neurochem.utils import model_dir_from_prefix
 from torchani.neurochem.neurochem import (
     load_aev_computer_and_symbols,
     load_model_ensemble,
     load_model,
     load_energy_adder,
+    model_dir_from_prefix,
 )
 
 
