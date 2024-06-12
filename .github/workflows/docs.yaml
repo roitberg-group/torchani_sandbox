@@ -21,17 +21,17 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Build extensions and run tests
+      - name: Build docs (GTX 1080 Ti)
         run: >-
           docker run
           --rm
-          --gpus '"device=none"'
+          --gpus '"device=0"'
           --shm-size 1g
           --ulimit memlock=-1
           --ulimit stack=67108864
           ${{ steps.meta.outputs.tags }}
           bash -c
-          "sphinx-build -W docs/src docs/build"
+          "nvidia-smi && sphinx-build -W docs/src docs/build"
 
       - name: Remove image
         if: ${{ always() }}
