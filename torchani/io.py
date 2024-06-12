@@ -5,6 +5,7 @@ from pathlib import Path
 import torch
 from torch import Tensor
 
+from torchani.annotations import StrPath
 from torchani.constants import ATOMIC_NUMBER
 from torchani.utils import pad_atomic_properties
 
@@ -14,7 +15,7 @@ class TorchaniIOError(IOError):
 
 
 def read_xyz(
-    path: tp.Union[str, Path],
+    path: StrPath,
     dtype: torch.dtype = torch.float,
     device: tp.Union[torch.device, tp.Literal["cpu", "cuda"]] = "cpu",
 ) -> tp.Tuple[Tensor, Tensor, tp.Optional[Tensor]]:
