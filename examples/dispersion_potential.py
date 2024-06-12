@@ -15,7 +15,7 @@ from torchani.grad import energies_and_forces
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 disp = StandaloneTwoBodyDispersionD3(
-    functional="b973cx", cutoff=math.inf, symbols=("H", "C", "N", "O")
+    functional="b973c", cutoff=math.inf, symbols=("H", "C", "N", "O")
 ).to(device)
 
 coordinates = torch.tensor(
@@ -47,7 +47,7 @@ print("Force:", force.squeeze())
 
 # Different supported species can be passed down to the constructor
 disp = StandaloneTwoBodyDispersionD3(
-    functional="b973cx", cutoff=math.inf, symbols=("H", "C", "N", "O", "S", "Fe")
+    functional="b973c", cutoff=math.inf, symbols=("H", "C", "N", "O", "S", "Fe")
 ).to(device)
 # Here we change the species a bit to make a nonesense molecule
 coordinates = torch.tensor(
