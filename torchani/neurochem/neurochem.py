@@ -47,7 +47,7 @@ class NeurochemLayerSpec:
 
 
 def load_aev_computer_and_symbols(
-    consts_file: tp.Union[str, Path],
+    consts_file: StrPath,
     use_cuda_extension: bool = False,
     use_cuaev_interface: bool = False,
     neighborlist: NeighborlistArg = "full_pairwise",
