@@ -45,12 +45,14 @@ jobs:
     runs-on: [self-hosted, ipickering]
     steps:
       - run: docker run --rm --gpus '"device=none"' ${{ env.TAG }} bash -c "pip install --upgrade flake8 && flake8 ."
-  #clang-format:
-    #depends: [build-image]
-    #steps:
+  clang-format:
+    needs: [build-image]
+    runs-on: [self-hosted, ipickering]
+    steps:
+      - run: docker run --rm --gpus '"device=none"' ${{ env.TAG }} bash -c "apt install -y clang-format && cd ./torchani/csrc && clang-format -Werror -n *.cpp *.cuh *.h *.cu"
   remove-image:
     if: ${{ always() }}
-    needs: [build-image, tools, tests, mypy, flake8, docs]
+    needs: [build-image, tools, tests, mypy, clang-format, flake8, docs]
     runs-on: [self-hosted, ipickering]
     steps:
       - run: docker image rm ${{ env.TAG }}
