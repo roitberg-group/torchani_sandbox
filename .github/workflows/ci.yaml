@@ -18,23 +18,23 @@ jobs:
     runs-on: [self-hosted, ipickering]
     steps:
       - name: Inference benchmark
-        run: docker run --rm --gpus all --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "python tools/inference-benchmark.py --no-tqdm"
+        run: docker run --rm --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "python tools/inference-benchmark.py --no-tqdm"
       - name: COMP6v1 accuracy benchmark
-        run: docker run --rm --gpus all --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "python tools/comp6v1-accuracy-benchmark.py --no-tqdm"
+        run: docker run --rm --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "python tools/comp6v1-accuracy-benchmark.py --no-tqdm"
       - name: Training benchmark (with Nsight dry run)
-        run: docker run --rm --gpus all --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "python tools/training-benchmark.py --nvtx --no-tqdm"
+        run: docker run --rm --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "python tools/training-benchmark.py --nvtx --no-tqdm"
       - name: MD Benchmark (with Nsight dry run)
-        run: docker run --rm --gpus all --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "python tools/md-benchmark.py --nvtx --no-tqdm"
+        run: docker run --rm --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "python tools/md-benchmark.py --nvtx --no-tqdm"
   tests:
     needs: [build-image]
     runs-on: [self-hosted, ipickering]
     steps:
-      - run: docker run --rm --gpus '"device=none"' --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "pytest ."
+      - run: docker run --rm --gpus '"device=none"' --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "pytest ."
   docs:
     needs: [build-image]
     runs-on: [self-hosted, ipickering]
     steps:
-      - run: docker run --rm --gpus all --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "nvidia-smi && sphinx-build -W docs/src docs/build"
+      - run: docker run --rm --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "nvidia-smi && sphinx-build -W docs/src docs/build"
   mypy:
     needs: [build-image]
     runs-on: [self-hosted, ipickering]
