@@ -42,6 +42,7 @@ from torchani import (
     models,
     units,
     datasets,
+    legacy_data,
     transforms,
     cli,
     geometry,
@@ -52,9 +53,9 @@ from torchani import (
     infer,
     constants,
     grad,
-    data,  # TODO: Get rid of this
     io,
     neurochem,
+    annotations,
 )
 # NOTE: ase is an optional dependency so don't import here
 
@@ -71,12 +72,14 @@ __all__ = [
     'grad',
     'SpeciesConverter',
     'utils',
+    'annotations',
     'models',
     'units',
     'potentials',
     'neighbors',
     'cutoffs',
     'datasets',
+    'legacy_data',
     'transforms',
     'cli',
     'io',
@@ -87,7 +90,6 @@ __all__ = [
     "infer",
     "constants",
     "neurochem",
-    'data',  # TODO: Get rid of this
 ]
 
 # Disable TF32 since it catastrophically degrades accuracy

@@ -1,3 +1,4 @@
+import typing as tp
 import os
 from pathlib import Path
 import json
@@ -65,13 +66,6 @@ ani1x_sae_dict = {
 _numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
 
-def ignore_unshuffled_warning():
-    warnings.filterwarnings(
-        action="ignore",
-        message="Dataset will not be shuffled, this should only be used for debugging",
-    )
-
-
 class TestDatasetUtils(TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
@@ -107,6 +101,7 @@ class TestDatasetUtils(TestCase):
             delete_inplace=True,
             verbose=False,
         )
+        assert out is not None
         self.assertEqual(len(out[0]), 1)
         self.assertEqual(len(out[0][0]["coordinates"]), 1)
 
@@ -183,7 +178,7 @@ class TestFineGrainedShuffle(TestCase):
         # test that shuffling correctly mixes multiple h5 files
         num_groups = 10
         num_conformers_per_group = 12
-        self._create_dummy_controlled_dataset(
+        self._create_dummy_dataset(
             num_groups, num_conformers_per_group, use_energy_ranges=False
         )
 
@@ -200,7 +195,7 @@ class TestFineGrainedShuffle(TestCase):
         num_groups = 10
         num_conformers_per_group = 12
         folds = 3
-        self._create_dummy_controlled_dataset(
+        self._create_dummy_dataset(
             num_groups, num_conformers_per_group, use_energy_ranges=False, folds=3
         )
 
@@ -222,7 +217,7 @@ class TestFineGrainedShuffle(TestCase):
         num_groups = 10
         num_conformers_per_group = 12
         folds = 5
-        self._create_dummy_controlled_dataset(
+        self._create_dummy_dataset(
             num_groups, num_conformers_per_group, use_energy_ranges=True, folds=folds
         )
 
@@ -240,13 +235,13 @@ class TestFineGrainedShuffle(TestCase):
         # duplicates
         num_groups = 10
         num_conformers_per_group = 12
-        self._create_dummy_controlled_dataset(
+        self._create_dummy_dataset(
             num_groups, num_conformers_per_group, use_energy_ranges=True
         )
         self._check_disjoint_and_nonduplicates("training", "validation")
 
     # creates a dataset inside self.tmp_dir_batched
-    def _create_dummy_controlled_dataset(
+    def _create_dummy_dataset(
         self, num_groups, num_conformers_per_group, use_energy_ranges=False, folds=None
     ):
         def create_dummy_file(
@@ -350,8 +345,8 @@ class TestFineGrainedShuffle(TestCase):
                     create_batched_dataset(
                         h5_dirs,
                         dest_path=self.tmp_dir_batched.name,
-                        shuffle=True,
-                        shuffle_seed=123456789,
+                        divs_seed=123456789,
+                        batch_seed=123456789,
                         splits={"training": 0.5, "validation": 0.5},
                         batch_size=60,
                     )
@@ -359,8 +354,8 @@ class TestFineGrainedShuffle(TestCase):
                     create_batched_dataset(
                         h5_dirs,
                         dest_path=self.tmp_dir_batched.name,
-                        shuffle=True,
-                        shuffle_seed=123456789,
+                        divs_seed=123456789,
+                        batch_seed=123456789,
                         folds=folds,
                         batch_size=60,
                     )
@@ -368,13 +363,13 @@ class TestFineGrainedShuffle(TestCase):
     def _check_disjoint_and_nonduplicates(self, name1, name2):
         train = ANIBatchedDataset(self.tmp_dir_batched.name, split=name1)
         valid = ANIBatchedDataset(self.tmp_dir_batched.name, split=name2)
-        all_train_energies = []
-        all_valid_energies = []
+        _all_train_energies = []
+        _all_valid_energies = []
         for b, b_valid in zip(train, valid):
-            all_train_energies.append(b["energies"])
-            all_valid_energies.append(b_valid["energies"])
-        all_train_energies = torch.cat(all_train_energies)
-        all_valid_energies = torch.cat(all_valid_energies)
+            _all_train_energies.append(b["energies"])
+            _all_valid_energies.append(b_valid["energies"])
+        all_train_energies = torch.cat(_all_train_energies)
+        all_valid_energies = torch.cat(_all_valid_energies)
 
         all_train_list = [e.item() for e in all_train_energies]
         all_train_set = set(all_train_list)
@@ -410,18 +405,18 @@ class TestEstimationSAE(TestCase):
         create_batched_dataset(
             dataset_path_gdb,
             dest_path=self.tmp_dir_batched.name,
-            shuffle=True,
             splits={"training": 1.0},
             batch_size=self.batch_size,
-            shuffle_seed=12345,
+            divs_seed=12345,
+            batch_seed=12345,
             properties=("energies", "species", "coordinates"),
         )
         self.direct_cache = create_batched_dataset(
             dataset_path_gdb,
-            shuffle=True,
             splits={"training": 1.0},
             batch_size=self.batch_size,
-            shuffle_seed=12345,
+            divs_seed=12345,
+            batch_seed=12345,
             properties=("energies", "species", "coordinates"),
             direct_cache=True,
         )
@@ -532,23 +527,21 @@ class TestTransforms(TestCase):
         numbers_to_indices = AtomicNumbersToIndices(self.elements)
         compose = Compose([subtract_sae, numbers_to_indices])
 
-        with warnings.catch_warnings():
-            ignore_unshuffled_warning()
-            create_batched_dataset(
-                dataset_path,
-                dest_path=self.tmp_dir_batched.name,
-                shuffle=False,
-                splits={"training": 0.5, "validation": 0.5},
-                batch_size=2560,
-                transform=compose,
-            )
-            create_batched_dataset(
-                dataset_path,
-                dest_path=self.tmp_dir_batched2.name,
-                shuffle=False,
-                splits={"training": 0.5, "validation": 0.5},
-                batch_size=2560,
-            )
+        create_batched_dataset(
+            dataset_path,
+            dest_path=self.tmp_dir_batched.name,
+            splits={"training": 0.5, "validation": 0.5},
+            batch_size=2560,
+            transform=compose,
+            _shuffle=False,
+        )
+        create_batched_dataset(
+            dataset_path,
+            dest_path=self.tmp_dir_batched2.name,
+            splits={"training": 0.5, "validation": 0.5},
+            batch_size=2560,
+            _shuffle=False,
+        )
         train = ANIBatchedDataset(
             self.tmp_dir_batched2.name, transform=compose, split="training"
         )
@@ -574,26 +567,24 @@ class TestANIBatchedDataset(TestCase):
         ).resolve()
 
         self.batch_size = 2560
-        with warnings.catch_warnings():
-            ignore_unshuffled_warning()
-            create_batched_dataset(
-                dataset_path,
-                dest_path=self.tmp_dir_batched.name,
-                shuffle=False,
-                splits={"training": 0.5, "validation": 0.5},
-                batch_size=self.batch_size,
-                properties=("species", "coordinates", "energies"),
-            )
+        create_batched_dataset(
+            dataset_path,
+            dest_path=self.tmp_dir_batched.name,
+            _shuffle=False,
+            splits={"training": 0.5, "validation": 0.5},
+            batch_size=self.batch_size,
+            properties=("species", "coordinates", "energies"),
+        )
         self.train = ANIBatchedDataset(self.tmp_dir_batched.name, split="training")
         self.valid = ANIBatchedDataset(self.tmp_dir_batched.name, split="validation")
 
     def testInit(self):
-        self.assertTrue(self.train.split == "training")
-        self.assertTrue(self.valid.split == "validation")
+        self.assertTrue(self.train.div == "training")
+        self.assertTrue(self.valid.div == "validation")
         self.assertEqual(len(self.train), 3)
         self.assertEqual(len(self.valid), 3)
-        self.assertEqual(self.train.batch_size(0), self.batch_size)
-        self.assertEqual(self.valid.batch_size(0), self.batch_size)
+        self.assertEqual(self.train._batch_size(self.train[0]), self.batch_size)
+        self.assertEqual(self.valid._batch_size(self.valid[0]), self.batch_size)
         # transform does nothing if no transform was passed
         self.assertTrue(self.train.transform(None) is None)
 
@@ -606,8 +597,12 @@ class TestANIBatchedDataset(TestCase):
         )
         self.assertEqual(len(train_drop_last), 2)
         self.assertEqual(len(valid_drop_last), 2)
-        self.assertEqual(train_drop_last.batch_size(-1), self.batch_size)
-        self.assertEqual(valid_drop_last.batch_size(-1), self.batch_size)
+        self.assertEqual(
+            train_drop_last._batch_size(train_drop_last[-1]), self.batch_size
+        )
+        self.assertEqual(
+            valid_drop_last._batch_size(valid_drop_last[-1]), self.batch_size
+        )
         for b in train_drop_last:
             self.assertTrue(len(b["coordinates"]), self.batch_size)
         for b in valid_drop_last:
@@ -622,10 +617,10 @@ class TestANIBatchedDataset(TestCase):
     def testNumConformers(self):
         # check that the number of conformers is consistent
         h5 = ANIDataset(dataset_path)
-        num_conformers_batched = [len(b["species"]) for b in self.train] + [
+        _num_conformers_batched = [len(b["species"]) for b in self.train] + [
             len(b["species"]) for b in self.valid
         ]
-        num_conformers_batched = sum(num_conformers_batched)
+        num_conformers_batched = sum(_num_conformers_batched)
         self.assertEqual(h5.num_conformers, num_conformers_batched)
 
     def testShuffle(self):
@@ -633,8 +628,8 @@ class TestANIBatchedDataset(TestCase):
         create_batched_dataset(
             dataset_path,
             dest_path=self.tmp_dir_batched_shuffled.name,
-            shuffle=True,
-            shuffle_seed=12345,
+            divs_seed=12345,
+            batch_seed=12345,
             splits={"training": 0.5, "validation": 0.5},
             batch_size=self.batch_size,
         )
@@ -660,27 +655,23 @@ class TestANIBatchedDataset(TestCase):
     def testDataLoader(self):
         # check that yielding from the dataloader is equal
 
-        with warnings.catch_warnings():
-            ignore_unshuffled_warning()
-            train_dataloader = torch.utils.data.DataLoader(
-                self.train, shuffle=False, batch_size=None
-            )
+        train_dataloader = torch.utils.data.DataLoader(
+            self.train, shuffle=False, batch_size=None
+        )
         for batch_ref, batch in zip(self.train, train_dataloader):
             for k_ref in batch_ref:
                 self.assertEqual(batch_ref[k_ref], batch[k_ref])
 
     def testCache(self):
         # check that yielding from the cache is equal to non cache
-        with warnings.catch_warnings():
-            ignore_unshuffled_warning()
-            train_non_cache = torch.utils.data.DataLoader(
-                self.train, shuffle=False, batch_size=None
-            )
-            train_cache = torch.utils.data.DataLoader(
-                deepcopy(self.train).cache(pin_memory=False),
-                shuffle=False,
-                batch_size=None,
-            )
+        train_non_cache = torch.utils.data.DataLoader(
+            self.train, shuffle=False, batch_size=None
+        )
+        train_cache = torch.utils.data.DataLoader(
+            deepcopy(self.train).cache(pin_memory=False),
+            shuffle=False,
+            batch_size=None,
+        )
         for batch_ref, batch in zip(train_non_cache, train_cache):
             for k_ref in batch_ref:
                 self.assertEqual(batch_ref[k_ref], batch[k_ref])
@@ -704,15 +695,13 @@ class TestANIBatchedDataset(TestCase):
     def testFileFormats(self):
         # check that batches created with all file formats are equal
         self.tmp_dir_batched2 = tempfile.TemporaryDirectory()
-        with warnings.catch_warnings():
-            ignore_unshuffled_warning()
-            create_batched_dataset(
-                dataset_path,
-                dest_path=self.tmp_dir_batched2.name,
-                shuffle=False,
-                splits={"training": 0.5, "validation": 0.5},
-                batch_size=self.batch_size,
-            )
+        create_batched_dataset(
+            dataset_path,
+            dest_path=self.tmp_dir_batched2.name,
+            splits={"training": 0.5, "validation": 0.5},
+            batch_size=self.batch_size,
+            _shuffle=False,
+        )
         train = ANIBatchedDataset(self.tmp_dir_batched2.name, split="training")
         valid = ANIBatchedDataset(self.tmp_dir_batched2.name, split="validation")
         for batch_ref, batch in zip(self.train, train):
@@ -931,23 +920,23 @@ class TestANIDataset(TestCase):
         for k, v in conformers.items():
             ds.append_conformers(k, v)
 
-        keys = {}
+        keys: tp.Set[str] = set()
         coords = []
         for k, _, v in ds.chunked_numpy_items(max_size=10):
             coords.append(torch.from_numpy(v["coordinates"]))
-            keys.update({k})
+            keys.add(k)
 
-        keys_large = {}
+        keys_large: tp.Set[str] = set()
         coords_large = []
         for k, _, v in ds.chunked_numpy_items(max_size=100000):
             coords_large.append(torch.from_numpy(v["coordinates"]))
-            keys_large.update({k})
+            keys_large.add(k)
 
-        keys_expect = {}
+        keys_expect: tp.Set[str] = set()
         coords_expect = []
         for k, v in ds.numpy_items():
             coords_expect.append(torch.from_numpy(v["coordinates"]))
-            keys_expect.update({k})
+            keys_expect.add(k)
         self.assertEqual(keys_expect, keys)
         self.assertEqual(torch.cat(coords_expect), torch.cat(coords))
         self.assertEqual(keys_expect, keys_large)

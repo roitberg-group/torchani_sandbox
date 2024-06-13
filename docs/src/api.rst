@@ -74,7 +74,12 @@ Datasets
     :members:
 .. autoclass:: torchani.datasets.ANIBatchedDataset
     :members:
+.. autoclass:: torchani.datasets.ANIBatchedInMemoryDataset
+    :members:
+.. autoclass:: torchani.datasets.Batcher
+    :members:
 .. autofunction:: torchani.datasets.create_batched_dataset
+.. autofunction:: torchani.datasets.batch_all_in_ram
 
 Dataset Transforms
 ==================
@@ -116,10 +121,8 @@ Potentials
 ===========
 
 .. automodule:: torchani.geometry
-.. autofunction:: torchani.geometry.displace
 .. autoclass:: torchani.geometry.Displacer
     :members:
-.. autofunction:: torchani.geometry.tile_into_tight_cell
 
 Electrostatics
 ==============

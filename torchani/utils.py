@@ -13,6 +13,7 @@ import torch
 from torch import Tensor
 import torch.utils.data
 
+from torchani.annotations import Device
 from torchani.constants import MASS, ATOMIC_NUMBER, PERIODIC_TABLE
 from torchani.tuples import SpeciesEnergies
 
@@ -28,6 +29,9 @@ __all__ = [
     "ATOMIC_NUMBER",
     "TightCELU",
 ]
+
+SYMBOLS_1X = ("H", "C", "N", "O")
+SYMBOLS_2X = ("H", "C", "N", "O", "S", "F", "Cl")
 
 
 PADDING = {
@@ -478,7 +482,7 @@ class AtomicNumbersToMasses(torch.nn.Module):
     def __init__(
         self,
         masses: tp.Iterable[float] = (),
-        device: tp.Union[torch.device, tp.Literal["cpu", "cuda"]] = "cpu",
+        device: Device = "cpu",
         dtype: torch.dtype = torch.float,
     ) -> None:
         super().__init__()

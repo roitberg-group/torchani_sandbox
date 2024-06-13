@@ -1,23 +1,34 @@
+r"""Tools for interfacing with legacy NeuroChem files"""
 import itertools
 from pathlib import Path
 from dataclasses import dataclass
 import typing as tp
 import struct
 import bz2
+import zipfile
+import shutil
 from collections import OrderedDict
 
 import torch
 from torch import Tensor
+import typing_extensions as tpx
 
+from torchani.storage import NEUROCHEM_DIR
+from torchani.models import BuiltinModel
 from torchani.aev import AEVComputer
 from torchani.nn import ANIModel, Ensemble
 from torchani.cutoffs import CutoffArg
 from torchani.neighbors import NeighborlistArg
 from torchani.potentials import EnergyAdder
 from torchani.tuples import SpeciesEnergies
-from torchani.neurochem.utils import model_dir_from_prefix
 from torchani.utils import TightCELU
-from torchani.atomics import AtomicNetwork
+from torchani.atomics import AtomicNetwork, AtomicContainer
+from torchani.annotations import StrPath
+
+
+def model_dir_from_prefix(prefix: Path, idx: int) -> Path:
+    network_path = (prefix.parent / f"{prefix.name}{idx}") / "networks"
+    return network_path
 
 
 class NeurochemParseError(RuntimeError):
@@ -46,7 +57,7 @@ class NeurochemLayerSpec:
 
 
 def load_aev_computer_and_symbols(
-    consts_file: tp.Union[str, Path],
+    consts_file: StrPath,
     use_cuda_extension: bool = False,
     use_cuaev_interface: bool = False,
     neighborlist: NeighborlistArg = "full_pairwise",
@@ -84,7 +95,7 @@ class AEVConstants:
 
 
 def load_aev_constants_and_symbols(
-    consts_file: tp.Union[Path, str]
+    consts_file: StrPath
 ) -> tp.Tuple[AEVConstants, tp.Tuple[str, ...]]:
     aev_floats: tp.Dict[str, float] = {}
     aev_seqs: tp.Dict[str, tp.Tuple[float, ...]] = {}
@@ -138,7 +149,7 @@ def load_aev_constants_and_symbols(
     return constants, symbols
 
 
-def load_energy_adder(filename: tp.Union[Path, str]) -> EnergyAdder:
+def load_energy_adder(filename: StrPath) -> EnergyAdder:
     """Returns an object of :class:`EnergyAdder` with self energies from
     NeuroChem sae file"""
     _self_energies = []
@@ -173,7 +184,7 @@ class EnergyShifter(torch.nn.Module):
 
 
 # This function is kept for backwards compatibility
-def load_sae(filename: tp.Union[Path, str]):
+def load_sae(filename: StrPath):
     """Returns an object of :class:`EnergyShifter` with self energies from
     NeuroChem sae file"""
     return EnergyShifter(load_energy_adder(filename))
@@ -223,7 +234,7 @@ def _parse_nnf(nnf_str: str) -> tp.List[NeurochemLayerSpec]:
     return [NeurochemLayerSpec(**eval(layer)) for layer in layers]
 
 
-def load_atomic_network(filename: tp.Union[Path, str]) -> AtomicNetwork:
+def load_atomic_network(filename: StrPath) -> AtomicNetwork:
     """Returns an instance of :class:`torch.nn.Sequential` with hyperparameters
     and parameters loaded from NeuroChem's .nnf, .wparam and .bparam files."""
     filename = Path(filename).resolve()
@@ -300,7 +311,7 @@ def load_atomic_network(filename: tp.Union[Path, str]) -> AtomicNetwork:
     return network
 
 
-def load_model(symbols: tp.Sequence[str], model_dir: tp.Union[Path, str]) -> ANIModel:
+def load_model(symbols: tp.Sequence[str], model_dir: StrPath) -> ANIModel:
     """Returns an instance of :class:`torchani.nn.ANIModel` loaded from
     NeuroChem's network directory.
 
@@ -318,7 +329,7 @@ def load_model(symbols: tp.Sequence[str], model_dir: tp.Union[Path, str]) -> ANI
 
 
 def load_model_ensemble(
-    symbols: tp.Sequence[str], prefix: tp.Union[Path, str], count: int
+    symbols: tp.Sequence[str], prefix: StrPath, count: int
 ) -> Ensemble:
     """Returns an instance of :class:`torchani.nn.Ensemble` loaded from
     NeuroChem's network directories beginning with the given prefix.
@@ -336,6 +347,195 @@ def load_model_ensemble(
     )
 
 
+SUPPORTED_MODELS = {"ani1x", "ani2x", "ani1ccx"}
+
+
+@dataclass
+class NeurochemInfo:
+    sae: Path
+    const: Path
+    ensemble_prefix: Path
+    ensemble_size: int
+
+    @classmethod
+    def from_info_file(cls, info_file_path: Path) -> tpx.Self:
+        with open(info_file_path, mode="rt", encoding="utf-8") as f:
+            lines: tp.List[str] = [x.strip() for x in f.readlines()][:4]
+            _const_file, _sae_file, _ensemble_prefix, _ensemble_size = lines
+
+            ensemble_size: int = int(_ensemble_size)
+            const_file_reldir, const_file_name = _const_file.split("/")
+            sae_file_reldir, sae_file_name = _sae_file.split("/")
+            ensemble_prefix_reldir, ensemble_prefix_name = _ensemble_prefix.split("/")
+
+            const_file_path: Path = (
+                NEUROCHEM_DIR / const_file_reldir
+            ) / const_file_name
+            sae_file_path: Path = (NEUROCHEM_DIR / sae_file_reldir) / sae_file_name
+            ensemble_prefix: Path = (
+                NEUROCHEM_DIR / ensemble_prefix_reldir
+            ) / ensemble_prefix_name
+        return cls(sae_file_path, const_file_path, ensemble_prefix, ensemble_size)
+
+    @classmethod
+    def from_builtin_name(cls, model_name: str) -> tpx.Self:
+        if model_name not in SUPPORTED_MODELS:
+            raise ValueError(
+                f"Neurochem model {model_name} not supported,"
+                f" supported models are: {SUPPORTED_MODELS}",
+            )
+        suffix = model_name.replace("ani", "")
+        info_file_path = NEUROCHEM_DIR / f"ani-{suffix}_8x.info"
+        if not info_file_path.is_file():
+            download_model_parameters()
+        info = cls.from_info_file(info_file_path)
+        return info
+
+
+def download_model_parameters(
+    root: tp.Optional[Path] = None, verbose: bool = True
+) -> None:
+    if root is None:
+        root = NEUROCHEM_DIR
+    zip_path = root / "neurochem-builtins.zip"
+    if any(root.iterdir()):
+        if verbose:
+            print("Found existing files in directory, assuming params already present")
+        return
+    repo = "ani-model-zoo"
+    tag = "ani-2x"
+    extracted_dirname = f"{repo}-{tag}"
+    url = f"https://github.com/aiqm/{repo}/archive/{tag}.zip"
+    if verbose:
+        print("Downloading ANI model parameters ...")
+    torch.hub.download_url_to_file(url, str(zip_path), progress=verbose)
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(root)
+    zip_path.unlink()
+    extracted_dir = Path(root) / extracted_dirname
+    for f in (extracted_dir / "resources").iterdir():
+        shutil.move(str(f), root / f.name)
+    shutil.rmtree(extracted_dir)
+
+
+def modules_from_info(
+    info: NeurochemInfo,
+    model_index: tp.Optional[int] = None,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+) -> tp.Tuple[AEVComputer, AtomicContainer, EnergyAdder, tp.Sequence[str]]:
+    aev_computer, symbols = load_aev_computer_and_symbols(
+        info.const,
+        use_cuda_extension=use_cuda_extension,
+        use_cuaev_interface=use_cuaev_interface,
+    )
+    adder = load_energy_adder(info.sae)
+
+    neural_networks: AtomicContainer
+    if model_index is None:
+        neural_networks = load_model_ensemble(
+            symbols, info.ensemble_prefix, info.ensemble_size
+        )
+    else:
+        if model_index >= info.ensemble_size:
+            raise ValueError(
+                f"Model index {model_index} should be <= {info.ensemble_size}"
+            )
+        neural_networks = load_model(
+            symbols,
+            model_dir_from_prefix(
+                info.ensemble_prefix,
+                model_index,
+            ),
+        )
+    return aev_computer, neural_networks, adder, symbols
+
+
+def modules_from_builtin_name(
+    model_name: str,
+    model_index: tp.Optional[int] = None,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+) -> tp.Tuple[AEVComputer, AtomicContainer, EnergyAdder, tp.Sequence[str]]:
+    r"""
+    Creates the necessary modules to generate a pretrained builtin model,
+    parsing the data from legacy neurochem files. and optional arguments to
+    modify some modules.
+    """
+    return modules_from_info(
+        NeurochemInfo.from_builtin_name(model_name),
+        model_index,
+        use_cuda_extension,
+        use_cuaev_interface,
+    )
+
+
+def modules_from_info_file(
+    info_file: Path,
+    model_index: tp.Optional[int] = None,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+) -> tp.Tuple[AEVComputer, AtomicContainer, EnergyAdder, tp.Sequence[str]]:
+    r"""
+    Creates the necessary modules to generate a pretrained neurochem model,
+    parsing the data from legacy neurochem files. and optional arguments to
+    modify some modules.
+    """
+    return modules_from_info(
+        NeurochemInfo.from_info_file(info_file),
+        model_index,
+        use_cuda_extension,
+        use_cuaev_interface,
+    )
+
+
+def load_builtin_from_info_file(
+    info_file: StrPath,
+    model_index: tp.Optional[int] = None,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    periodic_table_index: bool = True,
+) -> BuiltinModel:
+    info_file = Path(info_file).resolve()
+    components = modules_from_info_file(
+        info_file,
+        model_index,
+        use_cuda_extension,
+        use_cuaev_interface,
+    )
+    aev_computer, neural_networks, energy_adder, symbols = components
+    return BuiltinModel(
+        symbols,
+        aev_computer,
+        neural_networks,
+        energy_adder,
+        periodic_table_index=periodic_table_index,
+    )
+
+
+def load_builtin_from_name(
+    model_name: str,
+    model_index: tp.Optional[int] = None,
+    use_cuda_extension: bool = False,
+    use_cuaev_interface: bool = False,
+    periodic_table_index: bool = True,
+) -> BuiltinModel:
+    components = modules_from_builtin_name(
+        model_name,
+        model_index,
+        use_cuda_extension,
+        use_cuaev_interface,
+    )
+    aev_computer, neural_networks, energy_adder, symbols = components
+    return BuiltinModel(
+        symbols,
+        aev_computer,
+        neural_networks,
+        energy_adder,
+        periodic_table_index=periodic_table_index,
+    )
+
+
 __all__ = [
     "load_aev_constants_and_symbols",
     "load_aev_computer_and_symbols",
@@ -343,4 +543,9 @@ __all__ = [
     "load_energy_adder",
     "load_model",
     "load_model_ensemble",
+    "load_builtin_from_name",
+    "load_builtin_from_info_file",
+    "modules_from_builtin_name",
+    "modules_from_info_file",
+    "download_model_parameters",
 ]
