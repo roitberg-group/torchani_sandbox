@@ -279,7 +279,7 @@ class TestPBCSeeEachOther(TestCase):
 
         for xyz2 in xyz2s:
             coordinates = torch.stack([xyz1, xyz2]).to(torch.double).unsqueeze(0)
-            atom_index12, _, _ = self.neighborlist(species, coordinates, 1.0, cell, pbc)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, 1.0, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -296,7 +296,7 @@ class TestPBCSeeEachOther(TestCase):
             xyz2[i] = 9.9
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _, _ = self.neighborlist(species, coordinates, 1.0, cell, pbc)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, 1.0, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -316,7 +316,7 @@ class TestPBCSeeEachOther(TestCase):
                 xyz2[j] = new_j
 
             coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-            atom_index12, _, _ = self.neighborlist(species, coordinates, 1.0, cell, pbc)
+            atom_index12, _, _, _ = self.neighborlist(species, coordinates, 1.0, cell, pbc)
             atom_index1, atom_index2 = atom_index12.unbind(0)
             self.assertEqual(atom_index1.tolist(), [0])
             self.assertEqual(atom_index2.tolist(), [1])
@@ -334,7 +334,7 @@ class TestPBCSeeEachOther(TestCase):
         xyz2 = torch.tensor([10.0, 0.1, 0.1], dtype=torch.double)
 
         coordinates = torch.stack([xyz1, xyz2]).unsqueeze(0)
-        atom_index12, _, _ = self.neighborlist(species, coordinates, 1.0, cell, pbc)
+        atom_index12, _, _, _ = self.neighborlist(species, coordinates, 1.0, cell, pbc)
         atom_index1, atom_index2 = atom_index12.unbind(0)
         self.assertEqual(atom_index1.tolist(), [0])
         self.assertEqual(atom_index2.tolist(), [1])
