@@ -45,12 +45,6 @@ jobs:
     runs-on: [self-hosted, ipickering]
     steps:
       - run: docker run --rm --gpus '"device=none"' ${{ env.TAG }} bash -c "pip install --upgrade flake8 && flake8 ."
-
-  flake8:
-    needs: [build-image]
-    runs-on: [self-hosted, ipickering]
-    steps:
-      - run: docker run --rm --gpus '"device=none"' ${{ env.TAG }} bash -c "pip install --upgrade flake8 && flake8 ."
   #clang-format:
     #depends: [build-image]
     #steps:
