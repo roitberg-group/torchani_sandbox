@@ -742,24 +742,26 @@ class PairPotentialsChargesModel(PairPotentialsModel):
             num_molecules, device=element_idxs.device, dtype=coordinates.dtype
         )
         atomic_charges = torch.zeros(
-            num_molecules, device=element_idxs.device, dtype=coordinates.dtype
+            (num_molecules, num_atoms),
+            device=element_idxs.device,
+            dtype=coordinates.dtype,
         )
         for pot in self.potentials:
             cutoff = pot.cutoff
             if cutoff < previous_cutoff:
-                neighbor_data = rescreen(cutoff, neighbors)
+                neighbors = rescreen(cutoff, neighbors)
                 previous_cutoff = cutoff
             if pot.is_trainable:
                 output = pot.energies_and_atomic_charges(
                     element_idxs,
-                    neighbor_data,
+                    neighbors,
                     ghost_flags=None,
                     total_charge=total_charge,
                 )
                 energies += output.energies
                 atomic_charges += output.atomic_charges
             else:
-                energies += pot(element_idxs, neighbor_data)
+                energies += pot(element_idxs, neighbors)
         return SpeciesEnergiesAtomicCharges(
             element_idxs, energies + self.energy_shifter(element_idxs), atomic_charges
         )

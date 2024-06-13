@@ -19,6 +19,7 @@ from torchani.aev.terms import (
 )
 from torchani.csrc import CUAEV_IS_INSTALLED
 from torchani.tuples import NeighborData
+import torchani.tuples
 
 
 def jit_unused_if_no_cuaev():
