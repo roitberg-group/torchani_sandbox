@@ -146,6 +146,49 @@ class Neighborlist(torch.nn.Module):
             diff_vectors=screened_diff_vectors,
         )
 
+    @torch.jit.export
+    def process_external_input(
+        self,
+        species: Tensor,
+        coordinates: Tensor,
+        neighbor_idxs: Tensor,
+        shift_values: Tensor,
+        cutoff: float = 0.0,
+        input_needs_screening: bool = True,
+    ) -> NeighborData:
+        # Check shapes
+        num_pairs = neighbor_idxs.shape[1]
+        assert neighbor_idxs.shape == (2, num_pairs)
+        assert shift_values.shape == (num_pairs, 3)
+
+        if input_needs_screening:
+            # First screen the input neighbors in case some of the
+            # values are at distances larger than the radial cutoff, or some of
+            # the values are masked with dummy atoms. The first may happen if
+            # the neighborlist uses some sort of skin value to rebuild itself
+            # (as in Loup Verlet lists), which is common in MD programs.
+            return self._screen_with_cutoff(
+                cutoff,
+                coordinates,
+                neighbor_idxs,
+                shift_values,
+                (species == -1),
+            )
+        # If the input neighbor idxs are pre screened then
+        # directly calculate the distances and diff_vectors from them
+        coordinates = coordinates.view(-1, 3)
+        coords0 = coordinates.index_select(0, neighbor_idxs[0])
+        coords1 = coordinates.index_select(0, neighbor_idxs[1])
+        diff_vectors = coords0 - coords1 + shift_values
+        distances = diff_vectors.norm(2, -1)
+
+        # Store diff vectors internally for calculation of stress
+        self.diff_vectors = diff_vectors
+
+        return NeighborData(
+            indices=neighbor_idxs, distances=distances, diff_vectors=diff_vectors
+        )
+
     def get_diff_vectors(self):
         return self.diff_vectors
 

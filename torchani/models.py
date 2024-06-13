@@ -162,40 +162,20 @@ class BuiltinModel(torch.nn.Module):
         input_needs_screening: bool = True,
     ) -> SpeciesEnergies:
         # This entrypoint supports input from an external neighborlist
-
-        # Check shapes
-        num_pairs = neighbor_idxs.shape[0]
-        assert neighbor_idxs.shape == (2, num_pairs)
-        assert shift_values.shape == (num_pairs, 3)
-
         species, coordinates = self._maybe_convert_species(species_coordinates)
+        # Check shapes
         num_molecules, num_atoms = species.shape
         assert coordinates.shape == (num_molecules, num_atoms, 3)
-
-        if input_needs_screening:
-            # First screen the input neighbors in case some of the
-            # values are at distances larger than the radial cutoff, or some of
-            # the values are masked with dummy atoms. The first may happen if
-            # the neighborlist uses some sort of skin value to rebuild itself
-            # (as in Loup Verlet lists), which is common in MD programs.
-            cutoff = self.aev_computer.radial_terms.cutoff
-            neighbors = self.aev_computer.neighborlist._screen_with_cutoff(cutoff,
-                                                           coordinates,
-                                                           neighbors,
-                                                           shift_values,
-                                                           (species == -1))
-            neighbors, _, diff_vectors, distances = nl_out
-        else:
-            # If the input neighbors is pre screened then
-            # directly calculate the distances and diff_vectors
-            coordinates = coordinates.view(-1, 3)
-            coords0 = coordinates.index_select(0, neighbors[0])
-            coords1 = coordinates.index_select(0, neighbors[1])
-            diff_vectors = coords0 - coords1 + shift_values
-            distances = diff_vectors.norm(2, -1)
-
-        assert neighbors is not None
-        aevs = self.aev_computer._compute_aev(species, neighbors, diff_vectors, distances)
+        cutoff = self.aev_computer.radial_terms.cutoff
+        neighbors = self.aev_computer.neighborlist.process_external_input(
+            species,
+            coordinates,
+            neighbor_idxs,
+            shift_values,
+            cutoff,
+            input_needs_screening,
+        )
+        aevs = self.aev_computer._compute_aev(species, neighbors=neighbors)
         species, energies = self.neural_networks((species, aevs))
         return SpeciesEnergies(species, energies + self.energy_shifter(species))
 
@@ -562,6 +542,44 @@ class PairPotentialsModel(BuiltinModel):
         self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
         self.aev_computer.neighborlist._recast_long_buffers()
 
+    # TODO: Remove code repetition
+    @torch.jit.export
+    def from_neighborlist(
+        self,
+        species_coordinates: tp.Tuple[Tensor, Tensor],
+        neighbor_idxs: Tensor,
+        shift_values: Tensor,
+        total_charge: float = 0.0,
+        input_needs_screening: bool = True,
+    ) -> SpeciesEnergies:
+        # This entrypoint supports input from an external neighborlist
+        element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
+        # Check shapes
+        num_molecules, num_atoms = element_idxs.shape
+        assert coordinates.shape == (num_molecules, num_atoms, 3)
+
+        previous_cutoff = self.potentials[0].cutoff
+        neighbors = self.aev_computer.neighborlist.process_external_input(
+            element_idxs,
+            coordinates,
+            neighbor_idxs,
+            shift_values,
+            previous_cutoff,
+            input_needs_screening,
+        )
+        energies = torch.zeros(
+            num_molecules, device=element_idxs.device, dtype=coordinates.dtype
+        )
+        for pot in self.potentials:
+            cutoff = pot.cutoff
+            if cutoff < previous_cutoff:
+                neighbors = rescreen(cutoff, neighbors)
+                previous_cutoff = cutoff
+            energies += pot(element_idxs, neighbors)
+        return SpeciesEnergies(
+            element_idxs, energies + self.energy_shifter(element_idxs)
+        )
+
     def forward(
         self,
         species_coordinates: tp.Tuple[Tensor, Tensor],
@@ -571,8 +589,9 @@ class PairPotentialsModel(BuiltinModel):
     ) -> SpeciesEnergies:
         assert total_charge == 0.0, "Model only supports neutral molecules"
         element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
+
         previous_cutoff = self.potentials[0].cutoff
-        neighbor_data = self.aev_computer.neighborlist(
+        neighbors = self.aev_computer.neighborlist(
             element_idxs, coordinates, previous_cutoff, cell, pbc
         )
         energies = torch.zeros(
@@ -581,9 +600,9 @@ class PairPotentialsModel(BuiltinModel):
         for pot in self.potentials:
             cutoff = pot.cutoff
             if cutoff < previous_cutoff:
-                neighbor_data = rescreen(cutoff, neighbor_data)
+                neighbors = rescreen(cutoff, neighbors)
                 previous_cutoff = cutoff
-            energies += pot(element_idxs, neighbor_data)
+            energies += pot(element_idxs, neighbors)
         return SpeciesEnergies(
             element_idxs, energies + self.energy_shifter(element_idxs)
         )
@@ -694,6 +713,57 @@ class PairPotentialsChargesModel(PairPotentialsModel):
         # Re-register the ModuleList
         self.potentials = torch.nn.ModuleList(potentials)
 
+    # TODO: Remove code duplication
+    @torch.jit.export
+    def energies_and_atomic_charges_from_neighborlist(
+        self,
+        species_coordinates: tp.Tuple[Tensor, Tensor],
+        neighbor_idxs: Tensor,
+        shift_values: Tensor,
+        total_charge: float = 0.0,
+        input_needs_screening: bool = True,
+    ) -> SpeciesEnergiesAtomicCharges:
+        # This entrypoint supports input from an external neighborlist
+        element_idxs, coordinates = self._maybe_convert_species(species_coordinates)
+        # Check shapes
+        num_molecules, num_atoms = element_idxs.shape
+        assert coordinates.shape == (num_molecules, num_atoms, 3)
+        assert total_charge == 0.0, "Model only supports neutral molecules"
+        previous_cutoff = self.potentials[0].cutoff
+        neighbors = self.aev_computer.neighborlist.process_external_input(
+            element_idxs,
+            coordinates,
+            neighbor_idxs,
+            shift_values,
+            previous_cutoff,
+            input_needs_screening,
+        )
+        energies = torch.zeros(
+            num_molecules, device=element_idxs.device, dtype=coordinates.dtype
+        )
+        atomic_charges = torch.zeros(
+            num_molecules, device=element_idxs.device, dtype=coordinates.dtype
+        )
+        for pot in self.potentials:
+            cutoff = pot.cutoff
+            if cutoff < previous_cutoff:
+                neighbor_data = rescreen(cutoff, neighbors)
+                previous_cutoff = cutoff
+            if pot.is_trainable:
+                output = pot.energies_and_atomic_charges(
+                    element_idxs,
+                    neighbor_data,
+                    ghost_flags=None,
+                    total_charge=total_charge,
+                )
+                energies += output.energies
+                atomic_charges += output.atomic_charges
+            else:
+                energies += pot(element_idxs, neighbor_data)
+        return SpeciesEnergiesAtomicCharges(
+            element_idxs, energies + self.energy_shifter(element_idxs), atomic_charges
+        )
+
     @torch.jit.export
     def energies_and_atomic_charges(
         self,
@@ -749,29 +819,35 @@ class PairPotentialsChargesModel(PairPotentialsModel):
 
 def ANI1x(**kwargs) -> BuiltinModel:
     from torchani.assembler import ANI1x as build
+
     return build(**kwargs)
 
 
 def ANI1ccx(**kwargs) -> BuiltinModel:
     from torchani.assembler import ANI1ccx as build
+
     return build(**kwargs)
 
 
 def ANI2x(**kwargs) -> BuiltinModel:
     from torchani.assembler import ANI2x as build
+
     return build(**kwargs)
 
 
 def ANIala(**kwargs) -> BuiltinModel:
     from torchani.assembler import ANIala as build
+
     return build(**kwargs)
 
 
 def ANIdr(**kwargs) -> BuiltinModel:
     from torchani.assembler import ANIdr as build
+
     return build(**kwargs)
 
 
 def ANImbis(**kwargs) -> BuiltinModel:
     from torchani.assembler import ANImbis as build
+
     return build(**kwargs)
