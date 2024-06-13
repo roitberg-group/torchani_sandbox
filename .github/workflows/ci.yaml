@@ -3,7 +3,7 @@ name: ci
 on: pull_request
 
 env:
-  TAG: ani-ci:${{ github.event.pull_request.number || github.sha }}
+  TAG: ani-ci:${{ github.sha }}
 
 jobs:
   build-image:
@@ -55,7 +55,7 @@ jobs:
     needs: [build-image, tools, tests, mypy, clang-format, flake8, docs]
     runs-on: [self-hosted, ipickering]
     steps:
-      - run: docker image rm ${{ env.TAG }}
+      - run: docker image rm --force ${{ env.TAG }}
 
 concurrency:
   group: ani-ci-${{ github.event.pull_request.number || github.sha }}

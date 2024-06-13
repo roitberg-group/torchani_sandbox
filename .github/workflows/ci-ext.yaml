@@ -3,7 +3,7 @@ name: ci-ext
 on: pull_request
 
 env:
-  TAG: ani-ci-ext:${{ github.event.pull_request.number || github.sha }}
+  TAG: ani-ci-ext:${{ github.sha }}
 
 jobs:
   build-image:
@@ -26,7 +26,7 @@ jobs:
     needs: [build-image, tests]
     runs-on: [self-hosted, ipickering]
     steps:
-      - run: docker image rm ${{ env.TAG }}
+      - run: docker image rm --force ${{ env.TAG }}
 
 concurrency:
   group: ani-ci-ext-${{ github.event.pull_request.number || github.sha }}
