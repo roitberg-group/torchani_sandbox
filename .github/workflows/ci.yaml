@@ -15,7 +15,7 @@ jobs:
           tags: cpu-ci:${{ github.event.pull_request.number || github.sha }}
 
   tools:
-    depends: [build-image]
+    needs: [build-image]
     runs-on: [self-hosted, ipickering]
     steps:
       - name: Inference benchmark
@@ -27,19 +27,19 @@ jobs:
       - name: MD Benchmark (with Nsight dry run)
         run: docker run --rm --gpus all --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "python tools/md-benchmark.py --nvtx --no-tqdm"
   tests:
-    depends: [build-image]
+    needs: [build-image]
     steps:
       - run: docker run --rm --gpus '"device=none"' --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ steps.meta.outputs.tags }} bash -c "pytest ."
   docs:
-    depends: [build-image]
+    needs: [build-image]
     steps:
       - run: docker run --rm --gpus all --shm-size 1g --ulimit memlock=-1 --ulimit stack=67108864 ${{ steps.meta.outputs.tags }} bash -c "nvidia-smi && sphinx-build -W docs/src docs/build"
   mypy:
-    depends: [build-image]
+    needs: [build-image]
     steps:
       - run: pip install --upgrade mypy && mypy --install-types --non-interactive .
   flake8:
-    depends: [build-image]
+    needs: [build-image]
     steps:
       - run: pip install --upgrade flake8 && flake8 .
   #clang-format:
@@ -47,11 +47,11 @@ jobs:
     #steps:
 
   remove-image:
-    depends: [build-image, tools, tests, mypy, flake8, docs]
+    if: ${{ always() }}
+    needs: [build-image, tools, tests, mypy, flake8, docs]
     runs-on: [self-hosted, ipickering]
     steps:
       - name: Remove image
-        if: ${{ always() }}
         continue-on-error: true
         run: docker image rm ${{ env.TAG }}
 
