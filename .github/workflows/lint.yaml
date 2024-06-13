@@ -2,9 +2,6 @@ name: lint
 
 on: pull_request
 
-env:
-  PY_VERSION: "3.10"
-
 jobs:
   clang-format:
     runs-on: [self-hosted, ipickering]
