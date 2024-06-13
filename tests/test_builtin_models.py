@@ -35,7 +35,10 @@ class TestExternalEntryPoints(ANITest):
             coords.detach(), eps=1e-3,
         )
         pbc = torch.tensor([True, True, True], dtype=torch.bool, device=self.device)
-        cutoff = model.aev_computer.radial_terms.cutoff
+        if hasattr(model, "potentials"):
+            cutoff = model.potentials[0].cutoff
+        else:
+            cutoff = model.aev_computer.radial_terms.cutoff
         neighbors = model.aev_computer.neighborlist(
             species, coords, cutoff, cell, pbc, return_shift_values=True
         )
