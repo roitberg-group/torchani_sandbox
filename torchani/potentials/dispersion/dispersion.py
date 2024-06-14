@@ -101,6 +101,20 @@ class TwoBodyDispersionD3(PairPotential):
     _k2: Final[float]
     _k3: Final[int]
 
+    # Needed for bw compatibility
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
+        old_keys = list(state_dict.keys())
+        for k in old_keys:
+            if "damp_fn_6" in k:
+                state_dict.pop(k)
+                continue
+            if "damp_fn_8" in k:
+                new_key = k.replace("damp_fn_8", "damp_fn")
+            else:
+                new_key = k
+            state_dict[new_key] = state_dict.pop(k)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
     def __init__(
         self,
         symbols: tp.Sequence[str],
