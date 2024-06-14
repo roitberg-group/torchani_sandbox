@@ -294,8 +294,6 @@ class Batcher:
             batch_seed = batch_rng.seed()
         else:
             batch_rng.manual_seed(batch_seed)
-        print(batch_rng.initial_seed())
-        print(divs_rng.initial_seed())
 
         # (1) Get all indices and shuffle them
         #
