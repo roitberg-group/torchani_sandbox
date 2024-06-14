@@ -517,7 +517,10 @@ class _ChemicalSymbolsConvert(torch.nn.Module):
         self.register_buffer('_dummy', torch.empty(0, device=device), persistent=False)
 
     def forward(self, species: tp.List[str]) -> Tensor:
-        numbers_list = [self.symbol_dict[x] for x in species if x]
+        # This can't be an in-place loop to be jit-compilable
+        numbers_list: tp.List[int] = []
+        for x in species:
+            numbers_list.append(self.symbol_dict[x])
         return torch.tensor(numbers_list, dtype=torch.long, device=self._dummy.device)
 
     def __len__(self) -> int:
