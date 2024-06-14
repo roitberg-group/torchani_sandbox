@@ -1,26 +1,33 @@
 # CSRC
 Cpp source files for CUAEV and MNP extensions.
-- CUAEV: CUDA Extension for AEV calculation. Performance improvement is expected to be ~3X for AEV computation and ~1.5X for energy training, 2.6X for energy+force training.
-- MNP: Multi Net Parallel between different species networks using OpenMP (Inference Only) to reduce CUDA call overhead.
+- CUAEV: CUDA Extension for AEV calculation. Performance improvement is
+  expected to be ~3X for AEV computation and ~1.5X for energy training, 2.6X
+  for energy+force training.
+- MNP: Multi Net Parallel between different species networks using OpenMP
+  (Inference Only) to reduce CUDA call overhead.
 
 ## Requirement
 Following [pytorch.org](https://pytorch.org/) to install PyTorch.
 On linux, for example:
 ```
-conda install pytorch cudatoolkit=11.6 -c pytorch
+conda install pytorch pytorch-cuda=11.8 cuda-toolkit=11.8 cuda-compiler=11.8 -c pytorch -c nvidia
 ```
 
 ## Build from source
-In most cases, if `gcc` and `cuda` environment are well configured, runing the following command at `torchani` directory will install torchani and all extensions together.
+
+In most cases, if `gcc` and `cuda` environment are well configured, runing the
+following command at `torchani` directory will install torchani and all
+extensions together.
 
 ```bash
 git clone git@github.com:roitberg-group/torchani_sandbox.git
-cd torchani
+cd torchani_sandbox
 # choose one option below
 # ============== install ==============
 python setup.py install --ext          # only build for detected gpus
 python setup.py install --ext-all-sms  # build for all gpus
 # ============== development ==============
+
 # `pip install -e . && ` is only needed for the very first install (because issue of https://github.com/pypa/pip/issues/1883)
 pip install -e . && pip install -v -e . --global-option="--ext"          # only build for detected gpus
 pip install -e . && pip install -v -e . --global-option="--ext-all-sms"  # build for all gpus
@@ -34,95 +41,35 @@ git pull
 pip install -v -e . --global-option="--ext"
 ```
 
-Some notes for building extensions on multiple HPC, cuda version might be outdated and please check again.
-<details>
-<summary>Hipergator</summary>
+To build the extension in a HPC cluster (access to conda/mamba either
+by local install or a "module" is needed):
 
 ```bash
+# First start an interactive session with GPU access. How to do this will
+# depend on your specific cluster, here are some examples:
+# Hipergator
 srun -p gpu --ntasks=1 --cpus-per-task=2 --gpus=geforce:1 --time=02:00:00 --mem=10gb  --pty -u bash -i
-# create env if necessary
-conda create -n cuaev python=3.8
-conda activate cuaev
-# modules
-module load cuda/11.4.3 gcc/9.3.0 git/2.30.1
-# pytorch
-conda install pytorch==1.12.1 cudatoolkit=11.6 -c pytorch -c conda-forge
-# install torchani
-git clone https://github.com/roitberg-group/torchani_sandbox.git
-cd torchani
-pip install -e . && pip install -v -e . --global-option="--ext"
-```
-
-</details>
-
-<details>
-<summary>Bridges2</summary>
-
-```bash
-# prepare
+# Bridges2
 srun -p GPU-small --ntasks=1 --cpus-per-task=5 --gpus=1 --time=02:00:00 --mem=20gb  --pty -u bash -i
-# create env if necessary
-conda create -n cuaev python=3.8
-conda activate cuaev
-# modules
-module load cuda/10.2.0
-# pytorch
-conda install pytorch cudatoolkit=10.2 -c pytorch
-# install torchani
-git clone https://github.com/roitberg-group/torchani_sandbox.git
-cd torchani
-pip install -e . && pip install -v -e . --global-option="--ext"
-```
-
-</details>
-
-<details>
-<summary>Expanse</summary>
-
-```bash
+# Expanse
 srun -p gpu-shared --ntasks=1 --account=cwr109 --cpus-per-task=1 --gpus=1 --time=01:00:00 --mem=10gb  --pty -u bash -i
-# create env if necessary
-conda create -n cuaev python=3.8
-conda activate cuaev
-# modules
-module load cuda10.2/toolkit/10.2.89 gcc/7.5.0
-# pytorch
-conda install pytorch cudatoolkit=10.2 -c pytorch
-# install torchani
-git clone https://github.com/roitberg-group/torchani_sandbox.git
-cd torchani
-pip install -e . && pip install -v -e . --global-option="--ext"
-```
-
-</details>
-
-
-<details>
-<summary>Moria</summary>
-
-```bash
+# Moria
 srun --ntasks=1 --cpus-per-task=2 --gres=gpu:1 --time=02:00:00 --mem=10gb  --pty -u bash -i
-# create env if necessary
-conda create -n cuaev python=3.8
-conda activate cuaev
-# cuda path (could be added to ~/.bashrc)
-export CUDA_HOME=/usr/local/cuda-11.1
-export PATH=${CUDA_HOME}/bin:$PATH
-export LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
-# pytorch
-conda install pytorch cudatoolkit=11.6 -c pytorch
-# install torchani
+# Create env and install torchani with the extensions.
+# Installing with --ext-all-sms  guarantees that the extension will run correctly
+# whatever the GPU is you select during runs, as long as pytorch supports that GPU
+conda create -f ./environment.yml
 git clone https://github.com/roitberg-group/torchani_sandbox.git
-cd torchani
-pip install -e . && pip install -v -e . --global-option="--ext-all-sms"
-```
+cd torchani_sandbox
+pip install  -v --no-deps --no-build-isolation --editable .
+pip install -v --no-deps --no-build-isolation --editable . --global-option="--ext-all-sms"
 
-</details>
+```
 
 ## Test
 ```bash
 cd torchani
-pip install pytest pynvml pkbar ase parameterized h5py expecttest
+pip install -r dev_requirements.txt
 ./download.sh
 # cuaev
 python tests/test_cuaev.py
@@ -132,11 +79,15 @@ python tests/test_infer.py
 
 ## Usage
 #### CUAEV
-Pass `use_cuda_extension=True` when construct aev_computer, for example:
+Pass `use_cuda_extension=True` when constructing an aev_computer, for example:
 ```python
-cuaev_computer = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, use_cuda_extension=True)
+cuaev_computer = torchani.AEVComputer.from_constants(
+    Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, use_cuda_extension=True,
+)
 # or
-cuaev_computer = torchani.AEVComputer.like_1x(use_cuda_extension=True)
+cuaev_computer = torchani.AEVComputer.like_1x(
+    cutoff_fn="smooth", use_cuda_extension=True,
+)
 ```
 
 #### MNP
@@ -147,12 +98,6 @@ bmm_ensemble = ani2x.neural_networks.to_infer_model(use_mnp=True)
 # single model
 model = ani2x.neural_networks[0].to_infer_model(use_mnp=True)
 ```
-
-## TODOs
-- [x] CUAEV Forward
-- [x] CUAEV Backwad (Force)
-- [x] CUAEV Double Backwad (Force training need aev's double backward w.r.t. grad_aev)
-- [ ] PBC
 
 ## Benchmark
 
@@ -169,8 +114,8 @@ RUN                Total AEV    Forward      Backward     Force        Optimizer
 ```
 
 benchmark
-```
-pip install pynvml pkbar
+```bash
+pip install -r dev_requirements.txt
 python tools/training-aev-benchmark.py download/dataset/ani-1x/sample.h5
 python tools/aev-benchmark-size.py -p
 ```

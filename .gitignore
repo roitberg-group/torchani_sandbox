@@ -1,51 +1,85 @@
-*.prof
-/tools/benchmark/*
-__pycache__
-nohup.out
-/data
-a.out
-/test.py
-/.vscode
-/build*
-.eggs
-*.egg-info
-*.ninja
-/torchani.egg-info
-/*.h5
-/*.hdf5
-.ipynb_checkpoints
-benchmark_xyz
+# Python cache and build
+__pycache__/
 *.pyc
-*checkpoint*
-*.pt
-/tests/runs
-/quicktest.py
-/*.ipt
-/*.params
-/*.dat
-*.o
-*.so
-*.ninja_log
-/tmp
-*_cache
-datacache
-dist
-*.pckl
-# No vim swap files
+.eggs
+*.egg-info/
+
+# setuptools-scm version file
+_version.py
+
+# Vscode
+.vscode
+
+# Vim swap files
 *.swp
 *.swo
-/download
-/download.tar.xz
-*.qdrep
-*.qdstrm
+
+# Binary files
+/*.h5
+/*.hdf5
+*.pt
+*.o
+*.so
+*.pckl
 *.zip
-Untitled.ipynb
-/nnp_training.py
-/test*.py
+*.dat
+a.out
+
+# Mypy, pytest and clangd cache
+.mypy_cache/
+.pytest_cache/
+.cache/
+
+# Ninja
+*.ninja
+*.ninja_log
+
+# Code coverage through coverage.py
 .coverage
 htmlcov/
-/include
-training_outputs/
-examples/dataset.pkl
-/tools/plots/*
+
+# Notebooks
+.ipynb_checkpoints
+Untitled.ipynb
+
+# Output of tests
+/tests/runs/
 /tests/.hypothesis
+
+# Output of tools
+/tools/plots/
+/tools/benchmark/
+
+# Output of examples
+/examples/batched_dataset/
+/examples/runs/
+
+# Used for CUB when building CUDA / C++ extensions
+/include/
+
+# Build output of Sphinx docs
+/docs/build/
+/docs/src/examples_autogen/
+/docs/src/sg_execution_times.rst
+
+# Build output of CUDA / C++ extensions
+/build/
+/torchani/csrc/build/
+
+# Data downloaded with download.sh
+/download/
+
+# Dest dir of built conda pkgs
+/conda-pkgs/
+
+# Nvidia Nsight Systems profiling
+*.qdrep
+*.qdstrm
+*.nsys-rep
+report*.sqlite
+
+# line profiler
+*.prof
+
+# memory profiler
+mprofile_*

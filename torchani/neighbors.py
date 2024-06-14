@@ -3,9 +3,8 @@ import math
 
 import torch
 from torch import Tensor
-from torch.jit import Final
 
-from torchani.utils import map_to_central, cumsum_from_zero
+from torchani.utils import map_to_central, cumsum_from_zero, fast_masked_select
 from torchani.tuples import NeighborData
 
 
@@ -21,30 +20,33 @@ def rescreen(
     )
 
 
-class BaseNeighborlist(torch.nn.Module):
-
-    cutoff: Final[float]
+class Neighborlist(torch.nn.Module):
     default_pbc: Tensor
     default_cell: Tensor
 
-    def __init__(self, cutoff: float):
+    def __init__(self):
         """Compute pairs of atoms that are neighbors, uses pbc depending on
         weather pbc.any() is True or not
 
         Arguments:
             coordinates (:class:`torch.Tensor`): tensor of shape
                 (molecules, atoms, 3) for atom coordinates.
-            cutoff (float): the cutoff inside which atoms are considered pairs
         """
         super().__init__()
-        self.cutoff = cutoff
-        self.register_buffer('default_cell', torch.eye(3, dtype=torch.float), persistent=False)
-        self.register_buffer('default_pbc', torch.zeros(3, dtype=torch.bool), persistent=False)
+        self.register_buffer(
+            "default_cell", torch.eye(3, dtype=torch.float), persistent=False
+        )
+        self.register_buffer(
+            "default_pbc", torch.zeros(3, dtype=torch.bool), persistent=False
+        )
         self.diff_vectors = torch.empty(0)
 
     @torch.jit.export
-    def _compute_bounding_cell(self, coordinates: Tensor,
-                               eps: float) -> tp.Tuple[Tensor, Tensor]:
+    def compute_bounding_cell(
+        self,
+        coordinates: Tensor,
+        eps: float = 1e-3,
+    ) -> tp.Tuple[Tensor, Tensor]:
         # this works but its not needed for this naive implementation
         # This should return a bounding cell
         # for the molecule, in all cases, also it displaces coordinates a fixed
@@ -52,8 +54,8 @@ class BaseNeighborlist(torch.nn.Module):
         # no effects on forces or energies
 
         # add an epsilon to pad due to floating point precision
-        min_ = torch.min(coordinates.view(-1, 3), dim=0)[0] - eps
-        max_ = torch.max(coordinates.view(-1, 3), dim=0)[0] + eps
+        min_ = torch.min(coordinates.view(-1, 3), dim=0).values - eps
+        max_ = torch.max(coordinates.view(-1, 3), dim=0).values + eps
         largest_dist = max_ - min_
         coordinates = coordinates - min_
         cell = self.default_cell * largest_dist
@@ -66,8 +68,9 @@ class BaseNeighborlist(torch.nn.Module):
         cutoff: float,
         coordinates: Tensor,
         input_neighbor_indices: Tensor,
+        mask: Tensor,
         shift_values: tp.Optional[Tensor] = None,
-        mask: tp.Optional[Tensor] = None
+        return_shift_values: bool = False,
     ) -> NeighborData:
         # passing an infinite cutoff will only work for non pbc conditions
         # (shift values must be None)
@@ -85,15 +88,16 @@ class BaseNeighborlist(torch.nn.Module):
         # First we check if there are any dummy atoms in species, if there are
         # we get rid of those pairs to prevent wasting resources in calculation
         # of dummy distances
-        if mask is not None:
-            if mask.any():
-                mask = mask.view(-1)[input_neighbor_indices.view(-1)].view(2, -1)
-                non_dummy_pairs = (~torch.any(mask, dim=0)).nonzero().flatten()
-                input_neighbor_indices = input_neighbor_indices.index_select(1, non_dummy_pairs)
-                # shift_values can be None when there are no pbc conditions to prevent
-                # torch from launching kernels with only zeros
-                if shift_values is not None:
-                    shift_values = shift_values.index_select(0, non_dummy_pairs)
+        if mask.any():
+            mask = mask.view(-1)[input_neighbor_indices.view(-1)].view(2, -1)
+            non_dummy_pairs = (~torch.any(mask, dim=0)).nonzero().flatten()
+            input_neighbor_indices = input_neighbor_indices.index_select(
+                1, non_dummy_pairs
+            )
+            # shift_values can be None when there are no pbc conditions to prevent
+            # torch from launching kernels with only zeros
+            if shift_values is not None:
+                shift_values = shift_values.index_select(0, non_dummy_pairs)
 
         coordinates = coordinates.view(-1, 3)
         # Difference vector and distances could be obtained for free when
@@ -112,11 +116,13 @@ class BaseNeighborlist(torch.nn.Module):
             in_cutoff = (distances <= cutoff).nonzero().flatten()
             # ------------------- #
 
-            screened_neighbor_indices = input_neighbor_indices.index_select(1, in_cutoff)
+            screened_neighbor_indices = input_neighbor_indices.index_select(
+                1, in_cutoff
+            )
             if shift_values is not None:
                 shift_values = shift_values.index_select(0, in_cutoff)
         else:
-            assert shift_values is None, "PBC can't be implemented with an infinite cutoff"
+            assert shift_values is None, "PBC can't use an infinite cutoff"
             screened_neighbor_indices = input_neighbor_indices
 
         coords0 = coordinates.index_select(0, screened_neighbor_indices[0])
@@ -125,10 +131,11 @@ class BaseNeighborlist(torch.nn.Module):
         if shift_values is not None:
             screened_diff_vectors += shift_values
 
-        # This is the very first `diff_vectors` that are used to calculate various potentials:
-        # 2-body (radial), 3-body (angular), repulsion, dispersion and etc.
-        # To enable stress calculation using partial_fdotr approach, `diff_vectors` requires the
-        # `requires_grad` flag to be set and needs to be saved for future differentiation.
+        # This is the very first `diff_vectors` that are used to calculate
+        # various potentials: 2-body (radial), 3-body (angular), repulsion,
+        # dispersion and etc. To enable stress calculation using partial_fdotr
+        # approach, `diff_vectors` requires the `requires_grad` flag to be set
+        # and needs to be saved for future differentiation.
         screened_diff_vectors.requires_grad_()
         self.diff_vectors = screened_diff_vectors
 
@@ -137,120 +144,140 @@ class BaseNeighborlist(torch.nn.Module):
             indices=screened_neighbor_indices,
             distances=screened_distances,
             diff_vectors=screened_diff_vectors,
+            shift_values=shift_values if return_shift_values else None,
+        )
+
+    @torch.jit.export
+    def process_external_input(
+        self,
+        species: Tensor,
+        coordinates: Tensor,
+        neighbor_idxs: Tensor,
+        shift_values: Tensor,
+        cutoff: float = 0.0,
+        input_needs_screening: bool = True,
+    ) -> NeighborData:
+        # Check shapes
+        num_pairs = neighbor_idxs.shape[1]
+        assert neighbor_idxs.shape == (2, num_pairs)
+        assert shift_values.shape == (num_pairs, 3)
+
+        if input_needs_screening:
+            # First screen the input neighbors in case some of the
+            # values are at distances larger than the radial cutoff, or some of
+            # the values are masked with dummy atoms. The first may happen if
+            # the neighborlist uses some sort of skin value to rebuild itself
+            # (as in Loup Verlet lists), which is common in MD programs.
+            return self._screen_with_cutoff(
+                cutoff,
+                coordinates,
+                neighbor_idxs,
+                mask=(species == -1),
+                shift_values=shift_values,
+            )
+        # If the input neighbor idxs are pre screened then
+        # directly calculate the distances and diff_vectors from them
+        coordinates = coordinates.view(-1, 3)
+        coords0 = coordinates.index_select(0, neighbor_idxs[0])
+        coords1 = coordinates.index_select(0, neighbor_idxs[1])
+        diff_vectors = coords0 - coords1 + shift_values
+        distances = diff_vectors.norm(2, -1)
+
+        # Store diff vectors internally for calculation of stress
+        self.diff_vectors = diff_vectors
+
+        return NeighborData(
+            indices=neighbor_idxs, distances=distances, diff_vectors=diff_vectors
         )
 
     def get_diff_vectors(self):
         return self.diff_vectors
-
-    @staticmethod
-    def _rescreen_with_cutoff(
-        cutoff: float,
-        neighbors: NeighborData,
-    ) -> NeighborData:
-        closer_indices = (neighbors.distances <= cutoff).nonzero().flatten()
-        return NeighborData(
-            indices=neighbors.indices.index_select(1, closer_indices),
-            distances=neighbors.distances.index_select(0, closer_indices),
-            diff_vectors=neighbors.diff_vectors.index_select(0, closer_indices),
-        )
-
-    def dummy(self) -> NeighborData:
-        # return dummy neighbor data
-        device = self.default_cell.device
-        dtype = self.default_cell.dtype
-        indices = torch.tensor([[0], [1]], dtype=torch.long, device=device)
-        distances = torch.tensor([1.0], dtype=dtype, device=device)
-        diff_vectors = torch.tensor([[1.0, 0.0, 0.0]], dtype=dtype, device=device)
-        return NeighborData(
-            indices=indices,
-            distances=distances,
-            diff_vectors=diff_vectors,
-        )
 
     @torch.jit.export
     def _recast_long_buffers(self) -> None:
         pass
 
 
-class FullPairwise(BaseNeighborlist):
-
-    default_shift_values: Tensor
-
-    def __init__(self, cutoff: float):
-        """Compute pairs of atoms that are neighbors, uses pbc depending on
-        weather pbc.any() is True or not
-
-        Arguments:
-            cutoff (float): the cutoff inside which atoms are considered pairs
-        """
-        super().__init__(cutoff)
-        self.register_buffer('default_shift_values', torch.tensor(0.0), persistent=False)
-
+class FullPairwise(Neighborlist):
+    """Compute pairs of atoms that are neighbors, uses pbc depending on
+    wether pbc.any() is True or not"""
     def forward(
         self,
         species: Tensor,
         coordinates: Tensor,
+        cutoff: float,
         cell: tp.Optional[Tensor] = None,
-        pbc: tp.Optional[Tensor] = None
+        pbc: tp.Optional[Tensor] = None,
+        return_shift_values: bool = False,
     ) -> NeighborData:
-        """Arguments:
+        """
+        Arguments:
             coordinates (:class:`torch.Tensor`): tensor of shape
                 (molecules, atoms, 3) for atom coordinates.
             cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three vectors
                 defining unit cell: tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
             cutoff (float): the cutoff inside which atoms are considered pairs
-            pbc (:class:`torch.Tensor`): boolean tensor of shape (3,) storing wheather pbc is required
+            pbc (:class:`torch.Tensor`): boolean tensor of shape (3,) storing
+            wheather pbc is required
         """
         assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
         cell = cell if cell is not None else self.default_cell
         pbc = pbc if pbc is not None else self.default_pbc
 
-        mask = (species == -1)
+        mask = species == -1
         if pbc.any():
-            atom_index12, shift_indices = self._full_pairwise_pbc(species, cell, pbc)
+            atom_index12, shift_indices = self._full_pairwise_pbc(
+                species, cutoff, cell, pbc
+            )
             shift_values = shift_indices.to(cell.dtype) @ cell
             # before being screened the coordinates have to be mapped to the
             # central cell in case they are not inside it, this is not necessary
             # if there is no pbc
             coordinates = map_to_central(coordinates, cell, pbc)
             return self._screen_with_cutoff(
-                self.cutoff,
+                cutoff,
                 coordinates,
                 atom_index12,
-                shift_values,
-                mask
+                mask=mask,
+                shift_values=shift_values,
+                return_shift_values=return_shift_values,
             )
         else:
-            num_molecules = species.shape[0]
-            num_atoms = species.shape[1]
+            num_molecules, num_atoms = species.shape
             # Create a pairwise neighborlist for all molecules and all atoms,
             # assuming that there are no atoms at all. Dummy species will be
             # screened later
-            atom_index12 = torch.triu_indices(num_atoms, num_atoms, 1, device=species.device)
+            atom_index12 = torch.triu_indices(
+                num_atoms, num_atoms, 1, device=species.device
+            )
             if num_molecules > 1:
                 atom_index12 = atom_index12.unsqueeze(1).repeat(1, num_molecules, 1)
-                atom_index12 += num_atoms * torch.arange(num_molecules, device=mask.device).view(1, -1, 1)
+                atom_index12 += num_atoms * torch.arange(
+                    num_molecules, device=mask.device
+                ).view(1, -1, 1)
                 atom_index12 = atom_index12.view(-1).view(2, -1)
             return self._screen_with_cutoff(
-                self.cutoff,
+                cutoff,
                 coordinates,
                 atom_index12,
+                mask=mask,
                 shift_values=None,
-                mask=mask
             )
 
-    def _full_pairwise_pbc(self, species: Tensor,
-                           cell: Tensor, pbc: Tensor) -> tp.Tuple[Tensor, Tensor]:
+    def _full_pairwise_pbc(
+        self,
+        species: Tensor,
+        cutoff: float,
+        cell: Tensor,
+        pbc: Tensor,
+    ) -> tp.Tuple[Tensor, Tensor]:
         cell = cell.detach()
-        shifts = self._compute_shifts(cell, pbc)
+        shifts = self._compute_shifts(cutoff, cell, pbc)
         num_atoms = species.shape[1]
         all_atoms = torch.arange(num_atoms, device=cell.device)
 
         # Step 2: center cell
-        p12_center = torch.triu_indices(num_atoms,
-                                        num_atoms,
-                                        1,
-                                        device=cell.device)
+        p12_center = torch.triu_indices(num_atoms, num_atoms, 1, device=cell.device)
         shifts_center = shifts.new_zeros((p12_center.shape[1], 3))
 
         # Step 3: cells with shifts
@@ -267,7 +294,7 @@ class FullPairwise(BaseNeighborlist):
         all_atom_pairs = torch.cat([p12_center, p12], dim=1)
         return all_atom_pairs, shifts_all
 
-    def _compute_shifts(self, cell: Tensor, pbc: Tensor) -> Tensor:
+    def _compute_shifts(self, cutoff: float, cell: Tensor, pbc: Tensor) -> Tensor:
         """Compute the shifts of unit cell along the given cell vectors to make it
         large enough to contain all pairs of neighbor atoms with PBC under
         consideration
@@ -285,213 +312,116 @@ class FullPairwise(BaseNeighborlist):
         """
         reciprocal_cell = cell.inverse().t()
         inv_distances = reciprocal_cell.norm(2, -1)
-        num_repeats = torch.ceil(self.cutoff * inv_distances).to(torch.long)
+        num_repeats = torch.ceil(cutoff * inv_distances).to(torch.long)
         num_repeats = torch.where(pbc, num_repeats, num_repeats.new_zeros(()))
         r1 = torch.arange(1, num_repeats[0].item() + 1, device=cell.device)
         r2 = torch.arange(1, num_repeats[1].item() + 1, device=cell.device)
         r3 = torch.arange(1, num_repeats[2].item() + 1, device=cell.device)
         o = torch.zeros(1, dtype=torch.long, device=cell.device)
-        return torch.cat([
-            torch.cartesian_prod(r1, r2, r3),
-            torch.cartesian_prod(r1, r2, o),
-            torch.cartesian_prod(r1, r2, -r3),
-            torch.cartesian_prod(r1, o, r3),
-            torch.cartesian_prod(r1, o, o),
-            torch.cartesian_prod(r1, o, -r3),
-            torch.cartesian_prod(r1, -r2, r3),
-            torch.cartesian_prod(r1, -r2, o),
-            torch.cartesian_prod(r1, -r2, -r3),
-            torch.cartesian_prod(o, r2, r3),
-            torch.cartesian_prod(o, r2, o),
-            torch.cartesian_prod(o, r2, -r3),
-            torch.cartesian_prod(o, o, r3),
-        ])
+        return torch.cat(
+            [
+                torch.cartesian_prod(r1, r2, r3),
+                torch.cartesian_prod(r1, r2, o),
+                torch.cartesian_prod(r1, r2, -r3),
+                torch.cartesian_prod(r1, o, r3),
+                torch.cartesian_prod(r1, o, o),
+                torch.cartesian_prod(r1, o, -r3),
+                torch.cartesian_prod(r1, -r2, r3),
+                torch.cartesian_prod(r1, -r2, o),
+                torch.cartesian_prod(r1, -r2, -r3),
+                torch.cartesian_prod(o, r2, r3),
+                torch.cartesian_prod(o, r2, o),
+                torch.cartesian_prod(o, r2, -r3),
+                torch.cartesian_prod(o, o, r3),
+            ]
+        )
 
 
-class CellList(BaseNeighborlist):
+class CellList(Neighborlist):
+    _offset_idx3: Tensor
 
-    verlet: Final[bool]
-    constant_volume: Final[bool]
-
-    skin: Tensor
-    cell_diagonal: Tensor
-    cell_inverse: Tensor
-    total_buckets: Tensor
-    scaling_for_flat_index: Tensor
-    shape_buckets_grid: Tensor
-    vector_idx_to_flat: Tensor
-    translation_cases: Tensor
-    vector_index_displacement: Tensor
-    translation_displacement_indices: Tensor
-    bucket_length_lower_bound: Tensor
-    spherical_factor: Tensor
-
-    def __init__(self,
-                 cutoff: float,
-                 buckets_per_cutoff: int = 1,
-                 verlet: bool = False,
-                 skin: tp.Optional[float] = None,
-                 constant_volume: bool = False):
-        super().__init__(cutoff)
-
-        # right now I will only support this, and the extra neighbors are
-        # hardcoded, but full support for arbitrary buckets per cutoff is possible
-        assert buckets_per_cutoff == 1, "Cell list currently only supports one bucket per cutoff"
-        assert not verlet, "Verlet cell list has issues and should not be used"
-        self.constant_volume = constant_volume
-        self.verlet = verlet
-        self.register_buffer('spherical_factor', torch.full(size=(3, ), fill_value=1.0), persistent=False)
-        self.register_buffer('cell_diagonal', torch.zeros(1), persistent=False)
-        self.register_buffer('cell_inverse', torch.zeros(1), persistent=False)
-        self.register_buffer('total_buckets', torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('scaling_for_flat_index', torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('shape_buckets_grid', torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('vector_idx_to_flat', torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('translation_cases', torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('vector_index_displacement', torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('translation_displacement_indices', torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('bucket_length_lower_bound', torch.zeros(1), persistent=False)
-
-        if skin is None:
-            if verlet:
-                # default value for dynamically updated neighborlist
-                skin = 1.0
-            else:
-                # default value for non dynamically updated neighborlist
-                skin = 0.0
-        self.register_buffer('skin', torch.tensor(skin), persistent=False)
-
-        # only used for verlet option
-        self.register_buffer('old_cell_diagonal', torch.zeros(1), persistent=False)
-        self.register_buffer('old_shift_indices', torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('old_atom_pairs', torch.zeros(1, dtype=torch.long), persistent=False)
-        self.register_buffer('old_coordinates', torch.zeros(1), persistent=False)
-
-        # buckets_per_cutoff is also the number of buckets that is scanned in
-        # each direction. It determines how fine grained the grid is, with
-        # respect to the cutoff. This is 2 for amber, but 1 is useful for debug
-        self.buckets_per_cutoff = buckets_per_cutoff
-        # Here I get the vector index displacements for the neighbors of an
-        # arbitrary vector index I think these are enough (this is different
-        # from pmemd)
-        # I choose all the displacements except for the zero
-        # displacement that does nothing, which is the last one
-        # hand written order,
-        # this order is basically right-to-left, top-to-bottom
-        # using the middle buckets (leftmost lower corner + rightmost lower bucket)
-        # and the down buckets (all)
-        # so this looks like:
-        #  x--
-        #  xo-
-        #  xxx
-        # For the middle buckets and
-        #  xxx
-        #  xxx
-        #  xxx
-        # for the down buckets
-
-        # NOTE: "0" corresponds to [0, 0, 0], but I don't really need that for
-        # vector indices only for translation displacements
-        vector_index_displacement = torch.tensor([[-1, 0, 0],  # 1
-                                                  [-1, -1, 0],  # 2
-                                                  [0, -1, 0],  # 3
-                                                  [1, -1, 0],  # 4
-                                                  [-1, 1, -1],  # 5
-                                                  [0, 1, -1],  # 6
-                                                  [1, 1, -1],  # 7
-                                                  [-1, 0, -1],  # 8
-                                                  [0, 0, -1],  # 9
-                                                  [1, 0, -1],  # 10
-                                                  [-1, -1, -1],  # 11
-                                                  [0, -1, -1],  # 12
-                                                  [1, -1, -1]],  # 13
-                                                  dtype=torch.long)
-        self.vector_index_displacement = vector_index_displacement
-        # these are the translation displacement indices, used to displace the
-        # image atoms
-        assert self.vector_index_displacement.shape == torch.Size([13, 3])
-
-        # I need some extra positions for the translation displacements, in
-        # particular, I need some positions for displacements that don't exist
-        # inside individual boxes
-        extra_translation_displacements = torch.tensor([
-            [-1, 1, 0],  # 14
-            [0, 1, 0],  # 15
-            [1, 1, 0],  # 16
-            [1, 0, 0],  # 17
-        ], dtype=torch.long)
-        translation_displacement_indices = torch.cat((torch.tensor([[0, 0, 0]], dtype=torch.long),
-                                                     self.vector_index_displacement,
-                                                     extra_translation_displacements), dim=0)
-        self.translation_displacement_indices = translation_displacement_indices
-
-        assert self.translation_displacement_indices.shape == torch.Size([18, 3])
-        # This is 26 for 2 buckets and 17 for 1 bucket
-        # This is necessary for the image - atom map and atom - image map
-        self.num_neighbors = len(self.vector_index_displacement)
-        # Get the lower bound of the length of a bucket in the bucket grid
-        # shape 3, (Bx, By, Bz) The length is cutoff/buckets_per_cutoff +
-        # epsilon
-        self._register_bucket_length_lower_bound()
-
-        # variables are not set until we have received a cell at least once
-        self.cell_variables_are_set = False
-        self.old_values_are_cached = False
-
-    @torch.jit.export
-    def _recast_long_buffers(self) -> None:
-        # for cell list
-        self.total_buckets = self.total_buckets.to(dtype=torch.long)
-        self.scaling_for_flat_index = self.scaling_for_flat_index.to(dtype=torch.long)
-        self.shape_buckets_grid = self.shape_buckets_grid.to(dtype=torch.long)
-        self.vector_idx_to_flat = self.vector_idx_to_flat.to(dtype=torch.long)
-        self.translation_cases = self.translation_cases.to(dtype=torch.long)
-        self.vector_index_displacement = self.vector_index_displacement.to(dtype=torch.long)
-        self.translation_displacement_indices = self.translation_displacement_indices.to(dtype=torch.long)
+    def __init__(self):
+        super().__init__()
+        # Get the grid_idx3 offsets for the surrounding buckets of an
+        # arbitrary bucket (I think this is different from SANDER, not sure why)
+        # NOTE: This assumes "1-bucket-per-cutoff"
+        #
+        # In order to avoid double counting, consider only half of the
+        # surrounding buckets.
+        #
+        # Choose all buckets in the bottom plane, and the lower half of the
+        # buckets in the same plane, not including the "self" bucket (maybe
+        # other choices are possible).
+        #
+        # Order is reading order: "left-to-right, top-to-bottom"
+        #
+        # The selected buckets in the planes are:
+        # ("x" selected elements, "-" non-selected and "o" reference element)
+        # top,   same,  bottom,
+        # |---|  |---|  |xxx|
+        # |---|  |xo-|  |xxx|
+        # |---|  |xxx|  |xxx|
+        #
+        # shape (surrounding=13, 3)
+        self.register_buffer(
+            "_offset_idx3",
+            torch.tensor(
+                [
+                    # Surrounding buckets in the same plane (gz-offset = 0)
+                    [-1, 0, 0],
+                    [-1, -1, 0],
+                    [0, -1, 0],
+                    [1, -1, 0],
+                    # Surrounding buckets in bottom plane (gz-offset = -1)
+                    [-1, 1, -1],
+                    [0, 1, -1],
+                    [1, 1, -1],
+                    [-1, 0, -1],
+                    [0, 0, -1],
+                    [1, 0, -1],
+                    [-1, -1, -1],
+                    [0, -1, -1],
+                    [1, -1, -1],
+                ],
+                dtype=torch.long,
+            ),
+            persistent=False,
+        )
 
     def forward(
         self,
         species: Tensor,
         coordinates: Tensor,
+        cutoff: float,
         cell: tp.Optional[Tensor] = None,
-        pbc: tp.Optional[Tensor] = None
+        pbc: tp.Optional[Tensor] = None,
+        return_shift_values: bool = False,
     ) -> NeighborData:
-
+        assert cutoff >= 0.0, "Cutoff must be a positive float"
         assert coordinates.shape[0] == 1, "Cell list doesn't support batches"
-        if cell is None:
-            assert (pbc is None or not pbc.any())
-        # if cell is None then a bounding cell for the molecule is obtained
-        # from the coordinates, in this case the coordinates are assumed to be
-        # mapped to the central cell, since it is meaningless for the coordinates
-        # not to be mapped to the central cell if no pbc is requrested
-        pbc = pbc if pbc is not None else self.default_pbc
-        assert pbc.all() or (not pbc.any()), "Cell list is only implemented for PBC in all directions or no pbc"
+        # Coordinates are displaced only if (pbc=False, cell=None), in which
+        # case the displaced coordinates lie all inside the created cell.
+        # otherwise they are the same as the input coordinates, but "detached"
+        displaced_coordinates, cell, pbc = self._validate_and_parse_cell_and_pbc(
+            coordinates, cell, pbc
+        )
 
-        if cell is None:
-            # displaced coordinates are only used for computation if pbc is not required
-            coordinates_displaced, cell = self._compute_bounding_cell(coordinates.detach(), eps=1e-3)
-        else:
-            coordinates_displaced = coordinates.detach()
+        # The cell is spanned by a 3D grid of "buckets" or "grid elements",
+        # which has grid_shape=(GX, GY, GZ) and grid_numel=G=(GX * GY * GZ)
+        #
+        # It is cheap to set up the grid each step, and avoids keeping track of state
+        grid_shape = setup_grid(
+            cell.detach(),
+            cutoff,
+        )
 
-        if (not self.constant_volume) or (not self.cell_variables_are_set):
-            # Cell parameters need to be set only once for constant V simulations,
-            # and every time for variable V, (constant P, NPT) simulations
-            self._setup_variables(cell.detach())
-
-        if self.verlet and self.old_values_are_cached and (not self._need_new_list(coordinates_displaced.detach())):
-            # If a new cell list is not needed use the old cached values
-            # IMPORTANT: here cached values should NOT be updated, moving cache
-            # to the new step is incorrect
-            atom_pairs = self.old_atom_pairs
-            shift_indices: tp.Optional[Tensor] = self.old_shift_indices
-        else:
-            # The cell list is calculated with a skin here. Since coordinates are
-            # fractionalized before cell calculation, it is not needed for them to
-            # be imaged to the central cell, they can lie outside the cell.
-            atom_pairs, shift_indices = self._calculate_cell_list(coordinates_displaced.detach(), pbc)
-            # 'Verlet' prevent unnecessary rebuilds of the neighborlist
-            if self.verlet:
-                self._cache_values(atom_pairs, shift_indices, coordinates_displaced.detach())
+        # Since coords will be fractionalized they may lie outside the cell before this
+        atom_pairs, shift_indices = self._compute_cell_list(
+            displaced_coordinates.detach(),
+            grid_shape,
+            cell,
+            pbc,
+        )
 
         if pbc.any():
             assert shift_indices is not None
@@ -499,478 +429,533 @@ class CellList(BaseNeighborlist):
             # Before the screening step we map the coordinates to the central cell,
             # same as with a full pairwise calculation
             coordinates = map_to_central(coordinates, cell.detach(), pbc)
-            # The final screening does not use the skin, the skin is only used
-            # internally to prevent neighborlist recalculation.  We must screen
-            # even if the list is not rebuilt, two atoms may have moved a long
-            # enough distance that they are not neighbors anymore, but a short
-            # enough distance that the neighborlist is not rebuilt. Rebuilds
-            # happen only if it can't be guaranteed that the cached
-            # neighborlist holds at least all atom pairs, but it may hold more.
             return self._screen_with_cutoff(
-                self.cutoff,
+                cutoff,
                 coordinates,
                 atom_pairs,
-                shift_values,
-                (species == -1)
+                mask=(species == -1),
+                shift_values=shift_values,
+                return_shift_values=return_shift_values,
             )
-        else:
-            return self._screen_with_cutoff(
-                self.cutoff,
-                coordinates,
-                atom_pairs,
-                shift_values=None,
-                mask=(species == -1)
+        return self._screen_with_cutoff(
+            cutoff, coordinates, atom_pairs, mask=(species == -1), shift_values=None,
+        )
+
+    def _validate_and_parse_cell_and_pbc(
+        self,
+        coordinates: Tensor,
+        cell: tp.Optional[Tensor],
+        pbc: tp.Optional[Tensor],
+    ) -> tp.Tuple[Tensor, Tensor, Tensor]:
+        device = coordinates.device
+        if pbc is None:
+            pbc = torch.zeros(3, dtype=torch.bool, device=device)
+        assert pbc is not None
+
+        if not ((~pbc).all() or pbc.all()):
+            raise ValueError("Cell list only supports PBC in all or no directions")
+
+        if cell is None:
+            if pbc.any():
+                raise ValueError("Cell must be provided if PBC is required")
+            displaced_coordinates, cell = self.compute_bounding_cell(
+                coordinates.detach(), eps=1e-3,
             )
+            return displaced_coordinates, cell, pbc
 
-    def _calculate_cell_list(self, coordinates: Tensor, pbc: Tensor) -> tp.Tuple[Tensor, tp.Optional[Tensor]]:
-        # 1) Fractionalize coordinates
-        fractional_coordinates = self._fractionalize_coordinates(coordinates)
+        assert cell is not None
+        return coordinates.detach(), cell, pbc
 
-        # 2) Get vector indices and flattened indices for atoms in unit cell
-        # shape C x A x 3 this gives \vb{g}(a), the vector bucket idx
-        # shape C x A this gives f(a), the flat bucket idx for atom a
-        atom_vector_index, atom_flat_index = self._get_bucket_indices(fractional_coordinates)
+    def _compute_cell_list(
+        self,
+        coordinates: Tensor,  # shape (C, A, 3)
+        grid_shape: Tensor,  # shape (3,)
+        cell: Tensor,  # shape (3, 3)
+        pbc: Tensor,  # shape (3,)
+    ) -> tp.Tuple[Tensor, tp.Optional[Tensor]]:
+        # 1) Get location of each atom in the grid, given by a "grid_idx3"
+        # or by a single flat "grid_idx" (g).
+        # Shapes (C, A, 3) and (C, A)
+        atom_grid_idx3 = coords_to_grid_idx3(coordinates, cell, grid_shape)
+        atom_grid_idx = flatten_idx3(atom_grid_idx3, grid_shape)
 
-        # 3) get image_indices -> atom_indices and inverse mapping
-        # NOTE: there is not necessarily a requirement to do this here
-        # both shape (A,); a(i) and i(a)
-        # NOTE: watch out, since sorting is not stable this may scramble the atoms
-        # in the same box, so that the atidx you get after applying
-        # atidx_from_imidx[something] will not be the correct order
-        # since what we want is the pairs this is fine, pairs are agnostic to
-        # species.
-        imidx_from_atidx, atidx_from_imidx = self._get_imidx_converters(atom_flat_index)
+        # 2) Get image pairs of atoms WITHIN atoms inside a bucket
+        # To do this, first calculate:
+        # - Num atoms in each bucket "count_in_grid[g]", and the max, (c-max)
+        # - Cumulative num atoms *before* each bucket "comcount_in_grid[g]"
+        # Both shapes (G,)
+        count_in_grid, cumcount_in_grid = count_atoms_in_buckets(
+            atom_grid_idx, grid_shape
+        )
+        count_in_grid_max: int = int(count_in_grid.max())
+        # Shape (2, W)
+        _image_pairs_within = image_pairs_within(
+            count_in_grid,
+            cumcount_in_grid,
+            count_in_grid_max,
+        )
 
-        # FIRST WE WANT "WITHIN" IMAGE PAIRS
-        # 1) Get the number of atoms in each bucket (as indexed with f idx)
-        # this gives A*, A(f) , "A(f' <= f)" = Ac(f) (cumulative) f being the
-        # flat bucket index, A being the number of atoms for that bucket,
-        # and Ac being the cumulative number of atoms up to that bucket
-        out_in_flat_bucket = self._get_atoms_in_flat_bucket_counts(atom_flat_index)
-        flat_bucket_count, flat_bucket_cumcount, max_in_bucket = out_in_flat_bucket
+        # 3) Get image pairs BETWEEN atoms inside a bucket and its surrounding buckets
+        #
+        # First calc the grid_idx3 associated with the buckets
+        # surrounding a given atom. "self bucket" not included.
+        #
+        # The surrounding buckets will either lie in the central cell or wrap
+        # around one or more dimensions due to PBC. In the latter case the
+        # atom_surround_idx3 may be negative, or larger than the corrseponding
+        # grid_shape dim, which can be used to identify them. The required shift
+        # is given by the number and value of negative and overflowing
+        # dimensions.
+        # surround=N=13 for 1-bucket-per-cutoff
+        # shape (C, A, N=13, 3) contains negative and overflowing idxs
+        atom_surround_idx3 = atom_grid_idx3.unsqueeze(-2) + self._offset_idx3.view(
+            1, 1, -1, 3
+        )
+        # Modulo grid_shape is used to get rid of the negative and overflowing idxs
+        # shape (C, A, surround=13) contains only positive idxs
+        atom_surround_idx = flatten_idx3(atom_surround_idx3 % grid_shape, grid_shape)
 
-        # 2) this are indices WITHIN the central buckets
-        within_image_pairs = self._get_within_image_pairs(flat_bucket_count, flat_bucket_cumcount, max_in_bucket)
+        # 4) Calc upper and lower part of the image_pairs_between.
+        # The "unpadded" upper part of the pairlist repeats each image idx a
+        # number of times equal to the number of atoms on the surroundings of
+        # each atom
 
-        # NOW WE WANT "BETWEEN" IMAGE PAIRS
-        # 1) Get the vector indices of all (pure) neighbors of each atom
-        # this gives \vb{g}(a, n) and f(a, n)
-        # shapes 1 x A x Eta x 3 and 1 x A x Eta respectively
-        neighbor_vector_indices, neighbor_flat_indices = self._get_neighbor_indices(atom_vector_index)
+        # Both shapes (C, A, N=13)
+        count_in_atom_surround = count_in_grid[atom_surround_idx]
+        cumcount_in_atom_surround = cumcount_in_grid[atom_surround_idx]
+        # shape (C, A, N=13, 3), note that the -1 is needed here
+        shift_idxs_between = -torch.div(
+            atom_surround_idx3, grid_shape, rounding_mode="floor"
+        )
 
-        # 2) Upper and lower part of the external pairlist this is the
-        # correct "unpadded" upper
-        # part of the pairlist it repeats each image
-        # idx a number of times equal to the number of atoms on the
-        # neighborhood of each atom
+        # Shapes (B,) and (B, 3)
+        lower_between, shift_idxs_between = lower_image_pairs_between(
+            count_in_atom_surround,
+            cumcount_in_atom_surround,
+            shift_idxs_between,
+            count_in_grid_max,
+        )
 
-        # neighborhood count is A{n} (a), the number of atoms on the
-        # neighborhood (all the neighbor buckets) of each atom,
-        # A{n} (a) has shape 1 x A
-        # neighbor_translation_types
-        # has the type of shift for T(a, n), atom a,
-        # neighbor bucket n
-        neighbor_count = flat_bucket_count[neighbor_flat_indices]
-        neighbor_cumcount = flat_bucket_cumcount[neighbor_flat_indices]
-        neighbor_translation_types = self._get_neighbor_translation_types(neighbor_vector_indices)
-        lower, between_pairs_translation_types = self._get_lower_between_image_pairs(neighbor_count,
-                                                                               neighbor_cumcount,
-                                                                               max_in_bucket,
-                                                                               neighbor_translation_types)
-        neighborhood_count = neighbor_count.sum(-1).squeeze()
-        upper = torch.repeat_interleave(imidx_from_atidx.squeeze(), neighborhood_count)
-        assert lower.shape == upper.shape
-        between_image_pairs = torch.stack((upper, lower), dim=0)
+        # Total count of all atoms in buckets surrounding a given atom.
+        # shape (C, A, N=13) -> (C, A) -> (C*A,) (get rid of C with view)
+        total_count_in_atom_surround = count_in_atom_surround.sum(-1).view(-1)
 
+        # Both shapes (C*A,)
+        atom_to_image, image_to_atom = atom_image_converters(atom_grid_idx)
+
+        # For each atom we have one image_pair_between associated with each of
+        # the atoms in its surrounding buckets, so we repeat the image-idx of each
+        # atom that many times.
+        # shape (C*A,), (C*A) -> (B,)
+        upper_between = torch.repeat_interleave(
+            atom_to_image,
+            total_count_in_atom_surround,
+        )
+        # shape (2, B)
+        _image_pairs_between = torch.stack((upper_between, lower_between), dim=0)
+
+        # 5) Get the necessary shifts. If no PBC is needed also get rid of the
+        # image_pairs_between that need wrapping
         if not pbc.any():
-            # select only the pairs that don't need any translation
-            non_pbc_pairs = (between_pairs_translation_types == 0).nonzero().flatten()
-            between_image_pairs = between_image_pairs.index_select(1, non_pbc_pairs)
-            shift_indices = None
+            _image_pairs_between = fast_masked_select(
+                _image_pairs_between,
+                (shift_idxs_between == 0).all(dim=-1),
+                1,
+            )
+            shift_idxs = None
         else:
-            between_pairs_shift_indices = self.translation_displacement_indices.index_select(0, between_pairs_translation_types)
-            assert between_pairs_shift_indices.shape[-1] == 3
-            within_pairs_shift_indices = torch.zeros(len(within_image_pairs[0]),
-                                                3,
-                                                device=between_pairs_shift_indices.device, dtype=torch.long)
-            # -1 is necessary to ensure correct shifts
-            shift_indices = -torch.cat((between_pairs_shift_indices, within_pairs_shift_indices), dim=0)
+            shift_idxs_within = torch.zeros(
+                _image_pairs_within.shape[1],
+                3,
+                device=grid_shape.device,
+                dtype=torch.long,
+            )
+            shift_idxs = torch.cat((shift_idxs_between, shift_idxs_within), dim=0)
 
-        # concatenate within and between
-        image_pairs = torch.cat((between_image_pairs, within_image_pairs), dim=1)
-        atom_pairs = atidx_from_imidx[image_pairs]
+        # 6) Concatenate all image pairs, and convert to atom pairs
+        image_pairs = torch.cat((_image_pairs_between, _image_pairs_within), dim=1)
+        atom_pairs = image_to_atom[image_pairs]
+        return atom_pairs, shift_idxs
 
-        return atom_pairs, shift_indices
+    @torch.jit.export
+    def _recast_long_buffers(self) -> None:
+        # Needed due to JIT bug in C++
+        self._offset_idx3 = self._offset_idx3.to(dtype=torch.long)
 
-    def _setup_variables(self, cell: Tensor):
-        current_device = cell.device
-        # 1) Update the cell diagonal and translation displacements
-        # sizes of each side are given by norm of each basis vector of the unit cell
-        self.cell_diagonal = torch.linalg.norm(cell, dim=0)
-        self.cell_inverse = torch.inverse(cell)
 
-        # 2) Get max bucket index (Gx, Gy, Gz)
-        # which give the size of the grid of buckets that fully covers the
-        # whole volume of the unit cell U, given by "cell", and the number of
-        # flat buckets (F) (equal to the total number of buckets, F )
-        #
-        # Gx, Gy, Gz is 1 + maximum index for vector g. Flat bucket indices are
-        # indices for the buckets written in row major order (or equivalently
-        # dictionary order), the number F = Gx * Gy * Gz
+def coords_to_grid_idx3(
+    coordinates: Tensor,  # shape (C, A, 3)
+    cell: Tensor,  # shape (3, 3)
+    grid_shape: Tensor,  # shape (3,)
+) -> Tensor:
+    # 1) Fractionalize coordinates. After this ll coordinates lie in [0., 1.)
+    fractionals = coords_to_fractional(coordinates, cell)  # shape (C, A, 3)
+    # 2) Assign to each fractional its corresponding grid_idx3
+    return torch.floor(fractionals * grid_shape).to(torch.long)
 
-        # bucket_length_lower_bound = B, unit cell U_mu = B * 3 - epsilon this
-        # means I can cover it with 3 buckets plus some extra space that is
-        # less than a bucket, so I just stretch the buckets a little bit. In
-        # this particular case shape_buckets_grid = [3, 3, 3]
-        self.shape_buckets_grid = torch.div(
-            self.cell_diagonal, self.bucket_length_lower_bound, rounding_mode='floor').to(torch.long)
 
-        self.total_buckets = self.shape_buckets_grid.prod()
-        if self.total_buckets == 0:
-            raise RuntimeError("Cell is too small to perform pbc calculations")
+def coords_to_fractional(coordinates: Tensor, cell: Tensor) -> Tensor:
+    # Transform and wrap all coordinates to be relative to the cell vectors
+    #
+    # Input to this function may have coordinates outside the box. If the
+    # coordinate is 0.16 or 3.15 times the cell length, it is turned into 0.16
+    # or 0.15 respectively.
+    # All output coords are in the range [0.0, 1.0)
+    fractional_coords = torch.matmul(coordinates, cell.inverse())
+    fractional_coords -= fractional_coords.floor()
+    fractional_coords[fractional_coords >= 1.0] += -1.0
+    fractional_coords[fractional_coords < 0.0] += 1.0
+    return fractional_coords
 
-        # 3) This is needed to scale and flatten last dimension of bucket indices
-        # for row major this is (Gy * Gz, Gz, 1)
-        self.scaling_for_flat_index = torch.ones(3,
-                                                 dtype=torch.long,
-                                                 device=current_device)
-        self.scaling_for_flat_index[
-            0] *= self.shape_buckets_grid[1] * self.shape_buckets_grid[2]
-        self.scaling_for_flat_index[1] *= self.shape_buckets_grid[2]
 
-        # 4) create the vector_index -> flat_index conversion tensor
-        # it is not really necessary to perform circular padding,
-        # since we can index the array using negative indices!
-        vector_idx_to_flat = torch.arange(0, self.total_buckets.item(),
-                                          device=current_device)
-        vector_idx_to_flat = vector_idx_to_flat.view(
-            int(self.shape_buckets_grid[0]),
-            int(self.shape_buckets_grid[1]),
-            int(self.shape_buckets_grid[2]))
-        self.vector_idx_to_flat = self._pad_circular(vector_idx_to_flat)
+def flatten_idx3(
+    idx3: Tensor,
+    grid_shape: Tensor,
+) -> Tensor:
+    # Convert a tensor that holds idx3 (all of which lie inside the central
+    # grid) to one that holds flat idxs (last dimension is removed). For
+    # row-major flattening the factors needed are: (GY * GZ, GZ, 1)
+    grid_factors = grid_shape.clone()
+    grid_factors[0] = grid_shape[1] * grid_shape[2]
+    grid_factors[1] = grid_shape[2]
+    grid_factors[2] = 1
+    return (idx3 * grid_factors).sum(-1)
 
-        # 5) I now create a tensor that when indexed with vector indices
-        # gives the shifting case for that atom/neighbor bucket
-        self.translation_cases = torch.zeros_like(self.vector_idx_to_flat)
-        # now I need to  fill the vector
-        # in some smart way
-        # this should fill the tensor in a smart way
 
-        self.translation_cases[0, 1:-1, 1:-1] = 1
-        self.translation_cases[0, 0, 1:-1] = 2
-        self.translation_cases[1:-1, 0, 1:-1] = 3
-        self.translation_cases[-1, 0, 1:-1] = 4
-        self.translation_cases[0, -1, 0] = 5
-        self.translation_cases[1:-1, -1, 0] = 6
-        self.translation_cases[-1, -1, 0] = 7
-        self.translation_cases[0, 1:-1, 0] = 8
-        self.translation_cases[1:-1, 1:-1, 0] = 9
-        self.translation_cases[-1, 1:-1, 0] = 10
-        self.translation_cases[0, 0, 0] = 11
-        self.translation_cases[1:-1, 0, 0] = 12
-        self.translation_cases[-1, 0, 0] = 13
-        # extra
-        self.translation_cases[0, -1, 1:-1] = 14
-        self.translation_cases[1:-1, -1, 1:-1] = 15
-        self.translation_cases[-1, -1, 1:-1] = 16
-        self.translation_cases[-1, 1:-1, 1:-1] = 17
+def atom_image_converters(grid_idx: Tensor) -> tp.Tuple[Tensor, Tensor]:
+    # NOTE: Since sorting is not stable this may scramble the atoms,
+    # this is not important for the neighborlist, only the pairs are important,
+    # and non-stable sorting is marginally faster.
 
-        self.cell_variables_are_set = True
+    # For the "image indices", (indices that sort atoms in the order of
+    # the flattened bucket index) only occupied buckets are considered, so
+    # if a bucket is unoccupied the index is not taken into account.  for
+    # example if the atoms are distributed as:
+    # |1 9 8|, |empty|, |3 2 4|, |7|
+    # where the bars delimit flat buckets, then the image idxs will be:
+    # |0 1 2|, |empty|, |3 4 5|, |6|
+    #
+    # "atom_indices" can be reconstructed from the "image_indices". The
+    # pairlist can be built with image indices, and
+    # image_to_atom[image_neighborlist] = atom_neighborlist
 
-    @staticmethod
-    def _pad_circular(x: Tensor) -> Tensor:
-        x = x.unsqueeze(0).unsqueeze(0)
-        x = torch.nn.functional.pad(x, (1, 1, 1, 1, 1, 1), mode='circular')
-        return x.squeeze()
+    grid_idx = grid_idx.view(-1)  # shape (C, A) -> (A,), get rid of C
+    image_to_atom = torch.argsort(grid_idx)
+    atom_to_image = torch.argsort(image_to_atom)
+    # Both shapes (A,)
+    return atom_to_image, image_to_atom
 
-    def _register_bucket_length_lower_bound(self,
-                                            extra_space: float = 1e-5):
-        # Get the size (Bx, By, Bz) of the buckets in the grid.
-        # extra space by default is consistent with Amber
-        #
-        # The spherical factor is different from 1 in the case of nonorthogonal
-        # boxes and accounts for the "spherical protrusion", which is related
-        # to the fact that the sphere of radius "cutoff" around an atom needs
-        # some extra space in nonorthogonal boxes.
-        #
-        # note that this is not actually the bucket length used in the grid,
-        # it is only a lower bound used to calculate the grid size
-        spherical_factor = self.spherical_factor
-        self.bucket_length_lower_bound = (spherical_factor * self.cutoff / self.buckets_per_cutoff) + extra_space
 
-    def _to_flat_index(self, x: Tensor) -> Tensor:
-        # Converts a tensor with bucket indices in the last dimension to a
-        # tensor with flat bucket indices in the last dimension.
-        #
-        # If your tensor is (N1, ..., Nd, 3) this transforms the tensor into
-        # (N1, ..., Nd), which holds the flat bucket indices this can be done a
-        # different way, same as between but this is possibly faster (?) NOTE:
-        # should benchmark this or simplify the code
-        assert self.scaling_for_flat_index is not None, \
-            "Scaling for flat index has not been computed"
-        assert x.shape[-1] == 3
-        return (x * self.scaling_for_flat_index).sum(-1)
+def count_atoms_in_buckets(
+    atom_grid_idx: Tensor,  # shape (C, A)
+    grid_shape: Tensor,
+) -> tp.Tuple[Tensor, Tensor]:
+    # Return number of atoms in each bucket, and cumulative number of
+    # atoms before each bucket, as indexed with the flat grid_idx
+    atom_grid_idx = atom_grid_idx.view(-1)  # shape (A,), get rid of C
+    count_in_grid = torch.bincount(atom_grid_idx, minlength=int(grid_shape.prod()))
+    # Both shape (G,), the total number of "grid elements"|"buckets"
+    return count_in_grid, cumsum_from_zero(count_in_grid)
 
-    def _expand_into_neighbors(self, x: Tensor) -> Tensor:
-        # transforms a tensor of shape (... 3) with vector indices
-        # in the last dimension into a tensor of shape (..., Eta, 3)
-        # where Eta is the number of neighboring buckets, indexed by n
-        assert self.vector_index_displacement is not None, \
-            "Displacement for neighbors has not been computed"
-        assert x.shape[-1] == 3
-        x = x.unsqueeze(-2) + self.vector_index_displacement
-        # sanity check
-        assert x.shape[-1] == 3
-        assert x.shape[-2] == self.vector_index_displacement.shape[0]
-        return x
 
-    def _fractionalize_coordinates(self, coordinates: Tensor) -> Tensor:
-        # Scale coordinates to box size
-        #
-        # Make all coordinates relative to the box size. This means for
-        # instance that if the coordinate is 3.15 times the cell length, it is
-        # turned into 3.15; if it is 0.15 times the cell length, it is turned
-        # into 0.15, etc
-        fractional_coordinates = torch.matmul(coordinates, self.cell_inverse)
-        # this is done to account for possible coordinates outside the box,
-        # which amber does, in order to calculate diffusion coefficients, etc
-        fractional_coordinates -= fractional_coordinates.floor()
-        # fractional_coordinates should be in the range [0, 1.0)
-        fractional_coordinates[fractional_coordinates >= 1.0] += -1.0
-        fractional_coordinates[fractional_coordinates < 0.0] += 1.0
+def setup_grid(
+    cell: Tensor,
+    cutoff: float,
+    buckets_per_cutoff: int = 1,
+    extra_space: float = 1e-5,
+) -> Tensor:
+    # Get the shape (GX, GY, GZ) of the grid. Some extra space is used as slack.
+    #
+    # NOTE: "buckets_per_cutoff" determines how fine grained the 3D grid is,
+    # with respect to the distance cutoff, and is currently hardcoded to 1 in
+    # CellList and VerletCellList, but support for 2 may be possible. This may
+    # be 2 for SANDER, not sure. If this is changed then the surround_offsets
+    # must also be changed
+    #
+    # NOTE: extra_space is currently hardcoded to be consistent with SANDER
+    #
+    # The spherical factor is different from 1 in the case of nonorthogonal
+    # boxes and accounts for the "spherical protrusion", which is related
+    # to the fact that the sphere of radius "cutoff" around an atom needs
+    # some more room to fit in nonorthogonal boxes.
 
-        assert not torch.isnan(fractional_coordinates).any(), \
-                "Some fractional coordinates are NaN."
-        assert not torch.isinf(fractional_coordinates).any(), \
-                "Some fractional coordinates are +-Inf."
-        assert (fractional_coordinates < 1.0).all(), \
-            f"Some fractional coordinates are too large {fractional_coordinates[fractional_coordinates >= 1.]}"
-        assert (fractional_coordinates >= 0.0).all(), \
-            f"Some coordinates are too small {fractional_coordinates.masked_select(fractional_coordinates < 0.)}"
-        return fractional_coordinates
+    # To get the shape of the grid (number of "buckets" or "grid elements"
+    # in each direction) calculate first a lower bound, and afterwards
+    # perform floor division.
+    #
+    # NOTE: This is not actually the bucket length used in the grid,
+    # it is only a lower bound used to calculate the grid size, it is the minimum
+    # size that spawns a new bucket in the grid.
+    spherical_factor = torch.tensor(
+        [1.0, 1.0, 1.0], dtype=torch.float, device=cell.device
+    )  # TODO: calculate correctly
+    bucket_length_lower_bound = (
+        spherical_factor * cutoff / buckets_per_cutoff
+    ) + extra_space
 
-    def _fractional_to_vector_bucket_indices(self, fractional: Tensor) -> Tensor:
-        # transforms a tensor of fractional coordinates (shape (..., 3))
-        # into a tensor of vector bucket indices (same shape)
-        # Since the number of indices to iterate over is a cartesian product of 3
-        # vectors it will grow with L^3 (volume) I think it is intelligent to first
-        # get all indices and then apply as needed I will call the buckets "main
-        # bucket" and "neighboring buckets"
-        assert self.shape_buckets_grid is not None, "shape_buckets_grid not computed"
-        out = torch.floor(fractional * (self.shape_buckets_grid).view(1, 1, -1))
-        out = out.to(torch.long)
-        return out
+    # Lengths of each cell edge are given by norm of each cell basis vector
+    cell_lengths = torch.linalg.norm(cell, dim=0)
 
-    @staticmethod
-    def _get_imidx_converters(x: Tensor) -> tp.Tuple[Tensor, Tensor]:
-        # this are the "image indices", indices that sort atoms in the order of
-        # the flattened bucket index.  Only occupied buckets are considered, so
-        # if a bucket is unoccupied the index is not taken into account.  for
-        # example if the atoms are distributed as:
-        # / 1 9 8 / - / 3 2 4 / 7 /
-        # where the bars delimit flat buckets, then the assoc. image indices
-        # are:
-        # / 0 1 2 / - / 3 4 5 / 6 /
-        # atom indices can be reconstructed from the image indices, so the
-        # pairlist can be built with image indices and then at the end calling
-        # atom_indices_from_image_indices[pairlist] you convert to atom_indices
+    # For example, if a cell length is "3 * bucket_length_lower_bound + eps" it
+    # can be covered with 3 buckets if they are stretched to be slightly larger
+    # than the lower bound.
+    grid_shape = torch.div(
+        cell_lengths,
+        bucket_length_lower_bound,
+        rounding_mode="floor",
+    ).to(torch.long)
 
-        # imidx_from_atidx returns tensors that convert image indices into atom
-        # indices and viceversa
-        # move to device necessary? not sure
-        atidx_from_imidx = torch.argsort(x.squeeze()).to(x.device)
-        imidx_from_atidx = torch.argsort(atidx_from_imidx).to(x.device)
-        return imidx_from_atidx, atidx_from_imidx
+    if (grid_shape == 0).any():
+        raise RuntimeError("Cell is too small to perform pbc calculations")
+    return grid_shape
 
-    def _get_atoms_in_flat_bucket_counts(
-            self, atom_flat_index: Tensor) -> tp.Tuple[Tensor, Tensor, Tensor]:
-        # NOTE: count in flat bucket: 3 0 0 0 ... 2 0 0 0 ... 1 0 1 0 ...,
-        # shape is total buckets F cumulative buckets count has the number of
-        # atoms BEFORE a given bucket cumulative buckets count: 0 3 3 3 ... 3 5
-        # 5 5 ... 5 6 6 7 ...
-        atom_flat_index = atom_flat_index.squeeze()
-        flat_bucket_count = torch.bincount(atom_flat_index,
-                                           minlength=int(self.total_buckets)).to(
-                                               atom_flat_index.device)
-        flat_bucket_cumcount = cumsum_from_zero(flat_bucket_count).to(
-            atom_flat_index.device)
 
-        # this is A*
-        max_in_bucket = flat_bucket_count.max()
-        return flat_bucket_count, flat_bucket_cumcount, max_in_bucket
+def image_pairs_within(
+    count_in_grid: Tensor,  # shape (G,)
+    cumcount_in_grid: Tensor,  # shape (G,)
+    count_in_grid_max: int,  # max number of atoms in any bucket
+) -> Tensor:
+    device = count_in_grid.device
+    # Calc all possible image-idx-pairs within each central bucket ("W" in total)
+    # Output is shape (2, W)
+    #
+    # NOTE: Inside each central bucket there are grid_count[g] num atoms.
+    # These atoms are indexed with an "image idx", "i", different from the "atom idx"
+    # which indexes the atoms in the coords
+    # For instance:
+    # - central bucket g=0 has "image" atoms 0...grid_count[0]
+    # - central bucket g=1 has "image" atoms grid_count[0]...grid_count[1], etc
 
-    def _get_within_image_pairs(self, flat_bucket_count: Tensor,
-                                flat_bucket_cumcount: Tensor,
-                                max_in_bucket: Tensor) -> Tensor:
-        # note: in this function wpairs == "with_pairs"
-        # max_in_bucket = maximum number of atoms contained in any bucket
-        current_device = flat_bucket_count.device
+    # 1) Get idxs "g" that have atom pairs inside ("H" in total).
+    # Index them with 'h' using g[h], from this, get count_in_haspairs[h] and
+    # cumcount_in_haspairs[h].
+    # shapes are (H,)
+    haspairs_idx_to_grid_idx = (count_in_grid > 1).nonzero().view(-1)
+    count_in_haspairs = count_in_grid.index_select(0, haspairs_idx_to_grid_idx)
+    cumcount_in_haspairs = cumcount_in_grid.index_select(0, haspairs_idx_to_grid_idx)
 
-        # get all indices f that have pairs inside
-        # these are A(w) and Ac(w), and wpairs_flat_index is actually f(w)
-        wpairs_flat_index = (flat_bucket_count > 1).nonzero().squeeze()
-        wpairs_flat_bucket_count = flat_bucket_count.index_select(0, wpairs_flat_index)
-        wpairs_flat_bucket_cumcount = flat_bucket_cumcount.index_select(0, wpairs_flat_index)
+    # 2) Get image pairs pairs assuming every bucket (with pairs) has
+    # the same num atoms as the fullest one. To do this:
+    # - Get the image-idx-pairs for the fullest bucket
+    # - Repeat (view) the image pairs in the fullest bucket H-times,
+    # - Add to each repeat the cumcount of atoms in all previous buckets.
+    #
+    # After this step:
+    # - There are more pairs than needed
+    # - Some of the extra pairs may have out-of-bounds idxs
+    # Screen the incorrect, unneeded pairs in the next step.
+    # shapes are (2, cp-max) and (2, H*cp-max)
+    image_pairs_in_fullest_bucket = torch.tril_indices(
+        count_in_grid_max,
+        count_in_grid_max,
+        offset=-1,
+        device=device,
+    )
+    _image_pairs_within = (
+        image_pairs_in_fullest_bucket.view(2, 1, -1)
+        + cumcount_in_haspairs.view(1, -1, 1)
+    ).view(2, -1)
 
-        padded_pairs = torch.triu_indices(int(max_in_bucket),
-                                          int(max_in_bucket),
-                                          offset=1,
-                                          device=current_device)
-        # sort along first row
-        padded_pairs = padded_pairs.index_select(1, torch.argsort(padded_pairs[1]))
-        # shape (2, pairs) + shape (wpairs, 1, 1) = shape (wpairs, 2, pairs)
+    # 3) Get actual number of pairs in each bucket (with pairs), and a
+    # mask that selects those from the unscreened pairs
+    # shapes (H,) (cp-max,), (H, cp-max)
+    paircount_in_haspairs = torch.div(
+        count_in_haspairs * torch.sub(count_in_haspairs, 1),
+        2,
+        rounding_mode="floor",
+    )
+    mask = torch.arange(0, image_pairs_in_fullest_bucket.shape[1], device=device)
+    mask = mask.view(1, -1) < paircount_in_haspairs.view(-1, 1)
 
-        # basically this repeats the padded pairs "wpairs" times and adds to
-        # all of them the cumulative counts, then we unravel all pairs, which
-        # remain in the correct order in the second row (the order within same
-        # numbers in the first row is actually not essential)
-        padded_pairs = padded_pairs.view(2, 1, -1) + wpairs_flat_bucket_cumcount.view(1, -1, 1)
-        padded_pairs = padded_pairs.view(2, -1)
+    # 4) Screen the incorrect, unneeded pairs.
+    # shape (2, H*cp-max) -> (2, W)
+    return fast_masked_select(_image_pairs_within, mask, 1)
 
-        # NOTE this code is very confusing, it could probably use some comments / simplification
-        # NOTE: JIT bug makes it so that we have to add the "one" tensor here
-        one = torch.tensor(1, device=current_device, dtype=torch.long)
-        max_pairs_in_bucket = (max_in_bucket * (max_in_bucket - one)).div_(2, rounding_mode='floor')
-        wpairs_count_pairs = (wpairs_flat_bucket_count * (wpairs_flat_bucket_count - one)).div_(2, rounding_mode='floor')
 
-        mask = torch.arange(0, int(max_pairs_in_bucket), device=current_device)
-        mask = mask.expand(wpairs_flat_index.numel(), -1)
-        mask = (mask < wpairs_count_pairs.view(-1, 1)).view(-1)
-        within_image_pairs = padded_pairs.index_select(1, mask.nonzero().squeeze())
-        return within_image_pairs
+def lower_image_pairs_between(
+    count_in_atom_surround: Tensor,  # shape (C, A, N=13)
+    cumcount_in_atom_surround: Tensor,  # shape (C, A, N=13)
+    shift_idxs_between: Tensor,  # shape (C, A, N=13, 3)
+    count_in_grid_max: int,  # scalar
+) -> tp.Tuple[Tensor, Tensor]:
+    # Calculate "lower" part of the image_pairs_between buckets
+    device = count_in_atom_surround.device
+    mols, atoms, neighbors = count_in_atom_surround.shape
+    # shape is (c-max)
+    padded_atom_neighbors = torch.arange(0, count_in_grid_max, device=device)
+    # shape (1, 1, 1, c-max)
+    padded_atom_neighbors = padded_atom_neighbors.view(1, 1, 1, -1)
+    # shape (C, A, N=13, c-max)
+    padded_atom_neighbors = padded_atom_neighbors.repeat(mols, atoms, neighbors, 1)
 
-    def _get_lower_between_image_pairs(
-            self, neighbor_count: Tensor, neighbor_cumcount: Tensor,
-            max_in_bucket: Tensor,
-            neighbor_translation_types: Tensor) -> tp.Tuple[Tensor, Tensor]:
-        # neighbor_translation_types has shape 1 x At x Eta
-        # 3) now I need the LOWER part
-        # this gives, for each atom, for each neighbor bucket, all the
-        # unpadded, unshifted atom neighbors
-        # this is basically broadcasted to the shape of fna
-        # shape is 1 x A x eta x A*
-        atoms = neighbor_count.shape[1]
-        padded_atom_neighbors = torch.arange(0,
-                                             int(max_in_bucket),
-                                             device=neighbor_count.device)
-        padded_atom_neighbors = padded_atom_neighbors.view(1, 1, 1, -1)
-        # repeat is needed instead of expand here due to += neighbor_cumcount
-        padded_atom_neighbors = padded_atom_neighbors.repeat(
-            1, atoms, self.num_neighbors, 1)
+    # Create a mask to unpad the padded neighbors
+    # shape (C, A, N=13, c-max)
+    mask = padded_atom_neighbors < count_in_atom_surround.unsqueeze(-1)
+    padded_atom_neighbors.add_(cumcount_in_atom_surround.unsqueeze(-1))
 
-        # repeat the neighbor translation types to account for all neighboring atoms
-        # repeat is needed instead of expand due to reshaping later
-        neighbor_translation_types = neighbor_translation_types.unsqueeze(
-            -1).repeat(1, 1, 1, padded_atom_neighbors.shape[-1])
+    # Pad the shift idxs
+    # shape  (C, A, N=13, 1, 3)
+    shift_idxs_between = shift_idxs_between.unsqueeze(-2)
+    # shape  (C, A, N=13, c-max, 3)
+    shift_idxs_between = shift_idxs_between.repeat(1, 1, 1, count_in_grid_max, 1)
 
-        # now I need to add A(f' < fna) shift the padded atom neighbors to get
-        # image indices I need to check here that the cumcount is correct since
-        # it was technically done with imidx so I need to check correctnes of
-        # both counting schemes, but first I create the mask to unpad
-        # and then I shift to the correct indices
-        mask = (padded_atom_neighbors < neighbor_count.unsqueeze(-1))
-        padded_atom_neighbors.add_(neighbor_cumcount.unsqueeze(-1))
-        # the mask should have the same shape as padded_atom_neighbors, and
-        # now all that is left is to apply the mask in order to unpad
-        assert padded_atom_neighbors.shape == mask.shape
-        assert neighbor_translation_types.shape == mask.shape
-        # the following calls are equivalent to masked select but significantly faster,
-        # since masked_select is slow
-        # y = torch.masked_select(x, mask) == y = x.view(-1).index_select(0, mask.view(-1).nonzero().squeeze())
-        lower = padded_atom_neighbors.view(-1).index_select(0, mask.view(-1).nonzero().squeeze())
-        between_pairs_translation_types = neighbor_translation_types.view(-1)\
-                                          .index_select(0, mask.view(-1).nonzero().squeeze())
-        return lower, between_pairs_translation_types
+    # Apply the mask
+    # Both shapes (B,)
+    lower_between = fast_masked_select(padded_atom_neighbors.view(-1), mask, 0)
+    shift_idxs_between = fast_masked_select(shift_idxs_between.view(-1, 3), mask, 0)
+    return lower_between, shift_idxs_between
 
-    def _get_bucket_indices(self, fractional_coordinates: Tensor) -> tp.Tuple[Tensor, Tensor]:
-        atom_vector_index = self._fractional_to_vector_bucket_indices(fractional_coordinates)
-        atom_flat_index = self._to_flat_index(atom_vector_index)
-        return atom_vector_index, atom_flat_index
 
-    def _get_neighbor_indices(
-            self, atom_vector_index: Tensor) -> tp.Tuple[Tensor, Tensor]:
-        current_device = atom_vector_index.device
-        # This is actually pure neighbors, so it doesn't have
-        # "the bucket itself"
-        # These are
-        # - g(a, n),  shape 1 x A x Eta x 3
-        # - f(a, n),  shape 1 x A x Eta
-        # These give, for each atom, the flat index or the vector index of its
-        # neighbor buckets (neighbor buckets indexed by n).
-        neighbor_vector_indices = self._expand_into_neighbors(
-            atom_vector_index)
-        # these vector indices have the information that says whether to shift
-        # each pair and what amount to shift it
+# TODO: Currently broken
+class VerletCellList(CellList):
+    _old_shift_indices: Tensor
+    _old_atom_pairs: Tensor
+    _old_coordinates: Tensor
+    _old_cell_lenghts: Tensor
 
-        atoms = neighbor_vector_indices.shape[1]
-        neighbors = neighbor_vector_indices.shape[2]
+    def __init__(
+        self,
+        skin: float = 1.0,
+    ):
+        super().__init__()
+        if skin <= 0.0:
+            raise ValueError("skin must be a positive float")
+        self.skin = skin
+        self.register_buffer(
+            "_old_shift_indices",
+            torch.zeros(1, dtype=torch.long),
+            persistent=False,
+        )
+        self.register_buffer(
+            "_old_atom_pairs",
+            torch.zeros(1, dtype=torch.long),
+            persistent=False,
+        )
+        self.register_buffer(
+            "_old_coordinates",
+            torch.zeros(1),
+            persistent=False,
+        )
+        self.register_buffer(
+            "_old_cell_lenghts",
+            torch.zeros(1),
+            persistent=False,
+        )
+        self._old_values_are_cached = False
+        raise ValueError("VerletCellList is currently unsupported")
 
-        neighbor_vector_indices.add_(torch.ones(1, dtype=torch.long, device=current_device))
-        neighbor_vector_indices = neighbor_vector_indices.view(-1, 3)
-        # NOTE: This is needed instead of unbind due to torchscript bug
-        neighbor_flat_indices = self.vector_idx_to_flat[
-            neighbor_vector_indices[:, 0], neighbor_vector_indices[:, 1],
-            neighbor_vector_indices[:, 2]]
+    def forward(
+        self,
+        species: Tensor,
+        coordinates: Tensor,
+        cutoff: float,
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None,
+        return_shift_values: bool = False,
+    ) -> NeighborData:
+        assert cutoff >= 0.0, "Cutoff must be a positive float"
+        assert coordinates.shape[0] == 1, "Cell list doesn't support batches"
+        displaced_coordinates, cell, pbc = self._validate_and_parse_cell_and_pbc(
+            coordinates, cell, pbc
+        )
+        grid_shape = setup_grid(
+            cell.detach(),
+            cutoff,
+        )
+        cell_lengths = torch.linalg.norm(cell.detach(), dim=0)
+        if self._can_use_old_list(displaced_coordinates, cell_lengths):
+            # If a cell list is not needed use the old cached values
+            # NOTE: Cached values should NOT be updated here
+            atom_pairs = self._old_atom_pairs
+            shift_indices: tp.Optional[Tensor] = self._old_shift_indices
+        else:
+            # TODO: The cell list should be calculated with a skin (?) here.
+            atom_pairs, shift_indices = self._compute_cell_list(
+                displaced_coordinates.detach(),
+                grid_shape,
+                cell,
+                pbc,
+            )
+            self._cache_values(
+                atom_pairs,
+                shift_indices,
+                displaced_coordinates.detach(),
+                cell_lengths,
+            )
+        if pbc.any():
+            assert shift_indices is not None
+            shift_values = shift_indices.to(cell.dtype) @ cell
+            coordinates = map_to_central(coordinates, cell.detach(), pbc)
+            return self._screen_with_cutoff(
+                cutoff,
+                coordinates,
+                atom_pairs,
+                mask=(species == -1),
+                shift_values=shift_values,
+                return_shift_values=return_shift_values,
+            )
+        return self._screen_with_cutoff(
+            cutoff, coordinates, atom_pairs, mask=(species == -1), shift_values=None,
+        )
 
-        neighbor_flat_indices = neighbor_flat_indices.view(
-            1, atoms, neighbors)
-        neighbor_vector_indices = neighbor_vector_indices.view(1, atoms, neighbors, 3)
-        return neighbor_vector_indices, neighbor_flat_indices
-
-    def _get_neighbor_translation_types(self, neighbor_vector_indices: Tensor) -> Tensor:
-        atoms = neighbor_vector_indices.shape[1]
-        neighbors = neighbor_vector_indices.shape[2]
-        neighbor_vector_indices = neighbor_vector_indices.view(-1, 3)
-        neighbor_translation_types = self.translation_cases[
-            neighbor_vector_indices[:, 0], neighbor_vector_indices[:, 1],
-            neighbor_vector_indices[:, 2]]
-        neighbor_translation_types = neighbor_translation_types.view(
-            1, atoms, neighbors)
-        return neighbor_translation_types
-
-    def _cache_values(self, atom_pairs: Tensor,
-                            shift_indices: tp.Optional[Tensor],
-                            coordinates: Tensor):
-
-        self.old_atom_pairs = atom_pairs.detach()
+    def _cache_values(
+        self,
+        atom_pairs: Tensor,
+        shift_indices: tp.Optional[Tensor],
+        coordinates: Tensor,
+        cell_lengths: Tensor,
+    ):
         if shift_indices is not None:
-            self.old_shift_indices = shift_indices.detach()
-        self.old_coordinates = coordinates.detach()
-        self.old_cell_diagonal = self.cell_diagonal.detach()
-        self.old_values_are_cached = True
+            self._old_shift_indices = shift_indices.detach()
+        self._old_atom_pairs = atom_pairs.detach()
+        self._old_coordinates = coordinates.detach()
+        self._old_cell_lengths = cell_lengths.detach()
+        self._old_values_are_cached = True
 
-    def reset_cached_values(self) -> None:
-        float_dtype = self.cell_diagonal.dtype
-        device = self.cell_diagonal.device
-        self._cache_values(torch.zeros(1, dtype=torch.long, device=device),
-                           torch.zeros(1, dtype=torch.long, device=device),
-                           torch.zeros(1, dtype=float_dtype, device=device))
-        self.old_values_are_cached = False
+    @torch.jit.unused
+    def reset_cached_values(self, dtype: torch.dtype = torch.float) -> None:
+        device = self._offset_idx3.device
+        self._cache_values(
+            torch.zeros(1, dtype=torch.long, device=device),
+            torch.zeros(1, dtype=torch.long, device=device),
+            torch.zeros(1, dtype=dtype, device=device),
+            torch.zeros(1, dtype=dtype, device=device),
+        )
+        self._old_values_are_cached = False
 
-    def _need_new_list(self, coordinates: Tensor) -> bool:
-        if not self.verlet:
-            return True
-        # Check if any coordinate exceedes half the skin depth,
-        # if a coordinate exceedes this then the cell list has to be rebuilt
-        box_scaling = self.cell_diagonal / self.old_cell_diagonal
-        delta = coordinates - self.old_coordinates * box_scaling
+    def _can_use_old_list(self, coordinates: Tensor, cell_lengths: Tensor) -> bool:
+        if not self._old_values_are_cached:
+            return False
+        coordinates.detach_()
+        cell_lengths.detach_()
+        # Check if any coordinate moved more than half the skin depth,
+        # If this happened, then the cell list has to be rebuilt
+        cell_scaling = cell_lengths / self._old_cell_lenghts
+        delta = coordinates - self._old_coordinates * cell_scaling
         dist_squared = delta.pow(2).sum(-1)
-        need_new_list = (dist_squared > (self.skin / 2) ** 2).any().item()
-        return bool(need_new_list)
+        return bool((dist_squared > (self.skin / 2) ** 2).all())
 
 
-def _parse_neighborlist(neighborlist: tp.Optional[tp.Union[tp.Type[BaseNeighborlist], str]], cutoff: float) -> BaseNeighborlist:
-    _neighborlist: BaseNeighborlist
-    if neighborlist == 'full_pairwise':
-        _neighborlist = FullPairwise(cutoff)
-    elif neighborlist == 'cell_list':
-        _neighborlist = CellList(cutoff=cutoff)
-    elif neighborlist == 'verlet_cell_list':
-        _neighborlist = CellList(cutoff=cutoff, verlet=True)
-    elif neighborlist is None:
-        _neighborlist = BaseNeighborlist(cutoff)
-    else:
-        assert not isinstance(neighborlist, str)
-        assert issubclass(neighborlist, BaseNeighborlist)
-        _neighborlist = neighborlist(cutoff)
-    return _neighborlist
+NeighborlistArg = tp.Union[
+    tp.Literal[
+        "full_pairwise",
+        "cell_list",
+        "verlet_cell_list",
+        "base",
+    ],
+    Neighborlist,
+]
+
+
+def parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
+    if neighborlist == "full_pairwise":
+        neighborlist = FullPairwise()
+    elif neighborlist == "cell_list":
+        neighborlist = CellList()
+    elif neighborlist == "verlet_cell_list":
+        neighborlist = VerletCellList()
+    elif neighborlist == "base":
+        neighborlist = Neighborlist()
+    elif not isinstance(neighborlist, Neighborlist):
+        raise ValueError(f"Unsupported neighborlist: {neighborlist}")
+    return tp.cast(Neighborlist, neighborlist)

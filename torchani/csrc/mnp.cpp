@@ -1,6 +1,5 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
-#include <nvToolsExt.h>
 #include <omp.h>
 #include <torch/extension.h>
 
@@ -25,7 +24,7 @@ size_t get_env_num_threads(const char* var_name, size_t def_value = 1) {
   return def_value;
 }
 
-// TODO: Could switch to if constexpr once Pytorch support c++17.
+// TODO: PyTorch now supports C++ 17, this can be done with 'if constexpr'
 // TODO: When reach to really big system, each network could be ran in different GPUs.
 template <bool use_stream, bool is_bmm>
 class MultiNetFunction : public torch::autograd::Function<MultiNetFunction<use_stream, is_bmm>> {
@@ -270,26 +269,12 @@ bool is_same_tensor(Tensor last, Tensor current) {
   return last.data_ptr() == current.data_ptr();
 }
 
-// nvtx push
-void nvtx_range_push(c10::string_view name) {
-  ::nvtxRangePushA(std::string(name).c_str());
-}
-
-// nvtx pop
-void nvtx_range_pop() {
-  ::nvtxRangePop();
-}
-
 // mnp stands for multi network parallel
 TORCH_LIBRARY(mnp, m) {
   m.def("run", run_autograd);
   m.def("is_same_tensor", is_same_tensor);
-  m.def("nvtx_range_push", nvtx_range_push);
-  m.def("nvtx_range_pop", nvtx_range_pop);
 }
 
 TORCH_LIBRARY_IMPL(mnp, Autograd, m) {
   m.impl("run", run_autograd);
 }
-
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {}

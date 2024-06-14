@@ -6,6 +6,22 @@ import typing as tp
 from torch import Tensor
 
 
+class EnergiesForces(tp.NamedTuple):
+    energies: Tensor
+    forces: Tensor
+
+
+class EnergiesForcesHessians(tp.NamedTuple):
+    energies: Tensor
+    forces: Tensor
+    hessians: Tensor
+
+
+class ForcesHessians(tp.NamedTuple):
+    forces: Tensor
+    hessians: Tensor
+
+
 class SpeciesAEV(tp.NamedTuple):
     r"""
     Chemical elements and AEV feature tensor
@@ -31,6 +47,7 @@ class NeighborData(tp.NamedTuple):
     indices: Tensor
     distances: Tensor
     diff_vectors: Tensor
+    shift_values: tp.Optional[Tensor] = None
 
 
 class SpeciesCoordinates(tp.NamedTuple):
@@ -48,6 +65,22 @@ class SpeciesEnergies(tp.NamedTuple):
     '''
     species: Tensor
     energies: Tensor
+
+
+class SpeciesEnergiesAtomicCharges(tp.NamedTuple):
+    species: Tensor
+    energies: Tensor
+    atomic_charges: Tensor
+
+
+class EnergiesAtomicCharges(tp.NamedTuple):
+    energies: Tensor
+    atomic_charges: Tensor
+
+
+class SpeciesAtomicCharges(tp.NamedTuple):
+    energies: Tensor
+    atomic_charges: Tensor
 
 
 class SpeciesEnergiesQBC(tp.NamedTuple):

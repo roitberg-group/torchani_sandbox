@@ -1,0 +1,63 @@
+name: ani
+channels:
+  - nodefaults
+  - https://conda.anaconda.org/pytorch
+  - https://conda.anaconda.org/nvidia
+  - https://conda.anaconda.org/conda-forge
+dependencies:
+  # General
+  - python=3.10
+  - pip>=24.0
+
+  # Required dependencies:
+  - numpy>=1.24
+  - pytorch::pytorch=2.3
+  - pytorch::pytorch-cuda=11.8
+  - typing_extensions>=4.0.0
+  - h5py  # HDF5 backend for datasets
+  - tqdm  # progress bar util
+
+  # Optional dependencies follow:
+
+  # Compiled extensions (cuAEV and MNP):
+  # The cuda libraries speciefied by the pytorch-cuda metapackage are not
+  # enough, the *-dev versions with the headers are required. Also required to
+  # pin the version of nvcc, otherwise torch refuses to compile. Also required
+  # to pin the version of cccl due to torch's usage of thrust. Setuptools
+  # required since extensions have to be built with --no-build-isolation. g++
+  # and gcc compilers that support C++17 required (pin version for repro).
+  - setuptools>=64
+  - setuptools-scm>=8
+  - gxx_linux-64=11.4
+  - gcc_linux-64=11.4
+  - nvidia::cuda-libraries-dev=11.8
+  - nvidia::cuda-cccl=11.8
+  - nvidia::cuda-nvcc=11.8
+
+  # Optional ASE interface (needed for dynamics and for tests/tools/docs)
+  - ase
+
+  # Tests:
+  - coverage  # code coverage
+  - black  # formatter
+  - flake8  # linter
+  - mypy  # type checking
+  - pytest  # tests runner
+  - pre_commit  # run pre commit hooks
+  - parameterized  # parametrize test classes
+  - expecttest  # indirect dependency of torch.testing
+  # Extra data backends for tests:
+  - pandas  # Parquet backend
+  - pyarrow  # Parquet backend
+  - zarr  # Zarr backend
+
+  # Tools :
+  - matplotlib
+  - pynvml
+  - rich
+
+  # Docs:
+  - sphinx
+  - sphinx_rtd_theme
+  - sphinx-gallery
+  - tensorboard

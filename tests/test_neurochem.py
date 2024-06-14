@@ -1,88 +1,79 @@
-import torchani
-import torch
-import os
 import unittest
-from torchani.testing import TestCase
+import os
 
+from torchani.testing import ANITest, expand
+from torchani.models import ANI1x, ANI2x, ANI1ccx
+from torchani.aev import AEVComputer
+from torchani.neurochem import load_builtin_from_name, load_aev_computer_and_symbols
 
 path = os.path.dirname(os.path.realpath(__file__))
-iptpath = os.path.join(path, 'test_data/inputtrain.ipt')
-dspath = os.path.join(path, '../dataset/ani1-up_to_gdb4/ani_gdb_s01.h5')
+const_file_1x = os.path.join(path, "test_data/rHCNO-5.2R_16-3.5A_a4-8.params")
+const_file_1ccx = os.path.join(path, "test_data/rHCNO-5.2R_16-3.5A_a4-8.params")
+const_file_2x = os.path.join(path, "test_data/rHCNOSFCl-5.1R_16-3.5A_a8-4.params")
 
 
-class TestNeuroChem(TestCase):
+@expand(device="cpu", jit=False)
+class TestModelLoader(ANITest):
+    # check that models loaded from a neurochem source are equal to models
+    # loaded directly from a state_dict
+    def testANI1x(self):
+        model = self._setup(ANI1x())
+        model_nc = self._setup(load_builtin_from_name("ani1x"))
+        self.assertEqual(model_nc.state_dict(), model.state_dict())
 
-    def testNeuroChemTrainer(self):
-        d = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        trainer = torchani.neurochem.Trainer(iptpath, d, True, os.path.join(path, 'runs'))
+    def testANI1xSingle(self):
+        for j in range(8):
+            model = self._setup(ANI1x(model_index=j))
+            model_nc = self._setup(
+                load_builtin_from_name("ani1x", model_index=j)
+            )
+            self.assertEqual(model_nc.state_dict(), model.state_dict())
 
-        # test if loader construct correct model
-        self.assertEqual(trainer.aev_computer.aev_length, 384)
-        m = trainer.nn
-        H = m['H']
-        C = m['C']
-        N = m['N']
-        O = m['O']  # noqa: E741
-        self.assertIsInstance(H[0], torch.nn.Linear)
-        self.assertListEqual(list(H[0].weight.shape), [160, 384])
-        self.assertIsInstance(H[1], torch.nn.CELU)
-        self.assertIsInstance(H[2], torch.nn.Linear)
-        self.assertListEqual(list(H[2].weight.shape), [128, 160])
-        self.assertIsInstance(H[3], torch.nn.CELU)
-        self.assertIsInstance(H[4], torch.nn.Linear)
-        self.assertListEqual(list(H[4].weight.shape), [96, 128])
-        self.assertIsInstance(H[5], torch.nn.CELU)
-        self.assertIsInstance(H[6], torch.nn.Linear)
-        self.assertListEqual(list(H[6].weight.shape), [1, 96])
-        self.assertEqual(len(H), 7)
+    def testANI2x(self):
+        model = self._setup(ANI2x())
+        model_nc = self._setup(load_builtin_from_name("ani2x"))
+        self.assertEqual(model_nc.state_dict(), model.state_dict())
 
-        self.assertIsInstance(C[0], torch.nn.Linear)
-        self.assertListEqual(list(C[0].weight.shape), [144, 384])
-        self.assertIsInstance(C[1], torch.nn.CELU)
-        self.assertIsInstance(C[2], torch.nn.Linear)
-        self.assertListEqual(list(C[2].weight.shape), [112, 144])
-        self.assertIsInstance(C[3], torch.nn.CELU)
-        self.assertIsInstance(C[4], torch.nn.Linear)
-        self.assertListEqual(list(C[4].weight.shape), [96, 112])
-        self.assertIsInstance(C[5], torch.nn.CELU)
-        self.assertIsInstance(C[6], torch.nn.Linear)
-        self.assertListEqual(list(C[6].weight.shape), [1, 96])
-        self.assertEqual(len(C), 7)
+    def testANI2xSingle(self):
+        for j in range(8):
+            model = self._setup(ANI2x(model_index=j))
+            model_nc = self._setup(
+                load_builtin_from_name("ani2x", model_index=j)
+            )
+            self.assertEqual(model_nc.state_dict(), model.state_dict())
 
-        self.assertIsInstance(N[0], torch.nn.Linear)
-        self.assertListEqual(list(N[0].weight.shape), [128, 384])
-        self.assertIsInstance(N[1], torch.nn.CELU)
-        self.assertIsInstance(N[2], torch.nn.Linear)
-        self.assertListEqual(list(N[2].weight.shape), [112, 128])
-        self.assertIsInstance(N[3], torch.nn.CELU)
-        self.assertIsInstance(N[4], torch.nn.Linear)
-        self.assertListEqual(list(N[4].weight.shape), [96, 112])
-        self.assertIsInstance(N[5], torch.nn.CELU)
-        self.assertIsInstance(N[6], torch.nn.Linear)
-        self.assertListEqual(list(N[6].weight.shape), [1, 96])
-        self.assertEqual(len(N), 7)
-
-        self.assertIsInstance(O[0], torch.nn.Linear)
-        self.assertListEqual(list(O[0].weight.shape), [128, 384])
-        self.assertIsInstance(O[1], torch.nn.CELU)
-        self.assertIsInstance(O[2], torch.nn.Linear)
-        self.assertListEqual(list(O[2].weight.shape), [112, 128])
-        self.assertIsInstance(O[3], torch.nn.CELU)
-        self.assertIsInstance(O[4], torch.nn.Linear)
-        self.assertListEqual(list(O[4].weight.shape), [96, 112])
-        self.assertIsInstance(O[5], torch.nn.CELU)
-        self.assertIsInstance(O[6], torch.nn.Linear)
-        self.assertListEqual(list(O[6].weight.shape), [1, 96])
-        self.assertEqual(len(O), 7)
-
-        self.assertEqual(trainer.init_lr, 0.001)
-        self.assertEqual(trainer.min_lr, 1e-5)
-        self.assertEqual(trainer.max_nonimprove, 1)
-        self.assertEqual(trainer.lr_decay, 0.1)
-
-        trainer.load_data(dspath, dspath)
-        trainer.run()
+    def testANI1ccx(self):
+        model = self._setup(ANI1ccx())
+        model_nc = self._setup(load_builtin_from_name("ani1ccx"))
+        self.assertEqual(model_nc.state_dict(), model.state_dict())
 
 
-if __name__ == '__main__':
-    unittest.main()
+@expand(device="cpu", jit=False)
+class TestAEVLoader(ANITest):
+    # Test that checks that inexact friendly constructor
+    # reproduces the values from ANI1x with the correct parameters
+    def testEqualNeurochem1x(self):
+        aev_1x_nc, _ = load_aev_computer_and_symbols(const_file_1x)
+        aev_1x = AEVComputer.like_1x()
+        self._compare_constants(aev_1x_nc, aev_1x)
+
+    def testEqualNeurochem2x(self):
+        aev_2x_nc, _ = load_aev_computer_and_symbols(const_file_2x)
+        aev_2x = AEVComputer.like_2x()
+        self._compare_constants(aev_2x_nc, aev_2x)
+
+    def testEqualNeurochem1ccx(self):
+        aev_1ccx_nc, _ = load_aev_computer_and_symbols(
+            const_file_1ccx
+        )
+        aev_1ccx = AEVComputer.like_1x()
+        self._compare_constants(aev_1ccx_nc, aev_1ccx)
+
+    def _compare_constants(self, aev_computer, aev_computer_alt):
+        alt_state_dict = aev_computer_alt.state_dict()
+        for k, v in aev_computer.state_dict().items():
+            self.assertEqual(alt_state_dict[k], v, rtol=1e-17, atol=1e-17)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
