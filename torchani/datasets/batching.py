@@ -487,7 +487,13 @@ class Batcher:
 
                     packet_conformers_list: tp.List[Conformers] = []
                     packet_batch_idx_list: tp.List[Tensor] = []
-                    for group_idx in packet_unique_group_idxs:
+                    for group_idx in tqdm(
+                        packet_unique_group_idxs,
+                        desc=f"{div.name}: Collecting packet {i + 1}/{num_packets}",
+                        disable=not self.verbose,
+                        leave=False,
+                        total=len(packet_unique_group_idxs),
+                    ):
                         conformer_is_in_packet = packet[:, 0] == group_idx
                         conformers = readonly_ds.get_conformers(
                             group_names[group_idx.item()],
@@ -510,7 +516,7 @@ class Batcher:
                     packet_batch_idxs = torch.cat(packet_batch_idx_list, dim=0)
                     for batch_idx in tqdm(
                         packet_unique_batch_idxs,
-                        desc=f"{div.name}: Collecting packet {i + 1}/{num_packets}",
+                        desc=f"{div.name}: Saving packet {i + 1}/{num_packets}",
                         disable=not self.verbose,
                         leave=False,
                         total=len(packet_unique_batch_idxs),
@@ -525,11 +531,6 @@ class Batcher:
                             # The batch file names are e.g. 00034_batch.h5
                             max_digits = len(str(num_batches))
                             pre = str(batch_idx.item()).zfill(max_digits)
-                            if self.verbose:
-                                print(
-                                    f"{div.name}: Saving packet {i + 1}/{num_packets}"
-                                    " ..."
-                                )
                             with h5py.File(
                                 (dest_path / div.name) / f"{pre}_batch.h5", "w-"
                             ) as f:
@@ -569,17 +570,16 @@ class Batcher:
             "splits": splits,
             "folds": folds,
             "divs_seed": divs_seed,
-            "batch_seed": batch_seed,
-            "batch_size": batch_size,
-            "padding": padding,
-            "shuffle": self._shuffle,
+            "batch_seed": batch_seed if self._shuffle else None,
+            "batch_size": batch_size if self._shuffle else None,
+            "padding": {k: v for k, v in padding.items() if k in properties},
             "symbols": dataset.symbols if dataset.grouping != "legacy" else ("?",),
             "properties": properties,
             "store_locations": dataset.store_locations,
             "num_conformers": dataset.num_conformers,
         }
         with open(dest_path / "creation_log.json", "wt") as logfile:
-            json.dump(creation_log, logfile, indent=1)
+            json.dump(creation_log, logfile, indent=4)
 
 
 # Kept for bw compat
