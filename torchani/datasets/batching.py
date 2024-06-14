@@ -565,14 +565,24 @@ class Batcher:
         folds: tp.Optional[int],
         properties: tp.Sequence[str],
     ) -> None:
+        split_names = sorted(splits) if splits is not None else None
+        split_fracs = (
+            [splits[k] for k in split_names]
+            if (splits is not None and split_names is not None)
+            else None
+        )
+        padded_properties = sorted(k for k in padding if k in properties)
+        padded_values = [padding[k] for k in padded_properties]
         creation_log = {
             "datetime_created": str(datetime.datetime.now()),
-            "splits": splits,
+            "split_names": split_names,
+            "split_fractions": split_fracs,
             "folds": folds,
             "divs_seed": divs_seed,
             "batch_seed": batch_seed if self._shuffle else None,
             "batch_size": batch_size if self._shuffle else None,
-            "padding": {k: v for k, v in padding.items() if k in properties},
+            "padded_properties": padded_properties,
+            "padded_values": padded_values,
             "symbols": dataset.symbols if dataset.grouping != "legacy" else ("?",),
             "properties": properties,
             "store_locations": dataset.store_locations,
