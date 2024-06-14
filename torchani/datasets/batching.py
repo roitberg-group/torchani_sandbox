@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from torchani.storage import DATASETS_DIR
 from torchani.annotations import Conformers, StrPath
-from torchani.utils import pad_atomic_properties, PADDING
+from torchani.utils import pad_atomic_properties, strip_redundant_padding, PADDING
 from torchani.datasets.datasets import ANIDataset
 from torchani.transforms import Transform, identity
 
@@ -519,7 +519,7 @@ class Batcher:
                             k: v[packet_batch_idxs == batch_idx]
                             for k, v in packet_conformers.items()
                         }
-                        # TODO: remove redundant padding here!
+                        batch = strip_redundant_padding(batch)
                         batch = transform(batch)
                         if self.store_on_disk:
                             # The batch file names are e.g. 00034_batch.h5
