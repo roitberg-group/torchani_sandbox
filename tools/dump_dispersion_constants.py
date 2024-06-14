@@ -1,3 +1,17 @@
+r"""
+Notes about data parsing and preparation
+
+This script is used to dump pickle
+files with the constants needed for dispersion D3 calculations.
+
+The pickle files are loaded directly by the DispersionD3 module through the
+"constants" module, which parses the raw pickle lists into manageable
+structures. the C6 coefs are dump into a h5 file instead
+
+The actual calculation of the dispersion interaction is handled in
+potentials/dispersion.
+"""
+
 import h5py
 import typing as tp
 import pickle
