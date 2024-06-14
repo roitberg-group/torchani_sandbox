@@ -218,14 +218,14 @@ class Batcher:
     def __init__(
         self,
         dest_root: tp.Union[Path, tp.Literal["ram"]] = DATASETS_DIR,
-        max_batches_per_packet: int = 350,
+        max_batches_per_packet: int = 200,
         verbose: bool = False,
     ) -> None:
         self.max_batches_per_packet = max_batches_per_packet
         self.verbose = verbose
         self.store_on_disk = dest_root != "ram"
         if not self.store_on_disk:
-            if max_batches_per_packet != 350:
+            if max_batches_per_packet != 200:
                 raise ValueError(
                     "max_batches_per_packet can't be provided if saving in ram"
                 )
@@ -510,7 +510,7 @@ class Batcher:
                     packet_batch_idxs = torch.cat(packet_batch_idx_list, dim=0)
                     for batch_idx in tqdm(
                         packet_unique_batch_idxs,
-                        desc=f"{div.name}: Saving packet {i + 1}/{num_packets}",
+                        desc=f"{div.name}: Collecting packet {i + 1}/{num_packets}",
                         disable=not self.verbose,
                         leave=False,
                         total=len(packet_unique_batch_idxs),
@@ -525,6 +525,11 @@ class Batcher:
                             # The batch file names are e.g. 00034_batch.h5
                             max_digits = len(str(num_batches))
                             pre = str(batch_idx.item()).zfill(max_digits)
+                            if self.verbose:
+                                print(
+                                    f"{div.name}: Saving packet {i + 1}/{num_packets}"
+                                    " ..."
+                                )
                             with h5py.File(
                                 (dest_path / div.name) / f"{pre}_batch.h5", "w-"
                             ) as f:
@@ -593,7 +598,7 @@ def create_batched_dataset(
     batch_seed: tp.Optional[int] = None,
     # Performance
     direct_cache: bool = False,
-    max_batches_per_packet: int = 350,
+    max_batches_per_packet: int = 200,
     # Verbosity
     verbose: bool = True,
     _shuffle: bool = True,
