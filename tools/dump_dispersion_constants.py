@@ -1,6 +1,5 @@
 import h5py
 import typing as tp
-import math
 import pickle
 from pathlib import Path
 
