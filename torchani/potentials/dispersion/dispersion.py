@@ -29,7 +29,6 @@ class BeckeJohnsonDamp(torch.nn.Module):
     charges. Note that the cutoff radii is a matrix of T x T where T are the
     possible atom types and that these cutoff radii are in AU (Bohr)
     """
-    cutoff_radii: Tensor
     _a1: Final[float]
     _a2: Final[float]
 
@@ -38,25 +37,26 @@ class BeckeJohnsonDamp(torch.nn.Module):
         symbols: tp.Sequence[str],
         a1: float,
         a2: float,
-        sqrt_damp_q: tp.Sequence[float] = (),
+        sqrt_empirical_charge: tp.Sequence[float] = (),
     ):
         super().__init__()
         self.atomic_numbers = torch.tensor(
             [ATOMIC_NUMBER[e] for e in symbols], dtype=torch.long
         )
-        if not sqrt_damp_q:
-            _sqrt_damp_q = constants.get_sqrt_empirical_charge()
-            z = self.atomic_numbers
-            outer = torch.outer(_sqrt_damp_q, _sqrt_damp_q)
-            self.register_buffer("cutoff_radii", torch.sqrt(3 * outer)[:, z][z, :])
-        else:
-            if len(sqrt_damp_q) != len(symbols):
-                raise ValueError(
-                    "len(sqrt_damp_q), if provided, must match len(symbols)"
-                )
-            _sqrt_damp_q = torch.tensor(sqrt_damp_q, dtype=torch.float)
-            outer = torch.outer(_sqrt_damp_q, _sqrt_damp_q)
-            self.register_buffer("cutoff_radii", torch.sqrt(3 * outer))
+        if not sqrt_empirical_charge:
+            sqrt_empirical_charge = constants.get_sqrt_empirical_charge()[
+                self.atomic_numbers
+            ].tolist()
+
+        if not len(sqrt_empirical_charge) == len(symbols):
+            raise ValueError(
+                "len(sqrt_empirical_charge), if provided, must match len(symbols)"
+            )
+        _sqrt_empirical_charge = torch.tensor(sqrt_empirical_charge)
+        self.register_buffer(
+            "cutoff_radii",
+            torch.sqrt(3 * torch.outer(_sqrt_empirical_charge, _sqrt_empirical_charge)),
+        )
         # Sanity check
         assert self.cutoff_radii.shape == (len(symbols), len(symbols))
         self._a1 = a1
@@ -89,12 +89,6 @@ class TwoBodyDispersionD3(PairPotential):
     damping function for the order-6 and order-8 potential terms.
     """
 
-    covalent_radii: Tensor
-    precalc_coordnums_a: Tensor
-    precalc_coordnums_b: Tensor
-    precalc_coeff6: Tensor
-    sqrt_charge_ab: Tensor
-
     _s6: Final[float]
     _s8: Final[float]
     _k1: Final[int]
@@ -120,13 +114,11 @@ class TwoBodyDispersionD3(PairPotential):
         symbols: tp.Sequence[str],
         s6: float,
         s8: float,
-        # For damping fn
         damp_a1: float,
         damp_a2: float,
         cutoff_fn: CutoffArg = "dummy",
         cutoff: float = math.inf,
-        # For damping fn
-        sqrt_damp_q: tp.Sequence[float] = (),
+        sqrt_empirical_charge: tp.Sequence[float] = (),
     ):
         super().__init__(
             symbols=symbols,
@@ -134,8 +126,14 @@ class TwoBodyDispersionD3(PairPotential):
             is_trainable=False,
             cutoff_fn=cutoff_fn,
         )
+        if not sqrt_empirical_charge:
+            sqrt_empirical_charge = constants.get_sqrt_empirical_charge()[
+                self.atomic_numbers
+            ].tolist()
 
-        self._damp_fn = BeckeJohnsonDamp(symbols, damp_a1, damp_a2, sqrt_damp_q)
+        self._damp_fn = BeckeJohnsonDamp(
+            symbols, damp_a1, damp_a2, sqrt_empirical_charge
+        )
         self.ANGSTROM_TO_BOHR = ANGSTROM_TO_BOHR
         self._s6 = s6
         self._s8 = s8
@@ -163,10 +161,10 @@ class TwoBodyDispersionD3(PairPotential):
         )
 
         # The product of the sqrt of the empirical q's is stored directly
-        sqrt_empirical_charge = constants.get_sqrt_empirical_charge()
-        charge_ab = torch.outer(sqrt_empirical_charge, sqrt_empirical_charge)
+        _sqrt_empirical_charge = torch.tensor(sqrt_empirical_charge)
         self.register_buffer(
-            "sqrt_charge_ab", charge_ab[self.atomic_numbers, :][:, self.atomic_numbers]
+            "sqrt_charge_ab",
+            torch.outer(_sqrt_empirical_charge, _sqrt_empirical_charge),
         )
 
         # Covalent radii are in angstrom so we first convert to bohr
