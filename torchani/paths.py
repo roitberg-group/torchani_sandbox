@@ -1,5 +1,5 @@
 r"""
-Default storage location for various torchani resources
+Default location for various torchani resources
 """
 from pathlib import Path
 
