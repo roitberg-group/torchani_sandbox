@@ -41,7 +41,7 @@ jobs:
       - name: Training benchmark (with Nsight dry run)
         run: docker run --gpus all ${{ env.DOCKER_ARGS }} ${{ env.TAG }} bash -c "python tools/training-benchmark.py --nvtx --no-tqdm"
       - name: MD Benchmark (with Nsight dry run)
-        run: docker run --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "python tools/md-benchmark.py --nvtx --no-tqdm"
+        run: docker run --gpus all ${{ env.DOCKER_ARGS }} ${{ env.TAG }} bash -c "python tools/md-benchmark.py --nvtx --no-tqdm"
   tests:
     needs: [build-image]
     runs-on: [self-hosted, ipickering]
@@ -51,22 +51,22 @@ jobs:
     needs: [build-image]
     runs-on: [self-hosted, ipickering]
     steps:
-      - run: docker run --rm --gpus '"device=none"' --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 ${{ env.TAG }} bash -c "sphinx-build -W docs/src docs/build"
+      - run: docker run --gpus '"device=none"' ${{ env.DOCKER_ARGS }} ${{ env.TAG }} bash -c "sphinx-build -W docs/src docs/build"
   mypy:
     needs: [build-image]
     runs-on: [self-hosted, ipickering]
     steps:
-      - run: docker run --rm --gpus '"device=none"' ${{ env.TAG }} bash -c "mypy --install-types --non-interactive ."
+      - run: docker run --gpus '"device=none"' ${{ env.DOCKER_ARGS }} ${{ env.TAG }} bash -c "mypy --install-types --non-interactive ."
   flake8:
     needs: [build-image]
     runs-on: [self-hosted, ipickering]
     steps:
-      - run: docker run --rm --gpus '"device=none"' ${{ env.TAG }} bash -c "flake8 ."
+      - run: docker run --gpus '"device=none"' ${{ env.DOCKER_ARGS }} ${{ env.TAG }} bash -c "flake8 ."
   clang-format:
     needs: [build-image]
     runs-on: [self-hosted, ipickering]
     steps:
-      - run: docker run --rm --gpus '"device=none"' ${{ env.TAG }} bash -c "cd ./torchani/csrc && clang-format -Werror -n *.cpp *.cuh *.h *.cu"
+      - run: docker run --gpus '"device=none"' ${{ env.DOCKER_ARGS }} ${{ env.TAG }} bash -c "cd ./torchani/csrc && clang-format -Werror -n *.cpp *.cuh *.h *.cu"
   remove-image:
     if: ${{ always() }}
     needs: [build-image, tools, tests, mypy, clang-format, flake8, docs]
