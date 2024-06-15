@@ -38,6 +38,10 @@ Empirical Q in atomic units, correspond to sqrt(0.5 * sqrt(Z) * <r**2>/<r**4>).
 In Grimme's code these are "r2r4", and are used to calculate the C8 values.
 These are precalculated values. For details on their calculation consult the
 DFTD3 papers
+
+
+XTB repulsion data extracted from Grimme et. al. paper
+https://pubs.acs.org/doi/10.1021/acs.jctc.8b01176
 """
 import json
 from pathlib import Path
@@ -52,7 +56,11 @@ __all__ = [
     "ATOMIC_COVALENT_RADIUS",
     "ATOMIC_SQRT_EMPIRICAL_CHARGE",
     "ATOMIC_ELECTRONEGATIVITY",
+    "ATOMIC_XTB_REPULSION_ALPHA",
+    "ATOMIC_XTB_REPULSION_YEFF",
     "MASS",
+    "XTB_REPULSION_ALPHA",
+    "XTB_REPULSION_YEFF",
     "COVALENT_RADIUS",
     "SQRT_EMPIRICAL_CHARGE",
     "HARDNESS",
@@ -75,6 +83,9 @@ ATOMIC_ELECTRONEGATIVITY: tp.Dict[str, float] = {}
 ATOMIC_MASS: tp.Dict[str, float] = {}
 ATOMIC_SQRT_EMPIRICAL_CHARGE: tp.Dict[str, float] = {}
 ATOMIC_COVALENT_RADIUS: tp.Dict[str, float] = {}
+ATOMIC_XTB_REPULSION_ALPHA: tp.Dict[str, float] = {}
+ATOMIC_XTB_REPULSION_YEFF: tp.Dict[str, float] = {}
+
 
 for symbol, values in ATOMIC_CONSTANTS.items():
     if not symbol:
@@ -85,6 +96,8 @@ for symbol, values in ATOMIC_CONSTANTS.items():
     mass = values.get("mass")
     sqrt_empirical_charge = values.get("sqrt_empirical_charge")
     covalent_radius = values.get("covalent_radius")
+    alpha = values.get("xtb_repulsion_alpha")
+    yeff = values.get("xtb_repulsion_yeff")
     if znumber is not None:
         ATOMIC_NUMBER[symbol] = int(znumber)
     if hardness is not None:
@@ -97,6 +110,10 @@ for symbol, values in ATOMIC_CONSTANTS.items():
         ATOMIC_COVALENT_RADIUS[symbol] = float(covalent_radius)
     if sqrt_empirical_charge is not None:
         ATOMIC_SQRT_EMPIRICAL_CHARGE[symbol] = float(sqrt_empirical_charge)
+    if alpha is not None:
+        ATOMIC_XTB_REPULSION_ALPHA[symbol] = float(alpha)
+    if yeff is not None:
+        ATOMIC_XTB_REPULSION_YEFF[symbol] = float(yeff)
 
 # When indexed with the corresponding atomic number, PERIODIC_TABLE gives the
 # element associated with it. Note that there is no element with atomic number
@@ -155,3 +172,5 @@ ELECTRONEGATIVITY = mapping_to_znumber_indexed_seq(ATOMIC_ELECTRONEGATIVITY)
 HARDNESS = mapping_to_znumber_indexed_seq(ATOMIC_HARDNESS)
 COVALENT_RADIUS = mapping_to_znumber_indexed_seq(ATOMIC_COVALENT_RADIUS)
 SQRT_EMPIRICAL_CHARGE = mapping_to_znumber_indexed_seq(ATOMIC_SQRT_EMPIRICAL_CHARGE)
+XTB_REPULSION_ALPHA = mapping_to_znumber_indexed_seq(ATOMIC_XTB_REPULSION_ALPHA)
+XTB_REPULSION_YEFF = mapping_to_znumber_indexed_seq(ATOMIC_XTB_REPULSION_YEFF)
