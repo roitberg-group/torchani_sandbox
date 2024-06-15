@@ -1,18 +1,44 @@
 import math
 import typing as tp
+from pathlib import Path
 
 import torch
+import h5py
 from torch import Tensor
 from torch.jit import Final
 import typing_extensions as tpx
 
-from torchani.constants import ATOMIC_NUMBER, FUNCTIONAL_D3BJ_CONSTANTS
+from torchani.constants import (
+    ATOMIC_NUMBER,
+    FUNCTIONAL_D3BJ_CONSTANTS,
+    COVALENT_RADIUS,
+    SQRT_EMPIRICAL_CHARGE,
+)
 from torchani.units import ANGSTROM_TO_BOHR
 from torchani.cutoffs import CutoffArg
 from torchani.neighbors import NeighborData, NeighborlistArg
 from torchani.potentials.core import PairPotential
 from torchani.potentials.wrapper import PotentialWrapper
-from torchani.potentials.dispersion import constants
+
+
+# NOTE: Precalculated C6 constants for D3
+# - Precalculated C6 coefficients
+# shape (Elements, Elements, Ref, Ref), where "Ref" is the number of references
+# (Grimme et. al. provides 5)
+# This means for each pair of elements and reference indices there is an
+# associated precalc C6 coeff
+# - Precalculated coordination numbers
+# shape (Elements, Elements, Ref, Ref, 2)
+# Where the final axis indexes the coordination number of the first or second
+# atom respectively.
+# This means for each pair of elements and reference indices there is an
+# associated coordination number for the first and second items.
+def _load_c6_constants() -> tp.Tuple[Tensor, Tensor, Tensor]:
+    with h5py.File(str(Path(__file__).resolve().parent / "c6.h5"), "r") as f:
+        c6_constants = torch.from_numpy(f["all/constants"][:])
+        c6_coordnums_a = torch.from_numpy(f["all/coordnums_a"][:])
+        c6_coordnums_b = torch.from_numpy(f["all/coordnums_b"][:])
+    return c6_constants, c6_coordnums_a, c6_coordnums_b
 
 
 class BeckeJohnsonDamp(torch.nn.Module):
@@ -44,9 +70,9 @@ class BeckeJohnsonDamp(torch.nn.Module):
             [ATOMIC_NUMBER[e] for e in symbols], dtype=torch.long
         )
         if not sqrt_empirical_charge:
-            sqrt_empirical_charge = constants.get_sqrt_empirical_charge()[
-                self.atomic_numbers
-            ].tolist()
+            sqrt_empirical_charge = [
+                SQRT_EMPIRICAL_CHARGE[j] for j in self.atomic_numbers
+            ]
 
         if not len(sqrt_empirical_charge) == len(symbols):
             raise ValueError(
@@ -119,6 +145,7 @@ class TwoBodyDispersionD3(PairPotential):
         cutoff_fn: CutoffArg = "dummy",
         cutoff: float = math.inf,
         sqrt_empirical_charge: tp.Sequence[float] = (),
+        covalent_radii: tp.Sequence[float] = (),
     ):
         super().__init__(
             symbols=symbols,
@@ -127,9 +154,20 @@ class TwoBodyDispersionD3(PairPotential):
             cutoff_fn=cutoff_fn,
         )
         if not sqrt_empirical_charge:
-            sqrt_empirical_charge = constants.get_sqrt_empirical_charge()[
-                self.atomic_numbers
-            ].tolist()
+            sqrt_empirical_charge = [
+                SQRT_EMPIRICAL_CHARGE[j] for j in self.atomic_numbers
+            ]
+        if not len(sqrt_empirical_charge) == len(symbols):
+            raise ValueError(
+                "len(sqrt_empirical_charge), if provided, must match len(symbols)"
+            )
+
+        if not covalent_radii:
+            covalent_radii = [COVALENT_RADIUS[j] for j in self.atomic_numbers]
+        if not len(covalent_radii) == len(symbols):
+            raise ValueError(
+                "len(covalent_radii), if provided, must match len(symbols)"
+            )
 
         self._damp_fn = BeckeJohnsonDamp(
             symbols, damp_a1, damp_a2, sqrt_empirical_charge
@@ -146,7 +184,7 @@ class TwoBodyDispersionD3(PairPotential):
         # Needed to get around numerical issues
         self._eps = 1e-35
 
-        order6_constants, coordnums_a, coordnums_b = constants.get_c6_constants()
+        order6_constants, coordnums_a, coordnums_b = _load_c6_constants()
         self.register_buffer(
             "precalc_coeff6",
             order6_constants[self.atomic_numbers, :][:, self.atomic_numbers],
@@ -168,10 +206,9 @@ class TwoBodyDispersionD3(PairPotential):
         )
 
         # Covalent radii are in angstrom so we first convert to bohr
-        covalent_radii = constants.get_covalent_radii()
         self.register_buffer(
             "covalent_radii",
-            self.ANGSTROM_TO_BOHR * covalent_radii[self.atomic_numbers],
+            self.ANGSTROM_TO_BOHR * torch.tensor(covalent_radii),
         )
 
     @classmethod
