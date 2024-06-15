@@ -44,9 +44,10 @@ XTB repulsion data extracted from Grimme et. al. paper
 https://pubs.acs.org/doi/10.1021/acs.jctc.8b01176
 """
 import json
-from pathlib import Path
 import typing as tp
 import math
+
+from torchani.storage import RESOURCES_DIR
 
 __all__ = [
     "ATOMIC_CONSTANTS",
@@ -69,10 +70,10 @@ __all__ = [
     "FUNCTIONAL_D3BJ_CONSTANTS",
 ]
 
-with open(Path(__file__).parent / "atomic_constants.json", mode="rt") as f:
+with open(RESOURCES_DIR / "atomic_constants.json", mode="rt") as f:
     ATOMIC_CONSTANTS = json.load(f)
 
-with open(Path(__file__).parent / "functional_d3bj_constants.json", mode="rt") as f:
+with open(RESOURCES_DIR / "functional_d3bj_constants.json", mode="rt") as f:
     FUNCTIONAL_D3BJ_CONSTANTS = json.load(f)
 
 
