@@ -3,7 +3,7 @@ from pathlib import Path
 
 from torchani.annotations import StrPath, Grouping, Backend
 from torchani.datasets.backends.interface import _Store
-from torchani.datasets.backends.h5py_impl import _HDF5Store
+from torchani.datasets.backends.hdf5_impl import _HDF5Store
 from torchani.datasets.backends.zarr_impl import _ZarrStore
 from torchani.datasets.backends.parquet_impl import _ParquetStore, _CudfParquetStore
 
