@@ -1,4 +1,5 @@
 r"""Utilities for working with ANI Datasets"""
+from pathlib import Path
 import typing as tp
 
 import torch
@@ -10,7 +11,7 @@ from torchani.models import BuiltinModel
 from torchani.nn import Ensemble
 from torchani.annotations import Conformers, StrPath
 from torchani.datasets.datasets import ANIDataset
-from torchani.datasets.backends import TemporaryLocation
+from torchani.datasets.backends import STORE_TYPE
 
 
 __all__ = ["filter_by_high_force", "filter_by_high_energy_error", "concatenate"]
@@ -23,11 +24,12 @@ def concatenate(
     delete_originals: bool = False,
 ) -> ANIDataset:
     r"""Combine all the backing stores in a given ANIDataset into one"""
+    dest_location = Path(dest_location).resolve()
     if source.grouping not in ["by_formula", "by_num_atoms"]:
         raise ValueError("Please regroup your dataset before concatenating")
 
-    with TemporaryLocation(source._first_subds._backend) as tmp_location:
-        dest = ANIDataset(tmp_location, grouping=source.grouping, verbose=False)
+    with STORE_TYPE[source._first_subds._store.backend].tmp_root() as root:
+        dest = ANIDataset(root, grouping=source.grouping, verbose=False)
         for k, v in tqdm(
             source.numpy_items(),
             desc="Concatenating datasets",
@@ -35,7 +37,7 @@ def concatenate(
             disable=not verbose,
         ):
             dest.append_conformers(k.split("/")[-1], v)
-        dest._first_subds._store.location.root = dest_location
+        dest._first_subds._store.location.set_root(dest_location)
     # TODO this depends on the original stores being files, it should be
     # changed for generality
     if delete_originals:
