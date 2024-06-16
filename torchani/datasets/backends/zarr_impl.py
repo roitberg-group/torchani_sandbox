@@ -1,56 +1,52 @@
 import typing as tp
-import tempfile
-from pathlib import Path
 
 import numpy as np
 import typing_extensions as tpx
 
-from torchani.annotations import StrPath
+from torchani.annotations import StrPath, Grouping, Backend
 from torchani.datasets.backends.interface import (
     _ConformerGroup,
     _ConformerWrapper,
-    _HierarchicalStoreWrapper,
+    _HierarchicalStore,
 )
 
 try:
-    import zarr  # noqa
+    import zarr
 
     _ZARR_AVAILABLE = True
 except ImportError:
     _ZARR_AVAILABLE = False
 
 
-class _ZarrTemporaryLocation(tp.ContextManager[StrPath]):
-    def __init__(self) -> None:
-        self._tmp_location = tempfile.TemporaryDirectory(suffix=".zarr")
+class _ZarrStore(_HierarchicalStore["zarr.Group"]):
+    suffix: str = ".zarr"
+    backend: Backend = "zarr"
+    _AVAILABLE: bool = _ZARR_AVAILABLE
 
-    def __enter__(self) -> str:
-        return self._tmp_location.name
-
-    def __exit__(self, *args) -> None:
-        if Path(self._tmp_location.name).exists():  # check necessary for python 3.6
-            self._tmp_location.cleanup()
-
-
-class _ZarrStore(_HierarchicalStoreWrapper["zarr.Group"]):
     def __init__(
         self,
-        store_location: StrPath,
+        root: StrPath,
         dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        grouping: Grouping = "any",
     ):
-        super().__init__(
-            store_location, ".zarr", "dir", dummy_properties=dummy_properties
-        )
+        super().__init__(root, dummy_properties, grouping)
         self._mode: tp.Optional[str] = None
 
     @classmethod
     def make_empty(
-        cls, store_location: StrPath, grouping: str = "by_num_atoms", **kwargs
+        cls,
+        root: StrPath,
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        grouping: Grouping = "any",
     ) -> tpx.Self:
-        store = zarr.storage.DirectoryStore(store_location)
+        if grouping == "any":
+            grouping = "by_num_atoms"
+        if grouping not in ("by_num_atoms", "by_formula"):
+            raise RuntimeError(f"Invalid grouping for new dataset: {grouping}")
+        store = zarr.storage.DirectoryStore(root)
         with zarr.hierarchy.group(store=store, overwrite=True) as g:
             g.attrs["grouping"] = grouping
-        return cls(store_location, **kwargs)
+        return cls(root, dummy_properties, grouping)
 
     def open(self, mode: str = "r", only_attrs: bool = False) -> tpx.Self:
         store = zarr.storage.DirectoryStore(self.location.root)

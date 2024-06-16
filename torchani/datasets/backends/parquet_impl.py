@@ -1,23 +1,25 @@
 import typing as tp
 import json
-import shutil
-from os import fspath
-import tempfile
 from pathlib import Path
 from collections import OrderedDict
 
 import numpy as np
 import typing_extensions as tpx
 
-from torchani.annotations import StrPath
+from torchani.annotations import StrPath, Grouping, Backend
 from torchani.datasets.backends.interface import (
-    _StoreWrapper,
+    _Store,
     _ConformerGroup,
     CacheHolder,
-    _FileOrDirLocation,
 )
-from torchani.datasets.backends.zarr_impl import _ZarrTemporaryLocation
 
+try:
+    import pandas
+
+    _PANDAS_AVAILABLE = True
+    default_engine = pandas
+except ImportError:
+    _PANDAS_AVAILABLE = False
 
 try:
     import cudf
@@ -27,96 +29,8 @@ try:
 except ImportError:
     _CUDF_AVAILABLE = False
 
-try:
-    import pandas
-
-    _PANDAS_AVAILABLE = True
-    if not _CUDF_AVAILABLE:
-        default_engine = pandas
-except ImportError:
-    _PANDAS_AVAILABLE = False
-
 
 DataFrame = tp.Union["pandas.DataFrame", "cudf.DataFrame"]
-
-
-_PQ_AVAILABLE = _PANDAS_AVAILABLE or _CUDF_AVAILABLE
-
-
-def _to_numpy_pandas(series):
-    return series.to_numpy()
-
-
-def _to_dict_pandas(df, **kwargs):
-    return df.to_dict(**kwargs)
-
-
-def _to_numpy_cudf(series):
-    return series.to_pandas().to_numpy()
-
-
-def _to_dict_cudf(df, **kwargs):
-    return df.to_pandas().to_dict(**kwargs)
-
-
-class _PqLocation(_FileOrDirLocation):
-    def __init__(self, root: StrPath):
-        self._attrs_location: tp.Optional[Path] = None
-        self._pq_location: tp.Optional[Path] = None
-        super().__init__(root, ".pqdir", "dir")
-
-    @property
-    def attrs(self) -> StrPath:
-        if self._attrs_location is not None:
-            return self._attrs_location
-        else:
-            raise RuntimeError("Location is not set")
-
-    @property
-    def pq(self) -> StrPath:
-        if self._pq_location is not None:
-            return self._pq_location
-        else:
-            raise RuntimeError("Location is not set")
-
-    @property
-    def root(self) -> StrPath:
-        # mypy can not understand this, we are calling the getter from the superclass
-        return super(__class__, __class__).root.fget(self)  # type: ignore
-
-    @root.setter
-    def root(self, value: StrPath) -> None:
-        value = Path(value).resolve()
-        if value.suffix == "":
-            value = value.with_suffix(self._suffix)
-        if value.suffix != self._suffix:
-            raise ValueError(f"Incorrect location {value}")
-        attrs = self._attrs_location
-        pq = self._pq_location
-        if attrs is not None:
-            attrs.rename(attrs.with_name(value.with_suffix(".json").name))
-        if pq is not None:
-            pq.rename(pq.with_name(value.with_suffix(".pq").name))
-
-        if self._root_location is not None:
-            # pathlib.rename() may fail if src and dst are in different filesystems
-            shutil.move(fspath(self._root_location), fspath(value))
-        self._root_location = Path(value).resolve()
-        root = self._root_location
-        self._attrs_location = root / root.with_suffix(".json").name
-        self._pq_location = root / root.with_suffix(".pq").name
-        if not (self._pq_location.is_file() or self._attrs_location.is_file()):
-            raise FileNotFoundError(
-                f"The store in {self._root_location} could not be found or is invalid"
-            )
-        self._validate
-
-    @root.deleter
-    def root(self) -> None:
-        # mypy can not understand this, we are calling the deleter from the superclass
-        super(__class__, __class__).root.fdel(self)  # type: ignore
-        self._attrs_location = None
-        self._pq_location = None
 
 
 class DataFrameAdaptor:
@@ -146,29 +60,76 @@ class DataFrameAdaptor:
         self._df[k] = v
 
 
-class _PqTemporaryLocation(_ZarrTemporaryLocation):
-    def __init__(self) -> None:
-        self._tmp_location = tempfile.TemporaryDirectory(suffix=".pqdir")
+class _ParquetStore(_Store[DataFrame]):
+    suffix: str = ".pqdir"
+    backend: Backend = "parquet"
+    _AVAILABLE: bool = _PANDAS_AVAILABLE
 
-
-class _PqStore(_StoreWrapper[DataFrame]):
     def __init__(
         self,
-        store_location: StrPath,
-        use_cudf: bool = False,
+        root: StrPath,
         dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        grouping: Grouping = "any",
     ):
-        super().__init__(dummy_properties=dummy_properties)
-        self.location = _PqLocation(store_location)
+        super().__init__(root, dummy_properties, grouping)
         self._queued_appends: tp.List[DataFrame] = []
-        if use_cudf:
-            self._engine = cudf
-            self._to_dict = _to_dict_cudf
-            self._to_numpy = _to_numpy_cudf
-        else:
-            self._engine = pandas
-            self._to_dict = _to_dict_pandas
-            self._to_numpy = _to_numpy_pandas
+        self._engine = pandas
+
+    @staticmethod
+    def _to_numpy(series):
+        return series.to_numpy()
+
+    @staticmethod
+    def _to_dict(df, **kwargs):
+        return df.to_dict(**kwargs)
+
+    @property
+    def _pq_path(self) -> Path:
+        root = self.location.root()
+        return root / root.with_suffix(".pq").name
+
+    @property
+    def _attrs_path(self) -> Path:
+        root = self.location.root()
+        return root / root.with_suffix(".json").name
+
+    @classmethod
+    def make_empty(
+        cls,
+        root: StrPath,
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        grouping: Grouping = "any",
+    ) -> tpx.Self:
+        if grouping == "any":
+            grouping = "by_num_atoms"
+        if grouping not in ("by_num_atoms", "by_formula"):
+            raise RuntimeError(f"Invalid grouping for new dataset: {grouping}")
+        root = Path(root).resolve()
+        root.mkdir(exist_ok=True)
+        assert not list(root.iterdir()), "location is not empty"
+        attrs_location = root / root.with_suffix(".json").name
+        pq_location = root / root.with_suffix(".pq").name
+        default_engine.DataFrame().to_parquet(pq_location)
+        with open(attrs_location, "x") as f:
+            json.dump({"grouping": grouping}, f)
+        return cls(root, dummy_properties, grouping)
+
+    def update_cache(
+        self, check_properties: bool = False, verbose: bool = True
+    ) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
+        cache = CacheHolder()
+        try:
+            group_sizes_df = self._store["group"].value_counts().sort_index()
+        except KeyError:
+            return cache.group_sizes, cache.properties
+        cache.group_sizes = OrderedDict(
+            sorted([(k, v) for k, v in self._to_dict(group_sizes_df).items()])
+        )
+        cache.properties = set(self._store.columns.tolist()).difference({"group"})
+        self._dummy_properties = {
+            k: v for k, v in self._dummy_properties.items() if k not in cache.properties
+        }
+        return cache.group_sizes, cache.properties.union(self._dummy_properties)
 
     # Avoid pickling modules
     def __getstate__(self):
@@ -190,46 +151,15 @@ class _PqStore(_StoreWrapper[DataFrame]):
             raise RuntimeError("Incorrect _engine value")
         self.__dict__ = d
 
-    def update_cache(
-        self, check_properties: bool = False, verbose: bool = True
-    ) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
-        cache = CacheHolder()
-        try:
-            group_sizes_df = self._store["group"].value_counts().sort_index()
-        except KeyError:
-            return cache.group_sizes, cache.properties
-        cache.group_sizes = OrderedDict(
-            sorted([(k, v) for k, v in self._to_dict(group_sizes_df).items()])
-        )
-        cache.properties = set(self._store.columns.tolist()).difference({"group"})
-        self._dummy_properties = {
-            k: v for k, v in self._dummy_properties.items() if k not in cache.properties
-        }
-        return cache.group_sizes, cache.properties.union(self._dummy_properties)
-
-    @classmethod
-    def make_empty(
-        cls, store_location: StrPath, grouping: str = "by_num_atoms", **kwargs
-    ) -> tpx.Self:
-        root = Path(store_location).resolve()
-        root.mkdir(exist_ok=True)
-        assert not list(root.iterdir()), "location is not empty"
-        attrs_location = root / root.with_suffix(".json").name
-        pq_location = root / root.with_suffix(".pq").name
-        default_engine.DataFrame().to_parquet(pq_location)
-        with open(attrs_location, "x") as f:
-            json.dump({"grouping": grouping}, f)
-        return cls(store_location, **kwargs)
-
     # File-like
     def open(self, mode: str = "r", only_attrs: bool = False) -> tpx.Self:
         if not only_attrs:
             self._store_obj = DataFrameAdaptor(
-                self._engine.read_parquet(self.location.pq)
+                self._engine.read_parquet(self._pq_path)
             )
         else:
             self._store_obj = DataFrameAdaptor()
-        with open(self.location.attrs, mode) as f:
+        with open(self._attrs_path, mode) as f:
             attrs = json.load(f)
         if "extra_dims" not in attrs.keys():
             attrs["extra_dims"] = dict()
@@ -244,9 +174,9 @@ class _PqStore(_StoreWrapper[DataFrame]):
         if self._queued_appends:
             self.execute_queued_appends()
         if self._store._is_dirty:
-            self._store.to_parquet(self.location.pq)
+            self._store.to_parquet(self._pq_path)
         if self._store._attrs_is_dirty:
-            with open(self.location.attrs, "w") as f:
+            with open(self._attrs_path, "w") as f:
                 json.dump(self._store.attrs, f)
         self._store_obj = None
         return self
@@ -258,7 +188,7 @@ class _PqStore(_StoreWrapper[DataFrame]):
     # Mapping
     def __getitem__(self, name: str) -> "_ConformerGroup":
         df_group = self._store[self._store["group"] == name]
-        group = _PqConformerGroup(df_group, self._dummy_properties, self._store)
+        group = _ParquetConformerGroup(df_group, self._dummy_properties, self._store)
         # mypy does not understand monkey patching
         group._to_numpy = self._to_numpy  # type: ignore
         return group
@@ -352,7 +282,31 @@ class _PqStore(_StoreWrapper[DataFrame]):
         self._store._is_dirty = True
 
 
-class _PqConformerGroup(_ConformerGroup):
+class _CudfParquetStore(_ParquetStore):
+    suffix: str = ".pqdir"
+    backend: Backend = "cudf"
+    _AVAILABLE: bool = _CUDF_AVAILABLE
+
+    def __init__(
+        self,
+        root: StrPath,
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        grouping: Grouping = "any",
+    ):
+        super().__init__(root, dummy_properties, grouping)
+        self._queued_appends: tp.List[DataFrame] = []
+        self._engine = cudf
+
+    @staticmethod
+    def _to_numpy(series):
+        return series.to_pandas().to_numpy()
+
+    @staticmethod
+    def _to_dict(df, **kwargs):
+        return df.to_pandas().to_dict(**kwargs)
+
+
+class _ParquetConformerGroup(_ConformerGroup):
     def __init__(self, group_obj, dummy_properties, store_pointer):
         super().__init__(dummy_properties=dummy_properties)
         self._group_obj = group_obj

@@ -1,7 +1,8 @@
 import shutil
+import tempfile
+import types
 import typing as tp
 from itertools import chain
-from os import fspath
 from abc import ABC, abstractmethod
 from pathlib import Path
 from collections import OrderedDict
@@ -9,7 +10,10 @@ from collections import OrderedDict
 import numpy as np
 import typing_extensions as tpx
 
-from torchani.annotations import NumpyConformers, StrPath
+from torchani.annotations import NumpyConformers, StrPath, Grouping, Backend
+
+
+TmpRoot = tp.ContextManager[StrPath]
 
 
 # Keeps track of variables that must be updated each time the datasets get
@@ -29,15 +33,14 @@ class NamedMapping(tp.Mapping):
 
 _MutMapSubtype = tp.TypeVar("_MutMapSubtype", bound=tp.MutableMapping[str, np.ndarray])
 
-# _ConformerGroup and _StoreWrapper are abstract classes from which all backends
+# _ConformerGroup and _Store are abstract classes from which all backends
 # should inherit in order to correctly interact with ANIDataset. Adding
 # support for a new backend can be done just by coding these classes and
 # adding the support for the backend inside interface.py
 
 
-# This is kind of like a dict, but with the extra functionality that you can
-# directly "append" to it, and rename its keys, it can also create dummy
-# properties on the fly.
+# This is like a dict, but supports "append", and rename keys, it can also
+# create dummy properties on the fly.
 class _ConformerGroup(tp.MutableMapping[str, np.ndarray], ABC):
     def __init__(
         self,
@@ -92,9 +95,7 @@ class _ConformerGroup(tp.MutableMapping[str, np.ndarray], ABC):
         except KeyError:
             species = self._getitem_impl("numbers")
         if species.ndim != 2:
-            raise RuntimeError(
-                "Dummy properties are not supported for legacy grouping"
-            )
+            raise RuntimeError("Dummy properties are not supported for legacy grouping")
         shape: tp.Tuple[int, ...] = (species.shape[0],)
         if is_atomic:
             shape += (species.shape[1],)
@@ -156,61 +157,46 @@ class _ConformerWrapper(_ConformerGroup, tp.Generic[_MutMapSubtype]):
         self._data[p] = np.append(self._data[p], v, axis=0)
 
 
-# Base location manager for datasets that use either directories or files as
-# locations
-class _FileOrDirLocation:
-    def __init__(self, root: StrPath, suffix: str = "", kind: str = "file"):
-        if kind not in ["file", "dir"]:
-            raise ValueError("Kind must be one of 'file' or 'dir'")
-        self._kind = kind
+# Base location manager for datasets that use either a single file or a structure
+# of a directory with some files
+class Location:
+    def __init__(self, root: StrPath, suffix: str = ""):
+        self._root: tp.Optional[Path] = None
         self._suffix = suffix
-        self._root_location: tp.Optional[Path] = None
-        self.root = root
+        self.set_root(Path(root).resolve())
 
-    @property
-    def root(self) -> StrPath:
-        root = self._root_location
-        if root is None:
-            raise ValueError("Location is invalid")
-        return root
+    def root(self) -> Path:
+        if self._root is None:
+            raise ValueError("Tried to access an empty location")
+        return self._root
 
-    @root.setter
-    def root(self, value: StrPath) -> None:
-        value = Path(value).resolve()
+    def set_root(self, value: Path) -> None:
+        if not value.exists():
+            raise FileNotFoundError(f"The root {value} could not be found")
+
         if value.suffix == "":
             value = value.with_suffix(self._suffix)
         if value.suffix != self._suffix:
             raise ValueError(f"Incorrect location {value}")
-        if self._root_location is not None:
+
+        if self._root is not None:
             # pathlib.rename() may fail if src and dst are in different filesystems
-            shutil.move(fspath(self._root_location), fspath(value))
-        self._root_location = Path(value).resolve()
-        self._validate()
+            if self.root().is_file() != value.is_file():
+                raise ValueError(
+                    f"Location root is_file={self.root().is_file()}"
+                    f"Can't set with value is_file={value.is_file()}"
+                )
+            shutil.move(self.root(), value)
+        self._root = value
 
-    @root.deleter
-    def root(self) -> None:
-        if self._root_location is not None:
-            if self._kind == "file":
-                self._root_location.unlink()
-            else:
-                shutil.rmtree(self._root_location)
-        self._root_location = None
-
-    def transfer_to(self, other_store: "_StoreWrapper") -> None:
-        root = Path(self.root).with_suffix("")
-        del self.root
-        other_store.location.root = root
-
-    def _validate(self) -> None:
-        root = Path(self.root)
-        _kind = self._kind
-        if (
-            _kind == "dir"
-            and not root.is_dir()
-            or _kind == "file"
-            and not root.is_file()
-        ):
-            raise FileNotFoundError(f"The store in {root} could not be found")
+    def clear(self) -> None:
+        if self._root is None:
+            return
+        if self.root().is_dir():
+            shutil.rmtree(self.root())
+        else:
+            self.root().unlink()
+        self._root = None
 
 
 # mypy expects a Protocol here, which specifies that _T must
@@ -220,36 +206,76 @@ class _FileOrDirLocation:
 _T = tp.TypeVar("_T", bound=tp.Any)
 
 
-# A store that wraps another store class (e.g. Zarr, Exedir, HDF5, DataFrame)
+# Wrap a data format (e.g. Zarr, Exedir, HDF5, Parquet)
 # Wrapped store must have a "mode" and "attr" attributes, it may implement close()
 # __exit__, __enter__, , __delitem__
-class _StoreWrapper(
-    tp.ContextManager["_StoreWrapper"],
+class _Store(
+    tp.ContextManager["_Store"],
     tp.MutableMapping[str, "_ConformerGroup"],
     ABC,
     tp.Generic[_T],
 ):
-    location: tp.Any
+    suffix: str = ""
+    backend: Backend
+    _AVAILABLE: bool = False
 
     def __init__(
         self,
-        *args,
+        root: StrPath,
         dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
-        **kwargs,
+        grouping: Grouping = "any",
     ):
         self._dummy_properties = (
             dict() if dummy_properties is None else dummy_properties
         )
         self._store_obj: tp.Any = None
+        self.location = self._build_location(root, self.suffix)
+        if grouping != "any" and self.grouping != grouping:
+            raise RuntimeError(
+                f"Attempted to open a dataset with grouping {grouping},"
+                f" but found grouping {self.grouping} in provided root path"
+            )
+        if not self._AVAILABLE:
+            raise ValueError(f"{self.backend} could not be found")
+
+    def overwrite(self, other: "_Store") -> None:
+        root = Path(other.location.root()).with_suffix("")
+        other.location.clear()
+        self.location.set_root(root)
 
     @property
     def dummy_properties(self) -> tp.Dict[str, tp.Any]:
         return self._dummy_properties.copy()
 
     @classmethod
+    def tmp_root(cls) -> TmpRoot:
+        class _TmpRoot(tp.ContextManager[StrPath]):
+            def __init__(self) -> None:
+                self._loc = tempfile.TemporaryDirectory(suffix=cls.suffix)
+
+            def __enter__(self) -> str:
+                return self._loc.name
+
+            def __exit__(
+                self,
+                exc_type: tp.Optional[tp.Type[BaseException]],
+                exc_value: tp.Optional[BaseException],
+                exc_traceback: tp.Optional[types.TracebackType],
+            ) -> None:
+                self._loc.cleanup()
+
+        return _TmpRoot()
+
+    def _build_location(self, location: StrPath, suffix: str) -> Location:
+        return Location(location, suffix)
+
+    @classmethod
     @abstractmethod
     def make_empty(
-        cls, store_location: StrPath, grouping: str = "by_num_atoms", **kwargs
+        cls,
+        root: StrPath,
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        grouping: Grouping = "any",
     ) -> tpx.Self:
         pass
 
@@ -297,7 +323,7 @@ class _StoreWrapper(
         return self
 
     @property
-    def grouping(self) -> str:
+    def grouping(self) -> Grouping:
         # This detects Roman's formatting style which doesn't have a
         # 'grouping' key but is still grouped by num atoms.
         try:
@@ -305,35 +331,34 @@ class _StoreWrapper(
             return "by_num_atoms"
         except (KeyError, OSError):
             pass
-        try:
-            g = self._store.attrs["grouping"]
-            return tp.cast(str, g)
-        except (KeyError, OSError):
-            return "legacy"
 
-    def __exit__(self, *args) -> None:
         try:
-            self._store.__exit__(*args)
+            grouping = tp.cast(str, self._store.attrs["grouping"])
+            if grouping not in ("by_num_atoms", "legacy", "by_formula"):
+                raise RuntimeError(f"Read dataset with invalid grouping: {grouping}")
+            return tp.cast(Grouping, grouping)
+        except (KeyError, OSError):
+            pass
+        return "legacy"
+
+    def __exit__(
+        self,
+        exc_type: tp.Optional[tp.Type[BaseException]],
+        exc_value: tp.Optional[BaseException],
+        exc_traceback: tp.Optional[types.TracebackType],
+    ) -> None:
+        try:
+            self._store.__exit__(exc_type, exc_value, exc_traceback)
         except AttributeError:
             pass
         self._store_obj = None
 
 
-# A store that wraps another hierarchical store (e.g. Zarr, Exedir, HDF5)
-# Wrapped store must implement:
+# Wrap a hierarchical data format (e.g. Zarr, Exedir, HDF5)
+# Wrapped data must implement:
 # __exit__, __enter__, create_group, __len__, __iter__ -> Iterator[str], __delitem__
 # and have a "mode" and "attr" attributes
-class _HierarchicalStoreWrapper(_StoreWrapper[_T]):
-    def __init__(
-        self,
-        store_location: StrPath,
-        suffix="",
-        kind="",
-        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
-    ):
-        super().__init__(dummy_properties=dummy_properties)
-        self.location = _FileOrDirLocation(store_location, suffix, kind)
-
+class _HierarchicalStore(_Store[_T]):
     def update_cache(
         self, check_properties: bool = False, verbose: bool = True
     ) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:

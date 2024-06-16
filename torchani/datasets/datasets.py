@@ -18,6 +18,8 @@ from tqdm import tqdm
 from torchani.constants import ATOMIC_NUMBER, PERIODIC_TABLE
 from torchani.utils import species_to_formula, sort_by_element, PADDING, ATOMIC_KEYS
 from torchani.annotations import (
+    Grouping,
+    Backend,
     Conformers,
     NumpyConformers,
     MixedConformers,
@@ -25,9 +27,9 @@ from torchani.annotations import (
     IdxLike,
 )
 from torchani.datasets.backends import (
-    _StoreWrapper,
-    StoreFactory,
-    TemporaryLocation,
+    Store,
+    STORE_TYPE,
+    _Store,
     _ConformerWrapper,
     _SUFFIXES,
 )
@@ -306,11 +308,10 @@ class _ANISubdataset(_ANIDatasetBase):
     def __init__(
         self,
         store_location: StrPath,
-        grouping: tp.Optional[str] = None,
-        backend: tp.Optional[str] = None,
+        grouping: Grouping = "any",
+        backend: tp.Optional[Backend] = None,
         verbose: bool = True,
         dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
-        use_cudf: bool = False,
         _force_overwrite: bool = False,
     ):
         # dummy_properties must be a dict of the form {'name': {'dtype': dtype,
@@ -319,16 +320,13 @@ class _ANISubdataset(_ANIDatasetBase):
         # created on the fly only if they are not present in the dataset
         # already.
         super().__init__()
-        self._store = StoreFactory(
+        self._store = Store(
             store_location,
             backend,
             grouping,
             dummy_properties,
-            use_cudf=use_cudf,
             _force_overwrite=_force_overwrite,
         )
-        # StoreFactory monkey patches all stores with "backend" attribute
-        self._backend = self._store.backend  # type: ignore
         self._possible_nonbatch_properties: tp.Set[str]
 
         if self.grouping not in ["by_formula", "by_num_atoms", "legacy"]:
@@ -390,7 +388,7 @@ class _ANISubdataset(_ANIDatasetBase):
     # if they are being called from inside a "keep_open" context
     def _get_open_store(
         self, stack: ExitStack, mode: str = "r", only_attrs: bool = False
-    ) -> "_StoreWrapper":
+    ) -> _Store:
         if mode not in ["r+", "r"]:
             raise ValueError(f"Unsupported mode {mode}")
 
@@ -413,7 +411,7 @@ class _ANISubdataset(_ANIDatasetBase):
             )
 
     def __str__(self) -> str:
-        str_ = f"ANI {self._backend} store:\n"
+        str_ = f"ANI {self._store.backend} store:\n"
         d: tp.Dict[str, tp.Any] = {"Conformers": f"{self.num_conformers:,}"}
         d.update({"Conformer groups": self.num_conformer_groups})
         d.update({"Properties": sorted(self.properties)})
@@ -672,8 +670,8 @@ class _ANISubdataset(_ANIDatasetBase):
     def _make_empty_copy(
         self,
         location: StrPath,
-        grouping: str,
-        backend: str,
+        grouping: Grouping,
+        backend: Backend,
     ) -> "_ANISubdataset":
         return _ANISubdataset(
             location,
@@ -698,24 +696,24 @@ class _ANISubdataset(_ANIDatasetBase):
     @_needs_cache_update
     def to_backend(
         self,
-        backend: tp.Optional[str] = None,
+        backend: tp.Optional[Backend] = None,
         dest_root: tp.Optional[StrPath] = None,
         verbose: bool = True,
         inplace: bool = False,
     ) -> "_ANISubdataset":
         r"""Transforms underlying store into a different format"""
         if backend is None:
-            backend = self._backend
+            backend = self._store.backend
 
         if inplace:
             assert dest_root is None
         elif dest_root is None:
-            dest_root = Path(self._store.location.root).parent
+            dest_root = Path(self._store.location.root()).parent
 
         self._check_correct_grouping()
-        if self._backend == backend and backend != "h5py":
+        if self._store.backend == backend and backend != "hdf5":
             return self
-        with TemporaryLocation(backend) as location:
+        with STORE_TYPE[backend].tmp_root() as location:
             new_ds = self._make_empty_copy(
                 location, grouping=self.grouping, backend=backend
             )
@@ -736,12 +734,12 @@ class _ANISubdataset(_ANIDatasetBase):
                     )
             new_ds._attach_dummy_properties(self._dummy_properties)
             if inplace:
-                self._store.location.transfer_to(new_ds._store)
+                new_ds._store.overwrite(self._store)
                 return new_ds
             else:
                 new_parent = Path(tp.cast(StrPath, dest_root)).resolve()
-                new_ds._store.location.root = (
-                    new_parent / self._store.location.root.with_suffix("").name
+                new_ds._store.location.set_root(
+                    new_parent / self._store.location.root().with_suffix("").name
                 )
                 return self
 
@@ -753,7 +751,7 @@ class _ANISubdataset(_ANIDatasetBase):
         When a dataset is deleted from an HDF5 file the file size is not
         reduced since unlinked data is still kept in the file. Repacking is
         needed in order to reduce the size of the file. Note that this is only
-        useful for the h5py backend, otherwise it is a no-op.
+        useful for the hdf5 backend, otherwise it is a no-op.
         """
         return self.to_backend.__wrapped__(  # type: ignore
             self,
@@ -774,9 +772,9 @@ class _ANISubdataset(_ANIDatasetBase):
         explanation of that argument.
         """
         self._check_unique_element_key()
-        with TemporaryLocation(self._backend) as location:
+        with type(self._store).tmp_root() as root:
             new_ds = self._make_empty_copy(
-                location, grouping="by_formula", backend=self._backend
+                root, grouping="by_formula", backend=self._store.backend
             )
             with new_ds.keep_open("r+") as rwds:
                 for group_name, conformers in tqdm(
@@ -803,7 +801,7 @@ class _ANISubdataset(_ANIDatasetBase):
                             selected_conformers,
                         )
             new_ds._attach_dummy_properties(self._dummy_properties)
-            self._store.location.transfer_to(new_ds._store)
+            new_ds._store.overwrite(self._store)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
@@ -822,9 +820,9 @@ class _ANISubdataset(_ANIDatasetBase):
         for an explanation of that argument.
         """
         self._check_unique_element_key()
-        with TemporaryLocation(self._backend) as location:
+        with type(self._store).tmp_root() as root:
             new_ds = self._make_empty_copy(
-                location, grouping="by_num_atoms", backend=self._backend
+                root, grouping="by_num_atoms", backend=self._store.backend
             )
             with new_ds.keep_open("r+") as rwds:
                 for group_name, conformers in tqdm(
@@ -842,7 +840,7 @@ class _ANISubdataset(_ANIDatasetBase):
                         conformers,
                     )
             new_ds._attach_dummy_properties(self._dummy_properties)
-            self._store.location.transfer_to(new_ds._store)
+            new_ds._store.overwrite(self._store)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
@@ -907,7 +905,7 @@ class _ANISubdataset(_ANIDatasetBase):
         return self
 
     @property
-    def grouping(self) -> str:
+    def grouping(self) -> Grouping:
         r"""Get the dataset grouping
 
         Grouping is a string that describes how conformers are grouped in
@@ -1085,7 +1083,9 @@ class ANIDataset(_ANIDatasetBase):
         self._update_cache()
 
     @classmethod
-    def from_dir(cls, dir_: StrPath, only_backend: tp.Optional[str] = "h5py", **kwargs):
+    def from_dir(
+        cls, dir_: StrPath, only_backend: tp.Optional[Backend] = "hdf5", **kwargs
+    ):
         r"""Reads all files in a given directory, if there are multiple files
         with the same name only one of them will be considered"""
         dir_ = Path(dir_).resolve()
@@ -1131,7 +1131,7 @@ class ANIDataset(_ANIDatasetBase):
 
     @property
     def store_locations(self) -> tp.List[str]:
-        return [fspath(ds._store.location.root) for ds in self._datasets.values()]
+        return [str(ds._store.location.root()) for ds in self._datasets.values()]
 
     @property
     def num_stores(self) -> int:

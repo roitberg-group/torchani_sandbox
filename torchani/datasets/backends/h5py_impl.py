@@ -1,3 +1,4 @@
+import types
 import typing as tp
 from uuid import uuid4
 import tempfile
@@ -9,76 +10,103 @@ import numpy as np
 from tqdm import tqdm
 import typing_extensions as tpx
 
-from torchani.annotations import StrPath
+from torchani.annotations import StrPath, Grouping, Backend
 from torchani.datasets.backends.interface import (
+    TmpRoot,
     _ConformerGroup,
     _ConformerWrapper,
     CacheHolder,
-    _HierarchicalStoreWrapper,
+    _HierarchicalStore,
 )
 
 
-class _H5TemporaryLocation(tp.ContextManager[StrPath]):
-    def __init__(self) -> None:
-        self._tmp_location = tempfile.TemporaryDirectory()
-        self._tmp_filename = Path(self._tmp_location.name).resolve() / f"{uuid4()}.h5"
+class _HDF5Store(_HierarchicalStore[h5py.File]):
+    suffix: str = ".h5"
+    backend: Backend = "hdf5"
+    _AVAILABLE: bool = True
 
-    def __enter__(self) -> str:
-        return self._tmp_filename.as_posix()
-
-    def __exit__(self, *args) -> None:
-        self._tmp_location.cleanup()
-
-
-class _H5Store(_HierarchicalStoreWrapper[h5py.File]):
     def __init__(
         self,
-        store_location: StrPath,
+        root: StrPath,
         dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        grouping: Grouping = "any",
     ):
-        super().__init__(
-            store_location, ".h5", "file", dummy_properties=dummy_properties
+        super().__init__(root, dummy_properties, grouping)
+        self._has_flat_format = True
+        self._tried_to_infer_flat_format = False
+
+    def __getitem__(self, name: str) -> "_ConformerGroup":
+        return _HDF5ConformerGroup(
+            self._store[name], dummy_properties=self._dummy_properties
         )
-        self._has_standard_format = True
-        self._made_quick_check = False
 
     @classmethod
     def make_empty(
-        cls, store_location: StrPath, grouping: str = "by_num_atoms", **kwargs
+        cls,
+        root: StrPath,
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        grouping: Grouping = "any",
     ) -> tpx.Self:
-        with h5py.File(store_location, "x") as f:
+        if grouping == "any":
+            grouping = "by_num_atoms"
+        if grouping not in ("by_num_atoms", "by_formula"):
+            raise RuntimeError(f"Invalid grouping for new dataset: {grouping}")
+        with h5py.File(root, "x") as f:
             f.attrs["grouping"] = grouping
-        obj = cls(store_location, **kwargs)
-        obj._has_standard_format = True
+        obj = cls(root, dummy_properties, grouping)
+        obj._has_flat_format = True
         return obj
 
+    @classmethod
+    def tmp_root(cls) -> TmpRoot:
+        class _HDF5TmpRoot(tp.ContextManager[StrPath]):
+            def __init__(self) -> None:
+                self._tmp_dir = tempfile.TemporaryDirectory()
+                self._tmp_file = (
+                    Path(self._tmp_dir.name).resolve() / f"{uuid4()}"
+                ).with_suffix(cls.suffix)
+
+            def __enter__(self) -> str:
+                return str(self._tmp_file)
+
+            def __exit__(
+                self,
+                exc_type: tp.Optional[tp.Type[BaseException]],
+                exc_value: tp.Optional[BaseException],
+                exc_traceback: tp.Optional[types.TracebackType],
+            ) -> None:
+                self._tmp_dir.cleanup()
+
+        return _HDF5TmpRoot()
+
     def open(self, mode: str = "r", only_attrs: bool = False) -> tpx.Self:
-        self._store_obj = h5py.File(self.location.root, mode)
+        self._store_obj = h5py.File(self.location.root(), mode)
         return self
 
     def update_cache(
         self, check_properties: bool = False, verbose: bool = True
     ) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
         cache = CacheHolder()
-        # If the dataset has some semblance of standarization (it is a tree with depth
+        # If the dataset is standarized (it is a tree with depth
         # 1, where all groups are directly joined to the root) then it is much faster
-        # to traverse the dataset. In any case after the first recursion if this
-        # structure is detected the flag is set internally so we never do the recursion
-        # again. This speeds up cache updates and lookup x30
-        if self.grouping == "legacy" and not self._made_quick_check:
-            self._has_standard_format = self._quick_standard_format_check()
-            self._made_quick_check = True
+        # to traverse, so after the first recursion if this
+        # structure is detected set a flag to prevent doing the recursion again.
+        # This speeds up cache updates and lookup x30
+        if self.grouping == "legacy" and not self._tried_to_infer_flat_format:
+            self._has_flat_format = self._can_infer_flat_format()
+            self._tried_to_infer_flat_format = True
 
-        if self._has_standard_format:
+        if self._has_flat_format:
             for k, g in self._store.items():
                 if g.name in ["/_created", "/_meta"]:
                     continue
                 self._update_properties_cache(cache, g, check_properties)
                 self._update_groups_cache(cache, g)
         else:
-            self._has_standard_format = self._update_cache_nonstandard(
+            found_flat_format = self._update_cache_recursive_iter(
                 cache, check_properties, verbose
             )
+            self._has_flat_format = found_flat_format
         # By default iteration of HDF5 should be alphanumeric in which case
         # sorting should not be necessary, this internal check ensures the
         # groups were not created with 'track_order=True', and that the visitor
@@ -91,13 +119,13 @@ class _H5Store(_HierarchicalStoreWrapper[h5py.File]):
         }
         return cache.group_sizes, cache.properties.union(self._dummy_properties)
 
-    def _update_cache_nonstandard(
+    def _update_cache_recursive_iter(
         self, cache: CacheHolder, check_properties: bool, verbose: bool
     ) -> bool:
         def visitor_fn(
             name: str,
             object_: tp.Union[h5py.Dataset, h5py.Group],
-            store: "_H5Store",
+            store: "_HDF5Store",
             cache: CacheHolder,
             check_properties: bool,
             pbar: tp.Any,
@@ -138,13 +166,12 @@ class _H5Store(_HierarchicalStoreWrapper[h5py.File]):
                 )
             )
         # If the visitor function succeeded and this condition is met the
-        # dataset must be in standard format
-        has_standard_format = not any("/" in k[1:] for k in cache.group_sizes.keys())
-        return has_standard_format
+        # dataset must be in flat format
+        return not any("/" in k[1:] for k in cache.group_sizes.keys())
 
     # Check if the raw hdf5 file is one of a number of known files that can be assumed
     # to have standard format.
-    def _quick_standard_format_check(self) -> bool:
+    def _can_infer_flat_format(self) -> bool:
         # This check detects the "ani-release" files which have this property
         try:
             key = next(iter(self._store.keys()))
@@ -159,13 +186,8 @@ class _H5Store(_HierarchicalStoreWrapper[h5py.File]):
         except KeyError:
             return False
 
-    def __getitem__(self, name: str) -> "_ConformerGroup":
-        return _H5ConformerGroup(
-            self._store[name], dummy_properties=self._dummy_properties
-        )
 
-
-class _H5ConformerGroup(_ConformerWrapper[h5py.Group]):
+class _HDF5ConformerGroup(_ConformerWrapper[h5py.Group]):
     def __init__(self, data: h5py.Group, **kwargs):
         super().__init__(data=data, **kwargs)
 
