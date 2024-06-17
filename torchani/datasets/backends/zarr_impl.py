@@ -1,10 +1,10 @@
-import typing as tp
+from pathlib import Path
 
 import numpy as np
-import typing_extensions as tpx
 
-from torchani.annotations import StrPath, Grouping, Backend
+from torchani.annotations import Grouping, Backend
 from torchani.datasets.backends.interface import (
+    Metadata,
     _ConformerGroup,
     _ConformerWrapper,
     _HierarchicalStore,
@@ -21,42 +21,33 @@ except ImportError:
 class _ZarrStore(_HierarchicalStore["zarr.Group"]):
     suffix: str = ".zarr"
     backend: Backend = "zarr"
-    _AVAILABLE: bool = _ZARR_AVAILABLE
+    BACKEND_AVAILABLE: bool = _ZARR_AVAILABLE
 
-    def __init__(
-        self,
-        root: StrPath,
-        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
-        grouping: Grouping = "any",
-    ):
-        super().__init__(root, dummy_properties, grouping)
-        self._mode: tp.Optional[str] = None
-
-    @classmethod
-    def make_empty(
-        cls,
-        root: StrPath,
-        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
-        grouping: Grouping = "any",
-    ) -> tpx.Self:
-        if grouping == "any":
-            grouping = "by_num_atoms"
-        if grouping not in ("by_num_atoms", "by_formula"):
-            raise RuntimeError(f"Invalid grouping for new dataset: {grouping}")
-        store = zarr.storage.DirectoryStore(root)
-        with zarr.hierarchy.group(store=store, overwrite=True) as g:
+    @staticmethod
+    def init_empty(root: Path, grouping: Grouping) -> None:
+        zarr_dir_style_data = zarr.storage.DirectoryStore(str(root))
+        with zarr.hierarchy.group(store=zarr_dir_style_data, overwrite=True) as g:
             g.attrs["grouping"] = grouping
-        return cls(root, dummy_properties, grouping)
 
-    def open(self, mode: str = "r", only_attrs: bool = False) -> tpx.Self:
-        store = zarr.storage.DirectoryStore(self.location.root)
-        self._store_obj = zarr.hierarchy.open_group(store, mode)
-        setattr(self._store_obj, "mode", mode)
-        return self
+    def setup(self, root: Path, mode: str) -> None:
+        zarr_dir_style_data = zarr.storage.DirectoryStore(root)
+        file = zarr.hierarchy.open_group(zarr_dir_style_data, mode)
+        meta = Metadata(
+            grouping=file.attrs["grouping"],
+            dims=dict(),
+            dtypes=dict(),
+            units=dict(),
+        )
+        self.set_data(file, mode)
+        self.set_data(meta, mode)
+
+    # Zarr DirectoryStore has no cleanup logic
+    def teardown(self) -> None:
+        pass
 
     def __getitem__(self, name: str) -> "_ConformerGroup":
         return _ZarrConformerGroup(
-            self._store[name], dummy_properties=self._dummy_properties
+            self.data[name], dummy_properties=self._dummy_properties
         )
 
 

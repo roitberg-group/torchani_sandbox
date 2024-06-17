@@ -117,150 +117,6 @@ _symbols_to_numbers = np.vectorize(lambda x: ATOMIC_NUMBER[x])
 _numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
 
-# Base class for ANIDataset and _ANISubdataset
-class _ANIDatasetBase(tp.Mapping[str, Conformers]):
-    def __init__(self, *args, **kwargs) -> None:
-        # "properties" is read only, needed for validation of inputs, it may
-        # change if a property is renamed or deleted. num_conformers and
-        # num_conformer_groups are all calculated on the fly to guarantee
-        # synchronization with "group_sizes".
-        self._group_sizes: tp.OrderedDict[str, int] = OrderedDict()
-        self._properties: tp.Set[str] = set()
-
-    @property
-    def group_sizes(self) -> tp.OrderedDict[str, int]:
-        return self._group_sizes.copy()
-
-    @property
-    def properties(self) -> tp.Set[str]:
-        return self._properties
-
-    @property
-    def tensor_properties(self) -> tp.Tuple[str, ...]:
-        set_ = {
-            p
-            for p in self._properties
-            if not any(re.match(pattern, p) for pattern in _ALWAYS_STRING_PATTERNS)
-        }
-        return tuple(sorted(set_))
-
-    @property
-    def num_conformers(self) -> int:
-        return sum(self._group_sizes.values())
-
-    @property
-    def num_conformer_groups(self) -> int:
-        return len(self._group_sizes.keys())
-
-    @property
-    def grouping(self) -> str:
-        raise NotImplementedError
-
-    def __getitem__(self, key: str) -> Conformers:
-        return tp.cast(Conformers, getattr(self, "get_conformers")(key))
-
-    def __len__(self) -> int:
-        return self.num_conformer_groups
-
-    def __iter__(self) -> tp.Iterator[str]:
-        return iter(self._group_sizes.keys())
-
-    def numpy_items(
-        self, limit: float = math.inf, **kwargs
-    ) -> tp.Iterator[tp.Tuple[str, NumpyConformers]]:
-        count = 0
-        for group_name in self.keys():
-            count += 1
-            yield group_name, getattr(self, "get_numpy_conformers")(
-                group_name, **kwargs
-            )
-            if count >= limit:
-                return
-
-    def numpy_values(self, **kwargs) -> tp.Iterator[NumpyConformers]:
-        for k, v in self.numpy_items(**kwargs):
-            yield v
-
-    def chunked_items(
-        self, max_size: int = 2500, limit: float = math.inf, **kwargs
-    ) -> tp.Iterator[tp.Tuple[str, int, MixedConformers]]:
-        r"""Sequentially iterate over chunked pieces of the dataset with a maximum size
-
-        The iteration is "chunked" into pieces, so instead of yielding groups
-        this yields chunks of max size "max_size" which may be useful e.g.
-        if groups are too large and they don't fit in GPU memory.
-
-        The minimum size can't be controlled, and chunks may have different
-        sizes in general, but they will not exceed max_size. An estimate of
-        the number of chunks of the whole dataset is num_conformers //
-        max_size.
-
-        "limit" limits the number of output chunks to that number and then
-        stops iteration (iteration is still sequential, not random).
-
-        The second element in the yielded tuple is the cumulative conformer count
-        previous to the yielded tuple.
-        """
-        getter = kwargs.pop("getter", "get_conformers")
-        chunk_count = 0
-        for group_name in self.keys():
-            cumulative_conformer_count = 0
-            conformers = getattr(self, getter)(group_name, **kwargs)
-            any_key = next(iter(conformers.keys()))
-            keys_copy = list(conformers.keys())
-            splitted_conformers: NumpyConformers = dict()
-            for k in keys_copy:
-                if getter == "get_conformers":
-                    splits = torch.split(conformers.pop(k), max_size)
-                else:
-                    splits = tuple(
-                        conformers[k][j:j + max_size]
-                        for j in range(0, len(conformers[k]), max_size)
-                    )
-                splitted_conformers.update({k: splits})
-            num_chunks = len(splitted_conformers[any_key])
-            for j in range(num_chunks):
-                chunk_count += 1
-                chunk_to_yield = {k: v[j] for k, v in splitted_conformers.items()}
-                yield group_name, cumulative_conformer_count, chunk_to_yield
-                cumulative_conformer_count += len(chunk_to_yield[any_key])
-                if chunk_count >= limit:
-                    return
-
-    def chunked_numpy_items(
-        self, **kwargs
-    ) -> tp.Iterator[tp.Tuple[str, int, MixedConformers]]:
-        kwargs.update({"getter": "get_numpy_conformers"})
-        yield from self.chunked_items(**kwargs)
-
-    def iter_key_idx_conformers(
-        self, limit: float = math.inf, **kwargs
-    ) -> tp.Iterator[tp.Tuple[str, int, Conformers]]:
-        kwargs = kwargs.copy()
-        getter = kwargs.pop("getter", "get_conformers")
-        count = 0
-        for k, size in self._group_sizes.items():
-            conformers = getattr(self, getter)(k, **kwargs)
-            for idx in range(size):
-                count += 1
-                single_conformer = {k: conformers[k][idx] for k in conformers.keys()}
-                yield k, idx, single_conformer
-                if count >= limit:
-                    return
-
-    def iter_key_idx_numpy_conformers(
-        self, **kwargs
-    ) -> tp.Iterator[tp.Tuple[str, int, Conformers]]:
-        kwargs.update({"getter": "get_numpy_conformers"})
-        yield from self.iter_key_idx_conformers(**kwargs)
-
-    def iter_conformers(self, **kwargs) -> tp.Iterator[Conformers]:
-        for _, _, c in self.iter_key_idx_conformers(**kwargs):
-            yield c
-
-    def iter_numpy_conformers(self, **kwargs) -> tp.Iterator[Conformers]:
-        for _, _, c in self.iter_key_idx_numpy_conformers(**kwargs):
-            yield c
 
 
 # Decorators for ANISubdataset:
@@ -353,12 +209,6 @@ class _ANISubdataset(_ANIDatasetBase):
                     " *delete them* using dataset.delete_properties"
                 )
 
-    def open(self, mode: str = "r") -> None:
-        self._store.open(mode)
-
-    def close(self) -> None:
-        self._store.close()
-
     @contextmanager
     def keep_open(self, mode: str = "r") -> tp.Iterator["_ANISubdataset"]:
         r"""Context manager to keep dataset open while iterating over it
@@ -424,7 +274,7 @@ class _ANISubdataset(_ANIDatasetBase):
         present: tp.Set[str] = set()
         for group_name in self.keys():
             conformers = self.get_numpy_conformers(
-                group_name, properties=element_key, chem_symbols=True
+                group_name, properties=element_key, symbols=True
             )
             present.update(conformers[element_key].ravel())
         return sort_by_element(present)
@@ -440,7 +290,7 @@ class _ANISubdataset(_ANIDatasetBase):
         present: tp.Set[int] = set()
         for group_name in self.keys():
             conformers = self.get_numpy_conformers(
-                group_name, properties=element_key, chem_symbols=False
+                group_name, properties=element_key, symbols=False
             )
             present.update(conformers[element_key].ravel())
         return tuple(sorted(present))
@@ -461,7 +311,6 @@ class _ANISubdataset(_ANIDatasetBase):
             return idx_
         return idx
 
-    @_delegate_with_return
     def get_conformers(
         self,
         group_name: str,
@@ -479,65 +328,6 @@ class _ANISubdataset(_ANIDatasetBase):
             for k in set(numpy_conformers.keys())
             if not any(re.match(pattern, k) for pattern in _ALWAYS_STRING_PATTERNS)
         }
-
-    @_delegate_with_return
-    def get_numpy_conformers(
-        self,
-        group_name: str,
-        idx: IdxLike = None,
-        properties: tp.Optional[tp.Iterable[str]] = None,
-        chem_symbols: bool = False,
-        exclude_dummy: bool = False,
-    ) -> NumpyConformers:
-        r"""Same as get_conformers but conformers are a dict {property: ndarray}"""
-        if properties is None:
-            properties = self.properties
-        needed_properties = (
-            {properties} if isinstance(properties, str) else set(properties)
-        )
-        self._check_properties_are_present(needed_properties)
-        nonbatch_properties = needed_properties & self._possible_nonbatch_properties
-        batch_properties = needed_properties - self._possible_nonbatch_properties
-        with ExitStack() as stack:
-            f = self._get_open_store(stack, "r")
-            if exclude_dummy:
-                needed_properties = needed_properties - set(f._dummy_properties.keys())
-            numpy_conformers = {p: f[group_name][p] for p in needed_properties}
-        idx_ = self._parse_index(idx)
-        if idx_ is not None:
-            numpy_conformers.update(
-                {k: numpy_conformers[k][idx_] for k in batch_properties}
-            )
-        # Nonbatch properties, if present, need tiling in the first dim
-        if nonbatch_properties:
-            tile_shape: tp.Tuple[int, ...]
-            if idx_ is None or idx_.ndim == 1:
-                tile_shape = (_get_num_conformers(numpy_conformers), 1)
-            else:
-                tile_shape = (1,)
-            numpy_conformers.update(
-                {
-                    k: np.tile(numpy_conformers[k], tile_shape)
-                    for k in nonbatch_properties
-                    if numpy_conformers[k].ndim == 1
-                }
-            )
-        # Depending on "chem_symbols", "species" / "numbers" are returned as
-        # int64 or as str. In legacy grouping "species" and "numbers" can be
-        # str or ints themselves, so we check for that and convert.
-        for k in needed_properties & _ELEMENT_KEYS:
-            elements = numpy_conformers[k]
-            if issubclass(elements.dtype.type, np.integer):
-                if chem_symbols:
-                    numpy_conformers[k] = _numbers_to_symbols(elements)
-            else:
-                elements = elements.astype(str)
-                if not chem_symbols:
-                    numpy_conformers[k] = _symbols_to_numbers(elements)
-        for k in needed_properties:
-            if any(re.match(pattern, k) for pattern in _ALWAYS_STRING_PATTERNS):
-                numpy_conformers[k] = numpy_conformers[k].astype(str)
-        return numpy_conformers
 
     # Convert a dict that maybe has some numpy arrays and / or some torch
     # tensors into a homogeneous dict with all numpy arrays.
@@ -1129,14 +919,6 @@ class ANIDataset(_ANIDatasetBase):
     def znumbers(self) -> tp.Tuple[int, ...]:
         return tuple(sorted({s for ds in self._datasets.values() for s in ds.znumbers}))
 
-    @property
-    def store_locations(self) -> tp.List[str]:
-        return [str(ds._store.location.root()) for ds in self._datasets.values()]
-
-    @property
-    def num_stores(self) -> int:
-        return len(self._datasets)
-
     def auto_append_conformers(
         self,
         conformers: MixedConformers,
@@ -1255,3 +1037,258 @@ class ANIDataset(_ANIDatasetBase):
         if self.num_stores == 1:
             return self._first_name, "/".join(tokens)
         return tokens[0], "/".join(tokens[1:])
+
+
+# Class that manages a bunch of stores, possibly with different backends
+class ANIDataset(tp.Mapping[str, Conformers]):
+    def __init__(
+        self,
+        locations: tp.Union[tp.Iterable[StrPath], StrPath],
+        grouping: tp.Optional[Grouping] = None,
+        backend: tp.Optional[Backend] = None,
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        verbose: bool = True,
+        _force_overwrite: bool = False,
+    ):
+        if isinstance(locations, (Path, str)):
+            locations = [locations]
+        locations: tp.List[Path] = sorted(Path(loc).resolve() for loc in locations)
+
+        # "properties" is read only, needed for validation of inputs, it may
+        # change if a property is renamed or deleted. num_conformers and
+        # num_conformer_groups are all calculated on the fly to guarantee
+        # synchronization with "group_sizes".
+        self._group_sizes: tp.OrderedDict[str, int] = OrderedDict()
+        self._properties: tp.Set[str] = set()
+        self._stores: tp.List[_Store] = []
+
+    @property
+    def group_sizes(self) -> tp.OrderedDict[str, int]:
+        return self._group_sizes.copy()
+
+    @property
+    def num_conformers(self) -> int:
+        return sum(self._group_sizes.values())
+
+    @property
+    def num_conformer_groups(self) -> int:
+        return len(self._group_sizes.keys())
+
+    @property
+    def store_locations(self) -> tp.List[str]:
+        return [str(store.location.root()) for store in self._stores]
+
+    @property
+    def num_stores(self) -> int:
+        return len(self._stores)
+
+    @property
+    def properties(self) -> tp.Set[str]:
+        return self._properties
+
+    @property
+    def tensor_properties(self) -> tp.Tuple[str, ...]:
+        set_ = {
+            p
+            for p in self._properties
+            if not any(re.match(pattern, p) for pattern in _ALWAYS_STRING_PATTERNS)
+        }
+        return tuple(sorted(set_))
+
+    def __getitem__(self, key: str) -> Conformers:
+        return self.get_conformers(key)
+
+    def __len__(self) -> int:
+        return self.num_conformer_groups
+
+    def __iter__(self) -> tp.Iterator[str]:
+        return iter(self._group_sizes.keys())
+
+    def numpy_items(
+        self, limit: float = math.inf, **kwargs
+    ) -> tp.Iterator[tp.Tuple[str, NumpyConformers]]:
+        count = 0
+        for group_name in self.keys():
+            count += 1
+            yield group_name, self.get_numpy_conformers(group_name, **kwargs)
+            if count >= limit:
+                return
+
+    def numpy_values(self, **kwargs) -> tp.Iterator[NumpyConformers]:
+        for k, v in self.numpy_items(**kwargs):
+            yield v
+
+    @property
+    def grouping(self) -> str:
+        raise NotImplementedError
+
+    def chunked_items(
+        self, max_size: int = 2500, limit: float = math.inf, **kwargs
+    ) -> tp.Iterator[tp.Tuple[str, int, MixedConformers]]:
+        r"""Iterate over chunked pieces of the dataset with a max size
+
+        Yields tuples (group_name, num_conformers_before_this_tuple, conformers).
+        Iteration is sequential, *not random*.
+
+        Instead of yielding groups this yields chunks of max size "max_size"
+        which may be useful e.g. if groups are too large and they don't fit in
+        GPU memory.
+
+        The minimum size can't be controlled, and chunks may have different
+        sizes in general, but they will not exceed max_size. An estimate of the
+        number of chunks of the whole dataset is num_conformers // max_size.
+
+        "limit" limits the number of output chunks to that number and then
+        stops iteration.
+        """
+        getter = kwargs.pop("getter", "get_conformers")
+        chunk_count = 0
+        for group_name in self.keys():
+            cumulative_conformer_count = 0
+            conformers = getattr(self, getter)(group_name, **kwargs)
+            any_key = next(iter(conformers.keys()))
+            keys_copy = list(conformers.keys())
+            splitted_conformers: NumpyConformers = dict()
+            for k in keys_copy:
+                if getter == "get_conformers":
+                    splits = torch.split(conformers.pop(k), max_size)
+                else:
+                    splits = tuple(
+                        conformers[k][j:j + max_size]
+                        for j in range(0, len(conformers[k]), max_size)
+                    )
+                splitted_conformers.update({k: splits})
+            num_chunks = len(splitted_conformers[any_key])
+            for j in range(num_chunks):
+                chunk_count += 1
+                chunk_to_yield = {k: v[j] for k, v in splitted_conformers.items()}
+                yield group_name, cumulative_conformer_count, chunk_to_yield
+                cumulative_conformer_count += len(chunk_to_yield[any_key])
+                if chunk_count >= limit:
+                    return
+
+    def chunked_numpy_items(
+        self, **kwargs
+    ) -> tp.Iterator[tp.Tuple[str, int, MixedConformers]]:
+        kwargs.update({"getter": "get_numpy_conformers"})
+        yield from self.chunked_items(**kwargs)
+
+    def iter_key_idx_conformers(
+        self, limit: float = math.inf, **kwargs
+    ) -> tp.Iterator[tp.Tuple[str, int, Conformers]]:
+        r"""Individually yield all conformers in the dataset
+
+        Only `tensor_properties` are included by default.
+        Non-tensor properties can't be selected.
+
+        Yield tuples: (group_name, conformer_idx, conformer)
+        """
+        kwargs = kwargs.copy()
+        getter = kwargs.pop("getter", "get_conformers")
+        count = 0
+        for k, size in self._group_sizes.items():
+            conformers = getattr(self, getter)(k, **kwargs)
+            for idx in range(size):
+                count += 1
+                single_conformer = {k: conformers[k][idx] for k in conformers.keys()}
+                yield k, idx, single_conformer
+                if count >= limit:
+                    return
+
+    def iter_key_idx_numpy_conformers(
+        self, **kwargs
+    ) -> tp.Iterator[tp.Tuple[str, int, Conformers]]:
+        r"""Individually yield all numpy conformers in the dataset
+
+        All properties are included by default.
+
+        Yield tuples: (group_name, conformer_idx, numpy_conformer)
+        """
+        kwargs.update({"getter": "get_numpy_conformers"})
+        yield from self.iter_key_idx_conformers(**kwargs)
+
+    def iter_conformers(self, **kwargs) -> tp.Iterator[Conformers]:
+        for _, _, c in self.iter_key_idx_conformers(**kwargs):
+            yield c
+
+    def iter_numpy_conformers(self, **kwargs) -> tp.Iterator[Conformers]:
+        for _, _, c in self.iter_key_idx_numpy_conformers(**kwargs):
+            yield c
+
+    # get_*conformers are currently marked "delegate with return"
+    def get_conformers(
+        self,
+        group_name: str,
+        idx: IdxLike = None,
+        properties: tp.Iterable[str] = (),
+    ) -> Conformers:
+        r"""Get conformers in a given group in the dataset
+
+        Can obtain conformers with specified indices, and including only
+        specified properties. Conformers are dict of the form {property:
+        Tensor}, where properties are strings"""
+        numpy_conformers = self.get_numpy_conformers(group_name, idx, properties)
+        return {
+            k: torch.from_numpy(numpy_conformers[k])
+            for k in set(numpy_conformers.keys())
+            if not any(re.match(pattern, k) for pattern in _ALWAYS_STRING_PATTERNS)
+        }
+
+    def get_numpy_conformers(
+        self,
+        group_name: str,
+        idx: IdxLike = None,
+        properties: tp.Iterable[str] = (),
+        symbols: bool = False,
+        exclude_dummy: bool = False,
+    ) -> NumpyConformers:
+        r"""Same as get_conformers but conformers are a dict {property: ndarray}"""
+        if not properties:
+            needed_properties = self.properties
+
+        if isinstance(properties, str):
+            needed_properties = {properties}
+
+        self._check_properties_are_present(needed_properties)
+        nonbatch_properties = needed_properties & self._possible_nonbatch_properties
+        batch_properties = needed_properties - self._possible_nonbatch_properties
+        with ExitStack() as stack:
+            f = self._get_open_store(stack, "r")
+            if exclude_dummy:
+                needed_properties = needed_properties - set(f._dummy_properties.keys())
+            numpy_conformers = {p: f[group_name][p] for p in needed_properties}
+        idx_ = self._parse_index(idx)
+        if idx_ is not None:
+            numpy_conformers.update(
+                {k: numpy_conformers[k][idx_] for k in batch_properties}
+            )
+        # Nonbatch properties, if present, need tiling in the first dim
+        if nonbatch_properties:
+            tile_shape: tp.Tuple[int, ...]
+            if idx_ is None or idx_.ndim == 1:
+                tile_shape = (_get_num_conformers(numpy_conformers), 1)
+            else:
+                tile_shape = (1,)
+            numpy_conformers.update(
+                {
+                    k: np.tile(numpy_conformers[k], tile_shape)
+                    for k in nonbatch_properties
+                    if numpy_conformers[k].ndim == 1
+                }
+            )
+        # Depending on "symbols", "species" / "numbers" are returned as
+        # int64 or as str. In legacy grouping "species" and "numbers" can be
+        # str or ints themselves, so we check for that and convert.
+        for k in needed_properties & _ELEMENT_KEYS:
+            elements = numpy_conformers[k]
+            if issubclass(elements.dtype.type, np.integer):
+                if symbols:
+                    numpy_conformers[k] = _numbers_to_symbols(elements)
+            else:
+                elements = elements.astype(str)
+                if not symbols:
+                    numpy_conformers[k] = _symbols_to_numbers(elements)
+        for k in needed_properties:
+            if any(re.match(pattern, k) for pattern in _ALWAYS_STRING_PATTERNS):
+                numpy_conformers[k] = numpy_conformers[k].astype(str)
+        return numpy_conformers

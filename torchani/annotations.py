@@ -22,5 +22,5 @@ MixedConformers = tp.MutableMapping[str, tp.Union[Tensor, NumberOrStrArray]]
 StrPath = tp.Union[str, Path]
 
 # Datasets
-Grouping = tp.Literal["by_num_atoms", "by_formula", "any", "legacy"]
-Backend = tp.Literal["hdf5", "zarr", "parquet", "cudf"]
+Grouping = tp.Literal["by_num_atoms", "by_formula"]
+Backend = tp.Literal["hdf5", "zarr", "pandas", "cudf"]

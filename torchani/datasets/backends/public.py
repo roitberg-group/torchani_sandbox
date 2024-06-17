@@ -5,22 +5,25 @@ from torchani.annotations import StrPath, Grouping, Backend
 from torchani.datasets.backends.interface import _Store
 from torchani.datasets.backends.hdf5_impl import _HDF5Store
 from torchani.datasets.backends.zarr_impl import _ZarrStore
-from torchani.datasets.backends.parquet_impl import _ParquetStore, _CudfParquetStore
+from torchani.datasets.backends.parquet_impl import (
+    _PandasParquetStore,
+    _CudfParquetStore,
+)
 
 STORE_TYPE: tp.Dict[Backend, tp.Type[_Store]] = {
     "hdf5": _HDF5Store,
     "zarr": _ZarrStore,
-    "parquet": _ParquetStore,
+    "pandas": _PandasParquetStore,
     "cudf": _CudfParquetStore,
 }
 
-_SUFFIXES: tp.Dict[str, Backend] = {".h5": "hdf5", ".zarr": "zarr", ".pqdir": "parquet"}
+_SUFFIXES: tp.Dict[str, Backend] = {".h5": "hdf5", ".zarr": "zarr", ".pqdir": "pandas"}
 
 
 def Store(
     root: StrPath,
     backend: tp.Optional[Backend] = None,
-    grouping: Grouping = "any",
+    grouping: tp.Optional[Grouping] = None,
     dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
     _force_overwrite: bool = False,
 ) -> _Store:

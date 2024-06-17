@@ -4,13 +4,13 @@ from pathlib import Path
 from collections import OrderedDict
 
 import numpy as np
-import typing_extensions as tpx
 
 from torchani.annotations import StrPath, Grouping, Backend
 from torchani.datasets.backends.interface import (
     _Store,
     _ConformerGroup,
-    CacheHolder,
+    Cache,
+    Metadata,
 )
 
 try:
@@ -33,112 +33,104 @@ except ImportError:
 DataFrame = tp.Union["pandas.DataFrame", "cudf.DataFrame"]
 
 
-class DataFrameAdaptor:
-    def __init__(self, df: tp.Optional[DataFrame] = None):
-        self._df = df
-        self.attrs: tp.Dict[str, tp.Any] = dict()
-        self.mode: tp.Optional[str] = None
-        self._is_dirty: bool = False
-        self._attrs_is_dirty: bool = False
-
-    def __getattr__(self, k):
-        if self._df is None:
-            raise RuntimeError("Data frame was not opened")
-        return getattr(self._df, k)
-
-    def __getitem__(self, k):
-        if self._df is None:
-            raise RuntimeError("Data frame was not opened")
-        return self._df[k]
-
-    def __enter__(self) -> tpx.Self:
-        return self
-
-    def __setitem__(self, k, v):
-        if self._df is None:
-            raise RuntimeError("Data frame was not opened")
-        self._df[k] = v
-
-
-class _ParquetStore(_Store[DataFrame]):
+class _PandasParquetStore(_Store[DataFrame]):
     suffix: str = ".pqdir"
-    backend: Backend = "parquet"
-    _AVAILABLE: bool = _PANDAS_AVAILABLE
+    backend: Backend = "pandas"
+    BACKEND_AVAILABLE: bool = _PANDAS_AVAILABLE
 
     def __init__(
         self,
         root: StrPath,
         dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
-        grouping: Grouping = "any",
+        grouping: tp.Optional[Grouping] = None,
     ):
         super().__init__(root, dummy_properties, grouping)
         self._queued_appends: tp.List[DataFrame] = []
         self._engine = pandas
+        self._data_is_dirty = False
 
-    @staticmethod
-    def _to_numpy(series):
-        return series.to_numpy()
+    def setup(self, root: Path, mode: str) -> None:
+        data = self._engine.read_parquet(self.parquet_path)
+        self.set_data(data, mode)
 
-    @staticmethod
-    def _to_dict(df, **kwargs):
-        return df.to_dict(**kwargs)
+    def setup_meta(self, root: Path, mode: str) -> None:
+        with open(self.json_path, mode) as f:
+            meta = Metadata(**json.load(f))
+        self.set_meta(meta, mode)
+
+    def teardown(self) -> None:
+        self.execute_all_queued_append_ops()
+        if self._data_is_dirty:
+            self.data.to_parquet(self.parquet_path)
+        self._data_is_dirty = False
+
+    def teardown_meta(self) -> None:
+        with open(self.json_path, "w") as f:
+            json.dump(self.meta, f)
 
     @property
-    def _pq_path(self) -> Path:
+    def parquet_path(self) -> Path:
         root = self.location.root()
         return root / root.with_suffix(".pq").name
 
     @property
-    def _attrs_path(self) -> Path:
+    def json_path(self) -> Path:
         root = self.location.root()
         return root / root.with_suffix(".json").name
 
-    @classmethod
-    def make_empty(
-        cls,
-        root: StrPath,
-        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
-        grouping: Grouping = "any",
-    ) -> tpx.Self:
-        if grouping == "any":
-            grouping = "by_num_atoms"
-        if grouping not in ("by_num_atoms", "by_formula"):
-            raise RuntimeError(f"Invalid grouping for new dataset: {grouping}")
+    @staticmethod
+    def init_empty(
+        root: Path,
+        grouping: Grouping,
+    ) -> None:
         root = Path(root).resolve()
         root.mkdir(exist_ok=True)
-        assert not list(root.iterdir()), "location is not empty"
-        attrs_location = root / root.with_suffix(".json").name
-        pq_location = root / root.with_suffix(".pq").name
-        default_engine.DataFrame().to_parquet(pq_location)
-        with open(attrs_location, "x") as f:
-            json.dump({"grouping": grouping}, f)
-        return cls(root, dummy_properties, grouping)
+        if any(root.iterdir()):
+            raise RuntimeError("Root for empty parquet store must be empty")
+
+        default_engine.DataFrame().to_parquet(root / root.with_suffix(".pq").name)
+        with open(root / root.with_suffix(".json").name, "x") as f:
+            json.dump(
+                {
+                    "info": "",
+                    "units": dict(),
+                    "dtypes": dict(),
+                    "extra_dims": dict(),
+                    "grouping": grouping,
+                },
+                f,
+            )
 
     def update_cache(
         self, check_properties: bool = False, verbose: bool = True
     ) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
-        cache = CacheHolder()
+        cache = Cache()
         try:
-            group_sizes_df = self._store["group"].value_counts().sort_index()
+            group_sizes_df = self.data["group"].value_counts().sort_index()
         except KeyError:
             return cache.group_sizes, cache.properties
+        if hasattr(group_sizes_df, "to_pandas"):
+            group_sizes = group_sizes_df.to_pandas().to_dict()
+        else:
+            group_sizes = group_sizes_df.to_dict()
         cache.group_sizes = OrderedDict(
-            sorted([(k, v) for k, v in self._to_dict(group_sizes_df).items()])
+            sorted([(k, v) for k, v in group_sizes.items()])
         )
-        cache.properties = set(self._store.columns.tolist()).difference({"group"})
+        cache.properties = set(self.data.columns.tolist()).difference({"group"})
         self._dummy_properties = {
             k: v for k, v in self._dummy_properties.items() if k not in cache.properties
         }
         return cache.group_sizes, cache.properties.union(self._dummy_properties)
 
-    # Avoid pickling modules
+    # When pickling, store names of modules instead of modules
     def __getstate__(self):
+        self.execute_all_queued_append_ops()
         d = self.__dict__.copy()
         d["_engine"] = self._engine.__name__
         return d
 
-    # Restore modules from names when unpickling
-    def __setstate__(self, d):
+    # When unpickling, restore modules from their names
+    def __setstate__(self, d: tp.Dict[str, tp.Any]) -> None:
         if d["_engine"] == "pandas":
             import pandas  # noqa
 
@@ -151,110 +143,76 @@ class _ParquetStore(_Store[DataFrame]):
             raise RuntimeError("Incorrect _engine value")
         self.__dict__ = d
 
-    # File-like
-    def open(self, mode: str = "r", only_attrs: bool = False) -> tpx.Self:
-        if not only_attrs:
-            self._store_obj = DataFrameAdaptor(
-                self._engine.read_parquet(self._pq_path)
-            )
-        else:
-            self._store_obj = DataFrameAdaptor()
-        with open(self._attrs_path, mode) as f:
-            attrs = json.load(f)
-        if "extra_dims" not in attrs.keys():
-            attrs["extra_dims"] = dict()
-        if "dtypes" not in attrs.keys():
-            attrs["dtypes"] = dict()
-        self._store_obj.attrs = attrs
-        # monkey patch
-        self._store_obj.mode = mode
-        return self
-
-    def close(self) -> tpx.Self:
-        if self._queued_appends:
-            self.execute_queued_appends()
-        if self._store._is_dirty:
-            self._store.to_parquet(self._pq_path)
-        if self._store._attrs_is_dirty:
-            with open(self._attrs_path, "w") as f:
-                json.dump(self._store.attrs, f)
-        self._store_obj = None
-        return self
-
-    # ContextManager
-    def __exit__(self, *args, **kwargs) -> None:
-        self.close()
-
     # Mapping
     def __getitem__(self, name: str) -> "_ConformerGroup":
-        df_group = self._store[self._store["group"] == name]
-        group = _ParquetConformerGroup(df_group, self._dummy_properties, self._store)
-        # mypy does not understand monkey patching
-        group._to_numpy = self._to_numpy  # type: ignore
+        self.execute_all_queued_append_ops()
+        df_group = self.data[self.data["group"] == name]
+        group = _ParquetConformerGroup(df_group, self._dummy_properties, self.data)
         return group
 
     def __setitem__(self, name: str, conformers: "_ConformerGroup") -> None:
+        # This is asynchronous, it is queued and executed only when the dataset
+        # Is closed
         num_conformers = conformers[next(iter(conformers.keys()))].shape[0]
         tmp_df = self._engine.DataFrame()
         tmp_df["group"] = self._engine.Series([name] * num_conformers)
         for k, v in conformers.items():
+            # Check dims
             if v.ndim == 1:
                 tmp_df[k] = self._engine.Series(v)
             elif v.ndim == 2:
                 tmp_df[k] = self._engine.Series(v.tolist())
             else:
-                extra_dims = self._store.attrs["extra_dims"].get(k, None)
-                if extra_dims is not None:
-                    assert v.shape[2:] == tuple(
-                        extra_dims
-                    ), "Bad dimensions in appended property"
+                dims = self.meta.dims.get(k, None)
+                if dims is not None:
+                    dims = tuple(dims)
+                    assert v.shape[2:] == dims, "Bad dims in appended property"
                 else:
-                    self._store.attrs["extra_dims"][k] = v.shape[2:]
+                    self.meta.dims[k] = v.shape[2:]
                 tmp_df[k] = self._engine.Series(v.reshape(num_conformers, -1).tolist())
-            dtype = self._store.attrs["dtypes"].get(k, None)
+
+            # Check dtype
+            dtype = self.meta.dtypes.get(k, None)
             if dtype is not None:
                 assert np.dtype(v.dtype).name == dtype, "Bad dtype in appended property"
             else:
-                self._store.attrs["dtypes"][k] = np.dtype(v.dtype).name
+                self.meta.dtypes[k] = np.dtype(v.dtype).name
         self._queued_appends.append(tmp_df)
 
-    def execute_queued_appends(self):
-        attrs = self._store_obj.attrs
-        mode = self._store_obj.mode
-        self._store_obj = DataFrameAdaptor(
-            self._engine.concat([self._store._df] + self._queued_appends)
-        )
-        self._store_obj.attrs = attrs
-        self._store_obj.mode = mode
-        self._store._is_dirty = True
-        self._store._attrs_is_dirty = True
+    def execute_all_queued_append_ops(self) -> None:
+        if not self._queued_appends:
+            return
+        data, mode = self.get_data()
+        data = self._engine.concat([data] + self._queued_appends)
+        self.set_data(data, mode)
+        self._data_is_dirty = True
         self._queued_appends = []
 
     def __delitem__(self, name: str) -> None:
-        # Instead of deleting we just reassign the store to everything that is
-        # not the requested name here, since this dirties the dataset,
-        # only this part will be written to disk on closing
-        attrs = self._store_obj.attrs
-        mode = self._store_obj.mode
-        attrs_is_dirty = self._store_obj._attrs_is_dirty
-        self._store_obj = DataFrameAdaptor(self._store[self._store["group"] != name])
-        self._store_obj.attrs = attrs
-        self._store_obj.mode = mode
-        self._store._attrs_is_dirty = attrs_is_dirty
-        self._store._is_dirty = True
+        self.execute_all_queued_append_ops()
 
-    # TODO Fix these type ignores
+        # Reassign data to everything except the requested name, only that part
+        # is persisted when closing the store.
+        data, mode = self.get_data()
+        data = data[data["group"] != name]
+        self.set_data(data, mode)
+        self._data_is_dirty = True
+
     def __len__(self) -> int:
-        return len(self._store["group"].unique())  # type: ignore
+        self.execute_all_queued_append_ops()
+        return len(self.data["group"].unique())
 
     def __iter__(self) -> tp.Iterator[str]:
-        keys = self._store["group"].unique().tolist()  # type: ignore
+        self.execute_all_queued_append_ops()
+        keys = self.data["group"].unique().tolist()
         keys.sort()
         return iter(keys)
 
+    # TODO: Add these to all stores if possible?
     def create_full_direct(
         self, dest_key, is_atomic, extra_dims, fill_value, dtype, num_conformers
     ):
+        self.execute_all_queued_append_ops()
         if is_atomic:
             raise ValueError(
                 "creation of atomic properties not supported in parquet datasets"
@@ -264,46 +222,38 @@ class _ParquetStore(_Store[DataFrame]):
         new_property = np.full(
             shape=(num_conformers,) + extra_dims, fill_value=fill_value, dtype=dtype
         )
-        self._store.attrs["dtypes"][dest_key] = np.dtype(dtype).name
+        self.meta.dtypes[dest_key] = np.dtype(dtype).name
         if len(extra_dims) > 1:
-            self._store.attrs["extra_dims"][dest_key] = extra_dims[1:]
-        self._store[dest_key] = self._engine.Series(new_property)
-        self._store._attrs_is_dirty = True
-        self._store._is_dirty = True
+            self.data.dims[dest_key] = extra_dims[1:]
+        self.data[dest_key] = self._engine.Series(new_property)
+        self._data_is_dirty = True
 
     def rename_direct(self, old_new_dict: tp.Dict[str, str]) -> None:
-        self._store.rename(columns=old_new_dict, inplace=True)
-        self._store._is_dirty = True
+        self.execute_all_queued_append_ops()
+        self.data.rename(columns=old_new_dict, inplace=True)
+        self._data_is_dirty = True
 
     def delete_direct(self, properties: tp.Iterable[str]) -> None:
-        self._store.drop(labels=list(properties), inplace=True, axis="columns")
-        if self._store.columns.tolist() == ["group"]:
-            self._store.drop(labels=["group"], inplace=True, axis="columns")
-        self._store._is_dirty = True
+        self.execute_all_queued_append_ops()
+        self.data.drop(labels=list(properties), inplace=True, axis="columns")
+        # If the only thing left is "group", delete everything
+        if self.data.columns.tolist() == ["group"]:
+            self.data.drop(labels=["group"], inplace=True, axis="columns")
+        self._data_is_dirty = True
 
 
-class _CudfParquetStore(_ParquetStore):
-    suffix: str = ".pqdir"
+class _CudfParquetStore(_PandasParquetStore):
     backend: Backend = "cudf"
-    _AVAILABLE: bool = _CUDF_AVAILABLE
+    BACKEND_AVAILABLE: bool = _CUDF_AVAILABLE
 
     def __init__(
         self,
         root: StrPath,
         dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
-        grouping: Grouping = "any",
+        grouping: tp.Optional[Grouping] = None,
     ):
         super().__init__(root, dummy_properties, grouping)
-        self._queued_appends: tp.List[DataFrame] = []
         self._engine = cudf
-
-    @staticmethod
-    def _to_numpy(series):
-        return series.to_pandas().to_numpy()
-
-    @staticmethod
-    def _to_dict(df, **kwargs):
-        return df.to_pandas().to_dict(**kwargs)
 
 
 class _ParquetConformerGroup(_ConformerGroup):
@@ -312,8 +262,7 @@ class _ParquetConformerGroup(_ConformerGroup):
         self._group_obj = group_obj
         self._store_pointer = store_pointer
 
-    # parquet groups are immutable, mutable operations are done directly in the
-    # store
+    # "dataframe groups" are not resizable, mutation is done directly on the dataframe
     def _is_resizable(self) -> bool:
         return False
 
@@ -331,15 +280,19 @@ class _ParquetConformerGroup(_ConformerGroup):
 
     def _getitem_impl(self, p: str) -> np.ndarray:
         # mypy doesn't understand monkey patching
-        property_ = np.stack(self._to_numpy(self._group_obj[p]))  # type: ignore
+        series = self._group_obj[p]
+        _series: "pandas.Series" = (
+            series.to_pandas() if hasattr(series, "to_pandas") else series
+        )
+        _property = np.stack(_series.to_numpy())
         extra_dims = self._store_pointer.attrs["extra_dims"].get(p, None)
         dtype = self._store_pointer.attrs["dtypes"].get(p, None)
         if extra_dims is not None:
-            if property_.ndim == 1:
-                property_ = property_.reshape(-1, *extra_dims)
+            if _property.ndim == 1:
+                _property = _property.reshape(-1, *extra_dims)
             else:
-                property_ = property_.reshape(property_.shape[0], -1, *extra_dims)
-        return property_.astype(dtype)
+                _property = _property.reshape(_property.shape[0], -1, *extra_dims)
+        return _property.astype(dtype)
 
     def _len_impl(self) -> int:
         return len(self._group_obj.columns) - 1
