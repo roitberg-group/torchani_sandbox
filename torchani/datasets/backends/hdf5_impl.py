@@ -38,7 +38,7 @@ class _HDF5Store(_HierarchicalStore[h5py.File]):
     def setup(self, root: Path, mode: str) -> None:
         file = h5py.File(root, mode)
         meta = Metadata(
-            grouping=file.attrs["grouping"],
+            grouping=self.grouping,
             dims=dict(),
             dtypes=dict(),
             units=dict(),
