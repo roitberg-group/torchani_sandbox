@@ -95,7 +95,7 @@ class _PandasParquetStore(_Store[DataFrame]):
                     "info": "",
                     "units": dict(),
                     "dtypes": dict(),
-                    "extra_dims": dict(),
+                    "dims": dict(),
                     "grouping": grouping,
                 },
                 f,
@@ -257,10 +257,10 @@ class _CudfParquetStore(_PandasParquetStore):
 
 
 class _ParquetConformerGroup(_ConformerGroup):
-    def __init__(self, group_obj, dummy_properties, store_pointer):
+    def __init__(self, group_obj, dummy_properties, store_ref):
         super().__init__(dummy_properties=dummy_properties)
         self._group_obj = group_obj
-        self._store_pointer = store_pointer
+        self._store_ref = store_ref
 
     # "dataframe groups" are not resizable, mutation is done directly on the dataframe
     def _is_resizable(self) -> bool:
@@ -285,8 +285,8 @@ class _ParquetConformerGroup(_ConformerGroup):
             series.to_pandas() if hasattr(series, "to_pandas") else series
         )
         _property = np.stack(_series.to_numpy())
-        extra_dims = self._store_pointer.attrs["extra_dims"].get(p, None)
-        dtype = self._store_pointer.attrs["dtypes"].get(p, None)
+        extra_dims = self._store_ref.meta.dims.get(p, None)
+        dtype = self._store_ref.meta.dtypes.get(p, None)
         if extra_dims is not None:
             if _property.ndim == 1:
                 _property = _property.reshape(-1, *extra_dims)
