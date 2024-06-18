@@ -21,6 +21,8 @@ from torchani.tuples import SpeciesEnergies
 __all__ = [
     "strip_redundant_padding",
     "pad_atomic_properties",
+    "AtomicNumbersToChemicalSymbols",
+    "IntsToChemicalSymbols",
     "ChemicalSymbolsToInts",
     "ChemicalSymbolsToAtomicNumbers",
     "AtomicNumbersToMasses",
