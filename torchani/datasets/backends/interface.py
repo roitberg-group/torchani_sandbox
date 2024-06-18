@@ -326,6 +326,7 @@ class _Store(
         self, check_properties: bool = False, verbose: bool = True
     ) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
         pass
+
     # End overridable
 
     def _build_location(self, location: StrPath, suffix: str) -> Location:
@@ -495,15 +496,17 @@ class _Store(
         try:
             self.data.attrs["readme"]
             return "by_num_atoms"
-        except (KeyError, OSError):
+        except Exception:
             pass
 
         try:
-            grouping = tp.cast(str, self.data.attrs["grouping"])
+            grouping = tp.cast(
+                tp.Union[Grouping, tp.Literal["legacy"]], self.meta.grouping
+            )
             if grouping not in ("by_num_atoms", "legacy", "by_formula"):
-                raise RuntimeError(f"Read dataset with invalid grouping: {grouping}")
-            return tp.cast(Grouping, grouping)
-        except (KeyError, OSError):
+                raise RuntimeError(f"Found unknown grouping: {grouping}")
+            return grouping
+        except Exception:
             pass
         return "legacy"
 
