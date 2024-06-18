@@ -52,15 +52,16 @@ class TestConverters(ANITest):
         atomic_nums_to_symbols = self._setup(AtomicNumbersToChemicalSymbols())
         symbols = atomic_nums_to_symbols(torch.tensor([6, 1, 1, 1, -1, -1, -1]))
         self.assertEqual(
-                symbols, ['C', 'H', 'H', 'H']
+            symbols, ['C', 'H', 'H', 'H']
         )
 
     def testIdxsToSymbols(self):
         i2str = self._setup(IntsToChemicalSymbols(["A", "B", "C", "D", "E", "F"]))
         symbols = i2str(torch.tensor([5, 1, 1, 1, -1, -1, -1]))
         self.assertEqual(
-                symbols, ['F', 'B', 'B', 'B']
+            symbols, ['F', 'B', 'B', 'B']
         )
+
 
 @expand(device="cpu", jit=False)
 class TestGSAES(ANITest):
