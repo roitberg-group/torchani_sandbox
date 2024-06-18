@@ -70,12 +70,12 @@ class _PandasParquetStore(_Store[DataFrame]):
 
     @property
     def parquet_path(self) -> Path:
-        root = self.location.root()
+        root = self.location.root
         return root / root.with_suffix(".pq").name
 
     @property
     def json_path(self) -> Path:
-        root = self.location.root()
+        root = self.location.root
         return root / root.with_suffix(".json").name
 
     @staticmethod

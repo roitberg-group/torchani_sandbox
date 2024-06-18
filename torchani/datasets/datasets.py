@@ -708,7 +708,7 @@ class _ANISubdataset(_ANIDatasetBase):
         if inplace:
             assert dest_root is None
         elif dest_root is None:
-            dest_root = Path(self._store.location.root()).parent
+            dest_root = Path(self._store.location.root).parent
 
         self._check_correct_grouping()
         if self._store.backend == backend and backend != "h5py":
@@ -739,8 +739,8 @@ class _ANISubdataset(_ANIDatasetBase):
                 return new_ds
             else:
                 new_parent = Path(tp.cast(StrPath, dest_root)).resolve()
-                new_ds._store.location.set_root(
-                    new_parent / self._store.location.root().with_suffix("").name
+                new_ds._store.location.root = (
+                    new_parent / self._store.location.root.with_suffix("").name
                 )
                 return self
 
@@ -1122,7 +1122,7 @@ class ANIDataset(_ANIDatasetBase):
 
     @property
     def store_locations(self) -> tp.List[str]:
-        return [fspath(ds._store.location.root()) for ds in self._datasets.values()]
+        return [fspath(ds._store.location.root) for ds in self._datasets.values()]
 
     @property
     def num_stores(self) -> int:

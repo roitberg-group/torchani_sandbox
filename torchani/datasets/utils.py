@@ -37,7 +37,7 @@ def concatenate(
             disable=not verbose,
         ):
             dest.append_conformers(k.split("/")[-1], v)
-        dest._first_subds._store.location.set_root(dest_location)
+        dest._first_subds._store.location.root = dest_location
     # TODO this depends on the original stores being files, it should be
     # changed for generality
     if delete_originals:

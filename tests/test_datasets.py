@@ -1302,7 +1302,8 @@ class TestANIDatasetPandas(TestANIDatasetZarr):
         f3 = pandas.DataFrame()
         attrs = {
             "grouping": "by_formula",
-            "extra_dims": {"coordinates": (3,)},
+            "dims": {"coordinates": (3,)},
+            "units": {},
             "dtypes": {
                 "coordinates": np.dtype(np.float32).name,
                 "species": np.dtype(np.int64).name,

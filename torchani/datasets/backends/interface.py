@@ -173,39 +173,33 @@ class Location:
     def __init__(self, root: StrPath, suffix: str = ""):
         self._root: tp.Optional[Path] = None
         self._suffix = suffix
-        self.set_root(Path(root).resolve())
+        self.root = Path(root).resolve()
 
+    @property
     def root(self) -> Path:
         if self._root is None:
             raise ValueError("Tried to access an empty location")
         return self._root
 
-    def set_root(self, value: Path) -> None:
-        if not value.exists():
-            raise FileNotFoundError(f"The root {value} could not be found")
-
+    @root.setter
+    def root(self, value: Path) -> None:
         if value.suffix == "":
             value = value.with_suffix(self._suffix)
         if value.suffix != self._suffix:
             raise ValueError(f"Incorrect location {value}")
 
         if self._root is not None:
-            # pathlib.rename() may fail if src and dst are in different filesystems
-            if self.root().is_file() != value.is_file():
-                raise ValueError(
-                    f"Location root is_file={self.root().is_file()}"
-                    f"Can't set with value is_file={value.is_file()}"
-                )
-            shutil.move(self.root(), value)
+            # pathlib.rename() fails if src and dest are in different filesystems
+            shutil.move(self.root, value)
         self._root = value
 
     def clear(self) -> None:
         if self._root is None:
             return
-        if self.root().is_dir():
-            shutil.rmtree(self.root())
+        if self.root.is_dir():
+            shutil.rmtree(self.root)
         else:
-            self.root().unlink()
+            self.root.unlink()
         self._root = None
 
 
@@ -333,9 +327,9 @@ class _Store(
         return Location(location, suffix)
 
     def overwrite(self, other: "_Store") -> None:
-        root = Path(other.location.root()).with_suffix("")
+        root = Path(other.location.root).with_suffix("")
         other.location.clear()
-        self.location.set_root(root)
+        self.location.root = root
 
     @property
     def dummy_properties(self) -> tp.Dict[str, tp.Any]:
@@ -436,7 +430,7 @@ class _Store(
         # Try to setup the metadata only, if not implemented then setup
         # everything
         try:
-            self.setup_meta(self.location.root(), mode)
+            self.setup_meta(self.location.root, mode)
         except NotImplementedError:
             raise
 
@@ -455,9 +449,9 @@ class _Store(
         except UnsetDataError:
             pass
 
-        self.setup(self.location.root(), mode)
+        self.setup(self.location.root, mode)
         try:
-            self.setup_meta(self.location.root(), mode)
+            self.setup_meta(self.location.root, mode)
         except NotImplementedError:
             pass
 
