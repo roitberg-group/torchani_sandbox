@@ -221,7 +221,7 @@ class Metadata:
     units: tp.Dict[str, str]
     dtypes: tp.Dict[str, str]
     dims: tp.Dict[str, tp.Tuple[int, ...]]
-    grouping: str
+    grouping: tp.Union[Grouping, tp.Literal["legacy"]]
     info: str = ""
 
 
@@ -491,24 +491,7 @@ class _Store(
 
     @property
     def grouping(self) -> tp.Union[Grouping, tp.Literal["legacy"]]:
-        # This detects Roman's formatting style which doesn't have a
-        # 'grouping' key but is still grouped by num atoms.
-        try:
-            self.data.attrs["readme"]
-            return "by_num_atoms"
-        except Exception:
-            pass
-
-        try:
-            grouping = tp.cast(
-                tp.Union[Grouping, tp.Literal["legacy"]], self.meta.grouping
-            )
-            if grouping not in ("by_num_atoms", "legacy", "by_formula"):
-                raise RuntimeError(f"Found unknown grouping: {grouping}")
-            return grouping
-        except Exception:
-            pass
-        return "legacy"
+        return self.meta.grouping
 
 
 # Wrap a hierarchical data format (e.g. Zarr, Exedir, HDF5)

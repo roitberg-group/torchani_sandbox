@@ -37,8 +37,25 @@ class _HDF5Store(_HierarchicalStore[h5py.File]):
 
     def setup(self, root: Path, mode: str) -> None:
         file = h5py.File(root, mode)
+        grouping: tp.Union[Grouping, tp.Literal["legacy"]] = "legacy"  # default
+
+        # This detects Roman's formatting style which doesn't have a
+        # 'grouping' key but is still grouped by num atoms.
+        try:
+            file.attrs["readme"]
+            grouping = "by_num_atoms"
+        except Exception:
+            pass
+
+        try:
+            grouping = file.attrs["grouping"]
+            if grouping not in ("by_num_atoms", "legacy", "by_formula"):
+                raise RuntimeError(f"Unknown grouping: {grouping}")
+        except Exception:
+            pass
+
         meta = Metadata(
-            grouping=self.grouping,
+            grouping=grouping,
             dims=dict(),
             dtypes=dict(),
             units=dict(),
