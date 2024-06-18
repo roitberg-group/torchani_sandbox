@@ -291,7 +291,7 @@ class _Store(
 
         self.location = self._build_location(root, self.suffix)
 
-        with self.enter(mode="r", only_meta_needed=True) as open_self:
+        with self.open(mode="r", only_meta_needed=True) as open_self:
             if grouping is not None and open_self.grouping != grouping:
                 raise RuntimeError(
                     f"Attempted to open a dataset with grouping {grouping},"
@@ -408,7 +408,7 @@ class _Store(
         return self._meta, self._meta_mode
 
     @contextmanager
-    def enter(self, mode: str, only_meta_needed: bool = False) -> tp.Iterator[tpx.Self]:
+    def open(self, mode: str, only_meta_needed: bool = False) -> tp.Iterator[tpx.Self]:
         try:
             if only_meta_needed:
                 try:
@@ -422,7 +422,7 @@ class _Store(
         finally:
             self.close_meta_and_data()
 
-    def try_open_only_meta(self, mode: str = "r") -> None:
+    def try_open_only_meta(self, mode: str) -> None:
         # In case of reentry this is a no-op
         try:
             meta, current_mode = self.get_meta()
@@ -444,7 +444,7 @@ class _Store(
         except RuntimeError:
             raise RuntimeError("Metadata not correctly set in setup_meta") from None
 
-    def open_meta_and_data(self, mode: str = "r") -> None:
+    def open_meta_and_data(self, mode: str) -> None:
         # In case of reentry this is a no-op, unless mode is incompatible
         try:
             data, current_mode = self.get_data()
