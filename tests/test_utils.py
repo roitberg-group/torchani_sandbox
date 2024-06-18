@@ -58,7 +58,7 @@ class TestConverters(ANITest):
     def testIdxsToSymbols(self):
         i2str = self._setup(IntsToChemicalSymbols(["A", "B", "C", "D", "E", "F"]))
         symbols = i2str(torch.tensor([5, 1, 1, 1, -1, -1, -1]))
-        self.asserEqual(
+        self.assertEqual(
                 symbols, ['F', 'B', 'B', 'B']
         )
 
