@@ -48,7 +48,7 @@ def concatenate(
             total=source.num_stores,
             disable=not verbose,
         ):
-            del subds._store.location.root
+            subds._store.location.clear()
     return dest
 
 
