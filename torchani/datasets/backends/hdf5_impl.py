@@ -1,7 +1,4 @@
-import types
 import typing as tp
-from uuid import uuid4
-import tempfile
 from pathlib import Path
 from functools import partial
 
@@ -11,8 +8,8 @@ from tqdm import tqdm
 
 from torchani.annotations import StrPath, Grouping, Backend
 from torchani.datasets.backends.interface import (
+    RootKind,
     Metadata,
-    TmpRoot,
     _ConformerGroup,
     _ConformerWrapper,
     Cache,
@@ -22,6 +19,7 @@ from torchani.datasets.backends.interface import (
 
 class _HDF5Store(_HierarchicalStore[h5py.File]):
     suffix: str = ".h5"
+    root_kind: RootKind = "file"
     backend: Backend = "hdf5"
     BACKEND_AVAILABLE: bool = True
 
@@ -67,11 +65,11 @@ class _HDF5Store(_HierarchicalStore[h5py.File]):
         self.data.close()
 
     @staticmethod
-    def init_empty(
+    def init_new(
         root: Path,
         grouping: Grouping,
     ) -> None:
-        with h5py.File(str(root), "x") as f:
+        with h5py.File(str(root), "r+") as f:
             f.attrs["grouping"] = grouping
         # TODO: make sure initialized class has _has_flat_format = True
 
@@ -79,28 +77,6 @@ class _HDF5Store(_HierarchicalStore[h5py.File]):
         return _HDF5ConformerGroup(
             self.data[name], dummy_properties=self._dummy_properties
         )
-
-    @classmethod
-    def tmp_root(cls) -> TmpRoot:
-        class _HDF5TmpRoot(tp.ContextManager[StrPath]):
-            def __init__(self) -> None:
-                self._tmp_dir = tempfile.TemporaryDirectory()
-                self._tmp_file = (
-                    Path(self._tmp_dir.name).resolve() / f"{uuid4()}"
-                ).with_suffix(cls.suffix)
-
-            def __enter__(self) -> str:
-                return str(self._tmp_file)
-
-            def __exit__(
-                self,
-                exc_type: tp.Optional[tp.Type[BaseException]],
-                exc_value: tp.Optional[BaseException],
-                exc_traceback: tp.Optional[types.TracebackType],
-            ) -> None:
-                self._tmp_dir.cleanup()
-
-        return _HDF5TmpRoot()
 
     def update_cache(
         self, check_properties: bool = False, verbose: bool = True

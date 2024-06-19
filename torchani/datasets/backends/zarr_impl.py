@@ -5,6 +5,7 @@ import numpy as np
 from torchani.annotations import Grouping, Backend
 from torchani.datasets.backends.interface import (
     Metadata,
+    RootKind,
     _ConformerGroup,
     _ConformerWrapper,
     _HierarchicalStore,
@@ -19,12 +20,13 @@ except ImportError:
 
 
 class _ZarrStore(_HierarchicalStore["zarr.Group"]):
+    root_kind: RootKind = "dir"
     suffix: str = ".zarr"
     backend: Backend = "zarr"
     BACKEND_AVAILABLE: bool = _ZARR_AVAILABLE
 
     @staticmethod
-    def init_empty(root: Path, grouping: Grouping) -> None:
+    def init_new(root: Path, grouping: Grouping) -> None:
         zarr_dir_style_data = zarr.storage.DirectoryStore(str(root))
         with zarr.hierarchy.group(store=zarr_dir_style_data, overwrite=True) as g:
             g.attrs["grouping"] = grouping
@@ -39,7 +41,7 @@ class _ZarrStore(_HierarchicalStore["zarr.Group"]):
             units=dict(),
         )
         self.set_data(file, mode)
-        self.set_data(meta, mode)
+        self.set_meta(meta, mode)
 
     # Zarr DirectoryStore has no cleanup logic
     def teardown(self) -> None:

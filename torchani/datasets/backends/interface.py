@@ -1,7 +1,9 @@
+import tempfile
 from dataclasses import dataclass
 import shutil
-import tempfile
-import types
+
+# import tempfile
+# import types
 import typing as tp
 from contextlib import contextmanager
 from itertools import chain
@@ -15,7 +17,7 @@ import typing_extensions as tpx
 from torchani.annotations import NumpyConformers, StrPath, Grouping, Backend
 
 
-TmpRoot = tp.ContextManager[StrPath]
+RootKind = tp.Literal["dir", "file"]
 
 
 class UnsetDataError(Exception):
@@ -227,7 +229,7 @@ class Metadata:
 
 # Overridable methods are:
 #
-#  - init_empty (required)
+#  - init_new (required)
 #  Initializes an empty instance of the wrapped data and metadata from a "root
 #  path" and a "grouping"
 #
@@ -259,6 +261,7 @@ class _Store(
     tp.Generic[Data],
     ABC,
 ):
+    root_kind: RootKind
     suffix: str = ""
     backend: Backend
     BACKEND_AVAILABLE: bool = False
@@ -295,7 +298,7 @@ class _Store(
     # Overridable
     @staticmethod
     @abstractmethod
-    def init_empty(
+    def init_new(
         root: Path,
         grouping: Grouping,
     ) -> None:
@@ -336,26 +339,29 @@ class _Store(
         return self._dummy_properties.copy()
 
     @classmethod
-    def tmp_root(cls) -> TmpRoot:
-        class _TmpRoot(tp.ContextManager[StrPath]):
-            def __init__(self) -> None:
-                self._loc = tempfile.TemporaryDirectory(suffix=cls.suffix)
+    def make_tmp(
+        cls,
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        grouping: tp.Optional[Grouping] = None,
+    ) -> tpx.Self:
+        if grouping is None:
+            grouping = "by_num_atoms"
+        if grouping not in ("by_num_atoms", "by_formula"):
+            raise RuntimeError(f"Invalid grouping for new dataset: {grouping}")
 
-            def __enter__(self) -> str:
-                return self._loc.name
+        if cls.root_kind == "file":
+            _, _tmp_root = tempfile.mkstemp(suffix=cls.suffix)
+        elif cls.root_kind == "dir":
+            _tmp_root = tempfile.mkdtemp(suffix=cls.suffix)
+        else:
+            raise ValueError(f"Unknown root kind {cls.root_kind}")
 
-            def __exit__(
-                self,
-                exc_type: tp.Optional[tp.Type[BaseException]],
-                exc_value: tp.Optional[BaseException],
-                exc_traceback: tp.Optional[types.TracebackType],
-            ) -> None:
-                self._loc.cleanup()
-
-        return _TmpRoot()
+        tmp_root = Path(_tmp_root).resolve()
+        cls.init_new(tmp_root, grouping)
+        return cls(tmp_root, dummy_properties, grouping)
 
     @classmethod
-    def make_empty(
+    def make_new(
         cls,
         root: StrPath,
         dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
@@ -365,7 +371,21 @@ class _Store(
             grouping = "by_num_atoms"
         if grouping not in ("by_num_atoms", "by_formula"):
             raise RuntimeError(f"Invalid grouping for new dataset: {grouping}")
-        cls.init_empty(Path(root).resolve(), grouping)
+        root = Path(root).resolve()
+        if root.suffix != cls.suffix:
+            raise ValueError(
+                f"Unexpected root suffix {root.suffix}."
+                f" For backend {cls.backend} expecting {cls.suffix}"
+            )
+
+        if cls.root_kind == "file":
+            root.touch(exist_ok=False)
+        elif cls.root_kind == "dir":
+            root.mkdir(exist_ok=False)
+        else:
+            raise ValueError(f"Unknown root kind {cls.root_kind}")
+
+        cls.init_new(root, grouping)
         return cls(root, dummy_properties, grouping)
 
     def set_data(self, data: Data, mode: str) -> None:
@@ -408,7 +428,6 @@ class _Store(
             if only_meta_needed:
                 try:
                     self.try_open_only_meta(mode)
-                    yield self
                 except NotImplementedError:
                     self.open_meta_and_data(mode)
             else:

@@ -29,7 +29,6 @@ from torchani.annotations import (
 from torchani.datasets.backends import (
     _Store,
     Store,
-    STORE_TYPE,
     _ConformerWrapper,
     _SUFFIXES,
 )
@@ -312,7 +311,6 @@ class _ANISubdataset(_ANIDatasetBase):
         backend: tp.Optional[Backend] = None,
         verbose: bool = True,
         dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
-        _force_overwrite: bool = False,
     ):
         # dummy_properties must be a dict of the form {'name': {'dtype': dtype,
         # 'is_atomic': is_atomic, 'extra_dims': extra_dims, 'fill_value':
@@ -325,7 +323,6 @@ class _ANISubdataset(_ANIDatasetBase):
             backend,
             grouping,
             dummy_properties,
-            _force_overwrite=_force_overwrite,
         )
         # StoreFactory monkey patches all stores with "backend" attribute
         self._possible_nonbatch_properties: tp.Set[str]
@@ -665,20 +662,6 @@ class _ANISubdataset(_ANIDatasetBase):
                     )
         return self
 
-    def _make_empty_copy(
-        self,
-        location: StrPath,
-        grouping: Grouping,
-        backend: Backend,
-    ) -> "_ANISubdataset":
-        return _ANISubdataset(
-            location,
-            backend=backend,
-            grouping=grouping,
-            verbose=False,
-            _force_overwrite=True,
-        )
-
     def _attach_dummy_properties(self, dummy_properties: tp.Dict[str, tp.Any]) -> None:
         with ExitStack() as stack:
             f = self._get_open_store(stack, "r+", only_meta_needed=True)
@@ -702,6 +685,8 @@ class _ANISubdataset(_ANIDatasetBase):
         inplace: bool = False,
     ) -> "_ANISubdataset":
         r"""Transforms underlying store into a different format"""
+        self._check_correct_grouping()
+
         if backend is None:
             backend = self._store.backend
 
@@ -710,14 +695,14 @@ class _ANISubdataset(_ANIDatasetBase):
         elif dest_root is None:
             dest_root = Path(self._store.location.root).parent
 
-        self._check_correct_grouping()
         if self._store.backend == backend and backend != "h5py":
             return self
+
         grouping: Grouping = (
             "by_num_atoms" if self.grouping == "legacy" else self.grouping
         )
-        with STORE_TYPE[backend].tmp_root() as location:
-            new_ds = self._make_empty_copy(location, grouping=grouping, backend=backend)
+        new_ds = _ANISubdataset("tmp", grouping, backend, verbose=False)
+        try:
             with new_ds.keep_open("r+") as rwds:
                 for group_name, conformers in tqdm(
                     self.numpy_items(exclude_dummy=True),
@@ -734,15 +719,19 @@ class _ANISubdataset(_ANIDatasetBase):
                         conformers,
                     )
             new_ds._attach_dummy_properties(self._dummy_properties)
-            if inplace:
-                new_ds._store.overwrite(self._store)
-                return new_ds
-            else:
-                new_parent = Path(tp.cast(StrPath, dest_root)).resolve()
-                new_ds._store.location.root = (
-                    new_parent / self._store.location.root.with_suffix("").name
-                )
-                return self
+        except Exception:
+            new_ds._store.location.clear()
+            raise
+
+        if inplace:
+            new_ds._store.overwrite(self._store)
+            return new_ds
+
+        new_parent = Path(tp.cast(StrPath, dest_root)).resolve()
+        new_ds._store.location.root = (
+            new_parent / self._store.location.root.with_suffix("").name
+        )
+        return self
 
     @_broadcast
     @_needs_cache_update
@@ -773,10 +762,8 @@ class _ANISubdataset(_ANIDatasetBase):
         explanation of that argument.
         """
         self._check_unique_element_key()
-        with STORE_TYPE[self._store.backend].tmp_root() as location:
-            new_ds = self._make_empty_copy(
-                location, grouping="by_formula", backend=self._store.backend
-            )
+        new_ds = _ANISubdataset("tmp", "by_formula", self._store.backend, verbose=False)
+        try:
             with new_ds.keep_open("r+") as rwds:
                 for group_name, conformers in tqdm(
                     self.numpy_items(exclude_dummy=True),
@@ -802,7 +789,11 @@ class _ANISubdataset(_ANIDatasetBase):
                             selected_conformers,
                         )
             new_ds._attach_dummy_properties(self._dummy_properties)
-            new_ds._store.overwrite(self._store)
+        except Exception:
+            new_ds._store.location.clear()
+            raise
+
+        new_ds._store.overwrite(self._store)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore
@@ -821,10 +812,13 @@ class _ANISubdataset(_ANIDatasetBase):
         for an explanation of that argument.
         """
         self._check_unique_element_key()
-        with STORE_TYPE[self._store.backend].tmp_root() as location:
-            new_ds = self._make_empty_copy(
-                location, grouping="by_num_atoms", backend=self._store.backend
-            )
+        new_ds = _ANISubdataset(
+            "tmp",
+            "by_num_atoms",
+            self._store.backend,
+            verbose=False
+        )
+        try:
             with new_ds.keep_open("r+") as rwds:
                 for group_name, conformers in tqdm(
                     self.numpy_items(exclude_dummy=True),
@@ -841,7 +835,11 @@ class _ANISubdataset(_ANIDatasetBase):
                         conformers,
                     )
             new_ds._attach_dummy_properties(self._dummy_properties)
-            new_ds._store.overwrite(self._store)
+        except Exception:
+            new_ds._store.location.clear()
+            raise
+
+        new_ds._store.overwrite(self._store)
         if repack:
             new_ds._update_cache()
             return new_ds.repack.__wrapped__(new_ds, verbose=verbose)  # type: ignore

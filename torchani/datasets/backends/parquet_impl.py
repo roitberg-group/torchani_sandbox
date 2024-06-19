@@ -2,6 +2,7 @@ import typing as tp
 import json
 from pathlib import Path
 from collections import OrderedDict
+from dataclasses import asdict
 
 import numpy as np
 
@@ -10,6 +11,7 @@ from torchani.datasets.backends.interface import (
     _Store,
     _ConformerGroup,
     Cache,
+    RootKind,
     Metadata,
 )
 
@@ -33,7 +35,8 @@ except ImportError:
 DataFrame = tp.Union["pandas.DataFrame", "cudf.DataFrame"]
 
 
-class _PandasParquetStore(_Store[DataFrame]):
+class _PandasStore(_Store[DataFrame]):
+    root_kind: RootKind = "dir"
     suffix: str = ".pqdir"
     backend: Backend = "pandas"
     BACKEND_AVAILABLE: bool = _PANDAS_AVAILABLE
@@ -54,8 +57,11 @@ class _PandasParquetStore(_Store[DataFrame]):
         self.set_data(data, mode)
 
     def setup_meta(self, root: Path, mode: str) -> None:
-        with open(self.json_path, mode) as f:
-            meta = Metadata(**json.load(f))
+        try:
+            with open(self.json_path, mode) as f:
+                meta = Metadata(**json.load(f))
+        except Exception:
+            breakpoint()
         self.set_meta(meta, mode)
 
     def teardown(self) -> None:
@@ -66,40 +72,34 @@ class _PandasParquetStore(_Store[DataFrame]):
 
     def teardown_meta(self) -> None:
         with open(self.json_path, "w") as f:
-            json.dump(self.meta, f)
+            json.dump(asdict(self.meta), f)
 
     @property
     def parquet_path(self) -> Path:
-        root = self.location.root
-        return root / root.with_suffix(".pq").name
+        return self.location.root / "data.pq"
 
     @property
     def json_path(self) -> Path:
-        root = self.location.root
-        return root / root.with_suffix(".json").name
+        return self.location.root / "meta.json"
 
     @staticmethod
-    def init_empty(
+    def init_new(
         root: Path,
         grouping: Grouping,
     ) -> None:
-        root = Path(root).resolve()
-        root.mkdir(exist_ok=True)
         if any(root.iterdir()):
             raise RuntimeError("Root for empty parquet store must be empty")
 
-        default_engine.DataFrame().to_parquet(root / root.with_suffix(".pq").name)
-        with open(root / root.with_suffix(".json").name, "x") as f:
-            json.dump(
-                {
-                    "info": "",
-                    "units": dict(),
-                    "dtypes": dict(),
-                    "dims": dict(),
-                    "grouping": grouping,
-                },
-                f,
-            )
+        default_engine.DataFrame().to_parquet(root / "data.pq")
+        with open(root / "meta.json", "x") as f:
+            meta_kwargs = {
+                "info": "",
+                "units": dict(),
+                "dtypes": dict(),
+                "dims": dict(),
+                "grouping": grouping,
+            }
+            json.dump(meta_kwargs, f)
 
     def update_cache(
         self, check_properties: bool = False, verbose: bool = True
@@ -147,7 +147,7 @@ class _PandasParquetStore(_Store[DataFrame]):
     def __getitem__(self, name: str) -> "_ConformerGroup":
         self.execute_all_queued_append_ops()
         df_group = self.data[self.data["group"] == name]
-        group = _ParquetConformerGroup(df_group, self._dummy_properties, self.data)
+        group = _ParquetConformerGroup(df_group, self._dummy_properties, self)
         return group
 
     def __setitem__(self, name: str, conformers: "_ConformerGroup") -> None:
@@ -185,8 +185,8 @@ class _PandasParquetStore(_Store[DataFrame]):
         data, mode = self.get_data()
         data = self._engine.concat([data] + self._queued_appends)
         self.set_data(data, mode)
-        self._data_is_dirty = True
         self._queued_appends = []
+        self._data_is_dirty = True
 
     def __delitem__(self, name: str) -> None:
         self.execute_all_queued_append_ops()
@@ -242,7 +242,7 @@ class _PandasParquetStore(_Store[DataFrame]):
         self._data_is_dirty = True
 
 
-class _CudfParquetStore(_PandasParquetStore):
+class _CudfStore(_PandasStore):
     backend: Backend = "cudf"
     BACKEND_AVAILABLE: bool = _CUDF_AVAILABLE
 
@@ -257,7 +257,7 @@ class _CudfParquetStore(_PandasParquetStore):
 
 
 class _ParquetConformerGroup(_ConformerGroup):
-    def __init__(self, group_obj, dummy_properties, store_ref):
+    def __init__(self, group_obj, dummy_properties, store_ref: _Store):
         super().__init__(dummy_properties=dummy_properties)
         self._group_obj = group_obj
         self._store_ref = store_ref
