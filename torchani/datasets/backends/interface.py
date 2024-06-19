@@ -305,6 +305,12 @@ class _Store(
         pass
 
     @abstractmethod
+    def update_cache(
+        self, check_properties: bool = False, verbose: bool = True
+    ) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
+        pass
+
+    @abstractmethod
     def setup(self, root: Path, mode: str) -> None:
         pass
 
@@ -317,13 +323,6 @@ class _Store(
 
     def teardown_meta(self) -> None:
         raise NotImplementedError
-
-    @abstractmethod
-    def update_cache(
-        self, check_properties: bool = False, verbose: bool = True
-    ) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:
-        pass
-
     # End overridable
 
     def _build_location(self, location: StrPath, suffix: str) -> Location:
