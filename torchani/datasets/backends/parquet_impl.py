@@ -5,6 +5,7 @@ from collections import OrderedDict
 from dataclasses import asdict
 
 import numpy as np
+from numpy.typing import NDArray
 
 from torchani.annotations import StrPath, Grouping, Backend
 from torchani.datasets.backends.interface import (
@@ -263,7 +264,7 @@ class _ParquetConformerGroup(_ConformerGroup):
     def _is_resizable(self) -> bool:
         return False
 
-    def _append_to_property(self, p: str, data: np.ndarray) -> None:
+    def _append_to_property(self, p: str, data: NDArray[tp.Any]) -> None:
         raise ValueError("Not implemented for pq groups")
 
     def move(self, src: str, dest: str) -> None:
@@ -272,10 +273,10 @@ class _ParquetConformerGroup(_ConformerGroup):
     def __delitem__(self, k: str) -> None:
         raise ValueError("Not implemented for pq groups")
 
-    def __setitem__(self, p: str, v: np.ndarray) -> None:
+    def __setitem__(self, p: str, v: NDArray[tp.Any]) -> None:
         raise ValueError("Not implemented for pq groups")
 
-    def _getitem_impl(self, p: str) -> np.ndarray:
+    def _getitem_impl(self, p: str) -> NDArray[tp.Any]:
         # mypy doesn't understand monkey patching
         series = self._group_obj[p]
         _series: "pandas.Series" = (

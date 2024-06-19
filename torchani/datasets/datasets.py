@@ -439,7 +439,7 @@ class _ANISubdataset(_ANIDatasetBase):
             present.update(conformers[element_key].ravel())
         return tuple(sorted(present))
 
-    def _parse_index(self, idx: IdxLike) -> tp.Optional[np.ndarray]:
+    def _parse_index(self, idx: IdxLike) -> tp.Optional[NDArray[np.int64]]:
         # internally, idx_ is always a numpy array or None, idx can be a tensor
         # or a list or other iterable, which is must be castable to a numpy int
         # array of ndim 1
@@ -546,7 +546,7 @@ class _ANISubdataset(_ANIDatasetBase):
                 _array = mixed_conformers[k].detach().cpu().numpy()  # type: ignore
                 numpy_conformers[k] = _array
             except AttributeError:
-                numpy_conformers[k] = tp.cast(np.ndarray, mixed_conformers[k])
+                numpy_conformers[k] = tp.cast(NDArray[tp.Any], mixed_conformers[k])
         for k in properties & _ELEMENT_KEYS:
             # try to interpret as numeric, failure means we should convert to ints
             try:
