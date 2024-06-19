@@ -205,11 +205,9 @@ class Location:
         self._root = None
 
 
-# mypy expects a Protocol here, which specifies that Data must
-# support Mapping and ContextManager methods, and also 'close' and 'create_group'
-# and have 'mode' and 'attr' attributes
-# this is similar to C++20 concepts and it is currently very verbose, so we avoid it
-Data = tp.TypeVar("Data", bound=tp.Any)
+# TODO: Not 100% sure how to type this. Currently Data is an unknown object that
+# subclasses decide on and manipulate however they like
+Data = tp.Any
 
 
 @dataclass
@@ -256,11 +254,7 @@ class Metadata:
 #   pair of methods. If one is implemented the other must be implemented too
 
 
-class _Store(
-    tp.MutableMapping[str, "_ConformerGroup"],
-    tp.Generic[Data],
-    ABC,
-):
+class _Store(tp.MutableMapping[str, "_ConformerGroup"], ABC):
     root_kind: RootKind
     suffix: str = ""
     backend: Backend
@@ -509,9 +503,8 @@ class _Store(
 
 # Wrap a hierarchical data format (e.g. Zarr, Exedir, HDF5)
 # Wrapped data must implement:
-# __exit__, __enter__, create_group, __len__, __iter__ -> Iterator[str], __delitem__
-# and have a "mode" and "attr" attributes
-class _HierarchicalStore(_Store[Data]):
+# create_group, __len__, __iter__ -> Iterator[str], __delitem__, items(), __getitem__
+class _HierarchicalStore(_Store):
     def update_cache(
         self, check_properties: bool = False, verbose: bool = True
     ) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:

@@ -17,7 +17,7 @@ from torchani.datasets.backends.interface import (
 )
 
 
-class _HDF5Store(_HierarchicalStore[h5py.File]):
+class _HDF5Store(_HierarchicalStore):
     suffix: str = ".h5"
     root_kind: RootKind = "file"
     backend: Backend = "hdf5"

@@ -33,10 +33,7 @@ except ImportError:
     _CUDF_AVAILABLE = False
 
 
-DataFrame = tp.Union["pandas.DataFrame", "cudf.DataFrame"]
-
-
-class _PandasStore(_Store[DataFrame]):
+class _PandasStore(_Store):
     root_kind: RootKind = "dir"
     suffix: str = ".pqdir"
     backend: Backend = "pandas"
@@ -49,7 +46,7 @@ class _PandasStore(_Store[DataFrame]):
         grouping: tp.Optional[Grouping] = None,
     ):
         super().__init__(root, dummy_properties, grouping)
-        self._queued_appends: tp.List[DataFrame] = []
+        self._append_ops: tp.List[tp.Union["pandas.DataFrame", "cudf.DataFrame"]] = []
         self._engine = pandas
         self._data_is_dirty = False
 
@@ -175,15 +172,15 @@ class _PandasStore(_Store[DataFrame]):
                 assert np.dtype(v.dtype).name == dtype, "Bad dtype in appended property"
             else:
                 self.meta.dtypes[k] = np.dtype(v.dtype).name
-        self._queued_appends.append(tmp_df)
+        self._append_ops.append(tmp_df)
 
     def execute_all_queued_append_ops(self) -> None:
-        if not self._queued_appends:
+        if not self._append_ops:
             return
         data, mode = self.get_data()
-        data = self._engine.concat([data] + self._queued_appends)
+        data = self._engine.concat([data] + self._append_ops)
         self.set_data(data, mode)
-        self._queued_appends = []
+        self._append_ops = []
         self._data_is_dirty = True
 
     def __delitem__(self, name: str) -> None:

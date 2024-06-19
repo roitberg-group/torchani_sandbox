@@ -20,7 +20,7 @@ except ImportError:
     _ZARR_AVAILABLE = False
 
 
-class _ZarrStore(_HierarchicalStore["zarr.Group"]):
+class _ZarrStore(_HierarchicalStore):
     root_kind: RootKind = "dir"
     suffix: str = ".zarr"
     backend: Backend = "zarr"
