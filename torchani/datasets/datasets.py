@@ -469,7 +469,7 @@ class _ANISubdataset(_ANIDatasetBase):
         Tensor}, where properties are strings"""
         numpy_conformers = self.get_numpy_conformers(group_name, idx, properties)
         return {
-            k: torch.from_numpy(numpy_conformers[k])
+            k: torch.as_tensor(numpy_conformers[k])
             for k in set(numpy_conformers.keys())
             if not any(re.match(pattern, k) for pattern in _ALWAYS_STRING_PATTERNS)
         }
