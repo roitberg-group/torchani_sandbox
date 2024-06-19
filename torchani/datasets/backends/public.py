@@ -26,9 +26,11 @@ def Store(
     dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
 ) -> _Store:
     if backend is None:
-        backend = _SUFFIXES.get(Path(root).resolve().suffix)
-        if backend is None:
-            raise RuntimeError("Backend could not be inferred from root suffix")
+        try:
+            backend = _SUFFIXES[Path(root).resolve().suffix]
+        except KeyError:
+            raise RuntimeError("Can't infer backend from suffix") from None
+
     if root == "tmp":
         return _STORE_TYPE[backend].make_tmp(dummy_properties, grouping)
     if not Path(root).exists():
