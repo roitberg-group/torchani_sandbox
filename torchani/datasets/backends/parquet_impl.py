@@ -57,11 +57,8 @@ class _PandasStore(_Store[DataFrame]):
         self.set_data(data, mode)
 
     def setup_meta(self, root: Path, mode: str) -> None:
-        try:
-            with open(self.json_path, mode) as f:
-                meta = Metadata(**json.load(f))
-        except Exception:
-            breakpoint()
+        with open(self.json_path, mode) as f:
+            meta = Metadata(**json.load(f))
         self.set_meta(meta, mode)
 
     def teardown(self) -> None:
