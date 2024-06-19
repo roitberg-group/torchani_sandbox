@@ -30,7 +30,6 @@ from torchani.datasets.backends import (
     _Store,
     Store,
     _ConformerWrapper,
-    _SUFFIXES,
 )
 
 # About _ELEMENT_KEYS:
@@ -1082,16 +1081,17 @@ class ANIDataset(_ANIDatasetBase):
         self._update_cache()
 
     @classmethod
-    def from_dir(cls, dir_: StrPath, only_backend: tp.Optional[str] = "h5py", **kwargs):
-        r"""Reads all files in a given directory, if there are multiple files
-        with the same name only one of them will be considered"""
+    def from_dir(cls, dir_: StrPath, **kwargs):
+        r"""
+        Initializes datasets from all files in a given directory
+
+        File backends are inferred from the suffixes. All files must have
+        different names.
+        """
         dir_ = Path(dir_).resolve()
         if not dir_.is_dir():
             raise ValueError("Input should be a directory")
         locations = sorted([p for p in dir_.iterdir() if p.suffix != ".tar.gz"])
-        if only_backend is not None:
-            suffix = _SUFFIXES[only_backend]
-            locations = [loc for loc in locations if loc.suffix == suffix]
         names = [p.stem for p in locations]
         return cls(locations=locations, names=names, **kwargs)
 
