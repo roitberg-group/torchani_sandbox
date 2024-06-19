@@ -27,8 +27,8 @@ from torchani.annotations import (
     IdxLike,
 )
 from torchani.datasets.backends import (
-    _Store,
     Store,
+    create_store,
     _ConformerWrapper,
 )
 
@@ -317,7 +317,7 @@ class _ANISubdataset(_ANIDatasetBase):
         # created on the fly only if they are not present in the dataset
         # already.
         super().__init__()
-        self._store = Store(
+        self._store = create_store(
             store_location,
             backend,
             grouping,
@@ -379,7 +379,7 @@ class _ANISubdataset(_ANIDatasetBase):
     # if they are being called from inside a "keep_open" context
     def _get_open_store(
         self, stack: ExitStack, mode: str = "r", only_meta_needed: bool = False
-    ) -> _Store:
+    ) -> Store:
         if mode not in ["r+", "r"]:
             raise ValueError(f"Unsupported mode {mode}")
 

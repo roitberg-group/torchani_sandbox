@@ -48,7 +48,7 @@ _MutMapSubtype = tp.TypeVar(
     "_MutMapSubtype", bound=tp.MutableMapping[str, NDArray[tp.Any]]
 )
 
-# _ConformerGroup and _Store are abstract classes from which all backends
+# _ConformerGroup and Store are abstract classes from which all backends
 # should inherit in order to correctly interact with ANIDataset. Adding
 # support for a new backend can be done just by coding these classes and
 # adding the support for the backend inside interface.py
@@ -223,7 +223,7 @@ class Metadata:
 # Wrapped data must have:
 #
 # The wrapped data provides some sort of conformer data, which is provided by
-# the _Store as a "_ConformerGroup" through __getitem__ and deleted through __delitem__
+# the Store as a "_ConformerGroup" through __getitem__ and deleted through __delitem__
 
 # Overridable methods are:
 #
@@ -254,7 +254,7 @@ class Metadata:
 #   pair of methods. If one is implemented the other must be implemented too
 
 
-class _Store(tp.MutableMapping[str, "_ConformerGroup"], ABC):
+class Store(tp.MutableMapping[str, "_ConformerGroup"], ABC):
     root_kind: RootKind
     suffix: str = ""
     backend: Backend
@@ -323,7 +323,7 @@ class _Store(tp.MutableMapping[str, "_ConformerGroup"], ABC):
     def _build_location(self, location: StrPath, suffix: str) -> Location:
         return Location(location, suffix)
 
-    def overwrite(self, other: "_Store") -> None:
+    def overwrite(self, other: "Store") -> None:
         root = Path(other.location.root).with_suffix("")
         other.location.clear()
         self.location.root = root
@@ -504,7 +504,7 @@ class _Store(tp.MutableMapping[str, "_ConformerGroup"], ABC):
 # Wrap a hierarchical data format (e.g. Zarr, Exedir, HDF5)
 # Wrapped data must implement:
 # create_group, __len__, __iter__ -> Iterator[str], __delitem__, items(), __getitem__
-class _HierarchicalStore(_Store):
+class _HierarchicalStore(Store):
     def update_cache(
         self, check_properties: bool = False, verbose: bool = True
     ) -> tp.Tuple[tp.OrderedDict[str, int], tp.Set[str]]:

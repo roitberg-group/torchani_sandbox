@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 
 from torchani.annotations import StrPath, Grouping, Backend
 from torchani.datasets.backends.interface import (
-    _Store,
+    Store,
     _ConformerGroup,
     Cache,
     RootKind,
@@ -33,7 +33,7 @@ except ImportError:
     _CUDF_AVAILABLE = False
 
 
-class _PandasStore(_Store):
+class _PandasStore(Store):
     root_kind: RootKind = "dir"
     suffix: str = ".pqdir"
     backend: Backend = "pandas"
@@ -252,7 +252,7 @@ class _CudfStore(_PandasStore):
 
 
 class _ParquetConformerGroup(_ConformerGroup):
-    def __init__(self, group_obj, dummy_properties, store_ref: _Store):
+    def __init__(self, group_obj, dummy_properties, store_ref: Store):
         super().__init__(dummy_properties=dummy_properties)
         self._group_obj = group_obj
         self._store_ref = store_ref
