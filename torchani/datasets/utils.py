@@ -28,7 +28,6 @@ def concatenate(
     if source.grouping not in ["by_formula", "by_num_atoms"]:
         raise ValueError("Please regroup your dataset before concatenating")
 
-    # with STORE_TYPE[source._first_subds._store.backend].tmp_root() as root:
     dest = ANIDataset("tmp", backend=backend, grouping=source.grouping, verbose=False)
     try:
         for k, v in tqdm(
