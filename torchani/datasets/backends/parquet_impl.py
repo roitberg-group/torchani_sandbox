@@ -281,6 +281,8 @@ class _ParquetConformerGroup(_ConformerGroup):
         _series: "pandas.Series" = (
             series.to_pandas() if hasattr(series, "to_pandas") else series
         )
+        # TODO: Currently arrays are saved as 'object' which si probably not
+        # efficient, so to_numpy() creates an array of arrays that need to be stacked
         _property = np.stack(_series.to_numpy())
         extra_dims = self._store_ref.meta.dims.get(p, None)
         dtype = self._store_ref.meta.dtypes.get(p, None)

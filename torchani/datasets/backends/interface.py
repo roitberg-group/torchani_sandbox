@@ -152,9 +152,7 @@ class _ConformerWrapper(_ConformerGroup, tp.Generic[_MutMapSubtype]):
         del self._data[p]
 
     def _getitem_impl(self, p: str) -> np.ndarray:
-        array = self._data[p][()]
-        assert isinstance(array, np.ndarray)
-        return array
+        return self._data[p][...]
 
     def _len_impl(self) -> int:
         return len(self._data)
