@@ -478,7 +478,10 @@ def _register_dataset_builder(name: str) -> None:
         # If the dataset is not found we download it
         if download and ((not _root.is_dir()) or (not any(_root.glob(f"*{suffix}")))):
             _download_and_extract_archive(
-                base_url=_BASE_URL, file_name=archive, dest_dir=_root
+                base_url=_BASE_URL,
+                file_name=archive,
+                dest_dir=_root,
+                verbose=verbose,
             )
 
         # Check for corruption and missing files
