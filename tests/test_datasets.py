@@ -55,7 +55,7 @@ _numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
 
 TmpFileOrDir = tp.Union[
-    tempfile._TemporaryFileWrapper[bytes], tempfile.TemporaryDirectory[str]
+    tempfile._TemporaryFileWrapper, tempfile.TemporaryDirectory
 ]
 
 
