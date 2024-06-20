@@ -352,6 +352,8 @@ def _download_and_extract_archive(
 
     # download
     ar_file_path = dest_dir / file_name
+    if verbose:
+        print(f"Downloading {file_name}...")
     torch.hub.download_url_to_file(
         f"{base_url}{file_name}", str(ar_file_path), progress=verbose
     )
