@@ -278,8 +278,9 @@ def map_to_central(coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
 class EnergyShifter(torch.nn.Module):
     """Helper class for adding and subtracting self atomic energies
 
-    This is a subclass of :class:`torch.nn.Module`, so it can be used directly
-    in a pipeline as ``[input->AEVComputer->ANIModel->EnergyShifter->output]``.
+    Note: This class is *legacy*. Please use
+    :class:`torchani.potentials.EnergyAddder`, which has equivalent
+    functionality instead of this class.
 
     Arguments:
         self_energies (:class:`collections.abc.Sequence`): Sequence of floating
@@ -317,7 +318,7 @@ class EnergyShifter(torch.nn.Module):
     def sae(self, species: Tensor) -> Tensor:
         """Compute self energies for molecules.
 
-        Padding atoms will be automatically excluded.
+        Padding atoms are automatically excluded.
 
         Arguments:
             species (:class:`torch.Tensor`): Long tensor in shape
@@ -338,7 +339,6 @@ class EnergyShifter(torch.nn.Module):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
     ) -> SpeciesEnergies:
-        """(species, molecular energies)->(species, molecular energies + sae)"""
         species, energies = species_energies
         sae = self._atomic_saes(species).sum(dim=1)
 
@@ -366,7 +366,7 @@ class _NumbersConvert(torch.nn.Module):
 
 
 class AtomicNumbersToChemicalSymbols(_NumbersConvert):
-    r"""Converts tensor of atomic numbers to list of chemical symbol strings.
+    r"""Converts tensor of atomic numbers to list of chemical symbols
 
     On initialization, it is optional to supply the class with a :class:'dict'
     containing custom numbers and symbols. This is not necessary, as the class
