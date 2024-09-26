@@ -92,7 +92,7 @@ from torchani.neighbors import rescreen
 
 
 class ANI(torch.nn.Module):
-    r"""ANI-style atomistic neural network interatomic potential"""
+    r"""ANI-style neural network interatomic potential"""
 
     atomic_numbers: Tensor
     periodic_table_index: Final[bool]
@@ -127,8 +127,8 @@ class ANI(torch.nn.Module):
         """Convert the neural networks module of the model into a module
         optimized for inference.
 
-        Assumes that the atomic networks consist of an MLP with
-        torchani.utils.TightCELU activation functions.
+        Assumes that the atomic networks are multi layer perceptrons (MLPs)
+        with torchani.utils.TightCELU activation functions.
         """
         self.neural_networks = self.neural_networks.to_infer_model(use_mnp=use_mnp)
         return self
