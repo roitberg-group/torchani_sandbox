@@ -66,11 +66,11 @@ class ANIModel(AtomicContainer):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
     ) -> SpeciesEnergies:
-        atomic_energies = self._atomic_energies(species_aev).squeeze(0)
+        atomic_energies = self.members_atomic_energies(species_aev).squeeze(0)
         return SpeciesEnergies(species_aev[0], torch.sum(atomic_energies, dim=1))
 
     @torch.jit.export
-    def _atomic_energies(
+    def members_atomic_energies(
         self,
         species_aev: tp.Tuple[Tensor, Tensor],
     ) -> Tensor:
@@ -132,11 +132,11 @@ class Ensemble(AtomicContainer):
         return self.members[idx]
 
     @torch.jit.export
-    def _atomic_energies(self, species_aev: tp.Tuple[Tensor, Tensor]) -> Tensor:
+    def members_atomic_energies(self, species_aev: tp.Tuple[Tensor, Tensor]) -> Tensor:
         #  Note that the output is of shape (M, C, A)
         members_list = []
         for nnp in self.members:
-            members_list.append(nnp._atomic_energies((species_aev)))
+            members_list.append(nnp.members_atomic_energies((species_aev)))
         members_atomic_energies = torch.cat(members_list, dim=0)
         # out shape is (M, C, A)
         return members_atomic_energies
