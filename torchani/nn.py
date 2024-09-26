@@ -1,5 +1,4 @@
 import typing as tp
-from collections import OrderedDict
 
 import torch
 from torch import Tensor
@@ -11,7 +10,7 @@ from torchani.infer import BmmEnsemble, InferModel
 
 
 class ANIModel(AtomicContainer):
-    """ANI model that compute energies from species and AEVs.
+    """Module that compute energies from species and AEVs.
 
     Different atom types might have different modules, when computing
     energies, for each atom, the module for its corresponding atom type will
@@ -55,18 +54,11 @@ class ANIModel(AtomicContainer):
             state_dict[new_key] = state_dict.pop(k)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
-    @staticmethod
-    def ensureOrderedDict(modules):
-        if isinstance(modules, OrderedDict):
-            return modules
-        od = OrderedDict()
-        for i, m in enumerate(modules):
-            od[str(i)] = m
-        return od
-
-    def __init__(self, modules: tp.Mapping[str, AtomicNetwork]):
+    def __init__(self, modules: tp.Dict[str, AtomicNetwork]):
         super().__init__()
-        self.atomics = torch.nn.ModuleDict(self.ensureOrderedDict(modules))
+        if any(s not in PERIODIC_TABLE for s in modules):
+            raise ValueError("All modules should be mapped to valid chemical symbols")
+        self.atomics = torch.nn.ModuleDict(modules)
         self.num_species = len(self.atomics)
         self.num_networks = 1
 
