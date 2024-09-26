@@ -541,15 +541,6 @@ class PairPotentialsModel(ANI):
         potentials = sorted(potentials, key=lambda x: x.cutoff, reverse=True)
         self.potentials = torch.nn.ModuleList(potentials)
 
-    # Unfortunately this is an UGLY workaround to a torchscript bug
-    @torch.jit.export
-    def _recast_long_buffers(self) -> None:
-        self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(
-            dtype=torch.long
-        )
-        self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
-        self.aev_computer.neighborlist._recast_long_buffers()
-
     # TODO: Remove code repetition
     @torch.jit.export
     def from_neighborlist(
