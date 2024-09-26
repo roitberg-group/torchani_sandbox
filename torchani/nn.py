@@ -1,3 +1,6 @@
+r"""
+Core modules used by the ANI-style models
+"""
 import typing as tp
 
 import torch
