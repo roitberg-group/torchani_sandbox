@@ -26,11 +26,9 @@ class ANIModel(AtomicContainer):
     .. note:: The resulting energies are in Hartree.
 
     Arguments:
-        modules (:class:`collections.abc.Sequence`): Modules for each atom
-            types. Atom types are distinguished by their order in
-            :attr:`modules`, which means, for example ``modules[i]`` must be
-            the module for atom type ``i``. Different atom types can share a
-            module by putting the same reference in :attr:`modules`.
+        modules (Dict[str, AtomicNetwork]): symbol - network pairs for each
+        supported element. Different elements will share networks if the same
+        ref is used for different keys
     """
 
     # Needed for bw compatibility
