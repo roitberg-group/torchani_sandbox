@@ -1,4 +1,4 @@
-"""
+r"""
 The ``models`` submodule provides access to all published ANI models, which are
 subclasses of ``ANI``. Some models have been published in specific articles,
 and some have been published in TorchANI 2.0. If you use one of these models in
@@ -93,6 +93,7 @@ from torchani.neighbors import rescreen
 
 class ANI(torch.nn.Module):
     r"""ANI-style neural network interatomic potential"""
+
 
     atomic_numbers: Tensor
     periodic_table_index: Final[bool]
