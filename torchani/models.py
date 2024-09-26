@@ -1,21 +1,21 @@
-"""The ANI model zoo that stores public ANI models.
+r"""
+The ``models`` submodule provides access to all published ANI models, all of
+which are subclasses of ``ANI``. Some of the ANI models have been published in
+specific articles, and some have been published in TorchANI 2.0. If you use a
+built-in model in your work please cite the corresponding article.
 
-The ANI "Model Zoo" stores all published ANI models as built-in models. Some of
-the ANI models have been published in specific articles, and some have been
-published in TorchANI 2.0.
+If you discover any bug,performance problem, or incorrect behavior in some
+region of chemical space, please post an issue in GitHub. The TorchANI
+developers will attempt to address and document issues.
 
-If you use a built-in model in your work please cite the corresponding article.
-If you discover any problem, be it a bug, a performance problem, or incorrect
-behavior in some region of chemical space, please post an issue in GitHub. The
-TorchANI developers will attempt to address issues and document problematic
-behavior for of the models.
+Note that parameters of the ANI models are automatically downloaded and cached
+the first time they are instantiated. If this is an issue for your application
+we recommend you pre-download the parameters by instantiating the models before
+use.
 
-The parameters for the models are automatically downloaded the first time they
-are used. If this is an issue for your application we recommend you
-pre-download the parameters by instantiating the models before use.
-
-To use the models just instantiate them and either directly calculate energies
-by calling them, or cast them to an ASE calculator.
+The ANI models can be used directly as callable functions once they are
+instantiated. Alternatively, they can be caset to an ASE calculator by calling
+``ANI.ase()``.
 
 If the models have many ensembled neural networks they can be indexed to access
 individual members of the ensemble, and len() can be used to get the number of

@@ -1,3 +1,6 @@
+r"""
+Miscellaneous utilities
+"""
 from collections import OrderedDict
 import typing as tp
 import tarfile
