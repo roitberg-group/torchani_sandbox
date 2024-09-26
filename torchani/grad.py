@@ -2,7 +2,6 @@ r"""
 TorchANI functions that make use of torch.autograd capabilities to compute
 forces and hessians in a straightforward manner.
 """
-
 import math
 import typing as tp
 
