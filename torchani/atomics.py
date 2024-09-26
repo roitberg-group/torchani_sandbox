@@ -15,7 +15,7 @@ class AtomicContainer(torch.nn.Module):
     num_networks: int
     num_species: int
 
-    def __init__(self) -> None:
+    def __init__(self, *args: tp.Any, **kwargs: tp.Any) -> None:
         super().__init__()
         self.num_networks = 0
         self.num_species = 0
