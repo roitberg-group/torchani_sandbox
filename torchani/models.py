@@ -94,6 +94,7 @@ from torchani.neighbors import rescreen
 class ANI(torch.nn.Module):
     r"""ANI-style neural network interatomic potential"""
 
+
     atomic_numbers: Tensor
     periodic_table_index: Final[bool]
 
