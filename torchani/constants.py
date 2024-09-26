@@ -1,5 +1,8 @@
 r"""Atomic constants, and Density Functional constants
 
+If you use these constants in your work please cite the corresponding article(s).
+
+
 Values for electronegativity and hardness for elements H-Bk, all for neutral
 atoms, and are taken from Table 3 of
 

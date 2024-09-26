@@ -14,10 +14,10 @@ class EnergyAdder(Potential):
 
     Arguments:
         symbols: (:class:``list[str]``): Sequence of symbols corresponding to the
-            supported elements
-        self_energies (:class:`collections.abc.Sequence`): Sequence of floats
-            corresponding to self energy of each atom type. The numbers should
-            be in order, i.e. ``self_energies[i]`` should be atom type ``i``.
+            supported elements.
+        self_energies (:class:`list[float]`): Ordered sequence of floats
+            corresponding to the self energy of each element. Energies must be
+            be in order: ``self_energies[i]`` corresponds to element ``symbols[i]``.
     """
 
     self_energies: Tensor
