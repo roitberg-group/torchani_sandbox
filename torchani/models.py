@@ -533,17 +533,15 @@ class PairPotentialsModel(ANI):
             periodic_table_index=periodic_table_index,
         )
         potentials: tp.List[Potential] = list(pairwise_potentials)
-        aev_potential = NNPotential(self.aev_computer, self.neural_networks)
-        potentials.append(aev_potential)
+        potentials.append(NNPotential(self.aev_computer, self.neural_networks))
 
-        # We want to check the cutoffs of the potentials, and sort them
-        # in order of decreasing cutoffs. this way the potential with the LARGEST
-        # cutoff is computed first, then sequentially things that need smaller
-        # cutoffs are computed.
+        # Sort potentials in order of decresing cutoff. The potential with the
+        # LARGEST cutoff is computed first, then sequentially things that need
+        # SMALLER cutoffs are computed.
         potentials = sorted(potentials, key=lambda x: x.cutoff, reverse=True)
         self.potentials = torch.nn.ModuleList(potentials)
 
-    # unfortunately this is an UGLY workaround to a torchscript bug
+    # Unfortunately this is an UGLY workaround to a torchscript bug
     @torch.jit.export
     def _recast_long_buffers(self) -> None:
         self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(
@@ -678,8 +676,7 @@ class PairPotentialsChargesModel(PairPotentialsModel):
     Calculates energies and atomic charges. Charge networks share the input
     features with the energy networks, but are otherwise fully independent from them.
 
-    WARNING: This model is an experimental feature and will probably be removed
-    in the future.
+    WARNING: This model is experimental
     """
 
     def __init__(
