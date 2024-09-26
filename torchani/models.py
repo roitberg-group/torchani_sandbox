@@ -1,12 +1,12 @@
 r"""
-The ``models`` submodule provides access to all published ANI models, all of
-which are subclasses of ``ANI``. Some of the ANI models have been published in
-specific articles, and some have been published in TorchANI 2.0. If you use a
-built-in model in your work please cite the corresponding article.
+The ``models`` submodule provides access to all published ANI models, which are
+subclasses of ``ANI``. Some models have been published in specific articles,
+and some have been published in TorchANI 2.0. If you use one of these models in
+your work please cite the corresponding article.
 
-If you discover any bug,performance problem, or incorrect behavior in some
-region of chemical space, please post an issue in GitHub. The TorchANI
-developers will attempt to address and document issues.
+If for a given model you discover a bug, performance problem, or incorrect
+behavior in some region of chemical space, please post an issue in GitHub. The
+TorchANI developers will attempt to address and document issues.
 
 Note that parameters of the ANI models are automatically downloaded and cached
 the first time they are instantiated. If this is an issue for your application
@@ -14,12 +14,12 @@ we recommend you pre-download the parameters by instantiating the models before
 use.
 
 The ANI models can be used directly as callable functions once they are
-instantiated. Alternatively, they can be caset to an ASE calculator by calling
+instantiated. Alternatively, they can be cast to an ASE calculator by calling
 ``ANI.ase()``.
 
-If the models have many ensembled neural networks they can be indexed to access
-individual members of the ensemble, and len() can be used to get the number of
-networks in the ensemble
+Some models have a "network container" that consists of an "ensemble" of neural
+networks. Individual members of these ensembles can be accessed by indexing,
+and ``len()`` can be used to query the number of networks in it.
 
 The models also have three extra entry points for more specific use cases:
 members_energies, atomic_energies and energies_qbcs.
@@ -29,29 +29,36 @@ together with two optional tensors, `cell` and `pbc`.
 `coordinates` and `cell` should be in units of Angstroms,
 and the output energies are always in Hartrees
 
-For more detailed example of usage consult the examples documentation
+For more detailed examples of usage consult the examples documentation
 
 .. code-block:: python
+
     import torchani
 
-    model = torchani.models.ANI1x()
-    # compute energy using a model ensemble
-    _, energies = ani1x((species, coordinates))
+    model = torchani.models.ANI2x()
 
-    # output shape of energies is (M, C), where M is the number of ensemble members
-    _, members_energies = ani1x.members_energies((species, coordinates))
+    # Batch of conformers, shape is (C, A) for znums and (C, A, 3) for coordinates
+    znums = torch.tensor([[8, 1, 1]], dtype=torch.long)
+    coordinates = torch.tensor([[], [], []], dtype=torch.float)
 
-    # output shape of energies is (A, C) where A is num atoms in the minibatch
-    # atomic energies are averaged over all models by default
-    _, atomic_energies = ani1x.atomic_energies((species, coordinates))
+    # Average energies over the ensemble for the batch
+    # Output shape is (C,)
+    _, energies = model((species, coordinates))
 
-    # qbc factors are used for active learning, shape is equal to energies
-    _, energies, qbcs = ani1x.energies_qbcs((species, coordinates))
+    # Individual energies of the members of the ensemble
+    # Output shape is (M, C), M is the ensemble len
+    _, members_energies = model.members_energies((species, coordinates))
 
-    # individual models of the ensemble can be obtained by indexing,
-    # and they have the same functionality as the ensembled model
-    model0 = ani1x[0]
-    _, energies = model0((species, coordinates))
+    # Average atomic energies over the ensemble for the batch
+    # Output shape is (C, A)
+    _, atomic_energies = model.atomic_energies((species, coordinates))
+
+    # QBC factors are used for active learning, shape is (C,)
+    _, energies, qbcs = model.energies_qbcs((species, coordinates))
+
+    # Individual models of the ensemble can be obtained by indexing, they are also
+    # subclasses of ``ANI``, with the same functionality
+    member = model[0]
 """
 import typing as tp
 

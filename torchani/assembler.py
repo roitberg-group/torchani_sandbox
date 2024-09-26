@@ -1,11 +1,11 @@
-r""" WARNING: The assembler is currently experimental and it is not considered stable
-API, modify under your own risk
+r"""
+WARNING: This module is considered experimental and its API is subject to change
 
-The assembler responsibility is to build an ANI-style model from the different
-necessary parts, in such a way that all the parts of the model interact in the
-correct way and there are no compatibility issues among them.
+The assembler builds ANI-style models from the different necessary parts, in
+such a way that all parts interact in the correct way and there are no
+compatibility issues among them.
 
-An energy-predicting ANI-style model consists of:
+An ANI-style model consists of:
 
 - Featurizer (typically a AEVComputer, which supports custom cuda ops, or subclass)
 - Container for atomic networks (typically ANIModel or subclass)
