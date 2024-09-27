@@ -4,6 +4,7 @@ import warnings
 
 import torch
 
+from torchani.sae import calculate_saes
 from torchani.testing import TestCase
 from torchani.datasets import create_batched_dataset, ANIBatchedDataset
 
