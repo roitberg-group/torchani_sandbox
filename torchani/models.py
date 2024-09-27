@@ -427,7 +427,7 @@ class ANI(torch.nn.Module):
         """
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
-        atomic_energies = self.neural_networks._atomic_energies(species_aevs)
+        atomic_energies = self.neural_networks.members_atomic_energies(species_aevs)
 
         if shift_energy:
             atomic_energies += self.energy_shifter.atomic_energies(
