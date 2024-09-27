@@ -19,7 +19,7 @@ from torch import Tensor
 import torch.utils.data
 
 from torchani.annotations import Device
-from torchani.constants import MASS, ATOMIC_NUMBER, PERIODIC_TABLE
+from torchani.constants import MASS, ATOMIC_NUMBER, PERIODIC_TABLE, GSAES
 from torchani.tuples import SpeciesEnergies
 
 
@@ -84,9 +84,7 @@ def download_and_extract(
     dest_path = dest_dir / file_name
     if verbose:
         print(f"Downloading {file_name}...")
-    torch.hub.download_url_to_file(
-        url, str(dest_path), progress=verbose
-    )
+    torch.hub.download_url_to_file(url, str(dest_path), progress=verbose)
     # Extract
     if file_name.endswith(".tar.gz"):
         with tarfile.open(dest_path, "r:gz") as f:
@@ -301,11 +299,19 @@ class EnergyShifter(torch.nn.Module):
 
         self.register_buffer("self_energies", self_energies)
 
+    @staticmethod
+    def _sorted_gsaes(
+        elements: tp.Sequence[str], functional: str, basis_set: str
+    ) -> tp.List[float]:
+        gsaes = GSAES[f"{functional.lower()}-{basis_set.lower()}"]
+        return [gsaes[e] for e in elements]
+
     @classmethod
     def with_gsaes(cls, elements: tp.Sequence[str], functional: str, basis_set: str):
         r"""Instantiate an EnergyShifter with a given set of GSAES"""
-        from torchani.sae import sorted_gsaes
-        return cls(sorted_gsaes(elements, functional, basis_set), fit_intercept=False)
+        return cls(
+            cls._sorted_gsaes(elements, functional, basis_set), fit_intercept=False
+        )
 
     @torch.jit.export
     def _atomic_saes(self, species: Tensor) -> Tensor:
@@ -429,6 +435,7 @@ class IntsToChemicalSymbols(_NumbersConvert):
         (must be 1-D)
 
     """
+
     def __init__(self, symbols: tp.Sequence[str]):
         if isinstance(symbols, str):
             raise ValueError("symbols must be a sequence of str, but it can't be a str")
@@ -441,7 +448,7 @@ class _ChemicalSymbolsConvert(torch.nn.Module):
     def __init__(self, symbol_dict: tp.Dict[str, int], device: Device = "cpu"):
         super().__init__()
         self.symbol_dict = symbol_dict
-        self.register_buffer('_dummy', torch.empty(0, device=device), persistent=False)
+        self.register_buffer("_dummy", torch.empty(0, device=device), persistent=False)
 
     def forward(self, species: tp.List[str]) -> Tensor:
         # This can't be an in-place loop to be jit-compilable

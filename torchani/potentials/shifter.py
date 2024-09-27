@@ -32,7 +32,6 @@ class EnergyAdder(Potential):
             "self_energies", torch.tensor(self_energies, dtype=torch.float)
         )
 
-
     # Return a sequence of GSAES sorted by element
     # Example usage:
     # gsaes = sorted_gsaes(('H', 'C', 'S'), 'wB97X', '631Gd')
@@ -45,11 +44,10 @@ class EnergyAdder(Potential):
         gsaes = GSAES[f"{functional.lower()}-{basis_set.lower()}"]
         return [gsaes[e] for e in elements]
 
-
     @classmethod
     def with_gsaes(cls, elements: tp.Sequence[str], functional: str, basis_set: str):
         r"""Instantiate an EnergyAdder with ground state atomic energies"""
-        obj = cls(elements, self._sorted_gsaes(elements, functional, basis_set))
+        obj = cls(elements, cls._sorted_gsaes(elements, functional, basis_set))
         return obj
 
     @torch.jit.export
