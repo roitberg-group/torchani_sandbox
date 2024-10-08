@@ -1,6 +1,7 @@
 r"""
 Default location for various TorchANI resources
 """
+
 import typing as tp
 import os
 from pathlib import Path
