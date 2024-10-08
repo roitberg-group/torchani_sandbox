@@ -34,6 +34,8 @@ requirements:
     - conda-forge::numpy=1.26
     - conda-forge::h5py
     - conda-forge::tqdm
+    - conda-forge::rich
+    - conda-forge::typer
     - pytorch::pytorch={{ pytorch }}
     - pytorch::pytorch-cuda={{ cuda }}
 

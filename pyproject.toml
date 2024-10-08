@@ -23,6 +23,8 @@ dependencies = [
     "typing_extensions>=4.0.0",
     "h5py",
     "tqdm",
+    "typer",
+    "rich",
 ]
 dynamic = ["version"]
 
