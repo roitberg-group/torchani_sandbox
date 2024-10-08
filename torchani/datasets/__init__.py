@@ -26,7 +26,7 @@ from torchani.datasets import utils
 from torchani.datasets.utils import datapack
 
 # Some attrs are created programmatically, so a star import is needed
-from torchani.datasets.builtin import *  # noqa:F403
+from torchani.datasets.builtin import *  # noqa:F403,F401
 from torchani.datasets.builtin import (
     DatasetId,
     LotId,
