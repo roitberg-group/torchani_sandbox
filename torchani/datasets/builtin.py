@@ -301,7 +301,7 @@ from collections import OrderedDict
 
 from tqdm import tqdm
 
-from torchani.paths import DATASETS
+from torchani.paths import datasets_dir
 from torchani.utils import download_and_extract
 from torchani.datasets.anidataset import ANIDataset
 
@@ -360,7 +360,7 @@ def datapull(
     skip_check: bool = False,
 ):
     r"""Download a built-in dataset to the default location in disk"""
-    location = (DATASETS / f"{name}-{lot}").resolve()
+    location = (datasets_dir() / f"{name}-{lot}").resolve()
     if location.exists() and verbose:
         if skip_check:
             print("Dataset found locally, skipping integrity check")
@@ -474,7 +474,7 @@ def _register_dataset_builder(name: str) -> None:
             ) from None
         suffix = ".h5"
 
-        _root = (DATASETS / archive.replace(".tar.gz", "")).resolve()
+        _root = (datasets_dir() / archive.replace(".tar.gz", "")).resolve()
 
         _files_and_md5s = OrderedDict([(k, _MD5S[k]) for k in data[lot]["files"]])
 
