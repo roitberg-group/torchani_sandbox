@@ -109,7 +109,7 @@ class TestDatasetUtils(TestCase):
         out = filter_by_high_energy_error(
             ds,
             model,
-            threshold=0.2,
+            threshold=1.0,
             delete_inplace=True,
             verbose=False,
         )
