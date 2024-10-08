@@ -37,15 +37,27 @@ def datapull(
         tp.Optional[LotId],
         Option("-l", "--lot"),
     ] = None,
+    skip_check: tpx.Annotated[
+        bool,
+        Option("-s/-S", "--skip-check/--no-skip-check"),
+    ] = False,
 ) -> None:
-    _datapull(name, lot=lot, verbose=True)
+    _datapull(name, lot=lot, verbose=True, skip_check=skip_check)
 
 
 @main.command(help="Display info regarding built-in datasets")
 def datainfo(
     name: tpx.Annotated[DatasetId, Argument()],
+    lot: tpx.Annotated[
+        tp.Optional[LotId],
+        Option("-l", "--lot"),
+    ] = None,
+    skip_check: tpx.Annotated[
+        bool,
+        Option("-s/-S", "--skip-check/--no-skip-check"),
+    ] = False,
 ) -> None:
-    _datainfo(name)
+    _datainfo(name, lot=lot, skip_check=skip_check)
 
 
 @main.command(help="Create .tar.gz, .yaml, and .json files from a dir with .h5 files")

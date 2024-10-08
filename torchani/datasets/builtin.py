@@ -290,6 +290,7 @@ of GDB-10to13 were recalculated using ORCA 5.0 instead of 4.2 so the
 integration grids may be slightly different, but the difference should not be
 significant.
 """
+
 from enum import Enum
 import json
 import typing as tp
@@ -353,34 +354,50 @@ def _calc_file_md5(file_path: Path) -> str:
 
 
 def datapull(
-    name: DatasetId, lot: tp.Optional[LotId] = None, verbose: bool = True
+    name: DatasetId,
+    lot: tp.Optional[LotId] = None,
+    verbose: bool = True,
+    skip_check: bool = False,
 ):
     r"""Download a built-in dataset to the default location in disk"""
     location = (DATASETS / f"{name}-{lot}").resolve()
     if location.exists() and verbose:
-        print("Found dataset, will check files integrity")
+        if skip_check:
+            print("Dataset found locally, skipping integrity check")
+            return
+        print("Dataset found locally, starting files integrity check ...")
     else:
-        print("Will download dataset")
+        print("Dataset not found locally, starting download...")
     if lot is None:
         getattr(sys.modules[__name__], name.value)(download=True)
         return
-    getattr(sys.modules[__name__], name.value)(download=True, lot=lot.value)
+    getattr(sys.modules[__name__], name.value)(
+        download=True, lot=lot.value, skip_check=skip_check
+    )
 
 
-def datainfo(name: DatasetId) -> None:
-    ds = getattr(sys.modules[__name__], name.value)(download=False)
-    print(ds)
+def datainfo(
+    name: DatasetId, lot: tp.Optional[LotId] = None, skip_check: bool = False
+) -> None:
+    if lot is None:
+        ds = getattr(sys.modules[__name__], name.value)(
+            download=False, skip_check=skip_check
+        )
+    else:
+        ds = getattr(sys.modules[__name__], name.value)(
+            download=False, lot=lot, skip_check=skip_check
+        )
     groups = list(ds.keys())
     conformer = ds.get_numpy_conformers(groups[0], 0)
     key_max_len = max([len(k) for k in conformer.keys()]) + 3
     shapes = [str(list(conformer[k].shape)) for k in conformer.keys()]
     shape_max_len = max([len(s) for s in shapes]) + 3
-    print('\nFirst Conformer Properties (non-batched): ')
+    print("\nFirst Conformer Properties (non-batched): ")
     for i, k in enumerate(conformer.keys()):
         key = k.ljust(key_max_len)
         shape = shapes[i].ljust(shape_max_len)
         dtype = conformer[k].dtype
-        print(f'  {key} shape: {shape} dtype: {dtype}')
+        print(f"  {key} shape: {shape} dtype: {dtype}")
 
 
 def _check_files_integrity(
