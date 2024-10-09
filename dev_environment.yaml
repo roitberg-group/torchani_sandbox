@@ -22,6 +22,8 @@ dependencies:
 
   # CUDA GPU support (highly recommended unless doing simple debugging or tests):
   - pytorch::pytorch-cuda=11.8
+  # If not using CUDA GPU support, comment the previous line and uncomment the next:
+  # - pytorch::cpuonly
 
   # Compiled extensions (cuAEV and MNP):
   # Needs CUDA GPU support. The CUDA libraries speciefied by the pytorch-cuda
