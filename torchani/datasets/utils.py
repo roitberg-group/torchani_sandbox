@@ -294,7 +294,7 @@ from pathlib import Path
 import typing as tp
 import hashlib
 
-import tqdm
+from tqdm import tqdm
 
 from torchani.datasets.anidataset import ANIDataset
 from torchani.utils import download_and_extract
