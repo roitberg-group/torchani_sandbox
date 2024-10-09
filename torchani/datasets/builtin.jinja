@@ -59,3 +59,4 @@ class LotId(Enum):
 {% for lot in lots %}
     {{ lot | replace("-", "_") | replace("(", "_p") | replace(")", "p_") | upper }} = "{{ lot }}"
 {% endfor %}
+
