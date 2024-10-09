@@ -37,7 +37,7 @@ def {{ ds.name | replace("-", "_") | replace("(", "_p") | replace(")", "p_") }}(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
