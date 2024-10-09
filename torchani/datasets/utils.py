@@ -319,7 +319,6 @@ def _builder(
     root = (datasets_dir() / archive.replace(".tar.gz", "")).resolve()
     # If the dataset is not found we download it
     if download and ((not root.is_dir()) or (not any(root.glob(f"*{suffix}")))):
-        breakpoint()
         download_and_extract(
             url=f"{_BASE_URL}{archive}",
             file_name=archive,

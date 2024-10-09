@@ -36,7 +36,7 @@ def TestData(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -60,7 +60,7 @@ def TestDataIons(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -84,7 +84,7 @@ def TestDataForcesDipoles(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -108,7 +108,7 @@ def IonsVeryHeavy(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -132,7 +132,7 @@ def IonsHeavy(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -156,7 +156,7 @@ def IonsLight(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -180,7 +180,7 @@ def ANI1q(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -204,7 +204,7 @@ def ANI2qHeavy(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -228,7 +228,7 @@ def ANI1ccx(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -252,7 +252,7 @@ def AminoacidDimers(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -276,7 +276,7 @@ def ANI1x(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -300,7 +300,7 @@ def ANI2x(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -324,7 +324,7 @@ def COMP6v1(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -348,7 +348,7 @@ def COMP6v2(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -372,7 +372,7 @@ def QM9C7O2H10(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -396,7 +396,7 @@ def QM9Clean(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -420,7 +420,7 @@ def QM9Dirty(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -444,7 +444,7 @@ def Iso17EquilibriumSet1(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -468,7 +468,7 @@ def Iso17EquilibriumSet2(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -492,7 +492,7 @@ def Iso17TestSet1(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -516,7 +516,7 @@ def Iso17TestSet2(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -540,7 +540,7 @@ def Iso17TrainSet1(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -564,7 +564,7 @@ def SN2(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -588,7 +588,7 @@ def ANICCScan(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -612,7 +612,7 @@ def DielsAlder(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -636,7 +636,7 @@ def ANI1e(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -660,7 +660,7 @@ def SPICEDes370K(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -684,7 +684,7 @@ def SPICEDesMonomers(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -708,7 +708,7 @@ def SPICEDipeptides(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -732,7 +732,7 @@ def SPICEIonPairs(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -756,7 +756,7 @@ def SPICEPubChem2xCompatible(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -780,7 +780,7 @@ def SPICEPubChem(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -804,7 +804,7 @@ def SPICESolvatedAminoacids(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -828,7 +828,7 @@ def SolvatedProteinFragments(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -852,7 +852,7 @@ def Train3BPAMixedT(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -876,7 +876,7 @@ def Train3BPA300K(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -900,7 +900,7 @@ def Test3BPA300K(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -924,7 +924,7 @@ def Test3BPA600K(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -948,7 +948,7 @@ def Test3BPA1200K(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -972,7 +972,7 @@ def Test3BPADihedral180(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -996,7 +996,7 @@ def Test3BPADihedral150(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -1020,7 +1020,7 @@ def Test3BPADihedral120(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
@@ -1044,7 +1044,7 @@ def ANIExCorr(
         raise ValueError(f"Wrong LoT, supported are: {set(lots) - {'default-lot'}}")
 
     return _builder(
-        archive=lots[lot]["archive"].replace(".tar.gz", ""),
+        archive=lots[lot]["archive"],
         files_and_md5s={k: _MD5S[k] for k in lots[lot]["files"]},
         dummy_properties=dummy_properties,
         download=download,
