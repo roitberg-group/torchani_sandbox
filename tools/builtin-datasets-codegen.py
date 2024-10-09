@@ -36,3 +36,4 @@ for fname in ("builtin", "__init__"):
     builtin_ds_file = datasets_dir / f"{fname}.py"
     builtin_ds_file.touch()
     builtin_ds_file.write_text(string)
+print("Regenerated necessary torchani.datasets files jinja templates")
