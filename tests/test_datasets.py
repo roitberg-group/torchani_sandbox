@@ -18,14 +18,14 @@ from torchani.transforms import (
 from torchani.constants import PERIODIC_TABLE, ATOMIC_NUMBER
 from torchani.testing import TestCase
 from torchani.datasets import (
+    concatenate,
     ANIDataset,
     ANIBatchedDataset,
     create_batched_dataset,
 )
-from torchani.datasets.utils import (
+from torchani.datasets.filters import (
     filter_by_high_force,
     filter_by_high_energy_error,
-    concatenate,
 )
 from torchani.paths import set_data_dir
 
