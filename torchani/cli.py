@@ -8,10 +8,10 @@ import typing_extensions as tpx
 from typer import Option, Typer
 import re
 
-import torchani.datasets
-from torchani.datasets import DatasetId, LotId
-from torchani.datasets.builtin import _calc_file_md5
 from torchani.paths import datasets_dir
+import torchani.datasets
+from torchani.datasets.utils import _calc_file_md5
+from torchani.datasets.builtin import DatasetId, LotId
 
 REPO_BASE_URL = "https://github.com/roitberg-group/torchani_sandbox"
 

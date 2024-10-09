@@ -30,7 +30,7 @@ from torchani.datasets.filters import (
 from torchani.paths import set_data_dir
 
 # Dynamically created attrs
-from torchani.datasets import TestData  # type: ignore
+from torchani.datasets import TestData
 
 # Optional tests for zarr
 try:
@@ -47,7 +47,7 @@ try:
 except ImportError:
     PANDAS_AVAILABLE = False
 
-dataset_path = Path(Path(__file__).parent.parent, "dataset", "ani1x", "sample.h5")
+dataset_path = Path(Path(__file__).parent.parent, "dataset", "ani-1x", "sample.h5")
 dataset_path = dataset_path.resolve()
 batch_size = 256
 

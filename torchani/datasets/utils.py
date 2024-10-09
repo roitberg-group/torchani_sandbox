@@ -290,20 +290,15 @@ of GDB-10to13 were recalculated using ORCA 5.0 instead of 4.2 so the
 integration grids may be slightly different, but the difference should not be
 significant.
 """
+from pathlib import Path
 import typing as tp
 import hashlib
-import Path
 
 import tqdm
 
 from torchani.datasets.anidataset import ANIDataset
 from torchani.utils import download_and_extract
-from torchani.paths import DATASETS
-
-
-def datasets_dir() -> Path:
-    return DATASETS
-
+from torchani.paths import datasets_dir
 
 _BASE_URL = "http://moria.chem.ufl.edu/animodel/ground_truth_data/"
 
@@ -350,8 +345,8 @@ def _builder(
         key=lambda tup: filenames_order[tup[0]],
     )
     ds = ANIDataset(
-        locations=(tup[0] for tup in filenames_and_paths),
-        names=(tup[1] for tup in filenames_and_paths),
+        locations=(tup[1] for tup in filenames_and_paths),
+        names=(tup[0] for tup in filenames_and_paths),
         verbose=verbose,
         dummy_properties=dummy_properties,
     )
