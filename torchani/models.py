@@ -209,17 +209,17 @@ class ANI(torch.nn.Module):
         neighbor_idxs: Tensor,
         shift_values: Tensor,
         total_charge: float = 0.0,
+        ensemble_average: bool = True,
+        shift_energy: bool = True,
         input_needs_screening: bool = True,
     ) -> SpeciesEnergies:
         r"""
         This entrypoint supports input from an external neighborlist
         """
+        assert total_charge == 0.0, "Model only supports neutral molecules"
         elem_idxs, coords = self._maybe_convert_species(species_coordinates)
         assert coords.shape[:-1] == elem_idxs.shape
         assert coords.shape[-1] == 3
-        if self.potentials_len == 1:
-            assert False  # TODO implement this
-
         largest_cutoff = self.potentials[0].cutoff
         neighbors = self.neighborlist.process_external_input(
             elem_idxs,
@@ -229,11 +229,18 @@ class ANI(torch.nn.Module):
             largest_cutoff,
             input_needs_screening,
         )
-        energies = torch.zeros(
-            elem_idxs.shape[0], device=elem_idxs.device, dtype=coords.dtype
-        )
+        if not ensemble_average:
+            energies = self._atomic_energy_of_pots(
+                elem_idxs, coords, largest_cutoff, neighbors
+            ).mean(dim=1)
+
         energies = self._energy_of_pots(elem_idxs, coords, largest_cutoff, neighbors)
-        return SpeciesEnergies(elem_idxs, energies + self.energy_shifter(elem_idxs))
+        if shift_energy:
+            dummy = NeighborData(torch.empty(0), torch.empty(0), torch.empty(0))
+            energies += self.energy_shifter.atomic_energies(
+                elem_idxs, dummy, None, ensemble_average=ensemble_average
+            ).sum(dim=-1)
+        return SpeciesEnergies(elem_idxs, energies)
 
     @torch.jit.export
     def atomic_energies(
