@@ -71,4 +71,21 @@ for fname in ("builtin", "__init__"):
     builtin_ds_file = datasets_dir / f"{fname}.py"
     builtin_ds_file.touch()
     builtin_ds_file.write_text(string)
-print("Regenerated necessary torchani.datasets files jinja templates")
+print("Regenerated necessary torchani.datasets files from jinja templates")
+
+fname = "builtin_datasets_docs"
+docs_dir = Path(Path(__file__).parent.parent, "docs", "src")
+
+env = jinja2.Environment(
+    loader=jinja2.FileSystemLoader(docs_dir),
+    undefined=jinja2.StrictUndefined,
+    autoescape=jinja2.select_autoescape(),
+    trim_blocks=True,
+    lstrip_blocks=True,
+)
+template = env.get_template(f"{fname}.jinja")
+string = template.render(**template_kwargs)
+builtin_ds_docs_file = docs_dir / f"{fname}.rst"
+builtin_ds_docs_file.touch()
+builtin_ds_docs_file.write_text(string)
+print("Regenerated necessary docs files from jinja templates")
