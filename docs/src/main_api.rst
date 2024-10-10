@@ -51,8 +51,8 @@ Atomic Networks and Containers
 .. autofunction:: torchani.atomics.like_2x
 .. autofunction:: torchani.atomics.like_dr
 
-Built-in Models
-===============
+Built-in ANI-style Models
+=========================
 
 .. automodule:: torchani.models
 .. autoclass:: torchani.models.ANI1x
@@ -64,6 +64,14 @@ Built-in Models
 .. autoclass:: torchani.models.ANIdr
     :members:
 .. autoclass:: torchani.models.ANImbis
+    :members:
+
+Custom ANI-style Models
+=======================
+
+.. autoclass:: torchani.models.ANI
+    :members:
+.. autoclass:: torchani.models.ANIq
     :members:
 
 Potentials
