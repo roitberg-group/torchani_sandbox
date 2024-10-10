@@ -284,7 +284,7 @@ class Assembler:
 
     def assemble(self) -> ANI:
         if not self.symbols:
-            raise RuntimeError("Symbols not set. Call 'set_symbols' before assembly")
+            raise RuntimeError("Symbols not set. Call 'set_symbols()' before assembly")
         if self._featurizer is None:
             raise RuntimeError(
                 "Featurizer not set. Call 'set_featurizer' before assembly"
@@ -641,30 +641,30 @@ def ANIdr(
     return model if model_index is None else model[model_index]
 
 
-def FlexANI(
-    lot: str,  # functional-basis
+def BasicANI(
+    lot: str,  # method-basis
     symbols: tp.Sequence[str],
-    ensemble_size: int,
-    radial_cutoff: float,
-    angular_cutoff: float,
-    radial_shifts: int,
-    angular_shifts: int,
-    angle_sections: int,
-    angular_precision: float,
-    radial_precision: float,
-    angular_zeta: float,
-    cutoff_fn: CutoffArg,
-    neighborlist: NeighborlistArg,
-    dispersion: bool,
-    repulsion: bool,
-    atomic_maker: AtomicMakerArg,
-    activation: tp.Union[str, torch.nn.Module],
-    bias: bool,
-    use_cuda_ops: bool,
-    periodic_table_index: bool,
+    ensemble_size: int = 1,
+    radial_cutoff: float = 5.2,
+    angular_cutoff: float = 3.5,
+    radial_shifts: int = 16,
+    angular_shifts: int = 8,
+    angle_sections: int = 4,
+    radial_precision: float = 19.7,
+    angular_precision: float = 12.5,
+    angular_zeta: float = 14.1,
+    cutoff_fn: CutoffArg = "smooth2",
+    neighborlist: NeighborlistArg = "full_pairwise",
+    dispersion: bool = False,
+    repulsion: bool = True,
+    atomic_maker: AtomicMakerArg = "ani2x",
+    activation: tp.Union[str, torch.nn.Module] = "gelu",
+    bias: bool = False,
+    use_cuda_ops: bool = False,
+    periodic_table_index: bool = True,
 ) -> ANI:
     r"""
-    Flexible builder to create ANI-style models
+    Flexible builder to create ANI-style models. Defaults are similar to ANI-2x.
     """
     asm = Assembler(
         ensemble_size=ensemble_size, periodic_table_index=periodic_table_index
@@ -711,112 +711,13 @@ def FlexANI(
     return asm.assemble()
 
 
-def FlexANI1(
-    lot: str,  # functional-basis
-    symbols: tp.Sequence[str],
-    ensemble_size: int = 1,
-    radial_cutoff: float = 5.2,
-    angular_cutoff: float = 3.5,
-    radial_shifts: int = 16,
-    angular_shifts: int = 4,
-    angle_sections: int = 8,
-    radial_precision: float = 16.0,
-    angular_precision: float = 8.0,
-    angular_zeta: float = 32.0,
-    cutoff_fn: CutoffArg = "smooth2",
-    neighborlist: NeighborlistArg = "full_pairwise",
-    dispersion: bool = False,
-    repulsion: bool = True,
-    atomic_maker: AtomicMakerArg = "ani1x",
-    activation: tp.Union[str, torch.nn.Module] = "gelu",
-    bias: bool = False,
-    use_cuda_ops: bool = False,
-    periodic_table_index: bool = True,
-) -> ANI:
-    r"""
-    Builder that uses defaults similar to ANI1x
-    """
-    return FlexANI(
-        lot=lot,
-        symbols=symbols,
-        ensemble_size=ensemble_size,
-        radial_cutoff=radial_cutoff,
-        angular_cutoff=angular_cutoff,
-        radial_shifts=radial_shifts,
-        angular_shifts=angular_shifts,
-        angle_sections=angle_sections,
-        radial_precision=radial_precision,
-        angular_precision=angular_precision,
-        angular_zeta=angular_zeta,
-        cutoff_fn=cutoff_fn,
-        neighborlist=neighborlist,
-        dispersion=dispersion,
-        repulsion=repulsion,
-        atomic_maker=atomic_maker,
-        activation=activation,
-        bias=bias,
-        use_cuda_ops=use_cuda_ops,
-        periodic_table_index=periodic_table_index,
-    )
-
-
-def FlexANI2(
-    lot: str,  # functional-basis
-    symbols: tp.Sequence[str],
-    ensemble_size: int = 1,
-    radial_cutoff: float = 5.2,
-    angular_cutoff: float = 3.5,
-    radial_shifts: int = 16,
-    angular_shifts: int = 8,
-    angle_sections: int = 4,
-    radial_precision: float = 19.7,
-    angular_precision: float = 12.5,
-    angular_zeta: float = 14.1,
-    cutoff_fn: CutoffArg = "smooth2",
-    neighborlist: NeighborlistArg = "full_pairwise",
-    dispersion: bool = False,
-    repulsion: bool = True,
-    atomic_maker: AtomicMakerArg = "ani2x",
-    activation: tp.Union[str, torch.nn.Module] = "gelu",
-    bias: bool = False,
-    use_cuda_ops: bool = False,
-    periodic_table_index: bool = True,
-) -> ANI:
-    r"""
-    Builder that uses defaults similar to ANI-2x
-    """
-    return FlexANI(
-        lot=lot,
-        symbols=symbols,
-        ensemble_size=ensemble_size,
-        radial_cutoff=radial_cutoff,
-        angular_cutoff=angular_cutoff,
-        radial_shifts=radial_shifts,
-        angular_shifts=angular_shifts,
-        angle_sections=angle_sections,
-        radial_precision=radial_precision,
-        angular_precision=angular_precision,
-        angular_zeta=angular_zeta,
-        cutoff_fn=cutoff_fn,
-        neighborlist=neighborlist,
-        dispersion=dispersion,
-        repulsion=repulsion,
-        atomic_maker=atomic_maker,
-        activation=activation,
-        bias=bias,
-        use_cuda_ops=use_cuda_ops,
-        periodic_table_index=periodic_table_index,
-    )
-
-
 def fetch_state_dict(
     state_dict_file: str,
     local: bool = False,
     private: bool = False,
 ) -> tp.OrderedDict[str, Tensor]:
-    # If we want a pretrained model then we load the state dict from a
-    # remote url or a local path
-    # NOTE: torch.hub caches remote state_dicts after they have been downloaded
+    # If pretrained=True then load state dict from a remote url or a local path
+    # NOTE: torch.hub caches remote state_dicts after first download
     if local:
         dict_ = torch.load(state_dict_file, map_location=torch.device("cpu"))
         return OrderedDict(dict_)
@@ -832,6 +733,4 @@ def fetch_state_dict(
         model_dir=str(state_dicts_dir()),
         map_location=torch.device("cpu"),
     )
-    # if "energy_shifter.atomic_numbers" not in dict_:
-    # dict_["energy_shifter.atomic_numbers"] = deepcopy(dict_["atomic_numbers"])
     return OrderedDict(dict_)
