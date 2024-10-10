@@ -21,8 +21,7 @@ cutoffs, an angular and a radial ona (the radial cutoff must be larger than
 the angular cutoff, and it is recommended that the angular cutoff is kept
 small, 3.5 Ang or less).
 
-These pieces are assembled into a subclass of ANI (or PairPotentialsModel if it
-has PairPotentials).
+These pieces are assembled into a subclass of ANI
 """
 import functools
 import math
@@ -34,11 +33,7 @@ import torch
 from torch import Tensor
 
 from torchani import atomics
-from torchani.models import (
-    ANI,
-    PairPotentialsModel,
-    PairPotentialsChargesModel,
-)
+from torchani.models import ANI, ANIq
 from torchani.neighbors import parse_neighborlist, NeighborlistArg
 from torchani.cutoffs import parse_cutoff_fn, Cutoff, CutoffArg
 from torchani.potentials import (
@@ -230,12 +225,8 @@ class Assembler:
         fn: AtomicMaker,
         normalizer: tp.Optional[ChargeNormalizer] = None,
     ) -> None:
-        if self._model_type in (ANI, PairPotentialsModel):
-            self._model_type = PairPotentialsChargesModel
-        elif not issubclass(self._model_type, PairPotentialsChargesModel):
-            raise ValueError(
-                "The model class must support charges to add a charge maker"
-            )
+        if not issubclass(self._model_type, ANIq):
+            raise ValueError("Model must be a subclass of ANIq to use charge networks")
         self._charge_container_type = container_type
         self._charge_normalizer = normalizer
         self._fn_for_charges = fn
@@ -275,14 +266,6 @@ class Assembler:
         cutoff_fn: CutoffArg = "global",
         extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
-        if not issubclass(self._model_type, PairPotentialsModel):
-            # Override the model if it is exactly equal to this class
-            if self._model_type == ANI:
-                self._model_type = PairPotentialsModel
-        elif not issubclass(self._model_type, PairPotentialsModel):
-            raise ValueError(
-                "The model class must support pair potentials to add potentials"
-            )
         self._pairwise_potentials.append(
             PairPotentialWrapper(
                 pair_type,
@@ -537,7 +520,7 @@ def ANImbis(
     asm = Assembler(
         ensemble_size=8,
         periodic_table_index=periodic_table_index,
-        model_type=PairPotentialsChargesModel,
+        model_type=ANIq,
     )
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
