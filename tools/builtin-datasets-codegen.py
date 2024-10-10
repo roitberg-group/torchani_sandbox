@@ -1,6 +1,8 @@
 r"""
-The torchani.datasets.builtin module is automatically generated using this code,
-it should be run before a PR, every time a new builtin dataset is added
+The torchani.datasets.builtin module is automatically generated using this
+code, it should be run before every push (pre-commit can be used with the
+provided configuration to ensure this), ad every time a new builtin dataset is
+added, or any of the jinja files is modified.
 """
 
 import textwrap
@@ -73,7 +75,7 @@ for fname in ("builtin", "__init__"):
     builtin_ds_file.write_text(string)
 print("Regenerated necessary torchani.datasets files from jinja templates")
 
-fname = "builtin_datasets_docs"
+fname = "datasets_api"
 docs_dir = Path(Path(__file__).parent.parent, "docs", "src")
 
 env = jinja2.Environment(

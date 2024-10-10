@@ -1,11 +1,41 @@
-Usage Notes
-===========
+Datasets
+========
 
-.. automodule:: torchani.datasets.builtin
+.. automodule:: torchani.datasets
+.. autoclass:: torchani.datasets.ANIDataset
+    :members:
+.. autoclass:: torchani.datasets.ANIBatchedDataset
+    :members:
+.. autoclass:: torchani.datasets.ANIBatchedInMemoryDataset
+    :members:
+.. autoclass:: torchani.datasets.Batcher
+    :members:
+.. autofunction:: torchani.datasets.create_batched_dataset
+.. autofunction:: torchani.datasets.batch_all_in_ram
 
-Provided Datasets
+Transforms
+==========
+
+.. automodule:: torchani.transforms
+.. autoclass:: torchani.transforms.Transform
+    :members:
+.. autoclass:: torchani.transforms.SubtractEnergyAndForce
+    :members:
+.. autoclass:: torchani.transforms.SubtractRepulsionXTB
+    :members:
+.. autoclass:: torchani.transforms.SubtractTwoBodyDispersionD3
+    :members:
+.. autoclass:: torchani.transforms.SubtractSAE
+    :members:
+.. autoclass:: torchani.transforms.AtomicNumbersToIndices
+    :members:
+.. autoclass:: torchani.transforms.Compose
+    :members:
+
+Built-in Datasets
 =================
 
+.. automodule:: torchani.datasets.builtin
 .. autofunction:: torchani.datasets.builtin.TestData
 .. autofunction:: torchani.datasets.builtin.TestDataIons
 .. autofunction:: torchani.datasets.builtin.TestDataForcesDipoles

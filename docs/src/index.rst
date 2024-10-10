@@ -21,15 +21,15 @@ Welcome to TorchANI's documentation!
 
 .. toctree::
     :maxdepth: 2
-    :caption: API
+    :caption: Main API
 
-    api
+    main_api
 
 .. toctree::
     :maxdepth: 2
-    :caption: API
+    :caption: Datasets API
 
-    builtin_datasets_docs
+    datasets_api
 
 Indices and tables
 ==================
