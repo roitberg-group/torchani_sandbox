@@ -4,10 +4,19 @@
 r"""
 TorchANI Built-in Datasets
 
-Datasets provided by the TorchANI library, in a format ready to batch and train on.
+Datasets provided by the TorchANI library, in a format ready to batch and train
+on. All datasets importable from this module are also directly importable from
+`torchani.datasets`. For all datasets, the corresponding docstrings provide
+references and associated DOI when possible that point to the original
+publications. Please cite the original publications if you use any of these
+datasets.
 
-Note that the conformations present in datasets with different LoT may be
-different.
+Note that the conformations present in datasets with different LoT *may be
+different*. In many cases the number of conformations is similar, and many of
+the conformations match, but due to filters applied to the data, and to
+different convergence characteristics of the different LoT used, some
+calculations may not properly converge, or may be too costly for some LoT and
+thus are not included.
 """
 import typing as tp
 import json
