@@ -15,6 +15,7 @@ Welcome to TorchANI's documentation!
 .. toctree::
     :maxdepth: 2
     :caption: Examples
+    :glob:
 
     examples_autogen/*
 
