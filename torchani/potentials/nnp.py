@@ -82,7 +82,9 @@ class SeparateChargesNNPotential(NNPotential):
     ) -> EnergiesAtomicCharges:
         aevs = self.aev_computer._compute_aev(element_idxs, neighbors)
         energies = self.neural_networks((element_idxs, aevs))[1]
-        raw_atomic_charges = self.charge_networks((element_idxs, aevs))[1]
+        raw_atomic_charges = torch.sum(
+            self.charge_networks.members_atomic_energies((element_idxs, aevs)), dim=0
+        )  # shape (M, C, A)
         atomic_charges = self.charge_normalizer(
             element_idxs, raw_atomic_charges, total_charge
         )
