@@ -264,7 +264,7 @@ def ANImbis(
         model.energy_shifter.load_state_dict(shifter_state_dict)
         model.aev_computer.load_state_dict(aev_state_dict)
         model.neural_networks.load_state_dict(energy_nn_state_dict)
-        model.charge_networks.load_state_dict(charge_nn_state_dict)
+        model.potentials[0].charge_networks.load_state_dict(charge_nn_state_dict)
     return model if model_index is None else model[model_index]
 
 

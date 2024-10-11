@@ -629,24 +629,24 @@ class ANIq(ANI):
 
         if charge_networks is None:
             warnings.warn("Merged charges potential is currently untested")
-            charges_nnp = MergedChargesNNPotential(
+            nnp = MergedChargesNNPotential(
                 self.aev_computer,
                 self.neural_networks,
-                self.charge_normalizer,
+                charge_normalizer,
             )
         else:
-            charges_nnp = SeparateChargesNNPotential(
+            nnp = SeparateChargesNNPotential(
                 self.aev_computer,
                 self.neural_networks,
-                self.charge_networks,
-                self.charge_normalizer,
+                charge_networks,
+                charge_normalizer,
             )
 
         # Check which index has the NNPotential and replace with ChargesNNPotential
         potentials = [pot for pot in self.potentials]
         for j, pot in enumerate(potentials):
             if isinstance(pot, NNPotential):
-                potentials[j] = charges_nnp
+                potentials[j] = nnp
                 break
         # Re-register the ModuleList
         self.potentials = torch.nn.ModuleList(potentials)
