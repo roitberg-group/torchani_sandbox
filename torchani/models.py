@@ -211,15 +211,11 @@ def ANImbis(
     neighborlist: NeighborlistArg = "full_pairwise",
     use_cuda_ops: bool = False,
     periodic_table_index: bool = True,
-    alt_charges: bool = False,
 ) -> ANI:
     r"""
     ANI-2x model with MBIS experimental charges. Note: will be removed in the
     future.
     """
-    # "alt_charges=False" uses a model that was trained only to charges.
-    # "alt_charges=True" uses a model that was trained to energy and charges
-    # (from the ML/MM paper) but discards the energies
     asm = Assembler(
         ensemble_size=8,
         periodic_table_index=periodic_table_index,
@@ -237,20 +233,10 @@ def ANImbis(
         },
     )
     asm.set_atomic_networks(ANIModel, atomics.like_2x)
-    if alt_charges:
-        container = ANIModel
-        charge_maker = partial(atomics.like_2x, bias=False, activation="gelu")
-        charge_state_dict_file = "alt_charge_nn_state_dict.pt"
-    else:
-        container = _ANIModelDiscardFirstScalar
-        charge_maker = partial(
-            atomics.like_2x, out_dim=2, bias=False, activation="gelu"
-        )
-        charge_state_dict_file = "charge_nn_state_dict.pt"
 
     asm.set_charge_networks(
-        container,
-        charge_maker,
+        _ANIModelDiscardFirstScalar,
+        partial(atomics.like_2x, out_dim=2, bias=False, activation="gelu"),
         normalizer=ChargeNormalizer.from_electronegativity_and_hardness(
             asm.symbols, scale_weights_by_charges_squared=True
         ),
@@ -274,7 +260,7 @@ def ANImbis(
         shifter_state_dict = {
             "self_energies": ani2x_state_dict["energy_shifter.self_energies"]
         }
-        charge_nn_state_dict = fetch_state_dict(charge_state_dict_file, private=True)
+        charge_nn_state_dict = fetch_state_dict("charge_nn_state_dict.pt", private=True)
         model.energy_shifter.load_state_dict(shifter_state_dict)
         model.aev_computer.load_state_dict(aev_state_dict)
         model.neural_networks.load_state_dict(energy_nn_state_dict)

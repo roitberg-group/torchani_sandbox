@@ -109,11 +109,9 @@ class TestBuiltinModels(ANITest):
 
     def testANImbis(self):
         self._test_ensemble(ANImbis().to(self.device))
-        self._test_ensemble(ANImbis(alt_charges=True).to(self.device))
 
     def testANImbis_charges(self):
         self._test_ensemble_charges(ANImbis().to(self.device))
-        self._test_ensemble_charges(ANImbis(alt_charges=True).to(self.device))
 
 
 if __name__ == "__main__":
