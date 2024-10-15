@@ -38,7 +38,7 @@ def TestData(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=TestData,
+        ds_name="TestData",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -60,7 +60,7 @@ def TestDataIons(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=TestDataIons,
+        ds_name="TestDataIons",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -82,7 +82,7 @@ def TestDataForcesDipoles(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=TestDataForcesDipoles,
+        ds_name="TestDataForcesDipoles",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -106,7 +106,7 @@ def IonsVeryHeavy(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=IonsVeryHeavy,
+        ds_name="IonsVeryHeavy",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -130,7 +130,7 @@ def IonsHeavy(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=IonsHeavy,
+        ds_name="IonsHeavy",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -153,7 +153,7 @@ def IonsLight(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=IonsLight,
+        ds_name="IonsLight",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -177,7 +177,7 @@ def ANI1q(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=ANI1q,
+        ds_name="ANI1q",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -201,7 +201,7 @@ def ANI2qHeavy(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=ANI2qHeavy,
+        ds_name="ANI2qHeavy",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -226,7 +226,7 @@ def ANI1ccx(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=ANI1ccx,
+        ds_name="ANI1ccx",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -248,7 +248,7 @@ def AminoacidDimers(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=AminoacidDimers,
+        ds_name="AminoacidDimers",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -270,7 +270,7 @@ def ANI1x(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=ANI1x,
+        ds_name="ANI1x",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -296,7 +296,7 @@ def ANI2x(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=ANI2x,
+        ds_name="ANI2x",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -325,7 +325,7 @@ def COMP6v1(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=COMP6v1,
+        ds_name="COMP6v1",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -351,7 +351,7 @@ def COMP6v2(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=COMP6v2,
+        ds_name="COMP6v2",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -377,7 +377,7 @@ def QM9C7O2H10(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=QM9C7O2H10,
+        ds_name="QM9C7O2H10",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -405,7 +405,7 @@ def QM9(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=QM9,
+        ds_name="QM9",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -433,7 +433,7 @@ def Iso17EquilibriumSet1(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Iso17EquilibriumSet1,
+        ds_name="Iso17EquilibriumSet1",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -461,7 +461,7 @@ def Iso17EquilibriumSet2(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Iso17EquilibriumSet2,
+        ds_name="Iso17EquilibriumSet2",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -489,7 +489,7 @@ def Iso17TestSet1(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Iso17TestSet1,
+        ds_name="Iso17TestSet1",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -517,7 +517,7 @@ def Iso17TestSet2(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Iso17TestSet2,
+        ds_name="Iso17TestSet2",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -545,7 +545,7 @@ def Iso17TrainSet1(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Iso17TrainSet1,
+        ds_name="Iso17TrainSet1",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -574,7 +574,7 @@ def SN2(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=SN2,
+        ds_name="SN2",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -597,7 +597,7 @@ def ANICCScan(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=ANICCScan,
+        ds_name="ANICCScan",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -622,7 +622,7 @@ def DielsAlder(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=DielsAlder,
+        ds_name="DielsAlder",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -651,7 +651,7 @@ def ANI1e(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=ANI1e,
+        ds_name="ANI1e",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -681,7 +681,7 @@ def SPICEDes370K(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=SPICEDes370K,
+        ds_name="SPICEDes370K",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -711,7 +711,7 @@ def SPICEDesMonomers(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=SPICEDesMonomers,
+        ds_name="SPICEDesMonomers",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -741,7 +741,7 @@ def SPICEDipeptides(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=SPICEDipeptides,
+        ds_name="SPICEDipeptides",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -771,7 +771,7 @@ def SPICEIonPairs(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=SPICEIonPairs,
+        ds_name="SPICEIonPairs",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -801,7 +801,7 @@ def SPICEPubChem2xCompatible(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=SPICEPubChem2xCompatible,
+        ds_name="SPICEPubChem2xCompatible",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -831,7 +831,7 @@ def SPICEPubChem(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=SPICEPubChem,
+        ds_name="SPICEPubChem",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -861,7 +861,7 @@ def SPICESolvatedAminoacids(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=SPICESolvatedAminoacids,
+        ds_name="SPICESolvatedAminoacids",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -890,7 +890,7 @@ def SolvatedProteinFragments(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=SolvatedProteinFragments,
+        ds_name="SolvatedProteinFragments",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -914,7 +914,7 @@ def Train3BPAMixedT(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Train3BPAMixedT,
+        ds_name="Train3BPAMixedT",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -938,7 +938,7 @@ def Train3BPA300K(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Train3BPA300K,
+        ds_name="Train3BPA300K",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -962,7 +962,7 @@ def Test3BPA300K(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Test3BPA300K,
+        ds_name="Test3BPA300K",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -986,7 +986,7 @@ def Test3BPA600K(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Test3BPA600K,
+        ds_name="Test3BPA600K",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -1010,7 +1010,7 @@ def Test3BPA1200K(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Test3BPA1200K,
+        ds_name="Test3BPA1200K",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -1034,7 +1034,7 @@ def Test3BPADihedral180(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Test3BPADihedral180,
+        ds_name="Test3BPADihedral180",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -1058,7 +1058,7 @@ def Test3BPADihedral150(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Test3BPADihedral150,
+        ds_name="Test3BPADihedral150",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -1082,7 +1082,7 @@ def Test3BPADihedral120(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=Test3BPADihedral120,
+        ds_name="Test3BPADihedral120",
         lot=lot,
         verbose=verbose,
         download=download,
@@ -1105,7 +1105,7 @@ def ANIExCorr(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name=ANIExCorr,
+        ds_name="ANIExCorr",
         lot=lot,
         verbose=verbose,
         download=download,
