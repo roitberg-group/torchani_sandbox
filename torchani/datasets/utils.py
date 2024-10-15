@@ -81,7 +81,7 @@ def _fetch_and_create_builtin_dataset(
         Path(k).stem: j for j, k in enumerate(files_and_md5s.keys())
     }
     filenames_and_paths = sorted(
-        [(p.stem, p) for p in sorted(root.glob(f"*{suffix}"))],
+        [(p.stem, p) for p in sorted(dest_dir.glob(f"*{suffix}"))],
         key=lambda tup: filenames_order[tup[0]],
     )
     ds = ANIDataset(
