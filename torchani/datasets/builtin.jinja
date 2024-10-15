@@ -40,7 +40,7 @@ def {{ ds.name }}(
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
-        ds_name={{ ds.name }},
+        ds_name="{{ ds.name }}",
         lot=lot,
         verbose=verbose,
         download=download,

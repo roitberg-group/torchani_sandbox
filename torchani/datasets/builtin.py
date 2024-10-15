@@ -20,7 +20,6 @@ thus are not included.
 """
 import typing as tp
 from enum import Enum
-from pathlib import Path
 
 from torchani.paths import datasets_dir
 from torchani.datasets.utils import _fetch_and_create_builtin_dataset
