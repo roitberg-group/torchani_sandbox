@@ -80,6 +80,7 @@ class ANI(torch.nn.Module):
 
     atomic_numbers: Tensor
     periodic_table_index: Final[bool]
+    _output_labels: tp.List[str]
 
     def __init__(
         self,
@@ -89,6 +90,7 @@ class ANI(torch.nn.Module):
         energy_shifter: EnergyAdder,
         pairwise_potentials: tp.Iterable[PairPotential] = (),
         periodic_table_index: bool = True,
+        output_labels: tp.Sequence[str] = ("energies",),
     ):
         super().__init__()
 
@@ -96,6 +98,7 @@ class ANI(torch.nn.Module):
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
         self.neighborlist = self.aev_computer.neighborlist
+        self._output_labels = list(output_labels)
 
         device = energy_shifter.self_energies.device
         self.energy_shifter = energy_shifter
@@ -119,6 +122,21 @@ class ANI(torch.nn.Module):
         assert len(self.energy_shifter.self_energies) == len(self.atomic_numbers)
         assert self.aev_computer.num_species == len(self.atomic_numbers)
         assert self.neural_networks.num_species == len(self.atomic_numbers)
+
+    @torch.jit.export
+    def sp(
+        self,
+        species_coordinates: tp.Tuple[Tensor, Tensor],
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None,
+        total_charge: float = 0.0,
+        ensemble_average: bool = True,
+        shift_energy: bool = True,
+    ) -> tp.Dict[str, Tensor]:
+        _, energies = self(
+            species_coordinates, cell, pbc, total_charge, ensemble_average, shift_energy
+        )
+        return {self._output_labels[0]: energies}
 
     def forward(
         self,
@@ -594,7 +612,7 @@ class ANI(torch.nn.Module):
 
 class ANIq(ANI):
     r"""
-    ANI-style model that can calculate atomic charges
+    ANI-style model that can calculate both atomic charges and energies
 
     Charge networks share the input features with the energy networks, and may either
     be fully independent of them, or share weights to some extent.
@@ -613,6 +631,7 @@ class ANIq(ANI):
         periodic_table_index: bool = True,
         charge_networks: tp.Optional[AtomicContainer] = None,
         charge_normalizer: tp.Optional[ChargeNormalizer] = None,
+        output_labels: tp.Sequence[str] = ("eneries", "atomic_charges"),
     ):
         super().__init__(
             symbols=symbols,
@@ -621,10 +640,11 @@ class ANIq(ANI):
             energy_shifter=energy_shifter,
             pairwise_potentials=pairwise_potentials,
             periodic_table_index=periodic_table_index,
+            output_labels=output_labels,
         )
         nnp: NNPotential
         if charge_networks is None:
-            warnings.warn("Merged charges potential is experimental untested")
+            warnings.warn("Merged charges potential is experimental")
             nnp = MergedChargesNNPotential(
                 self.aev_computer,
                 self.neural_networks,
@@ -646,6 +666,24 @@ class ANIq(ANI):
                 break
         # Re-register the ModuleList
         self.potentials = torch.nn.ModuleList(potentials)
+
+    @torch.jit.export
+    def sp(
+        self,
+        species_coordinates: tp.Tuple[Tensor, Tensor],
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None,
+        total_charge: float = 0.0,
+        ensemble_average: bool = True,
+        shift_energy: bool = True,
+    ) -> tp.Dict[str, Tensor]:
+        _, energies, atomic_charges = self.energies_and_atomic_charges(
+            species_coordinates, cell, pbc, total_charge
+        )
+        return {
+            self._output_labels[0]: energies,
+            self._output_labels[1]: atomic_charges,
+        }
 
     # TODO: Remove code duplication
     @torch.jit.export
