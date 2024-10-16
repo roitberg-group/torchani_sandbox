@@ -340,6 +340,7 @@ class ANI(torch.nn.Module):
                 p for p in self.potentials if not isinstance(p, NNPotential)
             ],
             periodic_table_index=self.periodic_table_index,
+            output_labels=self._output_labels,
         )
 
     def _atomic_energy_of_pots(
@@ -796,6 +797,7 @@ class ANIq(ANI):
                 p for p in self.potentials if not isinstance(p, NNPotential)
             ],
             periodic_table_index=self.periodic_table_index,
+            output_labels=self._output_labels,
         )
 
 
