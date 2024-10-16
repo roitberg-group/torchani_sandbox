@@ -631,7 +631,7 @@ class ANIq(ANI):
         periodic_table_index: bool = True,
         charge_networks: tp.Optional[AtomicContainer] = None,
         charge_normalizer: tp.Optional[ChargeNormalizer] = None,
-        output_labels: tp.Sequence[str] = ("eneries", "atomic_charges"),
+        output_labels: tp.Sequence[str] = ("energies", "atomic_charges"),
     ):
         super().__init__(
             symbols=symbols,
@@ -844,12 +844,14 @@ class Assembler:
         featurizer: tp.Optional[FeaturizerWrapper] = None,
         neighborlist: NeighborlistArg = "full_pairwise",
         periodic_table_index: bool = True,
+        output_labels: tp.Sequence[str] = ("energies",),
     ) -> None:
         self._global_cutoff_fn: tp.Optional[Cutoff] = None
 
         self._neighborlist = parse_neighborlist(neighborlist)
         self._featurizer = featurizer
         self._pairwise_potentials: tp.List[PairPotentialWrapper] = []
+        self._output_labels = output_labels
 
         # This part of the assembler organizes the self-energies, the
         # symbols and the atomic networks
@@ -1114,6 +1116,7 @@ class Assembler:
             energy_shifter=shifter,
             neural_networks=neural_networks,
             periodic_table_index=self.periodic_table_index,
+            output_labels=self._output_labels,
             **kwargs,
         )
 
@@ -1139,12 +1142,15 @@ def build_basic_ani(
     bias: bool = False,
     use_cuda_ops: bool = False,
     periodic_table_index: bool = True,
+    output_label: str = "energies",
 ) -> ANI:
     r"""
     Flexible builder to create ANI-style models. Defaults are similar to ANI-2x.
     """
     asm = Assembler(
-        ensemble_size=ensemble_size, periodic_table_index=periodic_table_index
+        ensemble_size=ensemble_size,
+        periodic_table_index=periodic_table_index,
+        output_labels=(output_label,),
     )
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
@@ -1211,11 +1217,14 @@ def build_basic_aniq(
     merge_charge_networks: bool = False,
     scale_charge_normalizer_weights: bool = True,
     periodic_table_index: bool = True,
+    output_label: str = "energies",
+    second_output_label: str = "atomic_charges",
 ) -> ANI:
     asm = Assembler(
         ensemble_size=ensemble_size,
         periodic_table_index=periodic_table_index,
         model_type=ANIq,
+        output_labels=(output_label, second_output_label)
     )
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
