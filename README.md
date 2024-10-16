@@ -124,11 +124,10 @@ the CUDA and C++ extensions refer to [TorchANI CSRC](torchani/csrc).
 
 #### From source in macOS
 
-Note that there is no CUDA support on `macOS` and  TorchANI is **untested**
-with Apple Metal Performance Shaders (MPS). The `dev_environment.yaml` file
-needs slight modifications if installing on `macOS`. Please consult the
-corresponding file and perform the necessary modifications before creating the
-`conda` environment.
+Note that there is no CUDA support on `macOS` and TorchANI is **untested** with
+Apple Metal Performance Shaders (MPS). The `dev_environment.yaml` file needs
+slight modifications if installing on `macOS`. Please consult the corresponding
+file and modify it before creating the `conda` environment.
 
 ## GPU support
 
