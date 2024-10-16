@@ -48,8 +48,7 @@ dependencies:
   - expecttest  # indirect dependency of torch.testing
   # Extra data backends for tests:
   - pandas  # Parquet backend
-  - pyarrow  # Parquet backend, comment this line if installing on macOS
-  #- fastparquet  # Parquet backend, uncomment this line if installing on macOS
+  - pyarrow  # Parquet backend
   - zarr  # Zarr backend
 
   ## Running scripts in torchani/tools ##
