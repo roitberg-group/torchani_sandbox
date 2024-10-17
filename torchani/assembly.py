@@ -1151,7 +1151,7 @@ def simple_ani(
     r"""
     Flexible builder to create ANI-style models. Defaults are similar to ANI-2x.
 
-    To reproduce the ANI-1x AEV exactly use the following defaults:
+    To reproduce the ANI-2x AEV exactly use the following defaults:
         - cutoff_fn='cosine'
         - radial_start=0.8
         - angular_start=0.8
@@ -1231,6 +1231,16 @@ def simple_aniq(
     output_label: str = "energies",
     second_output_label: str = "atomic_charges",
 ) -> ANI:
+    r"""
+    Flexible builder to create ANI-style models with separated or merged charge
+    networks. Defaults are similar to ANI-2x.
+
+    To reproduce the ANI-2x AEV exactly use the following defaults:
+        - cutoff_fn='cosine'
+        - radial_start=0.8
+        - angular_start=0.8
+        - radial_cutoff=5.1
+    """
     asm = Assembler(
         ensemble_size=ensemble_size,
         periodic_table_index=True,
