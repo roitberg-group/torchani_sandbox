@@ -57,10 +57,6 @@ class Calculator(ase.calculators.calculator.Calculator):
         stress_numerical: bool = False,
     ):
         super().__init__()
-        # Since ANI is used in inference mode, no gradients on model parameters
-        # are required here. This is the default for models in torchani.models,
-        # But we force it in case client code passes a different model
-        model.requires_grad_(False)
         self.model = model
         self.overwrite = overwrite
         self.stress_partial_fdotr = stress_partial_fdotr
