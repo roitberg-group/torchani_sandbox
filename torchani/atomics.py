@@ -16,11 +16,21 @@ class AtomicContainer(torch.nn.Module):
 
     num_networks: int
     num_species: int
+    active_members: tp.List[int]
 
     def __init__(self, *args: tp.Any, **kwargs: tp.Any) -> None:
         super().__init__()
         self.num_networks = 0
         self.num_species = 0
+        self.active_members = []
+
+    @torch.jit.export
+    def set_active_members(self, idxs: tp.List[int]) -> None:
+        for idx in idxs:
+            if not (0 <= idx < self.num_networks):
+                raise ValueError(f"Incorrect member {idx} requested")
+        self.active_members = idxs
+        self.num_networks = len(self.active_members)
 
     def forward(
         self,
