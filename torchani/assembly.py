@@ -131,10 +131,13 @@ class ANI(torch.nn.Module):
         pbc: tp.Optional[Tensor] = None,
         total_charge: float = 0.0,
         ensemble_average: bool = True,
-        shift_energy: bool = True,
     ) -> tp.Dict[str, Tensor]:
         _, energies = self(
-            species_coordinates, cell, pbc, total_charge, ensemble_average, shift_energy
+            species_coordinates,
+            cell,
+            pbc,
+            total_charge,
+            ensemble_average,
         )
         return {self._output_labels[0]: energies}
 
@@ -145,7 +148,6 @@ class ANI(torch.nn.Module):
         pbc: tp.Optional[Tensor] = None,
         total_charge: float = 0.0,
         ensemble_average: bool = True,
-        shift_energy: bool = True,
     ) -> SpeciesEnergies:
         """Calculate energies for a minibatch of molecules
 
@@ -159,8 +161,6 @@ class ANI(torch.nn.Module):
             ensemble_average (bool): If True (default), return the average
                 over all models in the ensemble (output shape ``(C, A)``), otherwise
                 return one atomic energy per model (output shape ``(M, C, A)``).
-            shift_energy (bool): Add the a constant energy shift to the returned
-                energies. ``True`` by default.
 
         Returns:
             species_energies: tuple of tensors, species and energies for the
@@ -176,7 +176,6 @@ class ANI(torch.nn.Module):
                 pbc=pbc,
                 total_charge=total_charge,
                 ensemble_average=False,
-                shift_energy=shift_energy,
             )
             return SpeciesEnergies(elem_idxs, energies.sum(-1))
 
@@ -196,9 +195,7 @@ class ANI(torch.nn.Module):
         neighbors = self.neighborlist(elem_idxs, coords, largest_cutoff, cell, pbc)
         energies = self._energy_of_pots(elem_idxs, coords, largest_cutoff, neighbors)
 
-        if shift_energy:
-            energies += self.energy_shifter(elem_idxs)
-        return SpeciesEnergies(elem_idxs, energies)
+        return SpeciesEnergies(elem_idxs, energies + self.energy_shifter(elem_idxs))
 
     @torch.jit.export
     def from_neighborlist(
@@ -208,7 +205,6 @@ class ANI(torch.nn.Module):
         shift_values: Tensor,
         total_charge: float = 0.0,
         ensemble_average: bool = True,
-        shift_energy: bool = True,
         input_needs_screening: bool = True,
     ) -> SpeciesEnergies:
         r"""
@@ -233,11 +229,10 @@ class ANI(torch.nn.Module):
             ).mean(dim=1)
 
         energies = self._energy_of_pots(elem_idxs, coords, largest_cutoff, neighbors)
-        if shift_energy:
-            dummy = NeighborData(torch.empty(0), torch.empty(0), torch.empty(0))
-            energies += self.energy_shifter.atomic_energies(
-                elem_idxs, dummy, None, ensemble_average=ensemble_average
-            ).sum(dim=-1)
+        dummy = NeighborData(torch.empty(0), torch.empty(0), torch.empty(0))
+        energies += self.energy_shifter.atomic_energies(
+            elem_idxs, dummy, None, ensemble_average=ensemble_average
+        ).sum(dim=-1)
         return SpeciesEnergies(elem_idxs, energies)
 
     @torch.jit.export
@@ -248,7 +243,6 @@ class ANI(torch.nn.Module):
         pbc: tp.Optional[Tensor] = None,
         total_charge: float = 0.0,
         ensemble_average: bool = True,
-        shift_energy: bool = True,
     ) -> SpeciesEnergies:
         r"""Calculate predicted atomic energies of all atoms in a molecule
 
@@ -271,10 +265,9 @@ class ANI(torch.nn.Module):
                 elem_idxs, coords, largest_cutoff, neighbors
             )
 
-        if shift_energy:
-            atomic_energies += self.energy_shifter.atomic_energies(
-                elem_idxs, ensemble_average=False
-            )
+        atomic_energies += self.energy_shifter.atomic_energies(
+            elem_idxs, ensemble_average=False
+        )
 
         if ensemble_average:
             atomic_energies = atomic_energies.mean(dim=0)
@@ -442,7 +435,6 @@ class ANI(torch.nn.Module):
             pbc,
             total_charge=0.0,
             ensemble_average=False,
-            shift_energy=True,
         ).energies
         _forces = []
         for energy in members_energies:
@@ -489,7 +481,6 @@ class ANI(torch.nn.Module):
             pbc,
             total_charge=0.0,
             ensemble_average=False,
-            shift_energy=True,
         )
 
         if self.neural_networks.num_networks == 1:
@@ -513,12 +504,9 @@ class ANI(torch.nn.Module):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
         ensemble_average: bool = False,
-        shift_energy: bool = False,
         unbiased: bool = True,
     ) -> AtomicStdev:
         r"""Returns standard deviation of atomic energies across an ensemble
-
-        shift_energy returns the shifted atomic energies according to the model used
 
         If the model has only 1 network, a value of 0.0 is output for the stdev
         """
@@ -526,11 +514,10 @@ class ANI(torch.nn.Module):
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         atomic_energies = self.neural_networks.members_atomic_energies(species_aevs)
 
-        if shift_energy:
-            atomic_energies += self.energy_shifter.atomic_energies(
-                species_coordinates[0],
-                ensemble_average=ensemble_average,
-            )
+        atomic_energies += self.energy_shifter.atomic_energies(
+            species_coordinates[0],
+            ensemble_average=ensemble_average,
+        )
 
         if self.neural_networks.num_networks == 1:
             stdev_atomic_energies = torch.zeros_like(atomic_energies).squeeze(0)
@@ -676,7 +663,6 @@ class ANIq(ANI):
         pbc: tp.Optional[Tensor] = None,
         total_charge: float = 0.0,
         ensemble_average: bool = True,
-        shift_energy: bool = True,
     ) -> tp.Dict[str, Tensor]:
         _, energies, atomic_charges = self.energies_and_atomic_charges(
             species_coordinates, cell, pbc, total_charge
