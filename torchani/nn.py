@@ -134,7 +134,7 @@ class Ensemble(AtomicContainer):
         for j, x in enumerate(self.members):
             if j in self.active_members_idxs:
                 sum_ += x((species, input))[1]
-        return SpeciesEnergies(species, sum_ / len(self.active_members_idxs))
+        return SpeciesEnergies(species, sum_ / self.get_active_members_num())
 
     @torch.jit.ignore
     def member(self, idx: int) -> AtomicContainer:

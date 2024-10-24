@@ -23,6 +23,7 @@ small, 3.5 Ang or less).
 
 These pieces are assembled into a subclass of ANI
 """
+
 from copy import deepcopy
 import warnings
 import functools
@@ -134,7 +135,12 @@ class ANI(torch.nn.Module):
         shift_energy: bool = True,
     ) -> tp.Dict[str, Tensor]:
         _, energies = self(
-            species_coordinates, cell, pbc, total_charge, ensemble_average, shift_energy
+            species_coordinates,
+            cell=cell,
+            pbc=pbc,
+            total_charge=total_charge,
+            ensemble_average=ensemble_average,
+            shift_energy=shift_energy,
         )
         return {self._output_labels[0]: energies}
 
@@ -333,9 +339,9 @@ class ANI(torch.nn.Module):
             " To get the total number of available networks in an ensemble,"
             " access ``ANI.neural_networks.total_members_num`` instead."
             " To get the number of currently active models, (what ``len`` outputs),"
-            " access ``ANI.neural_networks.active_members_num`` instead."
+            " access ``ANI.neural_networks.get_active_members_num()`` instead."
         )
-        return self.neural_networks.active_members_num
+        return self.neural_networks.get_active_members_num()
 
     def __getitem__(self, idx: int) -> tpx.Self:
         warnings.warn(
@@ -344,7 +350,10 @@ class ANI(torch.nn.Module):
             " call ``model.neural_networks.set_active_members([idx])`` instead"
         )
         model = deepcopy(self)
-        model.neural_networks.set_active_members([idx])
+        model.neural_networks = self.neural_networks.member(idx)
+        for p in model.potentials:
+            if isinstance(p, NNPotential):
+                p.neural_networks = model.neural_networks
         return model
 
     def _atomic_energy_of_pots(
@@ -682,6 +691,8 @@ class ANIq(ANI):
         ensemble_average: bool = True,
         shift_energy: bool = True,
     ) -> tp.Dict[str, Tensor]:
+        assert ensemble_average
+        assert shift_energy
         _, energies, atomic_charges = self.energies_and_atomic_charges(
             species_coordinates, cell, pbc, total_charge
         )

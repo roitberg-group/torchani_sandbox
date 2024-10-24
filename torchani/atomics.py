@@ -21,8 +21,8 @@ class AtomicContainer(torch.nn.Module):
     def __init__(self, *args: tp.Any, **kwargs: tp.Any) -> None:
         super().__init__()
         self.total_members_num = 0
-        self.num_species = 0
         self.active_members_idxs = []
+        self.num_species = 0
 
     def forward(
         self,
@@ -32,8 +32,8 @@ class AtomicContainer(torch.nn.Module):
     ) -> tp.Tuple[Tensor, Tensor]:
         raise NotImplementedError()
 
-    @property
-    def active_members_num(self) -> int:
+    @torch.jit.export
+    def get_active_members_num(self) -> int:
         return len(self.active_members_idxs)
 
     @torch.jit.export

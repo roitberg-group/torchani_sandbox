@@ -11,7 +11,6 @@ from tqdm import tqdm
 
 from torchani.units import hartree2kcalpermol
 from torchani.assembly import ANI
-from torchani.nn import Ensemble
 from torchani.annotations import Conformers
 from torchani.datasets.anidataset import ANIDataset
 
@@ -108,10 +107,7 @@ def filter_by_high_energy_error(
             c = tp.cast(Tensor, group["coordinates"]).to(device)
             ta = tp.cast(Tensor, group["energies"]).to(device)
 
-            if isinstance(model.neural_networks, Ensemble):
-                member_energies = model.members_energies((s, c)).energies
-            else:
-                member_energies = model((s, c)).energies.unsqueeze(0)
+            member_energies = model.sp((s, c), ensemble_average=False)["energies"]
             errors = hartree2kcalpermol((member_energies - ta).abs())
             # any over individual models of the ensemble
             bad_idxs = (errors > threshold).any(dim=0).nonzero().squeeze()
