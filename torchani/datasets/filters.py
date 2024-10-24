@@ -105,10 +105,10 @@ def filter_by_high_energy_error(
         ):
             s = tp.cast(Tensor, group["species"]).to(device)
             c = tp.cast(Tensor, group["coordinates"]).to(device)
-            ta = tp.cast(Tensor, group["energies"]).to(device)
+            targ = tp.cast(Tensor, group["energies"]).to(device)
 
-            member_energies = model.sp((s, c), ensemble_average=False)["energies"]
-            errors = hartree2kcalpermol((member_energies - ta).abs())
+            energies = model.sp(s, c, ensemble_average=False)["energies"]
+            errors = hartree2kcalpermol((energies - targ).abs())
             # any over individual models of the ensemble
             bad_idxs = (errors > threshold).any(dim=0).nonzero().squeeze()
 
@@ -120,7 +120,7 @@ def filter_by_high_energy_error(
                     _bad_keys_and_idxs[key] = [bad_idxs + cumul_idx]
                 else:
                     _bad_keys_and_idxs[key].append(bad_idxs + cumul_idx)
-            del s, c, ta
+            del s, c, targ
     if _bad_keys_and_idxs:
         bad_keys_and_idxs = {k: torch.cat(v) for k, v in _bad_keys_and_idxs.items()}
         return _fetch_and_delete_conformations(
