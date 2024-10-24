@@ -179,12 +179,8 @@ class ANI(torch.nn.Module):
                 pbc=pbc,
                 total_charge=total_charge,
                 ensemble_average=False,
-                shift_energy=False,
             )
-            return SpeciesEnergies(
-                elem_idxs,
-                energies.sum(-1) + self.energy_shifter(elem_idxs).unsqueeze(0),
-            )
+            return SpeciesEnergies(elem_idxs, energies.sum(-1))
 
         elem_idxs, coords = self._maybe_convert_species(species_coordinates)
         assert coords.shape[:-1] == elem_idxs.shape
@@ -250,7 +246,6 @@ class ANI(torch.nn.Module):
         pbc: tp.Optional[Tensor] = None,
         total_charge: int = 0,
         ensemble_average: bool = True,
-        shift_energy: bool = True,
     ) -> SpeciesEnergies:
         r"""Calculate predicted atomic energies of all atoms in a molecule
 
@@ -273,8 +268,9 @@ class ANI(torch.nn.Module):
                 elem_idxs, coords, largest_cutoff, neighbors
             )
 
-        if shift_energy:
-            atomic_energies += self.energy_shifter(elem_idxs).view(1, -1, 1)
+        atomic_energies += self.energy_shifter.atomic_energies(
+            elem_idxs, ensemble_average=False
+        )
 
         if ensemble_average:
             atomic_energies = atomic_energies.mean(dim=0)
