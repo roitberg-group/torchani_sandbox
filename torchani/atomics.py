@@ -14,23 +14,15 @@ from torchani.utils import TightCELU
 class AtomicContainer(torch.nn.Module):
     r"""Base class for ANI modules that contain Atomic Neural Networks"""
 
-    num_networks: int
     num_species: int
-    active_members: tp.List[int]
+    total_members_num: int
+    active_members_idxs: tp.List[int]
 
     def __init__(self, *args: tp.Any, **kwargs: tp.Any) -> None:
         super().__init__()
-        self.num_networks = 0
+        self.total_members_num = 0
         self.num_species = 0
-        self.active_members = []
-
-    @torch.jit.export
-    def set_active_members(self, idxs: tp.List[int]) -> None:
-        for idx in idxs:
-            if not (0 <= idx < self.num_networks):
-                raise ValueError(f"Incorrect member {idx} requested")
-        self.active_members = idxs
-        self.num_networks = len(self.active_members)
+        self.active_members_idxs = []
 
     def forward(
         self,
@@ -40,6 +32,20 @@ class AtomicContainer(torch.nn.Module):
     ) -> tp.Tuple[Tensor, Tensor]:
         raise NotImplementedError()
 
+    @property
+    def active_members_num(self) -> int:
+        return len(self.active_members_idxs)
+
+    @torch.jit.export
+    def set_active_members(self, idxs: tp.List[int]) -> None:
+        for idx in idxs:
+            if not (0 <= idx < self.total_members_num):
+                raise IndexError(
+                    f"Idx {idx} should be 0 <= idx < {self.total_members_num}"
+                )
+        self.active_members_idxs = idxs
+
+    @torch.jit.ignore
     def member(self, idx: int) -> "AtomicContainer":
         if idx == 0:
             return self

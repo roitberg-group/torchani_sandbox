@@ -62,8 +62,8 @@ class ANIModel(AtomicContainer):
             raise ValueError("All modules should be mapped to valid chemical symbols")
         self.atomics = torch.nn.ModuleDict(modules)
         self.num_species = len(self.atomics)
-        self.num_networks = 1
-        self.active_members = [0]
+        self.total_members_num = 1
+        self.active_members_idxs = [0]
 
     def forward(
         self,
@@ -114,13 +114,14 @@ class Ensemble(AtomicContainer):
     def __init__(self, modules: tp.Sequence[AtomicContainer]):
         super().__init__()
         self.members = torch.nn.ModuleList(modules)
-        self.num_networks = len(self.members)
+        self.total_members_num = len(self.members)
+        self.active_members_idxs = list(range(self.total_members_num))
+
         if any(m.num_species != modules[0].num_species for m in modules):
             raise ValueError(
                 "All modules in the ensemble must support the same number of species"
             )
         self.num_species = modules[0].num_species
-        self.active_members = list(range(self.num_networks))
 
     def forward(
         self,
@@ -131,10 +132,11 @@ class Ensemble(AtomicContainer):
         species, input = species_input
         sum_ = torch.zeros(species.shape[0], dtype=input.dtype, device=input.device)
         for j, x in enumerate(self.members):
-            if j in self.active_members:
+            if j in self.active_members_idxs:
                 sum_ += x((species, input))[1]
-        return SpeciesEnergies(species, sum_ / self.num_networks)
+        return SpeciesEnergies(species, sum_ / len(self.active_members_idxs))
 
+    @torch.jit.ignore
     def member(self, idx: int) -> AtomicContainer:
         return self.members[idx]
 

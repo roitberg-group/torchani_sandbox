@@ -23,7 +23,7 @@ small, 3.5 Ang or less).
 
 These pieces are assembled into a subclass of ANI
 """
-
+from copy import deepcopy
 import warnings
 import functools
 import math
@@ -328,20 +328,24 @@ class ANI(torch.nn.Module):
         )
 
     def __len__(self):
-        return self.neural_networks.num_networks
-
-    def __getitem__(self, index: int) -> tpx.Self:
-        return type(self)(
-            symbols=self.get_chemical_symbols(),
-            aev_computer=self.aev_computer,
-            neural_networks=self.neural_networks.member(index),
-            energy_shifter=self.energy_shifter,
-            pairwise_potentials=[
-                p for p in self.potentials if not isinstance(p, NNPotential)
-            ],
-            periodic_table_index=self.periodic_table_index,
-            output_labels=self._output_labels,
+        warnings.warn(
+            "Calling 'len(model)' is strongly discouraged."
+            " To get the total number of available networks in an ensemble,"
+            " access ``ANI.neural_networks.total_members_num`` instead."
+            " To get the number of currently active models, (what ``len`` outputs),"
+            " access ``ANI.neural_networks.active_members_num`` instead."
         )
+        return self.neural_networks.active_members_num
+
+    def __getitem__(self, idx: int) -> tpx.Self:
+        warnings.warn(
+            "'model[idx]' and 'for m in model' are strongly discouraged."
+            " To activate a single network from the ensemble,"
+            " call ``model.neural_networks.set_active_members([idx])`` instead"
+        )
+        model = deepcopy(self)
+        model.neural_networks.set_active_members([idx])
+        return model
 
     def _atomic_energy_of_pots(
         self,
@@ -352,7 +356,7 @@ class ANI(torch.nn.Module):
     ) -> Tensor:
         # Add extra axis, since potentials return atomic E of shape (memb, N, A)
         shape = (
-            self.neural_networks.num_networks,
+            len(self.neural_networks.active_members_idxs),
             elem_idxs.shape[0],
             elem_idxs.shape[1],
         )
@@ -492,7 +496,7 @@ class ANI(torch.nn.Module):
             shift_energy=True,
         )
 
-        if self.neural_networks.num_networks == 1:
+        if len(self.neural_networks.active_members_idxs) == 1:
             qbc_factors = torch.zeros_like(energies).squeeze(0)
         else:
             # standard deviation is taken across ensemble members
@@ -532,7 +536,7 @@ class ANI(torch.nn.Module):
                 ensemble_average=ensemble_average,
             )
 
-        if self.neural_networks.num_networks == 1:
+        if len(self.neural_networks.active_members_idxs) == 1:
             stdev_atomic_energies = torch.zeros_like(atomic_energies).squeeze(0)
         else:
             stdev_atomic_energies = atomic_energies.std(0, unbiased=unbiased)
@@ -593,7 +597,7 @@ class ANI(torch.nn.Module):
         max_magnitudes = magnitudes.max(dim=0).values
         min_magnitudes = magnitudes.min(dim=0).values
 
-        if self.neural_networks.num_networks == 1:
+        if len(self.neural_networks.active_members_idxs) == 1:
             relative_stdev = torch.zeros_like(magnitudes).squeeze(0)
             relative_range = torch.ones_like(magnitudes).squeeze(0)
         else:
@@ -779,27 +783,6 @@ class ANIq(ANI):
                 energies += pot(element_idxs, neighbor_data, _coordinates=coords)
         return SpeciesEnergiesAtomicCharges(
             element_idxs, energies + self.energy_shifter(element_idxs), atomic_charges
-        )
-
-    def __getitem__(self, index: int) -> tpx.Self:
-        for p in self.potentials:
-            if isinstance(p, NNPotential):
-                charge_normalizer = getattr(p, "charge_normalizer", None)
-                charge_networks = getattr(p, "charge_networks", None)
-                break
-
-        return type(self)(
-            symbols=self.get_chemical_symbols(),
-            aev_computer=self.aev_computer,
-            neural_networks=self.neural_networks.member(index),
-            charge_networks=charge_networks,
-            charge_normalizer=charge_normalizer,
-            energy_shifter=self.energy_shifter,
-            pairwise_potentials=[
-                p for p in self.potentials if not isinstance(p, NNPotential)
-            ],
-            periodic_table_index=self.periodic_table_index,
-            output_labels=self._output_labels,
         )
 
 
@@ -1319,7 +1302,6 @@ def fetch_state_dict(
     local: bool = False,
     private: bool = False,
 ) -> tp.OrderedDict[str, Tensor]:
-    # If pretrained=True then load state dict from a remote url or a local path
     # NOTE: torch.hub caches remote state_dicts after first download
     if local:
         dict_ = torch.load(state_dict_file, map_location=torch.device("cpu"))
