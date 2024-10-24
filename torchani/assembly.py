@@ -156,7 +156,7 @@ class ANI(torch.nn.Module):
                 given configurations
         """
         _, energies = self(
-            (species, coordinates),
+            species_coordinates=(species, coordinates),
             cell=cell,
             pbc=pbc,
             total_charge=total_charge,
