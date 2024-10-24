@@ -115,7 +115,6 @@ class Ensemble(AtomicContainer):
         super().__init__()
         self.members = torch.nn.ModuleList(modules)
         self.num_networks = len(self.members)
-        self.active_members = list(range(self.num_networks))
         if any(m.num_species != modules[0].num_species for m in modules):
             raise ValueError(
                 "All modules in the ensemble must support the same number of species"
