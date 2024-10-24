@@ -333,22 +333,12 @@ class ANI(torch.nn.Module):
             [p for p in self.potentials if p.is_trainable]
         )
 
+    # TODO This is confusing, it may be a good idea to deprecate it, or at least warn
     def __len__(self):
-        warnings.warn(
-            "Calling 'len(model)' is strongly discouraged."
-            " To get the total number of available networks in an ensemble,"
-            " access ``ANI.neural_networks.total_members_num`` instead."
-            " To get the number of currently active models, (what ``len`` outputs),"
-            " access ``ANI.neural_networks.get_active_members_num()`` instead."
-        )
         return self.neural_networks.get_active_members_num()
 
+    # TODO This is confusing, it may be a good idea to deprecate it, or at least warn
     def __getitem__(self, idx: int) -> tpx.Self:
-        warnings.warn(
-            "'model[idx]' and 'for m in model' are strongly discouraged."
-            " To activate a single network from the ensemble,"
-            " call ``model.neural_networks.set_active_members([idx])`` instead"
-        )
         model = deepcopy(self)
         model.neural_networks = self.neural_networks.member(idx)
         for p in model.potentials:
