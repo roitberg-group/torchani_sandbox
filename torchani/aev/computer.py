@@ -416,12 +416,11 @@ class AEVComputer(torch.nn.Module):
 
     @jit_unused_if_no_cuaev()
     def _register_cuaev_computer(self) -> None:
-        # cuaev_computer is created only when use_cuda_extension is True.
-        # However jit needs to know cuaev_computer's Type even when
-        # use_cuda_extension is False. This 'registration' is only a kind of
-        # "dummy" initialization, it is always necessary to reinitialize in
-        # forward at least once, since some tensors may be on CPU at this
-        # point, but on GPU when forward is called.
+        # cuaev_computer is needed only when using a cuAEV compute strategy. However jit
+        # always needs to register the CuaevComputer type This 'registration' is only a
+        # kind of "dummy" initialization, it is always necessary to reinitialize in
+        # forward at least once, since some tensors may be on CPU at this point, but on
+        # GPU when forward is called.
         empty = torch.empty(0)
         self.cuaev_computer = torch.classes.cuaev.CuaevComputer(
             0.0, 0.0, empty, empty, empty, empty, empty, empty, 1, True
@@ -594,8 +593,8 @@ class AEVComputer(torch.nn.Module):
             angle_sections (:class:`torch.Tensor`): The 1D tensor of :math:`\theta_s` in
                 equation (4) in the `ANI paper`_.
             num_species (int): Number of supported atom types.
-            use_cuda_extension (bool): Whether to use cuda extension for faster
-                calculation (needs cuaev installed).
+            compute_stretegy (str): Compute strategy to use, one of 'pyaev', 'cuaev',
+                'cuaev-fused'
 
         .. _ANI paper:
             http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
