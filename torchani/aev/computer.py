@@ -250,6 +250,9 @@ class AEVComputer(torch.nn.Module):
             aev = self._compute_aev(element_idxs=species, neighbors=neighbors)
             return SpeciesAEV(species, aev)
 
+        if species.device.type != "cuda":
+            raise ValueError("cuAEV requires inputs to have device='cuda'")
+
         # cuAEV code branch:
         if not self.cuaev_is_initialized:
             self._init_cuaev_computer()
