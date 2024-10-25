@@ -104,8 +104,8 @@ class AEVComputer(torch.nn.Module):
             self._check_cuaev_fused_avail()
 
     @property
-    def compute_stretegy(self) -> str:
-        return self._compute_stretegy
+    def compute_strategy(self) -> str:
+        return self._compute_strategy
 
     def _check_cuaev_avail(self, raise_exc: bool = True) -> bool:
         if not CUAEV_IS_INSTALLED:
@@ -593,7 +593,7 @@ class AEVComputer(torch.nn.Module):
             angle_sections (:class:`torch.Tensor`): The 1D tensor of :math:`\theta_s` in
                 equation (4) in the `ANI paper`_.
             num_species (int): Number of supported atom types.
-            compute_stretegy (str): Compute strategy to use, one of 'pyaev', 'cuaev',
+            compute_strategy (str): Compute strategy to use, one of 'pyaev', 'cuaev',
                 'cuaev-fused'
 
         .. _ANI paper:
