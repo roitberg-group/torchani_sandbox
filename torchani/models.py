@@ -304,11 +304,11 @@ def ANIdr(
         compute_strategy=compute_strategy,
     )
     asm.set_atomic_networks(ANIModel, atomics.like_dr)
-    asm.add_pairwise_potential(
+    asm.add_pair_potential(
         RepulsionXTB,
         cutoff=5.3,
     )
-    asm.add_pairwise_potential(
+    asm.add_pair_potential(
         TwoBodyDispersionD3,
         cutoff=8.5,
         cutoff_fn="smooth4",

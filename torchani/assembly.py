@@ -89,7 +89,7 @@ class ANI(torch.nn.Module):
         aev_computer: AEVComputer,
         neural_networks: AtomicContainer,
         energy_shifter: EnergyAdder,
-        pairwise_potentials: tp.Iterable[PairPotential] = (),
+        pair_potentials: tp.Iterable[PairPotential] = (),
         periodic_table_index: bool = True,
         output_labels: tp.Sequence[str] = ("energies",),
     ):
@@ -105,8 +105,8 @@ class ANI(torch.nn.Module):
         self.energy_shifter = energy_shifter
         self.species_converter = SpeciesConverter(symbols).to(device)
 
-        self._has_pair_pots = bool(pairwise_potentials)
-        potentials: tp.List[Potential] = list(pairwise_potentials)
+        self._has_pair_pots = bool(pair_potentials)
+        potentials: tp.List[Potential] = list(pair_potentials)
         potentials.append(NNPotential(self.aev_computer, self.neural_networks))
 
         # Sort potentials in order of decresing cutoff. The potential with the
@@ -628,7 +628,7 @@ class ANIq(ANI):
         aev_computer: AEVComputer,
         neural_networks: AtomicContainer,
         energy_shifter: EnergyAdder,
-        pairwise_potentials: tp.Iterable[PairPotential] = (),
+        pair_potentials: tp.Iterable[PairPotential] = (),
         periodic_table_index: bool = True,
         charge_networks: tp.Optional[AtomicContainer] = None,
         charge_normalizer: tp.Optional[ChargeNormalizer] = None,
@@ -639,7 +639,7 @@ class ANIq(ANI):
             aev_computer=aev_computer,
             neural_networks=neural_networks,
             energy_shifter=energy_shifter,
-            pairwise_potentials=pairwise_potentials,
+            pair_potentials=pair_potentials,
             periodic_table_index=periodic_table_index,
             output_labels=output_labels,
         )
@@ -854,7 +854,7 @@ class Assembler:
 
         self._neighborlist = parse_neighborlist(neighborlist)
         self._featurizer = featurizer
-        self._pairwise_potentials: tp.List[PairPotentialWrapper] = []
+        self._pair_potentials: tp.List[PairPotentialWrapper] = []
         self._output_labels = output_labels
 
         # This part of the assembler organizes the self-energies, the
@@ -1008,14 +1008,14 @@ class Assembler:
     ) -> None:
         self._global_cutoff_fn = parse_cutoff_fn(cutoff_fn)
 
-    def add_pairwise_potential(
+    def add_pair_potential(
         self,
         pair_type: PairPotentialType,
         cutoff: float = math.inf,
         cutoff_fn: CutoffArg = "global",
         extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
-        self._pairwise_potentials.append(
+        self._pair_potentials.append(
             PairPotentialWrapper(
                 pair_type,
                 cutoff=cutoff,
@@ -1082,9 +1082,9 @@ class Assembler:
             self_energies=tuple(self_energies[k] for k in self.symbols),
         )
         kwargs: tp.Dict[str, tp.Any] = {}
-        if self._pairwise_potentials:
+        if self._pair_potentials:
             potentials = []
-            for pot in self._pairwise_potentials:
+            for pot in self._pair_potentials:
                 if pot.extra is not None:
                     pot_kwargs = pot.extra
                 else:
@@ -1103,7 +1103,7 @@ class Assembler:
                         **pot_kwargs,
                     )
                 )
-            kwargs.update({"pairwise_potentials": potentials})
+            kwargs.update({"pair_potentials": potentials})
 
         if charge_networks is not None:
             kwargs["charge_networks"] = charge_networks
@@ -1189,12 +1189,12 @@ def simple_ani(
     asm.set_neighborlist("full_pairwise")
     asm.set_gsaes_as_self_energies(lot)
     if repulsion:
-        asm.add_pairwise_potential(
+        asm.add_pair_potential(
             RepulsionXTB,
             cutoff=radial_cutoff,
         )
     if dispersion:
-        asm.add_pairwise_potential(
+        asm.add_pair_potential(
             TwoBodyDispersionD3,
             cutoff=8.0,
             extra={"functional": lot.split("-")[0]},
@@ -1301,12 +1301,12 @@ def simple_aniq(
     else:
         asm.set_zeros_as_self_energies()
     if repulsion and not dummy_energies:
-        asm.add_pairwise_potential(
+        asm.add_pair_potential(
             RepulsionXTB,
             cutoff=radial_cutoff,
         )
     if dispersion and not dummy_energies:
-        asm.add_pairwise_potential(
+        asm.add_pair_potential(
             TwoBodyDispersionD3,
             cutoff=8.0,
             extra={"functional": lot.split("-")[0]},
