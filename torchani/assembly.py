@@ -206,7 +206,7 @@ class ANI(torch.nn.Module):
         # Optimized path, use merged Neighborlist-AEVComputer
         if (
             not self._has_pair_pots
-            and self._aev_computer._compute_strategy == "cuaev-fused"
+            and self.aev_computer._compute_strategy == "cuaev-fused"
         ):
             _, energies = self.neural_networks(
                 self.aev_computer((elem_idxs, coords), cell=cell, pbc=pbc)
@@ -280,7 +280,7 @@ class ANI(torch.nn.Module):
         # Optimized path, go through the merged Neighborlist-AEVomputer only
         if (
             not self._has_pair_pots
-            and self._aev_computer._compute_strategy == "cuaev-fused"
+            and self.aev_computer._compute_strategy == "cuaev-fused"
         ):
             atomic_energies = self.neural_networks.members_atomic_energies(
                 self.aev_computer((elem_idxs, coords), cell=cell, pbc=pbc)
