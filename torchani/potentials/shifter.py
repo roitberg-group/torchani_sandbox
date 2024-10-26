@@ -23,7 +23,7 @@ class EnergyAdder(Potential):
     self_energies: Tensor
 
     def __init__(self, symbols: tp.Sequence[str], self_energies: tp.Sequence[float]):
-        super().__init__(symbols=symbols, cutoff=0.0, is_trainable=False)
+        super().__init__(symbols=symbols, cutoff=0.0)
         if not len(symbols) == len(self_energies):
             raise ValueError(
                 "Chemical symbols and self energies do not match in length"

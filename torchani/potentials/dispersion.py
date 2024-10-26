@@ -150,7 +150,6 @@ class TwoBodyDispersionD3(PairPotential):
         super().__init__(
             symbols=symbols,
             cutoff=cutoff,
-            is_trainable=False,
             cutoff_fn=cutoff_fn,
         )
         if not sqrt_empirical_charge:

@@ -327,12 +327,12 @@ class ANI(torch.nn.Module):
         return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)
 
     @torch.jit.unused
-    def strip_non_trainable_potentials(self):
+    def strip_non_nn_potentials(self):
         r"""
-        Remove all potentials in the network that are non-trainable
+        Remove all potentials in the network that don't have neural_networks
         """
         self.potentials = torch.nn.ModuleList(
-            [p for p in self.potentials if p.is_trainable]
+            [p for p in self.potentials if hasattr(p, "neural_networks")]
         )
 
     # TODO This is confusing, it may be a good idea to deprecate it, or at least warn
@@ -737,7 +737,7 @@ class ANIq(ANI):
             if cutoff < previous_cutoff:
                 neighbors = rescreen(cutoff, neighbors)
                 previous_cutoff = cutoff
-            if pot.is_trainable:
+            if hasattr(pot, "neural_networks"):
                 output = pot.energies_and_atomic_charges(
                     elem_idxs,
                     neighbors,
@@ -786,7 +786,7 @@ class ANIq(ANI):
             if cutoff < previous_cutoff:
                 neighbor_data = rescreen(cutoff, neighbor_data)
                 previous_cutoff = cutoff
-            if pot.is_trainable:
+            if hasattr(pot, "neural_networks"):
                 output = pot.energies_and_atomic_charges(
                     elem_idxs,
                     neighbor_data,

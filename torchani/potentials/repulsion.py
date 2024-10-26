@@ -38,7 +38,7 @@ class RepulsionXTB(PairPotential):
         cutoff_fn: CutoffArg = "smooth",
     ):
         super().__init__(
-            symbols=symbols, cutoff=cutoff, is_trainable=False, cutoff_fn=cutoff_fn
+            symbols=symbols, cutoff=cutoff, cutoff_fn=cutoff_fn
         )
         num_elements = len(symbols)
 

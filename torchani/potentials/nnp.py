@@ -25,7 +25,6 @@ class NNPotential(Potential):
         super().__init__(
             symbols=symbols,
             cutoff=aev_computer.radial_terms.cutoff,
-            is_trainable=True,
         )
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
