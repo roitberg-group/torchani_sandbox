@@ -46,7 +46,8 @@ class AEVComputer(torch.nn.Module):
     triu_index: Tensor
     _compute_strategy: str
     _cuaev_fused_is_avail: bool
-    _cuaeve_is_avail: bool
+    _cuaev_is_avail: bool
+    _cuaev_is_init: bool
 
     def __init__(
         self,
@@ -94,7 +95,7 @@ class AEVComputer(torch.nn.Module):
 
         # cuAEV true initialization happens in forward, so that we ensure that
         # all tensors are in the same device once it is initialized.
-        self.cuaev_is_initialized = False
+        self._cuaev_is_init = False
 
         # If we are using cuAEV then we need to check that the
         # arguments passed to __init__ are supported.
@@ -490,18 +491,17 @@ class AEVComputer(torch.nn.Module):
             self.cuaev_computer,
         )
 
+    @jit_unused_if_no_cuaev()
     def _prepare_cuaev_execution(self, species: Tensor, branch: str) -> None:
         if self._print_aev_branch:
             print(f"Executing branch: cuAEV {branch}")
-
         if species.device.type != "cuda" and species.shape[1] != 0:
             raise ValueError(
                 "cuAEV requires inputs in a CUDA device if there is at least 1 atom"
             )
-
-        if not self.cuaev_is_initialized:
+        if not self._cuaev_is_init:
             self._init_cuaev_computer()
-            self.cuaev_is_initialized = True
+            self._cuaev_is_init = True
 
     @jit_unused_if_no_cuaev()
     @staticmethod
