@@ -285,7 +285,7 @@ class ANI(torch.nn.Module):
             not self._has_pair_pots
             and self.aev_computer._compute_strategy == "cuaev-fused"
         ):
-            atomic_energies = self.neural_networks.members_atomic_energies(
+            atomic_energies = self.neural_networks.atomic_energies(
                 self.aev_computer((elem_idxs, coords), cell=cell, pbc=pbc)
             )
         # Iterate over all potentials
@@ -540,7 +540,7 @@ class ANI(torch.nn.Module):
         """
         species_coordinates = self._maybe_convert_species(species_coordinates)
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
-        atomic_energies = self.neural_networks.members_atomic_energies(species_aevs)
+        atomic_energies = self.neural_networks.atomic_energies(species_aevs)
 
         atomic_energies += self.energy_shifter.atomic_energies(
             species_coordinates[0],
