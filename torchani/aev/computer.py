@@ -45,9 +45,9 @@ class AEVComputer(torch.nn.Module):
 
     triu_index: Tensor
     _compute_strategy: str
-    _cuaev_fused_is_avail: bool
-    _cuaev_is_avail: bool
-    _cuaev_is_init: bool
+    _cuaev_fused_strat_is_avail: bool
+    _cuaev_strat_is_avail: bool
+    _cuaev_computer_is_init: bool
 
     def __init__(
         self,
@@ -59,11 +59,12 @@ class AEVComputer(torch.nn.Module):
         neighborlist: NeighborlistArg = "full_pairwise",
     ):
         super().__init__()
+        self._print_aev_branch = _PRINT_AEV_BRANCH
         self.num_species = num_species
         self.num_species_pairs = num_species * (num_species + 1) // 2
-        self._compute_strategy = compute_strategy
-        self._print_aev_branch = _PRINT_AEV_BRANCH
+        self.register_buffer("triu_index", self._calculate_triu_index(num_species))
 
+        # Terms
         self.radial_terms = parse_radial_term(radial_terms)
         self.angular_terms = parse_angular_term(angular_terms)
         if not (self.angular_terms.cutoff_fn.is_same(self.radial_terms.cutoff_fn)):
@@ -74,8 +75,11 @@ class AEVComputer(torch.nn.Module):
                 f" should be smaller than radial cutoff {self.radial_terms.cutoff}"
             )
         self._cuaev_cutoff_fn = self.angular_terms.cutoff_fn._cuaev_name
+
+        # Neighborlist
         self.neighborlist = parse_neighborlist(neighborlist)
-        self.register_buffer("triu_index", self._calculate_triu_index(num_species))
+
+        # Lenghts
         self.radial_sublength = self.radial_terms.sublength
         self.angular_sublength = self.angular_terms.sublength
         self.radial_length = self.radial_sublength * self.num_species
@@ -85,24 +89,27 @@ class AEVComputer(torch.nn.Module):
         # The following corresponds to initialization and checks for the cuAEV:
 
         # Check if the cuaev and the cuaev fused are available for used
-        self._cuaev_fused_is_avail = self._check_cuaev_fused_avail()
-        self._cuaev_is_avail = self._check_cuaev_avail()
+        self._cuaev_fused_strat_is_avail = self._check_cuaev_fused_strat_avail()
+        self._cuaev_strat_is_avail = self._check_cuaev_strat_avail()
 
         # cuAEV dummy initialization ('registration') happens here, as long as
         # cuAEV is installed, even if it is not used. This is required by JIT
         if CUAEV_IS_INSTALLED:
             self._register_cuaev_computer()
 
-        # cuAEV true initialization happens in forward, so that we ensure that
-        # all tensors are in the same device once it is initialized.
-        self._cuaev_is_init = False
+        # cuAEV init is delayed until fwd, to ensure tensors are in the correct device
+        self._cuaev_computer_is_init = False
 
-        # If we are using cuAEV then we need to check that the
-        # arguments passed to __init__ are supported.
-        if self._compute_strategy == "cuaev":
-            self._check_cuaev_avail(raise_exc=True)
-        elif self._compute_strategy == "cuaev-fused":
-            self._check_cuaev_fused_avail(raise_exc=True)
+        # Check that the requested strategy is available
+        if compute_strategy == "pyaev":
+            pass
+        elif compute_strategy == "cuaev":
+            self._check_cuaev_strat_avail(raise_exc=True)
+        elif compute_strategy == "cuaev-fused":
+            self._check_cuaev_fused_strat_avail(raise_exc=True)
+        else:
+            raise ValueError(f"Unsupported strategy {compute_strategy}")
+        self._compute_strategy = compute_strategy
 
     @property
     def compute_strategy(self) -> str:
@@ -116,16 +123,16 @@ class AEVComputer(torch.nn.Module):
         if strat == "pyaev":
             pass
         elif strat == "cuaev-fused":
-            if not self._cuaev_fused_is_avail:
+            if not self._cuaev_fused_strat_is_avail:
                 raise ValueError("cuAEV-fused strategy is not available")
         elif strat == "cuaev":
-            if not self._cuaev_is_avail:
+            if not self._cuaev_strat_is_avail:
                 raise ValueError("cuAEV strategy is not available")
         else:
             raise ValueError("Unknown compute strategy")
         self._compute_strategy = strat
 
-    def _check_cuaev_avail(self, raise_exc: bool = False) -> bool:
+    def _check_cuaev_strat_avail(self, raise_exc: bool = False) -> bool:
         if not CUAEV_IS_INSTALLED:
             if raise_exc:
                 raise ValueError("cuAEV is not installed")
@@ -143,8 +150,8 @@ class AEVComputer(torch.nn.Module):
             return False
         return True
 
-    def _check_cuaev_fused_avail(self, raise_exc: bool = False) -> bool:
-        avail = self._check_cuaev_avail(raise_exc=raise_exc)
+    def _check_cuaev_fused_strat_avail(self, raise_exc: bool = False) -> bool:
+        avail = self._check_cuaev_strat_avail(raise_exc=raise_exc)
         if not avail:
             return False
         if not isinstance(self.neighborlist, FullPairwise):
@@ -429,6 +436,7 @@ class AEVComputer(torch.nn.Module):
             self.num_species,
             (self._cuaev_cutoff_fn == "cosine"),
         )
+        self._cuaev_computer_is_init = True
 
     @jit_unused_if_no_cuaev()
     def _compute_cuaev(self, species: Tensor, coordinates: Tensor) -> Tensor:
@@ -499,9 +507,8 @@ class AEVComputer(torch.nn.Module):
             raise ValueError(
                 "cuAEV requires inputs in a CUDA device if there is at least 1 atom"
             )
-        if not self._cuaev_is_init:
+        if not self._cuaev_computer_is_init:
             self._init_cuaev_computer()
-            self._cuaev_is_init = True
 
     @jit_unused_if_no_cuaev()
     @staticmethod
