@@ -193,7 +193,7 @@ class ANI(torch.nn.Module):
         assert coords.shape[:-1] == elem_idxs.shape
         assert coords.shape[-1] == 3
 
-        # Optimized AEV path, use the fused FullPairwise-CuaevComputer
+        # Optimized AEV branch, use the fused FullPairwise-CuaevComputer
         if self._no_pair_pots and self.aev_computer._compute_strategy == "cuaev-fused":
             aevs = self.aev_computer((elem_idxs, coords), cell=cell, pbc=pbc)[1]
             input_ = (elem_idxs, aevs)
@@ -202,28 +202,22 @@ class ANI(torch.nn.Module):
                 elem_idxs, ensemble_average=False
             )
             if ensemble_average:
-                energies.sum(dim=0)
+                energies.mean(dim=0)
             if not atomic_energies:
                 energies.sum(dim=-1)
             return SpeciesEnergies(elem_idxs, energies)
 
-        # Branch that iterates over potentials
+        # Branch that iterate over potentials
         max_cutoff = self.potentials[0].cutoff
         neighbors = self.neighborlist(elem_idxs, coords, max_cutoff, cell, pbc)
-        if ensemble_average and not atomic_energies:
-            energies = self._energy_of_pots(elem_idxs, coords, max_cutoff, neighbors)
-            energies += self.energy_shifter(elem_idxs)
-        else:
-            energies = self._atomic_energy_of_pots(
-                elem_idxs, coords, max_cutoff, neighbors
-            )
-            energies += self.energy_shifter.atomic_energies(
-                elem_idxs, ensemble_average=False
-            )
-            if ensemble_average:
-                energies.sum(-1)
-            if not atomic_energies:
-                energies.sum(dim=-1)
+        energies = self._energy_of_potentials(
+            elem_idxs,
+            coords,
+            max_cutoff,
+            neighbors,
+            atomic_energies=atomic_energies,
+            ensemble_average=ensemble_average,
+        )
         return SpeciesEnergies(elem_idxs, energies)
 
     @torch.jit.export
@@ -234,6 +228,7 @@ class ANI(torch.nn.Module):
         shift_values: Tensor,
         total_charge: int = 0,
         ensemble_average: bool = True,
+        atomic_energies: bool = False,
         input_needs_screening: bool = True,
     ) -> SpeciesEnergies:
         r"""
@@ -252,18 +247,14 @@ class ANI(torch.nn.Module):
             largest_cutoff,
             input_needs_screening,
         )
-        if not ensemble_average:
-            energies = self._atomic_energy_of_pots(
-                elem_idxs, coords, largest_cutoff, neighbors
-            ).mean(dim=1)
-        else:
-            energies = self._energy_of_pots(
-                elem_idxs, coords, largest_cutoff, neighbors
-            )
-
-        energies += self.energy_shifter.atomic_energies(
-            elem_idxs, ensemble_average=ensemble_average
-        ).sum(dim=-1)
+        energies = self._energy_of_potentials(
+            elem_idxs,
+            coords,
+            largest_cutoff,
+            neighbors,
+            atomic_energies=atomic_energies,
+            ensemble_average=ensemble_average,
+        )
         return SpeciesEnergies(elem_idxs, energies)
 
     @torch.jit.export
@@ -349,44 +340,53 @@ class ANI(torch.nn.Module):
                 p.neural_networks = model.neural_networks
         return model
 
-    def _atomic_energy_of_pots(
+    def _energy_of_potentials(
         self,
         elem_idxs: Tensor,
         coords: Tensor,
         previous_cutoff: float,
         neighbors: NeighborData,
+        ensemble_average: bool = True,
+        atomic_energies: bool = False,
     ) -> Tensor:
-        # Add extra axis, since potentials return atomic E of shape (memb, N, A)
-        shape = (
-            len(self.neural_networks.active_members_idxs),
-            elem_idxs.shape[0],
-            elem_idxs.shape[1],
-        )
-        energies = torch.zeros(shape, dtype=coords.dtype, device=coords.device)
-        for pot in self.potentials:
-            cutoff = pot.cutoff
-            if cutoff < previous_cutoff:
-                neighbors = rescreen(cutoff, neighbors)
-                previous_cutoff = cutoff
-            energies += pot.atomic_energies(elem_idxs, neighbors, _coordinates=coords)
-        return energies
 
-    def _energy_of_pots(
-        self,
-        elem_idxs: Tensor,
-        coords: Tensor,
-        previous_cutoff: float,
-        neighbors: NeighborData,
-    ) -> Tensor:
-        energies = torch.zeros(
-            elem_idxs.shape[0], dtype=coords.dtype, device=coords.device
-        )
+        if atomic_energies or not ensemble_average:
+            energies = torch.zeros(
+                (
+                    len(self.neural_networks.active_members_idxs),
+                    elem_idxs.shape[0],
+                    elem_idxs.shape[1],
+                ),
+                dtype=coords.dtype,
+                device=coords.device,
+            )
+        else:
+            energies = torch.zeros(
+                elem_idxs.shape[0], dtype=coords.dtype, device=coords.device
+            )
+
         for pot in self.potentials:
             cutoff = pot.cutoff
             if cutoff < previous_cutoff:
                 neighbors = rescreen(cutoff, neighbors)
                 previous_cutoff = cutoff
-            energies += pot(elem_idxs, neighbors, _coordinates=coords)
+            if atomic_energies or not ensemble_average:
+                energies += pot.atomic_energies(
+                    elem_idxs, neighbors, _coordinates=coords
+                )
+            else:
+                energies += pot(elem_idxs, neighbors, _coordinates=coords)
+
+        if atomic_energies or not ensemble_average:
+            energies += self.energy_shifter.atomic_energies(
+                elem_idxs, ensemble_average=False
+            )
+            if ensemble_average:
+                energies.mean(dim=0)
+            if not atomic_energies:
+                energies.sum(dim=-1)
+        else:
+            energies += self.energy_shifter(elem_idxs)
         return energies
 
     # Needed for bw compatibility
@@ -517,30 +517,23 @@ class ANI(torch.nn.Module):
         species_coordinates: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        ensemble_average: bool = False,
         unbiased: bool = True,
     ) -> AtomicStdev:
         r"""Returns standard deviation of atomic energies across an ensemble
 
         If the model has only 1 network, a value of 0.0 is output for the stdev
         """
-        species_coordinates = self._maybe_convert_species(species_coordinates)
-        species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
-        atomic_energies = self.neural_networks.members_atomic_energies(species_aevs)
-
-        atomic_energies += self.energy_shifter.atomic_energies(
-            species_coordinates[0],
-            ensemble_average=ensemble_average,
+        elem_idxs, atomic_energies = self(
+            species_coordinates,
+            cell=cell,
+            pbc=pbc,
+            ensemble_average=False,
+            atomic_energies=True,
         )
-
-        if len(self.neural_networks.active_members_idxs) == 1:
+        if atomic_energies.shape[-2] == 1:
             stdev_atomic_energies = torch.zeros_like(atomic_energies).squeeze(0)
         else:
             stdev_atomic_energies = atomic_energies.std(0, unbiased=unbiased)
-
-        if ensemble_average:
-            atomic_energies = atomic_energies.mean(0)
-
         return AtomicStdev(
             species_coordinates[0], atomic_energies, stdev_atomic_energies
         )
