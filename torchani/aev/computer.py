@@ -84,8 +84,8 @@ class AEVComputer(torch.nn.Module):
         # The following corresponds to initialization and checks for the cuAEV:
 
         # Check if the cuaev and the cuaev fused are available for used
-        self._cuaev_fused_is_avail = self._check_cuaev_fused_avail(raise_exc=False)
-        self._cuaev_is_avail = self._check_cuaev_avail(raise_exc=False)
+        self._cuaev_fused_is_avail = self._check_cuaev_fused_avail()
+        self._cuaev_is_avail = self._check_cuaev_avail()
 
         # cuAEV dummy initialization ('registration') happens here, as long as
         # cuAEV is installed, even if it is not used. This is required by JIT
@@ -99,15 +99,32 @@ class AEVComputer(torch.nn.Module):
         # If we are using cuAEV then we need to check that the
         # arguments passed to __init__ are supported.
         if self._compute_strategy == "cuaev":
-            self._check_cuaev_avail()
+            self._check_cuaev_avail(raise_exc=True)
         elif self._compute_strategy == "cuaev-fused":
-            self._check_cuaev_fused_avail()
+            self._check_cuaev_fused_avail(raise_exc=True)
 
     @property
     def compute_strategy(self) -> str:
         return self._compute_strategy
 
-    def _check_cuaev_avail(self, raise_exc: bool = True) -> bool:
+    @torch.jit.export
+    def set_compute_strategy(
+        self,
+        strat: str = "pyaev",
+    ) -> None:
+        if strat == "pyaev":
+            pass
+        elif strat == "cuaev-fused":
+            if not self._cuaev_fused_is_avail:
+                raise ValueError("cuAEV-fused strategy is not available")
+        elif strat == "cuaev":
+            if not self._cuaev_is_avail:
+                raise ValueError("cuAEV strategy is not available")
+        else:
+            raise ValueError("Unknown compute strategy")
+        self._compute_strategy = strat
+
+    def _check_cuaev_avail(self, raise_exc: bool = False) -> bool:
         if not CUAEV_IS_INSTALLED:
             if raise_exc:
                 raise ValueError("cuAEV is not installed")
@@ -125,7 +142,7 @@ class AEVComputer(torch.nn.Module):
             return False
         return True
 
-    def _check_cuaev_fused_avail(self, raise_exc: bool = True) -> bool:
+    def _check_cuaev_fused_avail(self, raise_exc: bool = False) -> bool:
         avail = self._check_cuaev_avail(raise_exc=raise_exc)
         if not avail:
             return False
@@ -134,24 +151,6 @@ class AEVComputer(torch.nn.Module):
                 raise ValueError("cuAEV-fused only supports the default neighborlist")
             return False
         return True
-
-    @torch.jit.export
-    def set_compute_strategy(
-        self,
-        strat: str = "pyaev",
-    ) -> None:
-        # Check availability of compute strategy
-        if strat == "pyaev":
-            pass
-        elif strat == "cuaev-fused":
-            if self._cuaev_fused_is_avail:
-                raise ValueError("cuAEV-fused strategy is not available")
-        elif strat == "cuaev":
-            if not self._cuaev_is_avail:
-                raise ValueError("cuAEV strategy is not available")
-        else:
-            raise ValueError("Unknown compute strategy")
-        self._compute_strategy = strat
 
     def extra_repr(self) -> str:
         radial_perc = f"{self.radial_length / self.aev_length * 100:.2f}% of features"
@@ -219,45 +218,30 @@ class AEVComputer(torch.nn.Module):
             NamedTuple: Species and AEVs. species are the species from the input
             unchanged, and AEVs is a tensor of shape ``(N, A, self.aev_length)``
         """
-        species, coordinates = input_
+        species, coords = input_
         # Check input shape correctness and validate cutoffs
         assert species.dim() == 2
-        assert coordinates.dim() == 3
-        assert (species.shape == coordinates.shape[:2]) and (coordinates.shape[2] == 3)
+        assert coords.dim() == 3
+        assert (species.shape == coords.shape[:2]) and (coords.shape[2] == 3)
         assert self.angular_terms.cutoff < self.radial_terms.cutoff
-        # WARNING: If a neighborlist is used, the coordinates that are input
+        # WARNING: If a neighborlist is used, the coords that are input
         # into the neighborlist do **not** need to be mapped into the
         # central cell for pbc calculations.
 
-        # pyAEV branch:
+        cutoff = self.radial_terms.cutoff
         if self._compute_strategy == "pyaev":
-            neighbors = self.neighborlist(
-                species, coordinates, self.radial_terms.cutoff, cell, pbc
-            )
+            neighbors = self.neighborlist(species, coords, cutoff, cell, pbc)
             aev = self._compute_aev(element_idxs=species, neighbors=neighbors)
-            return SpeciesAEV(species, aev)
-
-        # cuAEV and cuAEV-fused branch:
-        if species.device.type != "cuda" and species.shape[1] != 0:
-            raise ValueError(
-                "cuAEV requires inputs in a CUDA device if there is at least 1 atom"
-            )
-
-        if not self.cuaev_is_initialized:
-            self._init_cuaev_computer()
-            self.cuaev_is_initialized = True
-
-        if self._compute_strategy == "cuaev":
-            neighbors = self.neighborlist(
-                species, coordinates, self.radial_terms.cutoff, cell, pbc
-            )
-            aev = self._compute_cuaev_with_half_nbrlist(species, coordinates, neighbors)
-        else:
-            assert self._compute_strategy == "cuaev-fused", "Internal assert failed"
+        elif self._compute_strategy == "cuaev":
+            neighbors = self.neighborlist(species, coords, cutoff, cell, pbc)
+            aev = self._compute_cuaev_with_half_nbrlist(species, coords, neighbors)
+        elif self._compute_strategy == "cuaev-fused":
             if pbc is not None:
                 if pbc.any():
                     raise ValueError("cuAEV-fused doesn't support PBC")
-            aev = self._compute_cuaev(species, coordinates)
+            aev = self._compute_cuaev(species, coords)
+        else:
+            raise RuntimeError(f"Invalid compute strategy {self._compute_strategy}")
         return SpeciesAEV(species, aev)
 
     def _compute_aev(
@@ -447,11 +431,77 @@ class AEVComputer(torch.nn.Module):
 
     @jit_unused_if_no_cuaev()
     def _compute_cuaev(self, species: Tensor, coordinates: Tensor) -> Tensor:
+        self._prepare_cuaev_execution(species, "fused")
+        return torch.ops.cuaev.run(
+            coordinates, species.to(torch.int32), self.cuaev_computer
+        )
+
+    @jit_unused_if_no_cuaev()
+    def _compute_cuaev_with_half_nbrlist(
+        self,
+        species: Tensor,
+        coordinates: Tensor,
+        neighbors: NeighborData,
+    ) -> Tensor:
+        self._prepare_cuaev_execution(species, "half-neighborlist")
+        # The coordinates will not be used in forward calculation, but it's
+        # gradient (force) will still be calculated in cuaev kernel, so it's
+        # important to have coordinates passed as an argument.
+        return torch.ops.cuaev.run_with_half_nbrlist(
+            coordinates,
+            species.to(torch.int32),
+            neighbors.indices.to(torch.int32),
+            neighbors.diff_vectors,
+            neighbors.distances,
+            self.cuaev_computer,
+        )
+
+    @jit_unused_if_no_cuaev()
+    def _compute_cuaev_with_full_nbrlist(
+        self,
+        species: Tensor,
+        coordinates: Tensor,
+        ilist_unique: Tensor,
+        jlist: Tensor,
+        numneigh: Tensor,
+    ) -> Tensor:
+        """
+        Computing aev with full nbrlist that is from
+            1. Lammps interface
+            2. For testting purpose, the full nbrlist converted from half nbrlist
+
+        The full neighbor list format needs the following three tensors:
+            - `ilist_unique`: This is a 1D tensor containing all local atom indices.
+            - `jlist`: A 1D tensor containing all the neighbors for all atoms.
+                  The neighbors for atom `i` could be inferred from the numneigh
+                  tensor.
+            - `numneigh`: This is a 1D tensor that specifies the number of
+                neighbors for each atom i.
+        """
+        self._prepare_cuaev_execution(species, "full-neighborlist")
+        if coordinates.shape[0] != 1:
+            raise ValueError("cuAEV with full neighborlist only supports single molecs")
+        return torch.ops.cuaev.run_with_full_nbrlist(
+            coordinates,
+            species.to(torch.int32),
+            ilist_unique.to(torch.int32),
+            jlist.to(torch.int32),
+            numneigh.to(torch.int32),
+            self.cuaev_computer,
+        )
+
+    def _prepare_cuaev_execution(self, species: Tensor, branch: str) -> None:
         if self._print_aev_branch:
-            print("Executing branch: FUSED cuAEV")
-        species_int = species.to(torch.int32)
-        aev = torch.ops.cuaev.run(coordinates, species_int, self.cuaev_computer)
-        return aev
+            print(f"Executing branch: cuAEV {branch}")
+
+        if species.device.type != "cuda" and species.shape[1] != 0:
+            raise ValueError(
+                "cuAEV requires inputs in a CUDA device if there is at least 1 atom"
+            )
+
+        if not self.cuaev_is_initialized:
+            self._init_cuaev_computer()
+            self.cuaev_is_initialized = True
 
     @jit_unused_if_no_cuaev()
     @staticmethod
@@ -501,62 +551,6 @@ class AEVComputer(torch.nn.Module):
 
         distances = diff_vector.norm(2, -1)
         return atom_index12, diff_vector, distances
-
-    @jit_unused_if_no_cuaev()
-    def _compute_cuaev_with_half_nbrlist(
-        self,
-        species: Tensor,
-        coordinates: Tensor,
-        neighbors: NeighborData,
-    ) -> Tensor:
-        if self._print_aev_branch:
-            print("Executing branch: cuAEV")
-        # The coordinates will not be used in forward calculation, but it's
-        # gradient (force) will still be calculated in cuaev kernel, so it's
-        # important to have coordinates passed as an argument.
-        return torch.ops.cuaev.run_with_half_nbrlist(
-            coordinates,
-            species.to(torch.int32),
-            neighbors.indices.to(torch.int32),
-            neighbors.diff_vectors,
-            neighbors.distances,
-            self.cuaev_computer,
-        )
-
-    @jit_unused_if_no_cuaev()
-    def _compute_cuaev_with_full_nbrlist(
-        self,
-        species: Tensor,
-        coordinates: Tensor,
-        ilist_unique: Tensor,
-        jlist: Tensor,
-        numneigh: Tensor,
-    ) -> Tensor:
-        """
-        Computing aev with full nbrlist that is from
-            1. Lammps interface
-            2. For testting purpose, the full nbrlist converted from half nbrlist
-
-        The full neighbor list format needs the following three tensors:
-            - `ilist_unique`: This is a 1D tensor containing all local atom indices.
-            - `jlist`: A 1D tensor containing all the neighbors for all atoms.
-                  The neighbors for atom `i` could be inferred from the numneigh
-                  tensor.
-            - `numneigh`: This is a 1D tensor that specifies the number of
-                neighbors for each atom i.
-        """
-        assert (
-            coordinates.shape[0] == 1
-        ), "_compute_cuaev_with_full_nbrlist only supports single molecule"
-        aev = torch.ops.cuaev.run_with_full_nbrlist(
-            coordinates,
-            species.to(torch.int32),
-            ilist_unique.to(torch.int32),
-            jlist.to(torch.int32),
-            numneigh.to(torch.int32),
-            self.cuaev_computer,
-        )
-        return aev
 
     # Constructors:
     @classmethod
