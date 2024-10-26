@@ -105,9 +105,9 @@ class ANI(torch.nn.Module):
         self.energy_shifter = energy_shifter
         self.species_converter = SpeciesConverter(symbols).to(device)
 
+        self._has_pair_pots = bool(pairwise_potentials)
         potentials: tp.List[Potential] = list(pairwise_potentials)
         potentials.append(NNPotential(self.aev_computer, self.neural_networks))
-        self.potentials_len = len(potentials)
 
         # Sort potentials in order of decresing cutoff. The potential with the
         # LARGEST cutoff is computed first, then sequentially things that need
@@ -203,8 +203,11 @@ class ANI(torch.nn.Module):
         assert coords.shape[:-1] == elem_idxs.shape
         assert coords.shape[-1] == 3
 
-        # Optimized path, use merged Neighborlist-AEVomputer
-        if self.potentials_len == 1:
+        # Optimized path, use merged Neighborlist-AEVComputer
+        if (
+            not self._has_pair_pots
+            and self._aev_computer._compute_strategy == "cuaev-fused"
+        ):
             _, energies = self.neural_networks(
                 self.aev_computer((elem_idxs, coords), cell=cell, pbc=pbc)
             )
@@ -275,7 +278,10 @@ class ANI(torch.nn.Module):
         elem_idxs, coords = self._maybe_convert_species(species_coordinates)
 
         # Optimized path, go through the merged Neighborlist-AEVomputer only
-        if self.potentials_len == 1:
+        if (
+            not self._has_pair_pots
+            and self._aev_computer._compute_strategy == "cuaev-fused"
+        ):
             atomic_energies = self.neural_networks.members_atomic_energies(
                 self.aev_computer((elem_idxs, coords), cell=cell, pbc=pbc)
             )
