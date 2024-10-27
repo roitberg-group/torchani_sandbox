@@ -78,7 +78,7 @@ from torchani.annotations import Device
 def ANI1x(
     model_index: tp.Optional[int] = None,
     neighborlist: NeighborlistArg = "full_pairwise",
-    compute_strategy: str = "pyaev",
+    strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: tp.Optional[Device] = None,
     dtype: tp.Optional[torch.dtype] = None,
@@ -100,9 +100,7 @@ def ANI1x(
     asm.set_symbols(SYMBOLS_1X, auto_sort=False)
     asm.set_atomic_networks(atomics.like_1x)
     asm.set_global_cutoff_fn("cosine")
-    asm.set_featurizer(
-        angular_terms="ani1x", radial_terms="ani1x", compute_strategy=compute_strategy
-    )
+    asm.set_featurizer(angular_terms="ani1x", radial_terms="ani1x", strategy=strategy)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble(8)
@@ -119,7 +117,7 @@ def ANI1x(
 def ANI1ccx(
     model_index: tp.Optional[int] = None,
     neighborlist: NeighborlistArg = "full_pairwise",
-    compute_strategy: str = "pyaev",
+    strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: tp.Optional[Device] = None,
     dtype: tp.Optional[torch.dtype] = None,
@@ -141,9 +139,7 @@ def ANI1ccx(
     asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_1X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
-    asm.set_featurizer(
-        radial_terms="ani1x", angular_terms="ani1x", compute_strategy=compute_strategy
-    )
+    asm.set_featurizer(radial_terms="ani1x", angular_terms="ani1x", strategy=strategy)
     asm.set_atomic_networks(atomics.like_1x)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("ccsd(t)star-cbs")
@@ -160,7 +156,7 @@ def ANI1ccx(
 def ANI2x(
     model_index: tp.Optional[int] = None,
     neighborlist: NeighborlistArg = "full_pairwise",
-    compute_strategy: str = "pyaev",
+    strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: tp.Optional[Device] = None,
     dtype: tp.Optional[torch.dtype] = None,
@@ -181,9 +177,7 @@ def ANI2x(
     asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
-    asm.set_featurizer(
-        radial_terms="ani2x", angular_terms="ani2x", compute_strategy=compute_strategy
-    )
+    asm.set_featurizer(radial_terms="ani2x", angular_terms="ani2x", strategy=strategy)
     asm.set_atomic_networks(atomics.like_2x)
     asm.set_neighborlist(neighborlist)
     # The self energies are overwritten by the state dict
@@ -201,7 +195,7 @@ def ANI2x(
 def ANImbis(
     model_index: tp.Optional[int] = None,
     neighborlist: NeighborlistArg = "full_pairwise",
-    compute_strategy: str = "pyaev",
+    strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: tp.Optional[Device] = None,
     dtype: tp.Optional[torch.dtype] = None,
@@ -210,14 +204,12 @@ def ANImbis(
     ANI-2x model with MBIS experimental charges. Note: will be removed in the
     future.
     """
-    if compute_strategy not in ["pyaev", "cuaev"]:
-        raise ValueError(f"Unavailable strategy for ANImbis: {compute_strategy}")
+    if strategy not in ["pyaev", "cuaev"]:
+        raise ValueError(f"Unavailable strategy for ANImbis: {strategy}")
     asm = Assembler(periodic_table_index=periodic_table_index, model_type=ANIq)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
-    asm.set_featurizer(
-        radial_terms="ani2x", angular_terms="ani2x", compute_strategy=compute_strategy
-    )
+    asm.set_featurizer(radial_terms="ani2x", angular_terms="ani2x", strategy=strategy)
     asm.set_atomic_networks(atomics.like_2x)
 
     asm.set_charge_networks(
@@ -262,7 +254,7 @@ def ANImbis(
 def ANIala(
     model_index: tp.Optional[int] = None,
     neighborlist: NeighborlistArg = "full_pairwise",
-    compute_strategy: str = "pyaev",
+    strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: tp.Optional[Device] = None,
     dtype: tp.Optional[torch.dtype] = None,
@@ -273,9 +265,7 @@ def ANIala(
     asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
-    asm.set_featurizer(
-        radial_terms="ani2x", angular_terms="ani2x", compute_strategy=compute_strategy
-    )
+    asm.set_featurizer(radial_terms="ani2x", angular_terms="ani2x", strategy=strategy)
     asm.set_atomic_networks(atomics.like_ala)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
@@ -292,7 +282,7 @@ def ANIala(
 def ANIdr(
     model_index: tp.Optional[int] = None,
     neighborlist: NeighborlistArg = "full_pairwise",
-    compute_strategy: str = "pyaev",
+    strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: tp.Optional[Device] = None,
     dtype: tp.Optional[torch.dtype] = None,
@@ -303,14 +293,12 @@ def ANIdr(
     It predicts
     energies on HCNOFSCl elements
     """
-    if compute_strategy not in ["pyaev", "cuaev"]:
-        raise ValueError(f"Unavailable strategy for ANImbis: {compute_strategy}")
+    if strategy not in ["pyaev", "cuaev"]:
+        raise ValueError(f"Unavailable strategy for ANImbis: {strategy}")
     asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("smooth2")
-    asm.set_featurizer(
-        angular_terms="ani2x", radial_terms="ani2x", compute_strategy=compute_strategy
-    )
+    asm.set_featurizer(angular_terms="ani2x", radial_terms="ani2x", strategy=strategy)
     asm.set_atomic_networks(atomics.like_dr)
     asm.add_pair_potential(
         RepulsionXTB,

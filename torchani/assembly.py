@@ -106,7 +106,7 @@ class ANI(torch.nn.Module):
         self.energy_shifter = energy_shifter
         self.species_converter = SpeciesConverter(symbols).to(device)
 
-        self._has_pair_potentials = bool(pair_potentials)
+        self._has_pair_pots = bool(pair_potentials)
         potentials: tp.List[Potential] = list(pair_potentials)
         potentials.append(NNPotential(self.aev_computer, self.neural_networks))
 
@@ -133,11 +133,11 @@ class ANI(torch.nn.Module):
                 p.neural_networks.set_active_members(idxs)
 
     @torch.jit.export
-    def set_compute_strategy(self, strategy: str = "pyaev") -> None:
-        self.aev_computer.set_compute_strategy(strategy)
+    def set_strategy(self, strategy: str = "pyaev") -> None:
+        self.aev_computer.set_strategy(strategy)
         for p in self.potentials:
             if hasattr(p, "aev_computer"):
-                p.aev_computer.set_compute_strategy(strategy)
+                p.aev_computer.set_strategy(strategy)
 
     @torch.jit.export
     def sp(
@@ -209,10 +209,7 @@ class ANI(torch.nn.Module):
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
 
         # Optimized branch that uses the cuAEV-fused strategy
-        if (
-            not self._has_pair_potentials
-            and self.aev_computer._compute_strategy == "cuaev-fused"
-        ):
+        if not self._has_pair_pots and self.aev_computer._strategy == "cuaev-fused":
             aevs = self.aev_computer((elem_idxs, coords), cell=cell, pbc=pbc)[1]
             energies = self.neural_networks(
                 (elem_idxs, aevs),
@@ -817,7 +814,7 @@ class FeaturizerWrapper:
         radial_terms: RadialTermArg,
         angular_terms: AngularTermArg,
         cutoff_fn: CutoffArg = "global",
-        compute_strategy: str = "pyaev",
+        strategy: str = "pyaev",
     ) -> None:
         self.cls = cls
         self.cutoff_fn = cutoff_fn
@@ -827,7 +824,7 @@ class FeaturizerWrapper:
             raise ValueError("Angular cutoff must be smaller or equal to radial cutoff")
         if self.angular_terms.cutoff <= 0 or self.radial_terms.cutoff <= 0:
             raise ValueError("Cutoffs must be strictly positive")
-        self.compute_strategy = compute_strategy
+        self.strategy = strategy
 
 
 @dataclass
@@ -961,7 +958,7 @@ class Assembler:
         angular_terms: AngularTermArg,
         radial_terms: RadialTermArg,
         cutoff_fn: CutoffArg = "global",
-        compute_strategy: str = "pyaev",
+        strategy: str = "pyaev",
         featurizer_type: FeaturizerType = AEVComputer,
     ) -> None:
         self._featurizer = FeaturizerWrapper(
@@ -969,7 +966,7 @@ class Assembler:
             cutoff_fn=cutoff_fn,
             angular_terms=angular_terms,
             radial_terms=radial_terms,
-            compute_strategy=compute_strategy,
+            strategy=strategy,
         )
 
     def set_neighborlist(
@@ -1029,7 +1026,7 @@ class Assembler:
             angular_terms=self._featurizer.angular_terms,
             radial_terms=self._featurizer.radial_terms,
             num_species=len(self.symbols),
-            compute_strategy=self._featurizer.compute_strategy,
+            strategy=self._featurizer.strategy,
         )
         neural_networks: AtomicContainer
         if ensemble_size > 1:
@@ -1118,7 +1115,8 @@ def simple_ani(
     atomic_maker: AtomicMakerArg = "ani2x",
     activation: tp.Union[str, torch.nn.Module] = "gelu",
     bias: bool = False,
-    compute_strategy: str = "pyaev",
+    strategy: str = "pyaev",
+    use_cuda_ops: bool = False,
 ) -> ANI:
     r"""
     Flexible builder to create ANI-style models. Defaults are similar to ANI-2x.
@@ -1129,8 +1127,11 @@ def simple_ani(
         - angular_start=0.8
         - radial_cutoff=5.1
     """
-    if compute_strategy not in ["pyaev", "cuaev"]:
-        raise ValueError(f"Unavailable strategy: {compute_strategy}")
+    if strategy not in ["pyaev", "cuaev"]:
+        raise ValueError(f"Unavailable strategy: {strategy}")
+    if use_cuda_ops:
+        warnings.warn("use_cuda_ops is deprecated, please use strategy = 'cuaev'")
+        strategy = "cuaev"
     asm = Assembler()
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
@@ -1149,7 +1150,7 @@ def simple_ani(
             num_angle_sections=angle_sections,
             cutoff=angular_cutoff,
         ),
-        compute_strategy=compute_strategy,
+        strategy=strategy,
     )
     atomic_maker = functools.partial(
         atomics.parse_atomics(atomic_maker),
@@ -1193,10 +1194,11 @@ def simple_aniq(
     atomic_maker: AtomicMakerArg = "ani2x",
     activation: tp.Union[str, torch.nn.Module] = "gelu",
     bias: bool = False,
-    compute_strategy: str = "pyaev",
+    strategy: str = "pyaev",
     merge_charge_networks: bool = False,
     scale_charge_normalizer_weights: bool = True,
     dummy_energies: bool = False,
+    use_cuda_ops: bool = False,
 ) -> ANI:
     r"""
     Flexible builder to create ANI-style models with separated or merged charge
@@ -1208,8 +1210,11 @@ def simple_aniq(
         - angular_start=0.8
         - radial_cutoff=5.1
     """
-    if compute_strategy not in ["pyaev", "cuaev"]:
-        raise ValueError(f"Unavailable strategy: {compute_strategy}")
+    if strategy not in ["pyaev", "cuaev"]:
+        raise ValueError(f"Unavailable strategy: {strategy}")
+    if use_cuda_ops:
+        warnings.warn("use_cuda_ops is deprecated, please use strategy = 'cuaev'")
+        strategy = "cuaev"
     asm = Assembler(model_type=ANIq)
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
@@ -1228,7 +1233,7 @@ def simple_aniq(
             num_angle_sections=angle_sections,
             cutoff=angular_cutoff,
         ),
-        compute_strategy=compute_strategy,
+        strategy=strategy,
     )
     normalizer = ChargeNormalizer.from_electronegativity_and_hardness(
         asm.symbols,

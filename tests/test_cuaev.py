@@ -66,34 +66,34 @@ class TestCUAEVStrategy(ANITest):
 
     @skipIfNoCUAEV
     def testModelChangeStrat(self) -> None:
-        m = self._setup(ANIdr(compute_strategy="cuaev"))
+        m = self._setup(ANIdr(strategy="cuaev"))
 
-        m.set_compute_strategy("cuaev")
+        m.set_strategy("cuaev")
         cu = m(self.znum_input)[1]
 
-        m.set_compute_strategy("pyaev")
+        m.set_strategy("pyaev")
         py = m(self.znum_input)[1]
 
         self.assertEqual(py, cu, atol=self.tolerance, rtol=self.tolerance)
 
     @skipIfNoCUAEV
     def testInvalidModelStrat(self) -> None:
-        m = self._setup(ANIdr(compute_strategy="cuaev"))
+        m = self._setup(ANIdr(strategy="cuaev"))
         with self.assertRaises(torch.jit.Error if self.jit else RuntimeError):
-            m.set_compute_strategy("cuaev-fused")
+            m.set_strategy("cuaev-fused")
             _ = m(self.znum_input)[1]
 
     @skipIfNoCUAEV
     def testAEVChangeStrat(self) -> None:
-        m = self._setup(AEVComputer.like_2x(compute_strategy="cuaev"))
+        m = self._setup(AEVComputer.like_2x(strategy="cuaev"))
 
-        m.set_compute_strategy("cuaev")
+        m.set_strategy("cuaev")
         cu = m(self.input)[1]
 
-        m.set_compute_strategy("cuaev-fused")
+        m.set_strategy("cuaev-fused")
         cu_fused = m(self.input)[1]
 
-        m.set_compute_strategy("pyaev")
+        m.set_strategy("pyaev")
         py = m(self.input)[1]
 
         self.assertEqual(py, cu, atol=self.tolerance, rtol=self.tolerance)
@@ -134,7 +134,7 @@ class TestCUAEVNoGPU(TestCase):
 
     def testNoAtoms(self):
         # cuAEV with no atoms does not require CUDA, and can be run without GPU
-        m = torch.jit.script(AEVComputer.like_1x(compute_strategy="cuaev-fused"))
+        m = torch.jit.script(AEVComputer.like_1x(strategy="cuaev-fused"))
         species = make_tensor((8, 0), device="cpu", dtype=torch.int64, low=-1, high=4)
         coordinates = make_tensor(
             (8, 0, 3), device="cpu", dtype=torch.float32, low=-5, high=5
@@ -142,7 +142,7 @@ class TestCUAEVNoGPU(TestCase):
         self.assertIn("cuaev::run", str(m.graph_for((species, coordinates))))
 
     def testPickle(self):
-        aev_computer = AEVComputer.like_1x(compute_strategy="cuaev-fused")
+        aev_computer = AEVComputer.like_1x(strategy="cuaev-fused")
         with tempfile.TemporaryFile(mode="wb+") as f:
             pickle.dump(aev_computer, f)
             f.seek(0)
@@ -173,7 +173,7 @@ class TestCUAEV(TestCase):
         )
         self.cuaev_computer_1x = AEVComputer.like_1x(
             cutoff_fn=self.cutoff_fn,
-            compute_strategy="cuaev-fused",
+            strategy="cuaev-fused",
         ).to(dtype=self.dtype, device=self.device)
         self.nn = torch.nn.Sequential(
             torch.nn.Linear(384, 1, False, dtype=self.dtype, device=self.device)
@@ -184,11 +184,11 @@ class TestCUAEV(TestCase):
         )
         self.cuaev_computer_2x = AEVComputer.like_2x(
             cutoff_fn=self.cutoff_fn,
-            compute_strategy="cuaev-fused",
+            strategy="cuaev-fused",
         ).to(dtype=self.dtype, device=self.device)
         self.cuaev_computer_2x_use_interface = AEVComputer.like_2x(
             cutoff_fn=self.cutoff_fn,
-            compute_strategy="cuaev",
+            strategy="cuaev",
         ).to(dtype=self.dtype, device=self.device)
         self.converter = SpeciesConverter(SYMBOLS_2X).to(
             dtype=self.dtype, device=self.device
