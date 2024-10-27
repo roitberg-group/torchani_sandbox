@@ -234,11 +234,11 @@ def ANImbis(
     asm.set_atomic_networks(atomics.like_2x)
 
     asm.set_charge_networks(
-        _ANIModelDiscardFirstScalar,
         partial(atomics.like_2x, out_dim=2, bias=False, activation="gelu"),
         normalizer=ChargeNormalizer.from_electronegativity_and_hardness(
             asm.symbols, scale_weights_by_charges_squared=True
         ),
+        container_type=_ANIModelDiscardFirstScalar,
     )
     asm.set_neighborlist(neighborlist)
     # The self energies are overwritten by the state dict
