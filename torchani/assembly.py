@@ -206,9 +206,7 @@ class ANI(torch.nn.Module):
     ) -> SpeciesEnergies:
         species, coords = species_coordinates
         self._check_inputs(species, coords, total_charge)
-        elem_idxs = (
-            self.species_converter(species) if self.periodic_table_index else species
-        )
+        elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
 
         # Optimized branch that uses the cuAEV-fused strategy
         if (
@@ -257,9 +255,7 @@ class ANI(torch.nn.Module):
     ) -> SpeciesEnergies:
         r"""This entrypoint supports input from an external neighborlist"""
         self._check_inputs(species, coords, total_charge)
-        elem_idxs = (
-            self.species_converter(species) if self.periodic_table_index else species
-        )
+        elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
 
         max_cutoff = self.potentials[0].cutoff
         neighbors = self.neighborlist.process_external_input(
@@ -724,9 +720,7 @@ class ANIq(ANI):
             raise ValueError("ensemble_values not supported for ANIq")
         # This entrypoint supports input from an external neighborlist
         self._check_inputs(species, coords, total_charge)
-        elem_idxs = (
-            self.species_converter(species) if self.periodic_table_index else species
-        )
+        elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
 
         previous_cutoff = self.potentials[0].cutoff
         neighbors = self.neighborlist.process_external_input(
@@ -777,9 +771,8 @@ class ANIq(ANI):
             raise ValueError("atomic E and ensemble values not supported")
         species, coords = species_coordinates
         self._check_inputs(species, coords, total_charge)
-        elem_idxs = (
-            self.species_converter(species) if self.periodic_table_index else species
-        )
+        elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
+
         prev_cutoff = self.potentials[0].cutoff
         neighbor_data = self.neighborlist(elem_idxs, coords, prev_cutoff, cell, pbc)
         energies = coords.new_zeros(elem_idxs.shape[0])

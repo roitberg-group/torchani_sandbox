@@ -230,8 +230,15 @@ class SpeciesConverter(torch.nn.Module):
             [ATOMIC_NUMBER[e] for e in species], dtype=torch.long
         )
 
-    def forward(self, atomic_nums: Tensor) -> Tensor:
+    def forward(self, atomic_nums: Tensor, nop: bool = False) -> Tensor:
         r"""Convert species from atomic numbers to 0, 1, 2, 3, ... indexing"""
+
+        # Consider as element idxs and check that its not too large, otherwise its
+        # a no-op TODO: unclear documentation for this, possibly remove
+        if nop:
+            if atomic_nums.max() >= len(self.atomic_numbers):
+                raise ValueError(f"Unsupported element idx in {atomic_nums}")
+            return atomic_nums
         elem_idxs = self.conv_tensor[atomic_nums]
         if (elem_idxs[atomic_nums != -1] == -1).any():
             raise ValueError(
