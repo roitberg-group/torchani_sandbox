@@ -253,7 +253,7 @@ class Sequential(torch.nn.ModuleList):
 
     def __init__(self, *modules):
         super().__init__(modules)
-        warnings.warn("Use of 'Sequential' is strongly discouraged")
+        warnings.warn("Use of `torchani.nn.Sequential` is strongly discouraged.")
 
     def forward(
         self,
