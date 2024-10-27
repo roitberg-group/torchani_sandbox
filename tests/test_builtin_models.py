@@ -77,8 +77,6 @@ class TestExternalEntryPoints(ANITest):
                 neighbors.indices,
                 neighbors.shift_values,
                 total_charge=0,
-                ensemble_average=True,
-                atomic_energies=False,
             )
         else:
             _, e, q = model.energies_and_atomic_charges(
@@ -86,8 +84,6 @@ class TestExternalEntryPoints(ANITest):
                 cell=cell,
                 pbc=pbc,
                 total_charge=0,
-                ensemble_average=True,
-                atomic_energies=False,
             )
             _, e2, q2 = model.energies_and_atomic_charges_from_neighborlist(
                 species,
@@ -95,8 +91,6 @@ class TestExternalEntryPoints(ANITest):
                 neighbors.indices,
                 neighbors.shift_values,
                 total_charge=0,
-                ensemble_average=True,
-                atomic_energies=False,
             )
             self.assertEqual(q, q2)
         self.assertEqual(e, e2)
