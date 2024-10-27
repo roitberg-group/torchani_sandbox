@@ -8,7 +8,7 @@ import pickle
 import torch
 from parameterized import parameterized_class
 
-from torchani._testing import ANITest, expand
+from torchani._testing import ANITestCase, expand
 from torchani.utils import SYMBOLS_2X
 from torchani.nn import SpeciesConverter
 from torchani.aev import AEVComputer
@@ -32,7 +32,7 @@ skipIfNoCUAEV = unittest.skipIf(
 
 
 @expand(device="cuda")
-class TestCUAEVStrategy(ANITest):
+class TestCUAEVStrategy(ANITestCase):
     def setUp(self) -> None:
         self.tolerance = 5e-5
         coordinates = torch.tensor(
