@@ -340,8 +340,9 @@ class ANI(torch.nn.Module):
             stress_numerical=stress_numerical,
         )
 
+    @property
     @torch.jit.unused
-    def get_chemical_symbols(self) -> tp.Tuple[str, ...]:
+    def symbols(self) -> tp.Tuple[str, ...]:
         return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)
 
     # TODO make this be useful

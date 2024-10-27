@@ -76,7 +76,7 @@ class MergedChargesNNPotential(NNPotential):
     ):
         super().__init__(aev_computer, neural_networks)
         if charge_normalizer is None:
-            charge_normalizer = ChargeNormalizer(self.get_chemical_symbols())
+            charge_normalizer = ChargeNormalizer(self.symbols)
         self.charge_normalizer = charge_normalizer
 
     @torch.jit.export
@@ -108,7 +108,7 @@ class SeparateChargesNNPotential(NNPotential):
     ):
         super().__init__(aev_computer, neural_networks)
         if charge_normalizer is None:
-            charge_normalizer = ChargeNormalizer(self.get_chemical_symbols())
+            charge_normalizer = ChargeNormalizer(self.symbols)
         self.charge_networks = charge_networks
         self.charge_normalizer = charge_normalizer
 
