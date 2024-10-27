@@ -67,11 +67,11 @@ import typing as tp
 
 from torchani import atomics
 from torchani.utils import SYMBOLS_2X, SYMBOLS_1X
-from torchani.aev import AEVComputer, StandardRadial, StandardAngular
+from torchani.aev import StandardRadial, StandardAngular
 from torchani.electro import ChargeNormalizer
 from torchani.assembly import Assembler, ANI, ANIq, fetch_state_dict
 from torchani.neighbors import NeighborlistArg
-from torchani.nn import ANIModel, _ANIModelDiscardFirstScalar
+from torchani.nn import _ANIModelDiscardFirstScalar
 from torchani.potentials import TwoBodyDispersionD3, RepulsionXTB
 from torchani.annotations import Device
 
@@ -99,10 +99,9 @@ def ANI1x(
     """
     asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_1X, auto_sort=False)
-    asm.set_atomic_networks(ANIModel, atomics.like_1x)
+    asm.set_atomic_networks(atomics.like_1x)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
-        AEVComputer,
         angular_terms=StandardAngular.like_1x(),
         radial_terms=StandardRadial.like_1x(),
         compute_strategy=compute_strategy,
@@ -146,12 +145,11 @@ def ANI1ccx(
     asm.set_symbols(SYMBOLS_1X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
-        AEVComputer,
         radial_terms=StandardRadial.like_1x(),
         angular_terms=StandardAngular.like_1x(),
         compute_strategy=compute_strategy,
     )
-    asm.set_atomic_networks(ANIModel, atomics.like_1x)
+    asm.set_atomic_networks(atomics.like_1x)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("ccsd(t)star-cbs")
     model = asm.assemble()
@@ -189,12 +187,11 @@ def ANI2x(
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
-        AEVComputer,
         radial_terms=StandardRadial.like_2x(),
         angular_terms=StandardAngular.like_2x(),
         compute_strategy=compute_strategy,
     )
-    asm.set_atomic_networks(ANIModel, atomics.like_2x)
+    asm.set_atomic_networks(atomics.like_2x)
     asm.set_neighborlist(neighborlist)
     # The self energies are overwritten by the state dict
     asm.set_gsaes_as_self_energies("wb97x-631gd")
@@ -230,12 +227,11 @@ def ANImbis(
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
-        AEVComputer,
         radial_terms=StandardRadial.like_2x(),
         angular_terms=StandardAngular.like_2x(),
         compute_strategy=compute_strategy,
     )
-    asm.set_atomic_networks(ANIModel, atomics.like_2x)
+    asm.set_atomic_networks(atomics.like_2x)
 
     asm.set_charge_networks(
         _ANIModelDiscardFirstScalar,
@@ -291,12 +287,11 @@ def ANIala(
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
-        AEVComputer,
         radial_terms=StandardRadial.like_2x(),
         angular_terms=StandardAngular.like_2x(),
         compute_strategy=compute_strategy,
     )
-    asm.set_atomic_networks(ANIModel, atomics.like_ala)
+    asm.set_atomic_networks(atomics.like_ala)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble()
@@ -329,12 +324,11 @@ def ANIdr(
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("smooth2")
     asm.set_featurizer(
-        AEVComputer,
         angular_terms=StandardAngular.like_2x(),
         radial_terms=StandardRadial.like_2x(),
         compute_strategy=compute_strategy,
     )
-    asm.set_atomic_networks(ANIModel, atomics.like_dr)
+    asm.set_atomic_networks(atomics.like_dr)
     asm.add_pair_potential(
         RepulsionXTB,
         cutoff=5.3,

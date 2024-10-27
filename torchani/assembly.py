@@ -968,17 +968,17 @@ class Assembler:
 
     def set_atomic_networks(
         self,
-        container_type: ContainerType,
         fn: AtomicMaker,
+        container_type: ContainerType = ANIModel,
     ) -> None:
         self._container_type = container_type
         self._fn_for_atomics = fn
 
     def set_charge_networks(
         self,
-        container_type: ContainerType,
         fn: AtomicMaker,
         normalizer: tp.Optional[ChargeNormalizer] = None,
+        container_type: ContainerType = ANIModel,
     ) -> None:
         if not issubclass(self._model_type, ANIq):
             raise ValueError("Model must be a subclass of ANIq to use charge networks")
@@ -988,11 +988,11 @@ class Assembler:
 
     def set_featurizer(
         self,
-        featurizer_type: FeaturizerType,
         angular_terms: AngularTermArg,
         radial_terms: RadialTermArg,
         cutoff_fn: CutoffArg = "global",
         compute_strategy: str = "pyaev",
+        featurizer_type: FeaturizerType = AEVComputer,
     ) -> None:
         self._featurizer = FeaturizerWrapper(
             featurizer_type,
@@ -1166,7 +1166,6 @@ def simple_ani(
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
     asm.set_featurizer(
-        AEVComputer,
         radial_terms=StandardRadial.cover_linearly(
             start=radial_start,
             cutoff=radial_cutoff,
@@ -1188,7 +1187,7 @@ def simple_ani(
         activation=atomics.parse_activation(activation),
         bias=bias,
     )
-    asm.set_atomic_networks(ANIModel, atomic_maker)
+    asm.set_atomic_networks(atomic_maker)
     asm.set_neighborlist("full_pairwise")
     asm.set_gsaes_as_self_energies(lot)
     if repulsion:
@@ -1250,7 +1249,6 @@ def simple_aniq(
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
     asm.set_featurizer(
-        AEVComputer,
         radial_terms=StandardRadial.cover_linearly(
             start=radial_start,
             cutoff=radial_cutoff,
@@ -1288,12 +1286,12 @@ def simple_aniq(
             bias=bias,
         )
         asm.set_charge_networks(
-            ANIModel,
             atomic_maker,
             normalizer=normalizer,
         )
     asm.set_atomic_networks(
-        ANIModel if not dummy_energies else DummyANIModel, atomic_maker
+        atomic_maker,
+        container_type=ANIModel if not dummy_energies else DummyANIModel,
     )
     asm.set_neighborlist("full_pairwise")
     if not dummy_energies:
