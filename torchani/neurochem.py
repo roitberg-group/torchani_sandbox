@@ -1,8 +1,8 @@
 r"""
-This submodule is considered *legacy*. Its not recommended for use with new
-models, and should only be used if needed to interface with previously trained
-ANI models. It contains tools for loading NeuroChem files, which were the original
-file format used in the first `ANI`_ article.
+This submodule is considered part of the *Legacy API*. Its not recommended for use with
+new models, and should only be used if needed to interface with previously trained ANI
+models. It contains tools for loading files in the NeuroChem format, the original file
+format used in the first `ANI`_ article.
 
 .. _ANI:
     http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
@@ -333,9 +333,10 @@ def load_member(symbols: tp.Sequence[str], model_dir: StrPath) -> ANINetworks:
     )
 
 
-def load_ensemble(symbols: tp.Sequence[str], prefix: StrPath, count: int) -> ANIEnsemble:
-    """Returns an instance of :class:`torchani.nn.ANIEnsemble` loaded from
-    NeuroChem's network directories beginning with the given prefix.
+def load_ensemble(
+    symbols: tp.Sequence[str], prefix: StrPath, count: int
+) -> ANIEnsemble:
+    """Loads :class:`torchani.nn.ANIEnsemble` from NeuroChem's dirs with a given prefix
 
     Arguments:
         symbols (:class:`collections.abc.Sequence`): Sequence of strings for
