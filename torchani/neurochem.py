@@ -24,7 +24,7 @@ import typing_extensions as tpx
 from torchani.paths import neurochem_dir
 from torchani.assembly import ANI
 from torchani.aev import AEVComputer
-from torchani.nn import ANINetworks, Ensemble
+from torchani.nn import ANINetworks, ANIEnsemble
 from torchani.cutoffs import CutoffArg
 from torchani.neighbors import NeighborlistArg
 from torchani.potentials import EnergyAdder
@@ -333,8 +333,8 @@ def load_member(symbols: tp.Sequence[str], model_dir: StrPath) -> ANINetworks:
     )
 
 
-def load_ensemble(symbols: tp.Sequence[str], prefix: StrPath, count: int) -> Ensemble:
-    """Returns an instance of :class:`torchani.nn.Ensemble` loaded from
+def load_ensemble(symbols: tp.Sequence[str], prefix: StrPath, count: int) -> ANIEnsemble:
+    """Returns an instance of :class:`torchani.nn.ANIEnsemble` loaded from
     NeuroChem's network directories beginning with the given prefix.
 
     Arguments:
@@ -345,7 +345,7 @@ def load_ensemble(symbols: tp.Sequence[str], prefix: StrPath, count: int) -> Ens
         count (int): Number of models in the ensemble.
     """
     prefix = Path(prefix)
-    return Ensemble(
+    return ANIEnsemble(
         [load_member(symbols, model_dir_from_prefix(prefix, i)) for i in range(count)]
     )
 
