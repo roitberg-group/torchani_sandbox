@@ -61,7 +61,6 @@ For more detailed examples of usage consult the examples documentation
     member = model[0]
 """
 
-import torch
 from functools import partial
 import typing as tp
 
@@ -72,7 +71,7 @@ from torchani.assembly import Assembler, ANI, ANIq, fetch_state_dict
 from torchani.neighbors import NeighborlistArg
 from torchani.nn import _ANIModelDiscardFirstScalar
 from torchani.potentials import TwoBodyDispersionD3, RepulsionXTB
-from torchani.annotations import Device
+from torchani.annotations import Device, DType
 
 
 def ANI1x(
@@ -80,8 +79,8 @@ def ANI1x(
     neighborlist: NeighborlistArg = "full_pairwise",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
-    device: tp.Optional[Device] = None,
-    dtype: tp.Optional[torch.dtype] = None,
+    device: Device = None,
+    dtype: DType = None,
 ) -> ANI:
     """The ANI-1x model as in `ani-1x_8x on GitHub`_ and `Active Learning Paper`_.
 
@@ -119,8 +118,8 @@ def ANI1ccx(
     neighborlist: NeighborlistArg = "full_pairwise",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
-    device: tp.Optional[Device] = None,
-    dtype: tp.Optional[torch.dtype] = None,
+    device: Device = None,
+    dtype: DType = None,
 ) -> ANI:
     """The ANI-1ccx model as in `ani-1ccx_8x on GitHub`_ and `Transfer Learning Paper`_.
 
@@ -158,8 +157,8 @@ def ANI2x(
     neighborlist: NeighborlistArg = "full_pairwise",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
-    device: tp.Optional[Device] = None,
-    dtype: tp.Optional[torch.dtype] = None,
+    device: Device = None,
+    dtype: DType = None,
 ) -> ANI:
     """The ANI-2x model as in `ANI2x Paper`_ and `ANI2x Results on GitHub`_.
 
@@ -197,8 +196,8 @@ def ANImbis(
     neighborlist: NeighborlistArg = "full_pairwise",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
-    device: tp.Optional[Device] = None,
-    dtype: tp.Optional[torch.dtype] = None,
+    device: Device = None,
+    dtype: DType = None,
 ) -> ANI:
     r"""
     ANI-2x model with MBIS experimental charges. Note: will be removed in the
@@ -256,8 +255,8 @@ def ANIala(
     neighborlist: NeighborlistArg = "full_pairwise",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
-    device: tp.Optional[Device] = None,
-    dtype: tp.Optional[torch.dtype] = None,
+    device: Device = None,
+    dtype: DType = None,
 ) -> ANI:
     r"""Experimental Model fine tuned to solvated frames of Ala dipeptide"""
     if model_index is not None:
@@ -284,8 +283,8 @@ def ANIdr(
     neighborlist: NeighborlistArg = "full_pairwise",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
-    device: tp.Optional[Device] = None,
-    dtype: tp.Optional[torch.dtype] = None,
+    device: Device = None,
+    dtype: DType = None,
 ) -> ANI:
     """ANI model trained with both dispersion and repulsion
 

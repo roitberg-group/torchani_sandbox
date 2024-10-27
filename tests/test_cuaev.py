@@ -172,27 +172,22 @@ class TestCUAEV(TestCase):
             dtype=self.dtype, device=self.device
         )
         self.cuaev_computer_1x = AEVComputer.like_1x(
-            cutoff_fn=self.cutoff_fn,
-            strategy="cuaev-fused",
-        ).to(dtype=self.dtype, device=self.device)
+            cutoff_fn=self.cutoff_fn, strategy="cuaev-fused"
+        ).to(self.device, self.dtype)
         self.nn = torch.nn.Sequential(
             torch.nn.Linear(384, 1, False, dtype=self.dtype, device=self.device)
         )
 
         self.aev_computer_2x = AEVComputer.like_2x(cutoff_fn=self.cutoff_fn).to(
-            dtype=self.dtype, device=self.device
+            self.device, self.dtype
         )
         self.cuaev_computer_2x = AEVComputer.like_2x(
-            cutoff_fn=self.cutoff_fn,
-            strategy="cuaev-fused",
-        ).to(dtype=self.dtype, device=self.device)
+            cutoff_fn=self.cutoff_fn, strategy="cuaev-fused"
+        ).to(self.device, self.dtype)
         self.cuaev_computer_2x_use_interface = AEVComputer.like_2x(
-            cutoff_fn=self.cutoff_fn,
-            strategy="cuaev",
-        ).to(dtype=self.dtype, device=self.device)
-        self.converter = SpeciesConverter(SYMBOLS_2X).to(
-            dtype=self.dtype, device=self.device
-        )
+            cutoff_fn=self.cutoff_fn, strategy="cuaev"
+        ).to(self.device, self.dtype)
+        self.converter = SpeciesConverter(SYMBOLS_2X).to(self.device, self.dtype)
         self.cutoff_2x = self.cuaev_computer_2x.radial_terms.cutoff
         self.cutoff_1x = self.cuaev_computer_1x.radial_terms.cutoff
 
@@ -486,9 +481,8 @@ class TestCUAEV(TestCase):
                 coordinates, species, *_ = pickle.load(f)
                 coordinates = (
                     torch.from_numpy(coordinates)
-                    .to(self.dtype)
                     .unsqueeze(0)
-                    .to(self.device)
+                    .to(self.device, self.dtype)
                 )
                 species = torch.from_numpy(species).unsqueeze(0).to(self.device)
                 _, aev = self.aev_computer_1x((species, coordinates))
@@ -502,9 +496,8 @@ class TestCUAEV(TestCase):
                 coordinates, species, *_ = pickle.load(f)
                 coordinates = (
                     torch.from_numpy(coordinates)
-                    .to(self.dtype)
                     .unsqueeze(0)
-                    .to(self.device)
+                    .to(self.device, self.dtype)
                     .requires_grad_(True)
                 )
                 species = torch.from_numpy(species).unsqueeze(0).to(self.device)
@@ -531,9 +524,8 @@ class TestCUAEV(TestCase):
                 coordinates, species, *_ = pickle.load(f)
                 coordinates = (
                     torch.from_numpy(coordinates)
-                    .to(self.dtype)
                     .unsqueeze(0)
-                    .to(self.device)
+                    .to(self.device, self.dtype)
                     .requires_grad_(True)
                 )
                 species = torch.from_numpy(species).unsqueeze(0).to(self.device)
@@ -548,9 +540,7 @@ class TestCUAEV(TestCase):
         with open(datafile, "rb") as f:
             data = pickle.load(f)
             for coordinates, species, _, _, _, _ in data:
-                coordinates = (
-                    torch.from_numpy(coordinates).to(self.dtype).to(self.device)
-                )
+                coordinates = torch.from_numpy(coordinates).to(self.device, self.dtype)
                 species = torch.from_numpy(species).to(self.device)
                 _, aev = self.aev_computer_1x((species, coordinates))
                 _, cu_aev = self.cuaev_computer_1x((species, coordinates))
@@ -566,8 +556,7 @@ class TestCUAEV(TestCase):
             for coordinates, species, _, _, _, _ in data[:10]:
                 coordinates = (
                     torch.from_numpy(coordinates)
-                    .to(self.dtype)
-                    .to(self.device)
+                    .to(self.device, self.dtype)
                     .requires_grad_(True)
                 )
                 species = torch.from_numpy(species).to(self.device)
@@ -595,8 +584,7 @@ class TestCUAEV(TestCase):
             for coordinates, species, _, _, _, _ in data[:3]:
                 coordinates = (
                     torch.from_numpy(coordinates)
-                    .to(self.dtype)
-                    .to(self.device)
+                    .to(self.device, self.dtype)
                     .requires_grad_(True)
                 )
                 species = torch.from_numpy(species).to(self.device)
@@ -613,9 +601,9 @@ class TestCUAEV(TestCase):
             with open(datafile, "rb") as f:
                 coordinates, species, *_ = pickle.load(f)
                 # change angstrom coordinates to 10 times smaller
-                coordinates = 0.1 * torch.from_numpy(coordinates).to(
-                    self.dtype
-                ).unsqueeze(0).to(self.device)
+                coordinates = 0.1 * torch.from_numpy(coordinates).unsqueeze(0).to(
+                    self.device, self.dtype
+                )
                 species = torch.from_numpy(species).unsqueeze(0).to(self.device)
                 _, aev = self.aev_computer_1x((species, coordinates))
                 _, cu_aev = self.cuaev_computer_1x((species, coordinates))
@@ -627,9 +615,9 @@ class TestCUAEV(TestCase):
             with open(datafile, "rb") as f:
                 coordinates, species, *_ = pickle.load(f)
                 # change angstrom coordinates to 10 times smaller
-                coordinates = 0.1 * torch.from_numpy(coordinates).to(
-                    self.dtype
-                ).unsqueeze(0).to(self.device)
+                coordinates = 0.1 * torch.from_numpy(coordinates).unsqueeze(0).to(
+                    self.device, self.dtype
+                )
                 coordinates.requires_grad_(True)
                 species = torch.from_numpy(species).unsqueeze(0).to(self.device)
 

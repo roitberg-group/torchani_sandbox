@@ -17,7 +17,8 @@ NumberOrStrArray = tp.Union[NDArray[np.int_], NDArray[np.float64], NDArray[np.st
 NumpyConformers = tp.MutableMapping[str, NumberOrStrArray]
 MixedConformers = tp.MutableMapping[str, tp.Union[Tensor, NumberOrStrArray]]
 
-Device = tp.Union[str, torch.device]
+Device = tp.Union[str, torch.device, None]
+DType = tp.Union[torch.dtype, None]
 
 # Mimic typeshed
 StrPath = tp.Union[str, Path]
