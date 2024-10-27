@@ -74,6 +74,20 @@ from torchani.potentials import TwoBodyDispersionD3, RepulsionXTB
 from torchani.annotations import Device, DType
 
 
+# Protocol used by factory functions that instantiate ani models, here for reference
+class _ModelFactory(tp.Protocol):
+    def __call__(
+        self,
+        model_index: tp.Optional[int] = None,
+        neighborlist: NeighborlistArg = "full_pairwise",
+        strategy: str = "pyaev",
+        periodic_table_index: bool = True,
+        device: Device = None,
+        dtype: DType = None,
+    ) -> ANI:
+        pass
+
+
 def ANI1x(
     model_index: tp.Optional[int] = None,
     neighborlist: NeighborlistArg = "full_pairwise",
