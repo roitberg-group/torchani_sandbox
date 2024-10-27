@@ -1,33 +1,30 @@
 r"""
 The ``models`` submodule provides access to all published ANI models, which are
-subclasses of ``ANI``. Some models have been published in specific articles,
-and some have been published in TorchANI 2.0. If you use any of these models in
-your work please cite the corresponding article(s).
+subclasses of ``ANI``. Some models have been published in specific articles, and some
+have been published in TorchANI 3.0. If you use any of these models in your work please
+cite the corresponding article(s).
 
-If for a given model you discover a bug, performance problem, or incorrect
-behavior in some region of chemical space, please post an issue in GitHub. The
-TorchANI developers will attempt to address and document issues.
+If for a given model you discover a bug, performance problem, or incorrect behavior in
+some region of chemical space, please post an issue in GitHub. The TorchANI developers
+will attempt to address and document issues.
 
-Note that parameters of the ANI models are automatically downloaded and cached
-the first time they are instantiated. If this is an issue for your application
-we recommend you pre-download the parameters by instantiating the models before
-use.
+Note that parameters of the ANI models are automatically downloaded and cached the first
+time they are instantiated. If this is an issue for your application we recommend you
+pre-download the parameters by instantiating the models before use.
 
-The ANI models can be used directly as callable functions once they are
-instantiated. Alternatively, they can be cast to an ASE calculator by calling
-``ANI.ase()``.
+The ANI models can be used directly as callable functions once they are instantiated.
+Alternatively, they can be cast to an ASE calculator by calling ``ANI.ase()``.
 
 Some models have a "network container" that consists of an "ensemble" of neural
-networks. Individual members of these ensembles can be accessed by indexing,
-and ``len()`` can be used to query the number of networks in it.
+networks. Individual members of these ensembles can be accessed by indexing, and
+``len()`` can be used to query the number of networks in it.
 
 The models also have three extra entry points for more specific use cases:
 atomic_energies and energies_qbcs.
 
-All entrypoints expect a tuple of tensors `(species, coordinates)` as input,
-together with two optional tensors, `cell` and `pbc`.
-`coordinates` and `cell` should be in units of Angstroms,
-and the output energies are always in Hartrees
+All entrypoints expect a tuple of tensors `(species, coordinates)` as input, together
+with two optional tensors, `cell` and `pbc`. `coordinates` and `cell` should be in units
+of Angstroms, and the output energies are always in Hartrees
 
 For more detailed examples of usage consult the examples documentation
 
@@ -64,17 +61,19 @@ For more detailed examples of usage consult the examples documentation
     member = model[0]
 """
 
+import torch
 from functools import partial
 import typing as tp
 
+from torchani import atomics
 from torchani.utils import SYMBOLS_2X, SYMBOLS_1X
 from torchani.aev import AEVComputer, StandardRadial, StandardAngular
 from torchani.electro import ChargeNormalizer
 from torchani.assembly import Assembler, ANI, ANIq, fetch_state_dict
 from torchani.neighbors import NeighborlistArg
 from torchani.nn import ANIModel, _ANIModelDiscardFirstScalar
-from torchani import atomics
 from torchani.potentials import TwoBodyDispersionD3, RepulsionXTB
+from torchani.annotations import Device
 
 
 def ANI1x(
@@ -82,6 +81,8 @@ def ANI1x(
     neighborlist: NeighborlistArg = "full_pairwise",
     compute_strategy: str = "pyaev",
     periodic_table_index: bool = True,
+    device: tp.Optional[Device] = None,
+    dtype: tp.Optional[torch.dtype] = None,
 ) -> ANI:
     """The ANI-1x model as in `ani-1x_8x on GitHub`_ and `Active Learning Paper`_.
 
@@ -111,6 +112,11 @@ def ANI1x(
     model = asm.assemble()
     model.load_state_dict(fetch_state_dict("ani1x_state_dict.pt", private=False))
     model.requires_grad_(False)
+    # TODO: Fix this
+    if device is not None:
+        model = model.to(device)
+    if dtype is not None:
+        model = model.to(dtype)
     return model if model_index is None else model[model_index]
 
 
@@ -119,6 +125,8 @@ def ANI1ccx(
     neighborlist: NeighborlistArg = "full_pairwise",
     compute_strategy: str = "pyaev",
     periodic_table_index: bool = True,
+    device: tp.Optional[Device] = None,
+    dtype: tp.Optional[torch.dtype] = None,
 ) -> ANI:
     """The ANI-1ccx model as in `ani-1ccx_8x on GitHub`_ and `Transfer Learning Paper`_.
 
@@ -149,6 +157,10 @@ def ANI1ccx(
     model = asm.assemble()
     model.load_state_dict(fetch_state_dict("ani1ccx_state_dict.pt", private=False))
     model.requires_grad_(False)
+    if device is not None:
+        model = model.to(device)
+    if dtype is not None:
+        model = model.to(dtype)
     return model if model_index is None else model[model_index]
 
 
@@ -157,6 +169,8 @@ def ANI2x(
     neighborlist: NeighborlistArg = "full_pairwise",
     compute_strategy: str = "pyaev",
     periodic_table_index: bool = True,
+    device: tp.Optional[Device] = None,
+    dtype: tp.Optional[torch.dtype] = None,
 ) -> ANI:
     """The ANI-2x model as in `ANI2x Paper`_ and `ANI2x Results on GitHub`_.
 
@@ -187,6 +201,10 @@ def ANI2x(
     model = asm.assemble()
     model.load_state_dict(fetch_state_dict("ani2x_state_dict.pt", private=False))
     model.requires_grad_(False)
+    if device is not None:
+        model = model.to(device)
+    if dtype is not None:
+        model = model.to(dtype)
     return model if model_index is None else model[model_index]
 
 
@@ -195,6 +213,8 @@ def ANImbis(
     neighborlist: NeighborlistArg = "full_pairwise",
     compute_strategy: str = "pyaev",
     periodic_table_index: bool = True,
+    device: tp.Optional[Device] = None,
+    dtype: tp.Optional[torch.dtype] = None,
 ) -> ANI:
     r"""
     ANI-2x model with MBIS experimental charges. Note: will be removed in the
@@ -249,6 +269,10 @@ def ANImbis(
     model.neural_networks.load_state_dict(energy_nn_state_dict)
     model.potentials[0].charge_networks.load_state_dict(charge_nn_state_dict)
     model.requires_grad_(False)
+    if device is not None:
+        model = model.to(device)
+    if dtype is not None:
+        model = model.to(dtype)
     return model if model_index is None else model[model_index]
 
 
@@ -257,6 +281,8 @@ def ANIala(
     neighborlist: NeighborlistArg = "full_pairwise",
     compute_strategy: str = "pyaev",
     periodic_table_index: bool = True,
+    device: tp.Optional[Device] = None,
+    dtype: tp.Optional[torch.dtype] = None,
 ) -> ANI:
     r"""Experimental Model fine tuned to solvated frames of Ala dipeptide"""
     if model_index is not None:
@@ -276,6 +302,10 @@ def ANIala(
     model = asm.assemble()
     model.load_state_dict(fetch_state_dict("aniala_state_dict.pt", private=True))
     model.requires_grad_(False)
+    if device is not None:
+        model = model.to(device)
+    if dtype is not None:
+        model = model.to(dtype)
     return model
 
 
@@ -284,6 +314,8 @@ def ANIdr(
     neighborlist: NeighborlistArg = "full_pairwise",
     compute_strategy: str = "pyaev",
     periodic_table_index: bool = True,
+    device: tp.Optional[Device] = None,
+    dtype: tp.Optional[torch.dtype] = None,
 ) -> ANI:
     """ANI model trained with both dispersion and repulsion
 
@@ -318,4 +350,8 @@ def ANIdr(
     model = asm.assemble()
     model.load_state_dict(fetch_state_dict("anidr_state_dict.pt", private=True))
     model.requires_grad_(False)
+    if device is not None:
+        model = model.to(device)
+    if dtype is not None:
+        model = model.to(dtype)
     return model if model_index is None else model[model_index]
