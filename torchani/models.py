@@ -97,7 +97,7 @@ def ANI1x(
     .. _Active Learning Paper:
         https://aip.scitation.org/doi/abs/10.1063/1.5023802
     """
-    asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
+    asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_1X, auto_sort=False)
     asm.set_atomic_networks(atomics.like_1x)
     asm.set_global_cutoff_fn("cosine")
@@ -108,7 +108,7 @@ def ANI1x(
     )
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
-    model = asm.assemble()
+    model = asm.assemble(8)
     model.load_state_dict(fetch_state_dict("ani1x_state_dict.pt", private=False))
     model.requires_grad_(False)
     # TODO: Fix this
@@ -141,7 +141,7 @@ def ANI1ccx(
     .. _Transfer Learning Paper:
         https://doi.org/10.26434/chemrxiv.6744440.v1
     """
-    asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
+    asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_1X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
@@ -152,7 +152,7 @@ def ANI1ccx(
     asm.set_atomic_networks(atomics.like_1x)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("ccsd(t)star-cbs")
-    model = asm.assemble()
+    model = asm.assemble(8)
     model.load_state_dict(fetch_state_dict("ani1ccx_state_dict.pt", private=False))
     model.requires_grad_(False)
     if device is not None:
@@ -183,7 +183,7 @@ def ANI2x(
     .. _ANI2x Paper:
         https://doi.org/10.26434/chemrxiv.11819268.v1
     """
-    asm = Assembler(ensemble_size=8, periodic_table_index=periodic_table_index)
+    asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
@@ -195,7 +195,7 @@ def ANI2x(
     asm.set_neighborlist(neighborlist)
     # The self energies are overwritten by the state dict
     asm.set_gsaes_as_self_energies("wb97x-631gd")
-    model = asm.assemble()
+    model = asm.assemble(8)
     model.load_state_dict(fetch_state_dict("ani2x_state_dict.pt", private=False))
     model.requires_grad_(False)
     if device is not None:
@@ -219,11 +219,7 @@ def ANImbis(
     """
     if compute_strategy not in ["pyaev", "cuaev"]:
         raise ValueError(f"Unavailable strategy for ANImbis: {compute_strategy}")
-    asm = Assembler(
-        ensemble_size=8,
-        periodic_table_index=periodic_table_index,
-        model_type=ANIq,
-    )
+    asm = Assembler(periodic_table_index=periodic_table_index, model_type=ANIq)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
@@ -243,7 +239,7 @@ def ANImbis(
     asm.set_neighborlist(neighborlist)
     # The self energies are overwritten by the state dict
     asm.set_gsaes_as_self_energies("wb97x-631gd")
-    model = asm.assemble()
+    model = asm.assemble(8)
 
     ani2x_state_dict = fetch_state_dict("ani2x_state_dict.pt")
     energy_nn_state_dict = {
@@ -283,7 +279,7 @@ def ANIala(
     r"""Experimental Model fine tuned to solvated frames of Ala dipeptide"""
     if model_index is not None:
         raise ValueError("Model index is not supported for ANIala")
-    asm = Assembler(ensemble_size=1, periodic_table_index=periodic_table_index)
+    asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
@@ -294,7 +290,7 @@ def ANIala(
     asm.set_atomic_networks(atomics.like_ala)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
-    model = asm.assemble()
+    model = asm.assemble(1)
     model.load_state_dict(fetch_state_dict("aniala_state_dict.pt", private=True))
     model.requires_grad_(False)
     if device is not None:
@@ -320,7 +316,7 @@ def ANIdr(
     """
     if compute_strategy not in ["pyaev", "cuaev"]:
         raise ValueError(f"Unavailable strategy for ANImbis: {compute_strategy}")
-    asm = Assembler(ensemble_size=7, periodic_table_index=periodic_table_index)
+    asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("smooth2")
     asm.set_featurizer(
@@ -341,7 +337,7 @@ def ANIdr(
     )
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("b973c-def2mtzvp")
-    model = asm.assemble()
+    model = asm.assemble(7)
     model.load_state_dict(fetch_state_dict("anidr_state_dict.pt", private=True))
     model.requires_grad_(False)
     if device is not None:

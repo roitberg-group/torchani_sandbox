@@ -849,18 +849,15 @@ class PairPotentialWrapper:
 class Assembler:
     def __init__(
         self,
-        ensemble_size: int = 1,
         symbols: tp.Sequence[str] = (),
-        container_type: ContainerType = ANIModel,
         model_type: tp.Type[ANI] = ANI,
-        featurizer: tp.Optional[FeaturizerWrapper] = None,
         neighborlist: NeighborlistArg = "full_pairwise",
         periodic_table_index: bool = True,
     ) -> None:
         self._global_cutoff_fn: tp.Optional[Cutoff] = None
 
         self._neighborlist = parse_neighborlist(neighborlist)
-        self._featurizer = featurizer
+        self._featurizer: tp.Optional[FeaturizerWrapper] = None
         self._pair_potentials: tp.List[PairPotentialWrapper] = []
 
         # This part of the assembler organizes the self-energies, the
@@ -868,52 +865,23 @@ class Assembler:
         self._self_energies: tp.Dict[str, float] = {}
         self._fn_for_atomics: tp.Optional[AtomicMaker] = None
         self._fn_for_charges: tp.Optional[AtomicMaker] = None
-        self._container_type: ContainerType = container_type
+        self._container_type: ContainerType = ANIModel
         self._charge_container_type: tp.Optional[ContainerType] = None
         self._charge_normalizer: tp.Optional[ChargeNormalizer] = None
         self._symbols: tp.Tuple[str, ...] = tuple(symbols)
-        self._ensemble_size: int = ensemble_size
 
-        # This is the general container for all the parts of the model
+        # The general container for all the parts of the model
         self._model_type: tp.Type[ANI] = model_type
 
         # This is a deprecated feature, it should probably not be used
         self.periodic_table_index = periodic_table_index
-
-    def _check_symbols(self, symbols: tp.Optional[tp.Iterable[str]] = None) -> None:
-        if not self.symbols:
-            raise ValueError(
-                "Please set symbols before setting the gsaes as self energies"
-            )
-        if symbols is not None:
-            if set(self.symbols) != set(symbols):
-                raise ValueError(
-                    f"Passed symbols don't match supported elements {self._symbols}"
-                )
-
-    @property
-    def ensemble_size(self) -> int:
-        return self._ensemble_size
-
-    @ensemble_size.setter
-    def ensemble_size(self, value: int) -> None:
-        if value < 0:
-            raise ValueError("Ensemble size must be positive")
-        self._ensemble_size = value
-
-    @property
-    def elements_num(self) -> int:
-        return len(self._symbols)
 
     @property
     def symbols(self) -> tp.Tuple[str, ...]:
         return self._symbols
 
     def set_symbols(self, symbols: tp.Sequence[str], auto_sort: bool = True) -> None:
-        if auto_sort:
-            self._symbols = sort_by_element(symbols)
-        else:
-            self._symbols = tuple(symbols)
+        self._symbols = sort_by_element(symbols) if auto_sort else tuple(symbols)
 
     @property
     def fn_for_atomics(self) -> AtomicMaker:
@@ -937,14 +905,13 @@ class Assembler:
             raise RuntimeError("Self energies have not been set")
         return self._self_energies
 
-    @self_energies.setter
-    def self_energies(self, value: tp.Mapping[str, float]) -> None:
+    def set_self_energies(self, value: tp.Mapping[str, float]) -> None:
         self._check_symbols(value.keys())
         self._self_energies = {k: v for k, v in value.items()}
 
     def set_zeros_as_self_energies(self) -> None:
         self._check_symbols()
-        self.self_energies = {s: 0.0 for s in self.symbols}
+        self.set_self_energies({s: 0.0 for s in self.symbols})
 
     def set_gsaes_as_self_energies(
         self,
@@ -964,7 +931,18 @@ class Assembler:
                 " or *both* functional *and* basis_set"
             )
         gsaes = GSAES[lot.lower()]
-        self.self_energies = {s: gsaes[s] for s in self.symbols}
+        self.set_self_energies({s: gsaes[s] for s in self.symbols})
+
+    def _check_symbols(self, symbols: tp.Optional[tp.Iterable[str]] = None) -> None:
+        if not self.symbols:
+            raise ValueError(
+                "Please set symbols before setting the gsaes as self energies"
+            )
+        if symbols is not None:
+            if set(self.symbols) != set(symbols):
+                raise ValueError(
+                    f"Passed symbols don't match supported elements {self._symbols}"
+                )
 
     def set_atomic_networks(
         self,
@@ -1030,14 +1008,16 @@ class Assembler:
             )
         )
 
-    def build_atomic_networks(
+    def _build_atomic_networks(
         self,
         fn_for_networks: AtomicMaker,
         in_dim: int,
     ) -> tp.OrderedDict[str, AtomicNetwork]:
         return OrderedDict([(s, fn_for_networks(s, in_dim)) for s in self.symbols])
 
-    def assemble(self) -> ANI:
+    def assemble(self, ensemble_size: int = 1) -> ANI:
+        if ensemble_size < 0:
+            raise ValueError("Ensemble size must be positive")
         if not self.symbols:
             raise RuntimeError("Symbols not set. Call 'set_symbols()' before assembly")
         if self._featurizer is None:
@@ -1056,16 +1036,16 @@ class Assembler:
             cutoff_fn=feat_cutoff_fn,
             angular_terms=self._featurizer.angular_terms,
             radial_terms=self._featurizer.radial_terms,
-            num_species=self.elements_num,
+            num_species=len(self.symbols),
             compute_strategy=self._featurizer.compute_strategy,
         )
         neural_networks: AtomicContainer
-        if self.ensemble_size > 1:
+        if ensemble_size > 1:
             containers = []
-            for j in range(self.ensemble_size):
+            for j in range(ensemble_size):
                 containers.append(
                     self._container_type(
-                        self.build_atomic_networks(
+                        self._build_atomic_networks(
                             self.fn_for_atomics, featurizer.aev_length
                         )
                     )
@@ -1073,13 +1053,13 @@ class Assembler:
             neural_networks = Ensemble(containers)
         else:
             neural_networks = self._container_type(
-                self.build_atomic_networks(self.fn_for_atomics, featurizer.aev_length)
+                self._build_atomic_networks(self.fn_for_atomics, featurizer.aev_length)
             )
 
         charge_networks: tp.Optional[AtomicContainer] = None
         if self._charge_container_type is not None:
             charge_networks = self._charge_container_type(
-                self.build_atomic_networks(self.fn_for_charges, featurizer.aev_length)
+                self._build_atomic_networks(self.fn_for_charges, featurizer.aev_length)
             )
 
         self_energies = self.self_energies
@@ -1159,10 +1139,7 @@ def simple_ani(
     """
     if compute_strategy not in ["pyaev", "cuaev"]:
         raise ValueError(f"Unavailable strategy: {compute_strategy}")
-    asm = Assembler(
-        ensemble_size=ensemble_size,
-        periodic_table_index=True,
-    )
+    asm = Assembler()
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
     asm.set_featurizer(
@@ -1201,7 +1178,7 @@ def simple_ani(
             cutoff=8.0,
             extra={"functional": lot.split("-")[0]},
         )
-    return asm.assemble()
+    return asm.assemble(ensemble_size)
 
 
 def simple_aniq(
@@ -1241,11 +1218,7 @@ def simple_aniq(
     """
     if compute_strategy not in ["pyaev", "cuaev"]:
         raise ValueError(f"Unavailable strategy: {compute_strategy}")
-    asm = Assembler(
-        ensemble_size=ensemble_size,
-        periodic_table_index=True,
-        model_type=ANIq,
-    )
+    asm = Assembler(model_type=ANIq)
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
     asm.set_featurizer(
@@ -1291,7 +1264,7 @@ def simple_aniq(
         )
     asm.set_atomic_networks(
         atomic_maker,
-        container_type=ANIModel if not dummy_energies else DummyANIModel,
+        container_type=DummyANIModel if dummy_energies else ANIModel,
     )
     asm.set_neighborlist("full_pairwise")
     if not dummy_energies:
@@ -1309,7 +1282,7 @@ def simple_aniq(
             cutoff=8.0,
             extra={"functional": lot.split("-")[0]},
         )
-    return asm.assemble()
+    return asm.assemble(ensemble_size)
 
 
 def fetch_state_dict(
