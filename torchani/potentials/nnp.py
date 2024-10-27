@@ -19,7 +19,7 @@ class NNPotential(Potential):
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
 
-    # TODO: Wrapper that executes the correct _compute_aev call, dirty
+    # TODO: Wrapper that executes the correct _compute_(py|cu)aev call, dirty
     def _execute_aev_computer(
         self,
         elem_idxs: Tensor,
@@ -28,7 +28,7 @@ class NNPotential(Potential):
     ) -> Tensor:
         strat = self.aev_computer._compute_strategy
         if strat == "pyaev":
-            return self.aev_computer._compute_aev(elem_idxs, neighbors)
+            return self.aev_computer._compute_pyaev(elem_idxs, neighbors)
         elif strat == "cuaev":
             assert _coords is not None
             return self.aev_computer._compute_cuaev_with_half_nbrlist(
