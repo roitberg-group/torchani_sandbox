@@ -1,5 +1,5 @@
-Migrating from TorchANI 2.0
-===========================
+Migrating from TorchANI 2
+=========================
 
 If you were using a previous version of TorchANI there may be some necessary
 modifications to your code. We strive to keep backwards compatibility for the most part,
@@ -10,7 +10,7 @@ Minor versions changes of ``torchani`` will attempt to be fully backwards compat
 going forward, and breaking changes will be reserved for major releases.
 
 Here we document the most important changes, and what you can do to modify your code to
-be compatible with version 3.0. In many cases code will run without changes at all, but
+be compatible with version 3. In many cases code will run without changes at all, but
 some warnings are emitted if the old, legacy API is being used, so we also provide
 recommendations to use the new, improved API, when appropriate.
 
