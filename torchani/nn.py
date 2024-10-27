@@ -8,7 +8,7 @@ import typing as tp
 import torch
 from torch import Tensor
 
-from torchani.constants import PERIODIC_TABLE
+from torchani.constants import PERIODIC_TABLE, ATOMIC_NUMBER
 from torchani.tuples import SpeciesCoordinates, SpeciesEnergies
 from torchani.atomics import AtomicContainer, AtomicNetwork
 from torchani.infer import BmmEnsemble, InferModel
@@ -226,6 +226,9 @@ class SpeciesConverter(torch.nn.Module):
         )
         for i, s in enumerate(species):
             self.conv_tensor[rev_idx[s]] = i
+        self.atomic_numbers = torch.tensor(
+            [ATOMIC_NUMBER[e] for e in species], dtype=torch.long
+        )
 
     def forward(
         self,
@@ -235,9 +238,12 @@ class SpeciesConverter(torch.nn.Module):
         species, coordinates = input_
         converted_species = self.conv_tensor[species]
 
-        # check if unknown species are included
-        if converted_species[species.ne(-1)].lt(0).any():
-            raise ValueError(f"Unknown species found in {species}")
+        if (converted_species[species != -1] == -1).any():
+            raise ValueError(
+                f"Model doesn't support some elements in input"
+                f" Input elements include: {torch.unique(species)}"
+                f" Supported elements are: {self.atomic_numbers}"
+            )
 
         return SpeciesCoordinates(converted_species.to(species.device), coordinates)
 
