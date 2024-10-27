@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.models import ANI1x, ANI2x, ANIdr, ANImbis
 from torchani.datasets import batch_all_in_ram, TestData
 

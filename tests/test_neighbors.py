@@ -6,7 +6,7 @@ from torch import Tensor
 
 import torchani
 from torchani.io import read_xyz
-from torchani.testing import TestCase, expand, ANITest
+from torchani._testing import TestCase, expand, ANITest
 from torchani.aev import AEVComputer
 from torchani.neighbors import (
     CellList,

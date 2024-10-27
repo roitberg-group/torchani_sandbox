@@ -3,7 +3,7 @@ import unittest
 import torch
 
 from torchani.electro import DipoleComputer
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 
 
 @expand()

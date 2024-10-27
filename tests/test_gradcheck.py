@@ -6,7 +6,7 @@ import torch
 from torch.autograd import gradcheck, gradgradcheck
 
 import torchani
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 
 path = os.path.dirname(os.path.realpath(__file__))
 

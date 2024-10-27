@@ -1,7 +1,7 @@
 import unittest
 import torch
 
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.nn import SpeciesConverter
 from torchani.utils import ChemicalSymbolsToInts
 from torchani.models import ANI1x

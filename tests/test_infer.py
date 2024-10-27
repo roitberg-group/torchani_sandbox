@@ -7,7 +7,7 @@ import unittest
 import torch
 
 from torchani.models import ANI2x
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.csrc import MNP_IS_INSTALLED, CUAEV_IS_INSTALLED
 from torchani.grad import energies_and_forces
 from torchani.io import read_xyz

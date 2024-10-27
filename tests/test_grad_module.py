@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.grad import (
     forces_and_hessians,
     forces,

@@ -4,7 +4,7 @@ import pickle
 
 import torch
 
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.models import ANI1x
 from torchani.grad import energies_and_forces, forces
 

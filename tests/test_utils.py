@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.utils import (
     # Padding
     pad_atomic_properties,

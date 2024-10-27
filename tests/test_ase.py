@@ -25,7 +25,7 @@ from ase.md.nptberendsen import NPTBerendsen
 from ase.calculators.test import numeric_force
 
 from torchani.io import read_xyz
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.assembly import ANI
 from torchani.models import ANI1x, ANIdr
 from torchani.potentials import PairPotential

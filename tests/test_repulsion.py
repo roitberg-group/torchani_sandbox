@@ -6,7 +6,7 @@ from torch import Tensor
 
 import torchani
 from torchani.utils import SYMBOLS_1X
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.potentials import RepulsionXTB
 from torchani.neighbors import NeighborData
 

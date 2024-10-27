@@ -5,7 +5,7 @@ import pickle
 import torch
 
 from torchani.models import ANI1x
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.utils import pad_atomic_properties
 from torchani.grad import energies_and_forces
 

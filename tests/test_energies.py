@@ -4,7 +4,7 @@ import pickle
 
 import torch
 
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.utils import pad_atomic_properties
 from torchani.models import ANI1x, ANI2x, ANIdr
 from torchani.units import hartree2kcalpermol

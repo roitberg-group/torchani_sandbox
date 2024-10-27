@@ -8,13 +8,13 @@ import pickle
 import torch
 from parameterized import parameterized_class
 
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.utils import SYMBOLS_2X
 from torchani.nn import SpeciesConverter
 from torchani.aev import AEVComputer
 from torchani.models import ANIdr
 from torchani.io import read_xyz
-from torchani.testing import TestCase, make_tensor
+from torchani._testing import TestCase, make_tensor
 from torchani.csrc import CUAEV_IS_INSTALLED
 
 path = os.path.dirname(os.path.realpath(__file__))

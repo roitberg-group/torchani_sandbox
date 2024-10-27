@@ -4,7 +4,7 @@ import unittest
 import torch
 import torchani
 
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.grad import forces, energies_and_forces
 
 

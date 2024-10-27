@@ -1,7 +1,7 @@
 import unittest
 import os
 
-from torchani.testing import ANITest, expand
+from torchani._testing import ANITest, expand
 from torchani.models import ANI1x, ANI2x, ANI1ccx
 from torchani.aev import AEVComputer
 from torchani.neurochem import load_model_from_name, load_aev_computer_and_symbols
