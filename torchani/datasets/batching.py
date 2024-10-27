@@ -302,7 +302,7 @@ class Batcher:
         elif isinstance(properties, str):
             properties = [properties]
         else:
-            properties = sorted(properties)
+            properties = sorted(set(properties))
 
         if splits is None and folds is None:
             splits = {"training": 1.0}
