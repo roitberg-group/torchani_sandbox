@@ -61,7 +61,7 @@ To output other quantities of interest use:
 
 TODO: Add more stuff
 
-The `AEVComputer`, ``torchani.ANIModel`` and ``torchani.SpeciesConverter`` classes
+The `AEVComputer`, ``torchani.ANINetworks`` and ``torchani.SpeciesConverter`` classes
 ----------------------------------------------------------------------------------
 
 TODO: Add
