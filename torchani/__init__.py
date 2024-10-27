@@ -37,7 +37,8 @@ from importlib.metadata import version, PackageNotFoundError
 import torch
 
 from torchani.utils import EnergyShifter
-from torchani.nn import ANINetworks, Ensemble, SpeciesConverter
+from torchani.nn import ANINetworks, ANIEnsemble
+from torchani.nn import ANIModel, Ensemble, SpeciesConverter  # Legacy API
 from torchani.aev import AEVComputer
 from torchani import (
     assembly,
@@ -71,7 +72,7 @@ __all__ = [
     'AEVComputer',
     'EnergyShifter',
     'ANINetworks',
-    'Ensemble',
+    'ANIEnsemble',
     'grad',
     'SpeciesConverter',
     'utils',
@@ -94,6 +95,9 @@ __all__ = [
     "constants",
     "neurochem",
 ]
+
+# Legacy API
+__all__.extend(["ANIModel", "Ensemble"])
 
 # Disable TF32 since it catastrophically degrades accuracy
 torch.backends.cuda.matmul.allow_tf32 = False
