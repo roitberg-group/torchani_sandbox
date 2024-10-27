@@ -58,7 +58,7 @@ from torchani.aev.terms import (
 )
 from torchani.neighbors import rescreen, NeighborData
 from torchani.electro import ChargeNormalizer
-from torchani.nn import SpeciesConverter, ANINetworks, DummyANINetworks, ANIEnsemble
+from torchani.nn import SpeciesConverter, ANINetworks, ANIEnsemble, _ZeroANINetworks
 from torchani.atomics import AtomicContainer, AtomicNetwork, AtomicMakerArg, AtomicMaker
 from torchani.constants import GSAES
 from torchani.utils import sort_by_element
@@ -1250,9 +1250,10 @@ def simple_aniq(
             atomic_maker,
             normalizer=normalizer,
         )
+
     asm.set_atomic_networks(
         atomic_maker,
-        container_type=DummyANINetworks if dummy_energies else ANINetworks,
+        container_type=_ZeroANINetworks if dummy_energies else ANINetworks,
     )
     asm.set_neighborlist("full_pairwise")
     if not dummy_energies:
