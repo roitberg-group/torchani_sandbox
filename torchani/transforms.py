@@ -38,7 +38,7 @@ import typing as tp
 import torch
 from torch import Tensor
 
-from torchani.grad import forces
+from torchani.grad import energies_and_forces
 from torchani.nn import SpeciesConverter
 from torchani.constants import ATOMIC_NUMBER
 from torchani.potentials import (
@@ -81,8 +81,7 @@ identity = Identity()
 
 class SubtractEnergyAndForce(Transform):
     r"""
-    Subtract the energies (and optionally forces) from an arbitrary Wrapper
-    module. This can be coupled with, e.g., a PairwisePotential
+    Subtract the energies (and optionally forces) from an arbitrary Potential
     """
 
     def __init__(self, potential: Potential, subtract_force: bool = True):
@@ -97,13 +96,11 @@ class SubtractEnergyAndForce(Transform):
         species = properties["species"]
         coordinates = properties["coordinates"]
         if self.subtract_force:
-            coordinates.requires_grad_(True)
-        energies = self.potential.calc(species, coordinates)
-        properties["energies"] -= energies.detach()
-        if self.subtract_force:
-            _forces = forces(energies, coordinates)
-            properties["forces"] -= _forces.detach()
-            coordinates.requires_grad_(False)
+            energies, forces = energies_and_forces(self.potential, species, coordinates)
+            properties["energies"] -= energies
+            properties["forces"] -= forces
+        else:
+            properties["energies"] -= self.potential.calc(species, coordinates)
         return properties
 
 
