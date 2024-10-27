@@ -67,7 +67,6 @@ import typing as tp
 
 from torchani import atomics
 from torchani.utils import SYMBOLS_2X, SYMBOLS_1X
-from torchani.aev import StandardRadial, StandardAngular
 from torchani.electro import ChargeNormalizer
 from torchani.assembly import Assembler, ANI, ANIq, fetch_state_dict
 from torchani.neighbors import NeighborlistArg
@@ -102,9 +101,7 @@ def ANI1x(
     asm.set_atomic_networks(atomics.like_1x)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
-        angular_terms=StandardAngular.like_1x(),
-        radial_terms=StandardRadial.like_1x(),
-        compute_strategy=compute_strategy,
+        angular_terms="ani1x", radial_terms="ani1x", compute_strategy=compute_strategy
     )
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
@@ -145,9 +142,7 @@ def ANI1ccx(
     asm.set_symbols(SYMBOLS_1X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
-        radial_terms=StandardRadial.like_1x(),
-        angular_terms=StandardAngular.like_1x(),
-        compute_strategy=compute_strategy,
+        radial_terms="ani1x", angular_terms="ani1x", compute_strategy=compute_strategy
     )
     asm.set_atomic_networks(atomics.like_1x)
     asm.set_neighborlist(neighborlist)
@@ -187,9 +182,7 @@ def ANI2x(
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
-        radial_terms=StandardRadial.like_2x(),
-        angular_terms=StandardAngular.like_2x(),
-        compute_strategy=compute_strategy,
+        radial_terms="ani2x", angular_terms="ani2x", compute_strategy=compute_strategy
     )
     asm.set_atomic_networks(atomics.like_2x)
     asm.set_neighborlist(neighborlist)
@@ -223,9 +216,7 @@ def ANImbis(
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
-        radial_terms=StandardRadial.like_2x(),
-        angular_terms=StandardAngular.like_2x(),
-        compute_strategy=compute_strategy,
+        radial_terms="ani2x", angular_terms="ani2x", compute_strategy=compute_strategy
     )
     asm.set_atomic_networks(atomics.like_2x)
 
@@ -283,9 +274,7 @@ def ANIala(
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
     asm.set_featurizer(
-        radial_terms=StandardRadial.like_2x(),
-        angular_terms=StandardAngular.like_2x(),
-        compute_strategy=compute_strategy,
+        radial_terms="ani2x", angular_terms="ani2x", compute_strategy=compute_strategy
     )
     asm.set_atomic_networks(atomics.like_ala)
     asm.set_neighborlist(neighborlist)
@@ -320,9 +309,7 @@ def ANIdr(
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("smooth2")
     asm.set_featurizer(
-        angular_terms=StandardAngular.like_2x(),
-        radial_terms=StandardRadial.like_2x(),
-        compute_strategy=compute_strategy,
+        angular_terms="ani2x", radial_terms="ani2x", compute_strategy=compute_strategy
     )
     asm.set_atomic_networks(atomics.like_dr)
     asm.add_pair_potential(
