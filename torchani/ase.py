@@ -20,6 +20,7 @@ except ImportError:
         " ('conda install ase' or 'pip install ase')"
     ) from None
 
+from torchani.annotations import StressKind
 from torchani.utils import map_to_central
 
 
@@ -41,11 +42,10 @@ class Calculator(AseCalculator):
         overwrite (bool): After wrapping atoms into central box, whether
             to replace the original positions stored in :class:`ase.Atoms`
             object with the wrapped positions.
-        stress_partial_fdotr (bool): Whether to use partial_fdotr approach to
-            calculate stress. This approach does not need the cell's box
-            information and can be used for multiple domians when running
-            parallel on multi-GPUs. Default as False.
-        stress_numerical (bool): Whether to calculate numerical stress
+        stress_kind (str): Strategy to calculate stress, valid options are
+            'fdotr', 'scaling', and 'numerical'. The fdotr approach does not need the
+            cell's box information and can be used for multiple domians when running
+            parallel on multi-GPUs. Default is 'scaling'.
     """
 
     implemented_properties = ["energy", "free_energy", "forces", "stress"]
@@ -54,28 +54,18 @@ class Calculator(AseCalculator):
         self,
         model,
         overwrite: bool = False,
-        stress_partial_fdotr: bool = False,
-        stress_numerical: bool = False,
+        stress_kind: StressKind = "scaling",
     ):
         super().__init__()
         self.model = model
-        self.overwrite = overwrite
-        self.stress_partial_fdotr = stress_partial_fdotr
-        self.stress_numerical = stress_numerical
-
         param = next(self.model.parameters())
         self.device = param.device
         self.dtype = param.dtype
-
-        if stress_partial_fdotr:
-            self.stress_kind = "fdotr"
-        elif stress_numerical:
-            self.stress_kind = "numerical"
-        else:
-            self.stress_kind = "scaling"
-
         if not model.periodic_table_index:
             raise ValueError("ASE models must have periodic_table_index=True")
+
+        self.overwrite = overwrite
+        self.stress_kind = stress_kind
 
     def calculate(self, atoms=None, properties=["energy"], system_changes=all_changes):
         super().calculate(atoms, properties, system_changes)

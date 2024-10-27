@@ -26,3 +26,6 @@ StrPath = tp.Union[str, Path]
 # Datasets
 Grouping = tp.Literal["by_num_atoms", "by_formula"]
 Backend = tp.Literal["hdf5", "zarr", "pandas", "cudf"]
+
+# Ase
+StressKind = tp.Literal["scaling", "fdotr", "numerical"]

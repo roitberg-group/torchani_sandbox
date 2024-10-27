@@ -45,6 +45,7 @@ from torchani.tuples import (
     ForceStdev,
     ForceMagnitudes,
 )
+from torchani.annotations import StressKind
 from torchani import atomics
 from torchani.neighbors import parse_neighborlist, NeighborlistArg
 from torchani.cutoffs import parse_cutoff_fn, Cutoff, CutoffArg
@@ -312,26 +313,30 @@ class ANI(torch.nn.Module):
     def ase(
         self,
         overwrite: bool = False,
-        stress_partial_fdotr: bool = False,
-        stress_numerical: bool = False,
+        stress_kind: StressKind = "scaling",
         jit: bool = False,
     ):
         r"""Get an ASE Calculator using this ANI model
 
         Arguments:
-            kwargs: ase.Calculator kwargs
+            jit (bool): Whether to JIT-compile the model before wrapping in a
+                Calculator
+            overwrite (bool): After wrapping atoms into central box, whether
+                to replace the original positions stored in :class:`ase.Atoms`
+                object with the wrapped positions.
+            stress_kind (str): Strategy to calculate stress, valid options are
+                'fdotr', 'scaling', and 'numerical'. The fdotr approach does not need
+                the cell's box information and can be used for multiple domians when
+                running parallel on multi-GPUs. Default is 'scaling'. kwargs:
+                torchani.ase.Calculator kwargs
 
         Returns:
             calculator (:class:`ase.Calculator`): A calculator to be used with ASE
         """
         from torchani.ase import Calculator
 
-        return Calculator(
-            torch.jit.script(self) if jit else self,
-            overwrite=overwrite,
-            stress_partial_fdotr=stress_partial_fdotr,
-            stress_numerical=stress_numerical,
-        )
+        model = torch.jit.script(self) if jit else self
+        return Calculator(model, overwrite=overwrite, stress_kind=stress_kind)
 
     @property
     @torch.jit.unused
