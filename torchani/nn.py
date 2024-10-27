@@ -9,7 +9,7 @@ import torch
 from torch import Tensor
 
 from torchani.constants import PERIODIC_TABLE, ATOMIC_NUMBER
-from torchani.tuples import SpeciesCoordinates, SpeciesEnergies
+from torchani.tuples import SpeciesEnergies
 from torchani.atomics import AtomicContainer, AtomicNetwork
 from torchani.infer import BmmEnsemble, InferModel
 
@@ -230,22 +230,16 @@ class SpeciesConverter(torch.nn.Module):
             [ATOMIC_NUMBER[e] for e in species], dtype=torch.long
         )
 
-    def forward(
-        self,
-        input_: tp.Tuple[Tensor, Tensor],
-    ):
+    def forward(self, atomic_nums: Tensor) -> Tensor:
         r"""Convert species from atomic numbers to 0, 1, 2, 3, ... indexing"""
-        species, coordinates = input_
-        converted_species = self.conv_tensor[species]
-
-        if (converted_species[species != -1] == -1).any():
+        elem_idxs = self.conv_tensor[atomic_nums]
+        if (elem_idxs[atomic_nums != -1] == -1).any():
             raise ValueError(
                 f"Model doesn't support some elements in input"
-                f" Input elements include: {torch.unique(species)}"
+                f" Input elements include: {torch.unique(atomic_nums)}"
                 f" Supported elements are: {self.atomic_numbers}"
             )
-
-        return SpeciesCoordinates(converted_species.to(species.device), coordinates)
+        return elem_idxs.to(atomic_nums.device)
 
 
 class Sequential(torch.nn.ModuleList):

@@ -16,10 +16,9 @@ An ANI-style model consists of:
 An energy-predicting model may have PairPotentials (RepulsionXTB,
 TwoBodyDispersion, VDW potential, Coulombic, etc.)
 
-Each of the potentials has their own cutoff, and the Featurizer has two
-cutoffs, an angular and a radial ona (the radial cutoff must be larger than
-the angular cutoff, and it is recommended that the angular cutoff is kept
-small, 3.5 Ang or less).
+Each of the potentials has their own cutoff, and the Featurizer has two cutoffs, an
+angular and a radial ona (the radial cutoff must be larger than the angular cutoff, and
+it is recommended that the angular cutoff is kept small, 3.5 Ang or less).
 
 These pieces are assembled into a subclass of ANI
 """
@@ -205,7 +204,11 @@ class ANI(torch.nn.Module):
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> SpeciesEnergies:
-        elem_idxs, coords = self._maybe_convert_species(species_coordinates)
+        species, coords = species_coordinates
+        self._check_inputs(species, coords, total_charge)
+        elem_idxs = (
+            self.species_converter(species) if self.periodic_table_index else species
+        )
 
         # Optimized branch that uses the cuAEV-fused strategy
         if (
@@ -244,7 +247,7 @@ class ANI(torch.nn.Module):
     def from_neighborlist(
         self,
         species: Tensor,
-        coordinates: Tensor,
+        coords: Tensor,
         neighbor_idxs: Tensor,
         shift_values: Tensor,
         total_charge: int = 0,
@@ -252,14 +255,11 @@ class ANI(torch.nn.Module):
         ensemble_values: bool = False,
         input_needs_screening: bool = True,
     ) -> SpeciesEnergies:
-        r"""
-        This entrypoint supports input from an external neighborlist
-        """
-        elem_idxs, coords = self._maybe_convert_species((species, coordinates))
-        # Check inputs
-        assert elem_idxs.dim() == 2
-        assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
-        assert total_charge == 0, "Model only supports neutral molecules"
+        r"""This entrypoint supports input from an external neighborlist"""
+        self._check_inputs(species, coords, total_charge)
+        elem_idxs = (
+            self.species_converter(species) if self.periodic_table_index else species
+        )
 
         max_cutoff = self.potentials[0].cutoff
         neighbors = self.neighborlist.process_external_input(
@@ -420,19 +420,13 @@ class ANI(torch.nn.Module):
                     state_dict[k] = state_dict[oldk]
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
-    @torch.jit.export
-    def _maybe_convert_species(
-        self, species_coordinates: tp.Tuple[Tensor, Tensor]
-    ) -> tp.Tuple[Tensor, Tensor]:
-        if self.periodic_table_index:
-            species_coordinates = self.species_converter(species_coordinates)
-        if (species_coordinates[0] >= self.aev_computer.num_species).any():
-            raise ValueError(f"Unknown species found in {species_coordinates[0]}")
+    def _check_inputs(
+        self, elem_idxs: Tensor, coords: Tensor, total_charge: int = 0
+    ) -> None:
         # Check inputs
-        elem_idxs, coords = species_coordinates
         assert elem_idxs.dim() == 2
         assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
-        return species_coordinates
+        assert total_charge == 0, "Model only supports neutral molecules"
 
     # Unfortunately this is an UGLY workaround for a torchscript bug
     @torch.jit.export
@@ -718,7 +712,7 @@ class ANIq(ANI):
     def energies_and_atomic_charges_from_neighborlist(
         self,
         species: Tensor,
-        coordinates: Tensor,
+        coords: Tensor,
         neighbor_idxs: Tensor,
         shift_values: Tensor,
         total_charge: int = 0,
@@ -729,8 +723,10 @@ class ANIq(ANI):
         if ensemble_values:
             raise ValueError("ensemble_values not supported for ANIq")
         # This entrypoint supports input from an external neighborlist
-        assert total_charge == 0, "Model only supports neutral molecules"
-        elem_idxs, coords = self._maybe_convert_species((species, coordinates))
+        self._check_inputs(species, coords, total_charge)
+        elem_idxs = (
+            self.species_converter(species) if self.periodic_table_index else species
+        )
 
         previous_cutoff = self.potentials[0].cutoff
         neighbors = self.neighborlist.process_external_input(
@@ -779,8 +775,11 @@ class ANIq(ANI):
     ) -> SpeciesEnergiesAtomicCharges:
         if ensemble_values:
             raise ValueError("atomic E and ensemble values not supported")
-        assert total_charge == 0, "Model only supports neutral molecules"
-        elem_idxs, coords = self._maybe_convert_species(species_coordinates)
+        species, coords = species_coordinates
+        self._check_inputs(species, coords, total_charge)
+        elem_idxs = (
+            self.species_converter(species) if self.periodic_table_index else species
+        )
         prev_cutoff = self.potentials[0].cutoff
         neighbor_data = self.neighborlist(elem_idxs, coords, prev_cutoff, cell, pbc)
         energies = coords.new_zeros(elem_idxs.shape[0])

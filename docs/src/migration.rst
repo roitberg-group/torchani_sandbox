@@ -61,15 +61,11 @@ To output other quantities of interest use:
 
 TODO: Add more stuff
 
-The `AEVComputer` class
------------------------
+The `AEVComputer`, ``torchani.ANIModel`` and ``torchani.SpeciesConverter`` classes
+----------------------------------------------------------------------------------
 
 TODO: Add
 
-The ``torchani.ANIModel`` class
--------------------------------
-
-TODO: Add
 
 Usage of ``torchani.data``
 --------------------------
@@ -79,10 +75,8 @@ TODO: Add
 Creating models for training with ``torchani.nn.Sequential``
 ------------------------------------------------------------
 
-The ``Sequential`` class is still available, but *its use is
-highly discouraged*. If you want to create a custom model, we recommend you
-create your ``torch.nn.Module``. This is much more flexible and less error
-prone, and it avoids having to return irrelevant outputs and accept irrelevant inputs.
+The ``torchani.nn.Sequential`` class is still available, but *its use is highly
+discouraged*.
 
 If you were previously doing:
 
@@ -94,7 +88,29 @@ If you were previously doing:
     energy_shifter = torchani.EnergyShifter(...)
     model = torchani.nn.Sequential(aev_computer, neural_networks, energy_shifter)
 
-You can now do:
+As an alternative, you can use the torchani ``Assembler`` to create your model. For
+example, to create a model just like ``ANI2x``, but with random weights, use:
+
+.. code-block:: python
+
+    from torchani import assembly
+    from torchani import atomics
+
+    asm = assembly.Assembler()
+    asm.set_symbols(("H", "C", "N", "O"))
+    asm.set_featurizer(radial_terms="ani2x", angular_terms="ani2x", compute_strategy="cuaev")  # cuAEV for faster training
+    asm.set_atomic_networks(atomics.like_2x)
+    asm.set_gsaes_as_self_energies("wb97x-631gd")  # Add ground state atomic energies
+    model = asm.assemble()  # The assembled model is ready to train
+
+This takes care of all the gotchas of building a neural network model (for instance, it
+ensures the AEVComputer is initialized with the the correct number of elements, that it
+matches the initial size of the networks, and that the internal order of the element
+idxs is correct for all modules). It is a pretty customizable procedure, and has good
+defaults. It also avoids having to return irrelevant outputs and accept irrelevant
+inputs.
+
+If you want even more flexibility, we recommend you create your ``torch.nn.Module``:
 
 .. code-block:: python
 
@@ -116,27 +132,5 @@ You can now do:
 
     model = Model()
 
-Which will have the same effect, but is much more flexible. As an alternative, you can
-use the torchani ``Assembler`` to create your model. For example, to create a model just
-like ``ANI2x``, but with random weights, use:
-
-.. code-block:: python
-
-    import torchani
-    from torchani.aev import StandardRadial, StandardAngular
-    from torchani import atomics
-    from torch.nn import Module
-
-    asm = torchani.Assembler()
-    asm.set_symbols(("H", "C", "N", "O"))
-    asm.set_featurizer(
-        radial_terms=StandardRadial.like_2x(),
-        angular_terms=StandardAngular.like_2x(),
-        compute_strategy="cuaev",  # Use the cuAEV extension for faster training
-    )
-    asm.set_atomic_networks(atomics.like_2x)
-    # This will ensure the assembled model adds the ground state atomic energies
-    # for this level of theory
-    asm.set_gsaes_as_self_energies("wb97x-631gd")
-
-    model = asm.assemble()  # The assembled model is ready to train
+This gives you the full flexibility of ``torch``, but be careful with potential
+pitfalls.
