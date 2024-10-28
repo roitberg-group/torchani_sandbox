@@ -4,10 +4,11 @@ calculated from the local chemical environment of each atom. This module contain
 AEV Computer, 2-body ("radial"), and 3-body ("angular") AEV terms.
 """
 
-from torchani.aev.computer import AEVComputer
-from torchani.aev.terms import (
+from torchani.aev._computer import AEVComputer
+from torchani.aev._terms import (
     StandardAngular,
     StandardRadial,
+    AngularTermArg,
     AngularTerm,
     RadialTerm,
 )
@@ -18,4 +19,5 @@ __all__ = [
     "StandardAngular",
     "AngularTerm",
     "RadialTerm",
+    "AngularTermArg",
 ]

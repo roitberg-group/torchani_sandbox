@@ -10,7 +10,7 @@ from torchani.tuples import SpeciesAEV, NeighborData
 from torchani.utils import cumsum_from_zero
 from torchani.neighbors import parse_neighborlist, NeighborlistArg, FullPairwise
 from torchani.cutoffs import CutoffArg
-from torchani.aev.terms import (
+from torchani.aev._terms import (
     parse_angular_term,
     parse_radial_term,
     StandardAngular,
