@@ -113,7 +113,7 @@ def ANI1x(
     asm.set_symbols(SYMBOLS_1X, auto_sort=False)
     asm.set_atomic_networks(atomics.like_1x)
     asm.set_global_cutoff_fn("cosine")
-    asm.set_featurizer(angular_terms="ani1x", radial_terms="ani1x", strategy=strategy)
+    asm.set_aev_computer(angular_terms="ani1x", radial_terms="ani1x", strategy=strategy)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
     model = asm.assemble(8)
@@ -152,7 +152,7 @@ def ANI1ccx(
     asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_1X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
-    asm.set_featurizer(radial_terms="ani1x", angular_terms="ani1x", strategy=strategy)
+    asm.set_aev_computer(radial_terms="ani1x", angular_terms="ani1x", strategy=strategy)
     asm.set_atomic_networks(atomics.like_1x)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("ccsd(t)star-cbs")
@@ -190,7 +190,7 @@ def ANI2x(
     asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
-    asm.set_featurizer(radial_terms="ani2x", angular_terms="ani2x", strategy=strategy)
+    asm.set_aev_computer(radial_terms="ani2x", angular_terms="ani2x", strategy=strategy)
     asm.set_atomic_networks(atomics.like_2x)
     asm.set_neighborlist(neighborlist)
     # The self energies are overwritten by the state dict
@@ -219,10 +219,10 @@ def ANImbis(
     """
     if strategy not in ["pyaev", "cuaev"]:
         raise ValueError(f"Unavailable strategy for ANImbis: {strategy}")
-    asm = Assembler(periodic_table_index=periodic_table_index, model_type=ANIq)
+    asm = Assembler(periodic_table_index=periodic_table_index, model_cls=ANIq)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
-    asm.set_featurizer(radial_terms="ani2x", angular_terms="ani2x", strategy=strategy)
+    asm.set_aev_computer(radial_terms="ani2x", angular_terms="ani2x", strategy=strategy)
     asm.set_atomic_networks(atomics.like_2x)
 
     asm.set_charge_networks(
@@ -230,7 +230,7 @@ def ANImbis(
         normalizer=ChargeNormalizer.from_electronegativity_and_hardness(
             asm.symbols, scale_weights_by_charges_squared=True
         ),
-        container_type=_ANINetworksDiscardFirstScalar,
+        container_cls=_ANINetworksDiscardFirstScalar,
     )
     asm.set_neighborlist(neighborlist)
     # The self energies are overwritten by the state dict
@@ -278,7 +278,7 @@ def ANIala(
     asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("cosine")
-    asm.set_featurizer(radial_terms="ani2x", angular_terms="ani2x", strategy=strategy)
+    asm.set_aev_computer(radial_terms="ani2x", angular_terms="ani2x", strategy=strategy)
     asm.set_atomic_networks(atomics.like_ala)
     asm.set_neighborlist(neighborlist)
     asm.set_gsaes_as_self_energies("wb97x-631gd")
@@ -311,7 +311,7 @@ def ANIdr(
     asm = Assembler(periodic_table_index=periodic_table_index)
     asm.set_symbols(SYMBOLS_2X, auto_sort=False)
     asm.set_global_cutoff_fn("smooth2")
-    asm.set_featurizer(angular_terms="ani2x", radial_terms="ani2x", strategy=strategy)
+    asm.set_aev_computer(angular_terms="ani2x", radial_terms="ani2x", strategy=strategy)
     asm.set_atomic_networks(atomics.like_dr)
     asm.add_pair_potential(
         RepulsionXTB,
