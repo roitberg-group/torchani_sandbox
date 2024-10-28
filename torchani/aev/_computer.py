@@ -1,3 +1,6 @@
+r"""
+This module is *internal* and considered an implementation detail
+"""
 import os
 import typing as tp
 
@@ -67,6 +70,7 @@ class AEVComputer(torch.nn.Module):
         The element indices must be 0, 1, 2, 3, ..., not atomic numbers. Check
         :class:`torchani.nn.SpeciesConverter` if you want atomic numbers.
     """
+
     num_species: Final[int]
     num_species_pairs: Final[int]
 
@@ -222,9 +226,7 @@ class AEVComputer(torch.nn.Module):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
     ) -> Tensor:
-        """Compute AEVs
-
-        """
+        """Compute AEVs"""
         if not torch.jit.is_scripting():
             if isinstance(elem_idxs, tuple):
                 raise ValueError(
