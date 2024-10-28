@@ -1,7 +1,4 @@
-r"""
-This module is *internal* and considered an implementation detail. Functions and classes
-are subject to change at any point. It contains legacy API and workarounds.
-"""
+# This module contains legacy API and workarounds. Please do not use in new code
 import typing as tp
 import warnings
 
