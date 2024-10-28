@@ -9,6 +9,9 @@ from torchani.aev._terms import (
     StandardAngular,
     StandardRadial,
     AngularTermArg,
+    RadialTermArg,
+    parse_radial_term,
+    parse_angular_term,
     AngularTerm,
     RadialTerm,
 )
@@ -20,4 +23,7 @@ __all__ = [
     "AngularTerm",
     "RadialTerm",
     "AngularTermArg",
+    "RadialTermArg",
+    "parse_radial_term",
+    "parse_angular_term",
 ]

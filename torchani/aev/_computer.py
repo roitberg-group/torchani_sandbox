@@ -1,6 +1,3 @@
-r"""
-This module is *internal* and considered an implementation detail
-"""
 import os
 import typing as tp
 
