@@ -1,4 +1,3 @@
-# This module contains legacy API and workarounds. Please do not use in new code
 import typing as tp
 import warnings
 
