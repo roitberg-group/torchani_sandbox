@@ -68,7 +68,6 @@ texinfo_documents = [
     ),
 ]
 
-html_additional_pages = {}
 html_use_modindex = True
 html_domain_indices = False
 html_copy_source = False
