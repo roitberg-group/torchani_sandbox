@@ -151,7 +151,7 @@ aev_computer_cosdiff = AEVComputer(
 ).to(device)
 
 radial_length = aev_computer_cosdiff.radial_length
-species, aevs = aev_computer_cosdiff(species, coords)
+aevs = aev_computer_cosdiff(species, coords)
 print("AEV computer similar to 1x, but with custom angular terms")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
