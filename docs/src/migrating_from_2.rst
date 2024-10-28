@@ -160,12 +160,13 @@ faster training, do this:
 .. code-block:: python
 
     from torchani import assembly
-    from torchani import atomics
+    from torchani.nn import make_2x_network
 
     asm = assembly.Assembler()
     asm.set_symbols(("H", "C", "N", "O"))
     asm.set_featurizer(radial_terms="ani2x", angular_terms="ani2x", strategy="cuaev")
-    asm.set_atomic_networks(atomics.like_2x)
+    # make_2x_network is a function that, given a symbol, builds an atomic network
+    asm.set_atomic_networks(make_2x_network)
     asm.set_gsaes_as_self_energies("wb97x-631gd")  # Add ground state atomic energies
     model = asm.assemble()  # The returned model is ready to train
 

@@ -3,11 +3,11 @@ import typing as tp
 import torch
 from torch import Tensor
 
+from torchani.nn import AtomicContainer
+from torchani.aev import AEVComputer
 from torchani.electro import ChargeNormalizer
 from torchani.tuples import EnergiesAtomicCharges
 from torchani.neighbors import NeighborData
-from torchani.atomics import AtomicContainer
-from torchani.aev.computer import AEVComputer
 from torchani.potentials.core import Potential
 
 

@@ -48,7 +48,6 @@ from torchani.tuples import (
     ForceMagnitudes,
 )
 from torchani.annotations import StressKind
-from torchani import atomics
 from torchani.neighbors import parse_neighborlist, NeighborlistArg
 from torchani.cutoffs import parse_cutoff_fn, Cutoff, CutoffArg
 from torchani.aev import AEVComputer, StandardAngular, StandardRadial
@@ -60,8 +59,18 @@ from torchani.aev.terms import (
 )
 from torchani.neighbors import rescreen, NeighborData
 from torchani.electro import ChargeNormalizer
-from torchani.nn import SpeciesConverter, ANINetworks, ANIEnsemble, _ZeroANINetworks
-from torchani.atomics import AtomicContainer, AtomicNetwork, AtomicMakerArg, AtomicMaker
+from torchani.nn import (
+    SpeciesConverter,
+    AtomicContainer,
+    ANINetworks,
+    ANIEnsemble,
+    AtomicNetwork,
+    AtomicMakerArg,
+    AtomicMaker,
+    parse_network_maker,
+    parse_activation,
+)
+from torchani.nn._internal import _ZeroANINetworks
 from torchani.constants import GSAES
 from torchani.utils import sort_by_element
 from torchani.paths import state_dicts_dir
@@ -1105,7 +1114,7 @@ def simple_ani(
     cutoff_fn: CutoffArg = "smooth2",
     dispersion: bool = False,
     repulsion: bool = True,
-    atomic_maker: AtomicMakerArg = "ani2x",
+    network_factory: AtomicMakerArg = "ani2x",
     activation: tp.Union[str, torch.nn.Module] = "gelu",
     bias: bool = False,
     strategy: str = "pyaev",
@@ -1145,12 +1154,12 @@ def simple_ani(
         ),
         strategy=strategy,
     )
-    atomic_maker = functools.partial(
-        atomics.parse_atomics(atomic_maker),
-        activation=atomics.parse_activation(activation),
+    network_factory = functools.partial(
+        parse_network_maker(network_factory),
+        activation=parse_activation(activation),
         bias=bias,
     )
-    asm.set_atomic_networks(atomic_maker)
+    asm.set_atomic_networks(network_factory)
     asm.set_neighborlist("full_pairwise")
     asm.set_gsaes_as_self_energies(lot)
     if repulsion:
@@ -1184,7 +1193,7 @@ def simple_aniq(
     cutoff_fn: CutoffArg = "smooth2",
     dispersion: bool = False,
     repulsion: bool = True,
-    atomic_maker: AtomicMakerArg = "ani2x",
+    network_factory: AtomicMakerArg = "ani2x",
     activation: tp.Union[str, torch.nn.Module] = "gelu",
     bias: bool = False,
     strategy: str = "pyaev",
@@ -1235,26 +1244,26 @@ def simple_aniq(
     if merge_charge_networks:
         if dummy_energies:
             raise ValueError("Can't output dummy energies with merged charge network")
-        atomic_maker = functools.partial(
-            atomics.parse_atomics(atomic_maker),
+        network_factory = functools.partial(
+            parse_network_maker(network_factory),
             out_dim=2,
-            activation=atomics.parse_activation(activation),
+            activation=parse_activation(activation),
             bias=bias,
         )
     else:
-        atomic_maker = functools.partial(
-            atomics.parse_atomics(atomic_maker),
+        network_factory = functools.partial(
+            parse_network_maker(network_factory),
             out_dim=1,
-            activation=atomics.parse_activation(activation),
+            activation=parse_activation(activation),
             bias=bias,
         )
         asm.set_charge_networks(
-            atomic_maker,
+            network_factory,
             normalizer=normalizer,
         )
 
     asm.set_atomic_networks(
-        atomic_maker,
+        network_factory,
         container_cls=_ZeroANINetworks if dummy_energies else ANINetworks,
     )
     asm.set_neighborlist("full_pairwise")

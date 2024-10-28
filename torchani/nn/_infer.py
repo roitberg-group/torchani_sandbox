@@ -1,7 +1,5 @@
 r"""
-Inference-optimized versions of ANIEnsemble and AtomicNetwork, recommended for
-single-point calculations of single molecules, molecular dynamics and geometry
-optimizations.
+This module is *internal* and considered an implementation detail.
 """
 
 import warnings
@@ -14,7 +12,7 @@ from torch import Tensor
 
 from torchani.csrc import MNP_IS_INSTALLED
 from torchani.utils import check_openmp_threads, TightCELU
-from torchani.atomics import AtomicContainer, AtomicNetwork
+from torchani.nn._core import AtomicContainer, AtomicNetwork
 
 
 def jit_unused_if_no_mnp():
