@@ -35,7 +35,7 @@ class ANINetworks(AtomicContainer):
     .. warning::
 
         The element indices must be 0, 1, 2, 3, ..., not atomic numbers. Check
-        :class:`torchani.SpeciesConverter` if you want atomic numbers.
+        :class:`torchani.nn.SpeciesConverter` if you want atomic numbers.
     """
 
     # Needed for bw compatibility
