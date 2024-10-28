@@ -221,21 +221,21 @@ class BmmLinear(torch.nn.Module):
         )
 
 
-class InferModel(AtomicContainer):
+class MNPNetworks(AtomicContainer):
     def __init__(self, module: AtomicContainer, use_mnp: bool = False):
         super().__init__()
         if not torch.cuda.is_available():
-            raise RuntimeError("InferModel needs a CUDA device to use CUDA Streams")
+            raise RuntimeError("MNPNetworks needs a CUDA device to use CUDA Streams")
 
-        # Infer model in general is hard to maintain so emit warnings
+        # MNP strategy in general is hard to maintain so emit warnings
         if use_mnp:
             warnings.warn(
-                "InferModel with MNP C++ extension is experimental."
+                "MNPNetworks with MNP C++ extension is experimental."
                 " It has a complex implementation, and may be removed in the future."
             )
         else:
             warnings.warn(
-                "InferModel with no MNP C++ extension is not optimized."
+                "MNPNetworks with no MNP C++ extension is not optimized."
                 " It is meant as a proof of concept and may be removed in the future."
             )
 
@@ -336,8 +336,8 @@ class InferModel(AtomicContainer):
         atomic: bool = False,
     ) -> Tensor:
         assert elem_idxs.shape == aevs.shape[:-1]
-        assert aevs.shape[0] == 1, "InferModel only supports single-conformer inputs"
-        assert not atomic, "InferModel doesn't support atomic energies"
+        assert aevs.shape[0] == 1, "MNPNetworks only supports single-conformer inputs"
+        assert not atomic, "MNPNetworks doesn't support atomic energies"
         aevs = aevs.flatten(0, 1)
 
         if self._MNP_IS_INSTALLED:
@@ -358,7 +358,7 @@ class InferModel(AtomicContainer):
                     self.atomics,
                     self._stream_list,
                 )
-            raise RuntimeError("JIT-InferModel only supported with use_mnp=True")
+            raise RuntimeError("JIT-MNPNetworks only supported with use_mnp=True")
         # cppMNP
         return self._cpp_mnp(aevs)
 

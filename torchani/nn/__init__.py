@@ -21,7 +21,7 @@ from torchani.nn._factories import (
     make_ala_network,
     make_dr_network,
 )
-from torchani.nn._infer import BmmEnsemble, InferModel
+from torchani.nn._infer import BmmAtomicNetwork, BmmEnsemble, BmmLinear, MNPNetworks
 from torchani.nn._containers import ANINetworks, ANIEnsemble, SpeciesConverter
 from torchani.nn._internal import (
     ANIModel,
@@ -47,8 +47,10 @@ __all__ = [
     "ANIEnsemble",
     "SpeciesConverter",
     # Inference optimization
+    "MNPNetworks",
+    "BmmLinear",
     "BmmEnsemble",
-    "InferModel",
+    "BmmAtomicNetwork",
     # Legacy
     "ANIModel",
     "Ensemble",

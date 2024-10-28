@@ -51,7 +51,7 @@ Atomic Networks and Containers
     :members:
 .. autoclass:: torchani.nn.BmmLinear
     :members:
-.. autoclass:: torchani.nn.InferModel
+.. autoclass:: torchani.nn.MNPNetworks
     :members:
 .. autofunction:: torchani.nn.make_1x_network
 .. autofunction:: torchani.nn.make_2x_network

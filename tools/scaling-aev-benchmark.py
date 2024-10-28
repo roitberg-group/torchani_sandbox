@@ -376,7 +376,7 @@ def plot(maxatoms, aev_fd, cuaev_fd, aev_fdbd, cuaev_fdbd):
     energy_label = ""
     if args.run_energy:
         _infer_flag = "on" if args.infer_model else "off"
-        energy_label = f"Energy: NN ({num_nn}), Infer Model ({_infer_flag})"
+        energy_label = f"Energy: NN ({num_nn}), Inference optimized with: {_infer_flag}"
         if args.infer_model:
             energy_label += f", MNP ({'on' if args.mnp else 'off'})"
     # plot

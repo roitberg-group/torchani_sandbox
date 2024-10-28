@@ -9,7 +9,7 @@ from torch import Tensor
 
 from torchani.constants import PERIODIC_TABLE, ATOMIC_NUMBER
 from torchani.nn._core import AtomicContainer, AtomicNetwork
-from torchani.nn._infer import BmmEnsemble, InferModel
+from torchani.nn._infer import BmmEnsemble, MNPNetworks
 
 
 class ANINetworks(AtomicContainer):
@@ -99,7 +99,7 @@ class ANINetworks(AtomicContainer):
 
     @torch.jit.unused
     def to_infer_model(self, use_mnp: bool = False) -> AtomicContainer:
-        return InferModel(self, use_mnp=use_mnp)
+        return MNPNetworks(self, use_mnp=use_mnp)
 
 
 class ANIEnsemble(AtomicContainer):
@@ -174,7 +174,7 @@ class ANIEnsemble(AtomicContainer):
     @torch.jit.unused
     def to_infer_model(self, use_mnp: bool = False) -> AtomicContainer:
         if use_mnp:
-            return InferModel(self, use_mnp=True)
+            return MNPNetworks(self, use_mnp=True)
         return BmmEnsemble(self)
 
 
