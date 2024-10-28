@@ -2,7 +2,7 @@ import torchani
 
 project = "TorchANI"
 copyright = "2024, Roitberg Group"
-author = "Xiang Gao"
+author = "TorchANI developers"
 
 version = torchani.__version__
 release = torchani.__version__
@@ -23,11 +23,13 @@ python_use_unqualifierd_type_names = True  # Not sure if needed
 
 templates_path = ["_templates"]
 
-source_suffix = {'.rst': 'restructuredtext'}
+source_suffix = {".rst": "restructuredtext"}
 master_doc = "index"
 pygments_style = "sphinx"
-html_theme = "sphinx_rtd_theme"
+html_theme = "pydata_sphinx_theme"
 htmlhelp_basename = "TorchANIdoc"
+html_static_path = ["_static"]
+html_css_files = ["style.css"]
 
 sphinx_gallery_conf = {
     "examples_dirs": "../../examples",
@@ -43,7 +45,13 @@ intersphinx_mapping = {
 }
 
 latex_documents = [
-    (master_doc, "TorchANI.tex", "TorchANI Documentation", "Xiang Gao", "manual"),
+    (
+        master_doc,
+        "TorchANI.tex",
+        "TorchANI Documentation",
+        "TorchANI developers",
+        "manual",
+    ),
 ]
 
 man_pages = [(master_doc, "torchani", "TorchANI Documentation", [author], 1)]
@@ -59,3 +67,28 @@ texinfo_documents = [
         "Miscellaneous",
     ),
 ]
+
+html_additional_pages = {}
+html_use_modindex = True
+html_domain_indices = False
+html_copy_source = False
+html_file_suffix = '.html'
+
+html_sidebars = {
+    "index": ["search-button-field"],
+    "**": ["search-button-field", "sidebar-nav-bs"]
+}
+
+html_theme_options = {
+    "github_url": "https://github.com/aiqm/torchani",
+    "header_links_before_dropdown": 6,
+    "icon_links": [],
+    "logo": {
+        "text": "TorchANI",
+    },
+    "navbar_start": ["navbar-logo"],
+    "navbar_end": ["theme-switcher", "navbar-icon-links"],
+    "navbar_persistent": [],
+    "show_version_warning_banner": True,
+    "secondary_sidebar_items": ["page-toc"],
+}

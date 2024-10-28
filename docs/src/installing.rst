@@ -1,5 +1,5 @@
-Installation
-============
+Installing
+==========
 
 TorchANI requires PyTorch. Please see `PyTorch's official site`_ for
 instructions of installing PyTorch. Note that if you updated TorchANI, you may

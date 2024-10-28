@@ -1,48 +1,26 @@
-====================================
-Welcome to TorchANI's documentation!
-====================================
+:html_theme.sidebar_secondary.remove: true
 
-.. automodule:: torchani
+.. module:: torchani
 
-.. toctree::
-    :maxdepth: 2
-    :caption: Getting Started
-
-    installing
-    examples_autogen/fundamentals.rst
-    migrating_from_2
-    tips
+**********************
+TorchANI documentation
+**********************
 
 .. toctree::
-    :maxdepth: 2
-    :caption: Examples
+   :maxdepth: 1
+   :hidden:
 
-    examples_autogen/ase_interface.rst
-    examples_autogen/vibration_analysis.rst
-    examples_autogen/dispersion_potential.rst
-    examples_autogen/repulsive_potential.rst
-    examples_autogen/training.rst
-    examples_autogen/modular_aev.rst
-    examples_autogen/datasets_simple_usage.rst
-    examples_autogen/datasets_advanced_usage.rst
-    examples_autogen/neurochem_loading.rst
-    examples_autogen/just_in_time_compilation.rst
+   Installing <installing>
+   Migrating to TorchANI 3 <migrating-to-3>
+   User Guide <user-guide>
+   API Reference <api>
 
-.. toctree::
-    :maxdepth: 2
-    :caption: Main API
+**Date**: |today| **Version**: |version|
 
-    main_api
+**Useful links**:
+`Issue Tracker <https://github.com/aiqm/torchani/issues>`_ |
+`Source Repository <https://github.com/aiqm/torchani>`_ |
+`Roitberg Lab <https://roitberg.chem.ufl.edu>`_ |
 
-.. toctree::
-    :maxdepth: 2
-    :caption: Datasets API
-
-    datasets_api
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+**TorchANI** is an open-source library for training and evaluation of ANI-style neural
+network interatomic potentials, developed by the Roitberg lab.

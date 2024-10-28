@@ -71,11 +71,22 @@ Units
 =====
 
 .. automodule:: torchani.units
-.. autofunction:: torchani.units.hartree2ev
-.. autofunction:: torchani.units.hartree2kcalpermol
-.. autofunction:: torchani.units.hartree2kjoulepermol
-.. autofunction:: torchani.units.ev2kcalpermol
-.. autofunction:: torchani.units.ev2kjoulepermol
-.. autofunction:: torchani.units.mhessian2fconst
-.. autofunction:: torchani.units.sqrt_mhessian2invcm
-.. autofunction:: torchani.units.sqrt_mhessian2milliev
+    :members:
+
+Datasets
+========
+
+.. automodule:: torchani.datasets
+    :members:
+
+Transforms
+==========
+
+.. automodule:: torchani.transforms
+    :members:
+
+Built-in Datasets
+=================
+
+.. automodule:: torchani.datasets.builtin
+    :members:
