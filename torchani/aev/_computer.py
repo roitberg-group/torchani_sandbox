@@ -194,6 +194,7 @@ class AEVComputer(torch.nn.Module):
         return True
 
     def extra_repr(self) -> str:
+        r""":meta private:"""
         radial_perc = f"{self.radial_length / self.aev_length * 100:.2f}% of features"
         angular_perc = f"{self.angular_length / self.aev_length * 100:.2f}% of features"
         parts = [

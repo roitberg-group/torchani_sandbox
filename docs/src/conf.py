@@ -15,6 +15,8 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx_gallery.gen_gallery",
 ]
+autodoc_typehints_format = "short"
+python_use_unqualifierd_type_names = True
 
 templates_path = ["_templates"]
 

@@ -63,6 +63,7 @@ class CutoffSmooth(Cutoff):
         return torch.exp(e)
 
     def extra_repr(self) -> str:
+        r""":meta private:"""
         return f"order={self.order}, eps={self.eps:.1e}"
 
 
