@@ -1,6 +1,6 @@
 r"""
 Collection of Cutoff functions, which can be used to envelope the outputs of
-PairPotential and AEVComputer.
+:class:`PairPotential` and :class:`AEVComputer`.
 """
 
 import typing as tp

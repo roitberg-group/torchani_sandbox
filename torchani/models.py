@@ -1,7 +1,7 @@
 r"""
 This submodule provides access to all published ANI models, which are subclasses of
-``ANI``. Some models have been published in previous articles, and some in TorchANI 3.
-If you use any of these models in your work please cite the corresponding article(s).
+:class:`ANI`. Some models have been published in previous articles, and some in TorchANI
+3. If you use any of these models in your work please cite the corresponding article(s).
 
 If for a given model you discover a bug, performance problem, or incorrect behavior in
 some region of chemical space, please open an issue in GitHub. The TorchANI developers
@@ -12,18 +12,18 @@ time they are instantiated. If this is an issue for your application we recommen
 pre-download the parameters by instantiating the models once before use.
 
 The models can be used directly once they are instantiated. Alternatively, they can be
-converted to an ASE calculator by calling ``model.ase()``.
+converted to an ASE calculator by calling :attr:`ANI.ase`.
 
-Some models have an interanl set of neural networks ("ANIEnsemble"), and they output
-their averaged values. Individual members of these ensembles can be accessed by
-indexing, and ``len()`` can be used to query the number of networks in it.
+Some models have an interanl set of neural networks (:class:`ANIEnsemble`), and they
+output their averaged values. Individual members of these ensembles can be accessed by
+indexing, and ``len(ANI)`` can be used to query the number of networks in it.
 
 The models also have three extra entry points for more specific use cases:
 atomic_energies and energies_qbcs.
 
-All entrypoints expect a tuple of tensors `(species, coordinates)` as input, together
-with two optional tensors, `cell` and `pbc`. `coordinates` and `cell` should be in units
-of Angstroms, and the output energies are always in Hartrees
+All entrypoints expect a tuple of tensors ``(species, coordinates)`` as input, together
+with two optional tensors, `cell` and `pbc`. ``coordinates`` and ``cell`` should be in
+units of Angstroms, and the output energies are always in Hartrees
 
 For more details consult the examples documentation
 
@@ -180,10 +180,9 @@ def ANI2x(
 ) -> ANI:
     """The ANI-2x model as in `ANI2x Paper`_ and `ANI2x Results on GitHub`_.
 
-    The ANI-2x model is an ensemble of 8 networks that was trained on the
-    ANI-2x dataset. The target level of theory is wB97X/6-31G(d). It predicts
-    energies on HCNOFSCl elements exclusively it shouldn't be used with other
-    atom types.
+    The ANI-2x model is an ensemble of 8 networks that was trained on the ANI-2x
+    dataset. The target level of theory is wB97X/6-31G(d). It predicts energies on
+    HCNOFSCl elements exclusively it shouldn't be used with other atom types.
 
     .. _ANI2x Results on GitHub:
         https://github.com/cdever01/ani-2x_results
@@ -218,8 +217,7 @@ def ANImbis(
     dtype: DType = None,
 ) -> ANI:
     r"""
-    ANI-2x model with MBIS experimental charges. Note: will be removed in the
-    future.
+    Experimental ANI-2x model with MBIS charges
     """
     if strategy not in ["pyaev", "cuaev"]:
         raise ValueError(f"Unavailable strategy for ANImbis: {strategy}")
@@ -276,7 +274,7 @@ def ANIala(
     device: Device = None,
     dtype: DType = None,
 ) -> ANI:
-    r"""Experimental Model fine tuned to solvated frames of Ala dipeptide"""
+    r"""Experimental Model fine tuned to solvated frames of ALA dipeptide"""
     if model_index is not None:
         raise ValueError("Model index is not supported for ANIala")
     asm = Assembler(periodic_table_index=periodic_table_index)
@@ -304,11 +302,11 @@ def ANIdr(
     device: Device = None,
     dtype: DType = None,
 ) -> ANI:
-    """ANI model trained with both dispersion and repulsion
+    r"""
+    ANI model trained with both dispersion and repulsion
 
-    The level of theory is B973c, it is an ensemble of 7 models.
-    It predicts
-    energies on HCNOFSCl elements
+    The level of theory is B973c, it is an ensemble of 7 models. It predicts energies on
+    HCNOFSCl elements
     """
     if strategy not in ["pyaev", "cuaev"]:
         raise ValueError(f"Unavailable strategy for ANImbis: {strategy}")
