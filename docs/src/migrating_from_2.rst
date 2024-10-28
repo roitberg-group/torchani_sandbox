@@ -93,6 +93,9 @@ you should now do this instead:
     energies = animodel(idxs, aevs)
     energies = ensemble(ixs, aevs)
 
+.. NOTE The old behavior is also supported directly by using the old class names but we
+   omit to mention this here.
+
 The old behavior is still supported by using the ``.call()`` method, but this is
 discouraged. An example:
 
@@ -121,6 +124,10 @@ calculation like this:
 Additionally, ``AEVComputer`` is now initialized with different inputs. If you prefer
 the old behavior you can use ``AEVComputer.from_constants(...)`` instead. (we
 recommend using the new constructors however).
+
+Additionally, ``AEVComputer`` is now initialized with different inputs. If you prefer
+the old behavior you can use ``AEVComputer.from_constants(...)`` instead. (we recommend
+using the new constructors however).
 
 Usage of ``torchani.data``
 --------------------------
