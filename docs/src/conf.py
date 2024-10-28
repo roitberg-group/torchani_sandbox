@@ -22,7 +22,7 @@ napoleon_numpy_docstring = False
 python_use_unqualifierd_type_names = True  # Not sure if needed
 
 templates_path = ["_templates"]
-
+default_role = "py:obj"
 source_suffix = {".rst": "restructuredtext"}
 master_doc = "index"
 pygments_style = "sphinx"
