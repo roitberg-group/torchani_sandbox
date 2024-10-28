@@ -1,6 +1,5 @@
 r"""
-Atomic Networks, Atomic Network Containers and factory methods with useful
-defaults
+Atomic Networks, Atomic Network Containers and factory methods with useful defaults
 """
 import warnings
 import typing as tp
