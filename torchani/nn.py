@@ -290,7 +290,10 @@ class Sequential(torch.nn.ModuleList):
         pbc: tp.Optional[Tensor] = None,
     ):
         for module in self:
-            input_ = module(input_, cell=cell, pbc=pbc)
+            if hasattr(module, "call"):
+                input_ = module.call(input_, cell=cell, pbc=pbc)
+            else:
+                input_ = module(input_, cell=cell, pbc=pbc)
         return input_
 
 
