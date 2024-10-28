@@ -2,12 +2,13 @@ r"""
 Atomic Networks, Atomic Network Containers and factory methods with useful
 defaults
 """
-
+import warnings
 import typing as tp
 
 import torch
 from torch import Tensor
 
+from torchani.tuples import SpeciesEnergies
 from torchani.utils import TightCELU
 
 
@@ -56,6 +57,17 @@ class AtomicContainer(torch.nn.Module):
     @torch.jit.unused
     def to_infer_model(self, use_mnp: bool = False) -> "AtomicContainer":
         return self
+
+    # Legacy API
+    def call(
+        self,
+        species_aevs: tp.Tuple[Tensor, Tensor],
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None,
+    ) -> SpeciesEnergies:
+        warnings.warn(".call is a deprecated API and will be removed in the future")
+        species, aevs = species_aevs
+        return SpeciesEnergies(species, self(species, aevs))
 
 
 class AtomicNetwork(torch.nn.Module):

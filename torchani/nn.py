@@ -25,17 +25,17 @@ class ANINetworks(AtomicContainer):
     different elements to map to the same network, pass ``alias=True``, otherwise
     elemetns are required to be mapped to different, element-specific networks.
 
-    .. warning::
-
-        The species input to this module must be indexed with 0, 1, 2, 3, ..., and not
-        with atomic numbers.
-
     Arguments:
         modules (dict[str, AtomicNetwork]): symbol - network pairs for each supported
             element. Different elements will share networks if the same ref is used for
             different keys
         alias (bool): Allow the class to map different elements to the same atomic
             network.
+
+    .. warning::
+
+        The element indices must be 0, 1, 2, 3, ..., not atomic numbers. Check
+        :class:`torchani.SpeciesConverter` if you want atomic numbers.
     """
 
     # Needed for bw compatibility
@@ -76,6 +76,16 @@ class ANINetworks(AtomicContainer):
         aevs: Tensor,
         atomic: bool = False,
     ) -> Tensor:
+        if not torch.jit.is_scripting():
+            if isinstance(elem_idxs, tuple):
+                raise ValueError(
+                    "You seem to be attempting to call "
+                    "`_, out = networks((idxs, aevs), cell, pbc)`. "
+                    "This signature was modified in TorchANI 3. "
+                    "Please use `out = networks(idxs, aevs)` instead."
+                    "If you want the old behavior (discouraged) use"
+                    " `_, out = networks.call((idxs, aevs), cell, pbc)`."
+                )
         assert elem_idxs.shape == aevs.shape[:-1]
         flat_elem_idxs = elem_idxs.flatten()
         aev = aevs.flatten(0, 1)
@@ -93,12 +103,6 @@ class ANINetworks(AtomicContainer):
     @torch.jit.unused
     def to_infer_model(self, use_mnp: bool = False) -> AtomicContainer:
         return InferModel(self, use_mnp=use_mnp)
-
-    # Legacy API
-    def call(self, species_aevs: tp.Tuple[Tensor, Tensor]) -> SpeciesEnergies:
-        warnings.warn(".call is a deprecated API and will be removed in the future")
-        species, aevs = species_aevs
-        return SpeciesEnergies(species, self(species, aevs))
 
 
 class ANIEnsemble(AtomicContainer):
@@ -131,6 +135,16 @@ class ANIEnsemble(AtomicContainer):
             raise ValueError("All modules must support the same number of elements")
 
     def forward(self, elem_idxs: Tensor, aevs: Tensor, atomic: bool = False) -> Tensor:
+        if not torch.jit.is_scripting():
+            if isinstance(elem_idxs, tuple):
+                raise ValueError(
+                    "You seem to be attempting to call "
+                    "`_, out = networks((idxs, aevs), cell, pbc)`. "
+                    "This signature was modified in TorchANI 3. "
+                    "Please use `out = networks(idxs, aevs)` instead."
+                    "If you want the old behavior (discouraged) use"
+                    " `_, out = networks.call((idxs, aevs), cell, pbc)`."
+                )
         if atomic:
             scalars = aevs.new_zeros(elem_idxs.shape)
         else:
@@ -168,35 +182,47 @@ class ANIEnsemble(AtomicContainer):
 
 
 class SpeciesConverter(torch.nn.Module):
-    """Converts tensors with species labeled as atomic numbers into tensors
-    labeled with internal torchani indices according to a custom ordering
-    scheme. It takes a custom species ordering as initialization parameter. If
-    the class is initialized with ['H', 'C', 'N', 'O'] for example, it will
-    convert a tensor [1, 1, 6, 7, 1, 8] into a tensor [0, 0, 1, 2, 0, 3]
+    """Converts atomic numbers into internal ANI element indices
+
+    Conversion is done according to the symbols sequence passed as init argument. If the
+    class is initialized with ``['H', 'C', 'N', 'O']``, it will convert ``tensor([1, 1,
+    6, 7, 1, 8])`` into a ``tensor([0, 0, 1, 2, 0, 3])``
 
     Arguments:
-        species (:class:`collections.abc.Sequence` of :class:`str`):
-        sequence of all supported species, in order (it is recommended to order
-        according to atomic number).
+        symbols (list[str]): Sequence of all supported elements, in order (it is
+            recommended to order according to atomic number, which you can do by using
+            ``torchani.utils.sort_by_element``).
     """
 
     conv_tensor: Tensor
 
-    def __init__(self, species: tp.Sequence[str]):
+    def __init__(self, symbols: tp.Sequence[str]):
         super().__init__()
+        if isinstance(symbols, str):
+            raise ValueError(
+                "You seem to be calling `SpeciesConverter('HCNO')` or similar. "
+                "Please use ``SpeciesConverter(['H', 'C', 'N', 'O'])`` instead"
+            )
         rev_idx = {s: k for k, s in enumerate(PERIODIC_TABLE)}
         maxidx = max(rev_idx.values())
         self.register_buffer(
             "conv_tensor", torch.full((maxidx + 2,), -1, dtype=torch.long)
         )
-        for i, s in enumerate(species):
+        for i, s in enumerate(symbols):
             self.conv_tensor[rev_idx[s]] = i
         self.atomic_numbers = torch.tensor(
-            [ATOMIC_NUMBER[e] for e in species], dtype=torch.long
+            [ATOMIC_NUMBER[e] for e in symbols], dtype=torch.long
         )
 
     def forward(self, atomic_nums: Tensor, nop: bool = False) -> Tensor:
-        r"""Convert species from atomic numbers to 0, 1, 2, 3, ... indexing"""
+        if not torch.jit.is_scripting():
+            if isinstance(atomic_nums, tuple):
+                raise ValueError(
+                    "You seem to be attempting to call "
+                    "`_, idxs = converter((atom_nums, aevs), cell, pbc)`. "
+                    "This signature was modified in TorchANI 3. "
+                    "Please use `idxs = converter(atom_nums)` instead."
+                )
 
         # Consider as element idxs and check that its not too large, otherwise its
         # a no-op TODO: unclear documentation for this, possibly remove
@@ -250,7 +276,11 @@ class Sequential(torch.nn.ModuleList):
     """Modified Sequential module that accept Tuple type as input"""
 
     def __init__(self, *modules):
-        warnings.warn("Use of `torchani.nn.Sequential` is strongly discouraged.")
+        warnings.warn(
+            "Use of `torchani.nn.Sequential` is strongly discouraged."
+            "Please use the Assembler, or write your own torch.nn.Module."
+            "For more information consult the 'migrating to 3' documentation"
+        )
         super().__init__(modules)
 
     def forward(
@@ -264,24 +294,12 @@ class Sequential(torch.nn.ModuleList):
         return input_
 
 
-class Ensemble(ANIEnsemble):
-    def __init__(self, modules: tp.Any) -> None:
-        warnings.warn("torchani.Ensemble is deprecated, use torchani.nn.ANIEnsemble")
-        super().__init__(modules, repeats=True)
-
-    # Signature is incompatible since this class is legacy
-    def forward(  # type: ignore
-        self,
-        species_aevs: tp.Tuple[Tensor, Tensor],
-        cell: tp.Optional[Tensor] = None,
-        pbc: tp.Optional[Tensor] = None,
-    ) -> SpeciesEnergies:
-        return self.call(species_aevs)
-
-
 class ANIModel(ANINetworks):
     def __init__(self, modules: tp.Any) -> None:
-        warnings.warn("torchani.ANIModel is deprecated, use torchani.nn.ANINetworks")
+        warnings.warn(
+            "torchani.ANIModel is deprecated, its use is discouraged."
+            " Please use torchani.nn.ANINetworks instead."
+        )
         super().__init__(modules, alias=True)
 
     # Signature is incompatible since this class is legacy
@@ -291,4 +309,22 @@ class ANIModel(ANINetworks):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
     ) -> SpeciesEnergies:
-        return self.call(species_aevs)
+        return self.call(species_aevs, cell, pbc)
+
+
+class Ensemble(ANIEnsemble):
+    def __init__(self, modules: tp.Any) -> None:
+        warnings.warn(
+            "torchani.Ensemble is deprecated, its use is discouraged."
+            " Please use torchani.nn.ANIEnsemble instead."
+        )
+        super().__init__(modules, repeats=True)
+
+    # Signature is incompatible since this class is legacy
+    def forward(  # type: ignore
+        self,
+        species_aevs: tp.Tuple[Tensor, Tensor],
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None,
+    ) -> SpeciesEnergies:
+        return self.call(species_aevs, cell, pbc)

@@ -82,20 +82,24 @@ you should now do this instead:
 .. code-block:: python
     
     import torchani
+    converter = torchani.nn.SpeciesConverter(...)
     aevc = torchani.AEVComputer(...)
     # Note that the following classes have different names
     ani_nets = torchani.nn.ANINetworks(...)
     ensemble = torchani.nn.ANIEnsemble(...)
-    converter = torchani.utils.AtomicNumsToIdxs(...)
 
     idxs = converter(atomic_nums)
     aevs = aevc(idxs, coords, cell, pbc)
     energies = animodel(idxs, aevs)
     energies = ensemble(ixs, aevs)
 
-The old behavior is still supported by using the new class names with the ``.call()``
-method, or the old class names (except ``AEVComputer``, for which ``.call()`` must be
-used to obtain the old behavior).
+The old behavior is still supported by using the ``.call()`` method, but this is
+discouraged. An example:
+
+.. code-block:: python
+
+    aevc = torchani.AEVComputer(...)
+    _, aevs = aevc.call((species, coords), cell, pbc)
 
 Extra notes on the ``AEVComputer``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -112,11 +116,11 @@ calculation like this:
 
     idxs = converter(atomic_nums)
     neighbors = neighborlist(idxs, coords, cell, pbc)
-    aevc = aevc.compute(idxs, neighbors)
+    aevc = aevc.compute_from_neighbors(idxs, neighbors)
 
 Additionally, ``AEVComputer`` is now initialized with different inputs. If you prefer
-the old behavior you can use ``AEVComputer.from_constants(...)`` instead. (we recommend
-using the new constructors however).
+the old behavior you can use ``AEVComputer.from_constants(...)`` instead. (we
+recommend using the new constructors however).
 
 Usage of ``torchani.data``
 --------------------------
@@ -175,7 +179,7 @@ If you want even *more* flexibility, we recommend you create your own
 
     class Model(Module):
         def __init__(self):
-            self.converter = torchani.utils.AtomicNumsToIdxs(...)
+            self.converter = torchani.nn.SpeciesConverter(...)
             self.neighborlist = torchani.neighbors.AllPairs(...)
             self.aevc = torchani.aev.AEVComputer(...)
             self.nn = torchani.nn.ANINetworks(...)

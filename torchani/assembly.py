@@ -211,7 +211,7 @@ class ANI(torch.nn.Module):
 
         # Optimized branch that uses the cuAEV-fused strategy
         if not self._has_pair_pots and self.aev_computer._strategy == "cuaev-fused":
-            aevs = self.aev_computer((elem_idxs, coords), cell=cell, pbc=pbc)[1]
+            aevs = self.aev_computer(elem_idxs, coords, cell=cell, pbc=pbc)
             energies = self.neural_networks(elem_idxs, aevs, atomic=atomic)
             energies += self.energy_shifter(elem_idxs, atomic=atomic)
             return SpeciesEnergies(elem_idxs, energies)
