@@ -1,3 +1,5 @@
+.. _torchani-migrating:
+
 Migrating to TorchANI 3
 =======================
 

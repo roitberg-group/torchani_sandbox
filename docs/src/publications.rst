@@ -1,5 +1,9 @@
-Scientific Publications
-=======================
+.. _torchani-publications:
+
+.. currentmodule:: torchani
+
+Publications
+============
 
 The general architecture of ANI-style models was originally proposed in the `ANI`_
 article. You can read more about the models that TorchANI implements in the `ANI-1x`_,
