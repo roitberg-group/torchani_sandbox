@@ -157,7 +157,7 @@ class ANIEnsemble(AtomicContainer):
     def ensemble_values(
         self, elem_idxs: Tensor, aevs: Tensor, atomic: bool = False
     ) -> Tensor:
-        r"""Don't reduce over the set of networks"""
+        r"""Don't reduce outputs over the set of networks"""
         size = len(self.active_members_idxs)
         if atomic:
             energies = aevs.new_zeros((size, elem_idxs.shape[0], elem_idxs.shape[1]))
