@@ -67,6 +67,7 @@ class AEVComputer(torch.nn.Module):
         The element indices must be 0, 1, 2, 3, ..., not atomic numbers. Check
         :class:`torchani.nn.SpeciesConverter` if you want atomic numbers.
     """
+
     num_species: Final[int]
     num_species_pairs: Final[int]
 
