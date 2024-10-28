@@ -1,8 +1,7 @@
 r"""
-The ``models`` submodule provides access to all published ANI models, which are
-subclasses of ``ANI``. Some models have been published in specific articles, and some
-have been published in TorchANI 3.0. If you use any of these models in your work please
-cite the corresponding article(s).
+This submodule provides access to all published ANI models, which are subclasses of
+``ANI``. Some models have been published in previous articles, and some in TorchANI 3.
+If you use any of these models in your work please cite the corresponding article(s).
 
 If for a given model you discover a bug, performance problem, or incorrect behavior in
 some region of chemical space, please open an issue in GitHub. The TorchANI developers
@@ -13,7 +12,7 @@ time they are instantiated. If this is an issue for your application we recommen
 pre-download the parameters by instantiating the models once before use.
 
 The models can be used directly once they are instantiated. Alternatively, they can be
-cast to an ASE calculator by calling ``ANI.ase()``.
+converted to an ASE calculator by calling ``model.ase()``.
 
 Some models have an interanl set of neural networks ("ANIEnsemble"), and they output
 their averaged values. Individual members of these ensembles can be accessed by
