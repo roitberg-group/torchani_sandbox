@@ -110,7 +110,9 @@ class SeparateChargesNNPotential(NNPotential):
         total_charge: int = 0,
         atomic: bool = False,
     ) -> EnergiesAtomicCharges:
-        aevs = self._execute_aev_computer(elem_idxs, neighbors, _coordinates)
+        aevs = self.aev_computer.compute_from_neighbors(
+            elem_idxs, neighbors, _coordinates
+        )
         energies = self.neural_networks(elem_idxs, aevs, atomic=atomic)
         qs = self.charge_networks(elem_idxs, aevs, atomic=True)
         qs = self.charge_normalizer(elem_idxs, qs, total_charge)
