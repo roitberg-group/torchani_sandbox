@@ -1,5 +1,5 @@
-TorchANI 3 Migration Guide
-==========================
+Migrating to TorchANI 3
+=======================
 
 If you were using a previous version of TorchANI you may need to update your
 code to work with TorchANI 3. We strive to keep backwards compatibility,

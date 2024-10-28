@@ -11,6 +11,8 @@ forces in Hartree/Angstrom.
     :caption: Examples
     :titlesonly:
 
+    migrating-to-3.rst
+    examples_autogen/fundamentals.rst
     examples_autogen/ase_interface.rst
     examples_autogen/vibration_analysis.rst
     examples_autogen/dispersion_potential.rst
