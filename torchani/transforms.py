@@ -80,7 +80,12 @@ identity = Identity()
 
 
 class SubtractEnergyAndForce(Transform):
-    r"""Subtract the energies (and optionally forces) of a :class:`Potential`"""
+    r"""Subtract the energies (and optionally forces) of a potential
+
+    Args:
+        potential: The potential to use for calculating energies and forces
+        subtract_force: Whether to subtract forces
+    """
 
     def __init__(self, potential: Potential, subtract_force: bool = True):
         super().__init__()
@@ -104,9 +109,9 @@ class SubtractEnergyAndForce(Transform):
 
 class SubtractRepulsionXTB(Transform):
     r"""
-    Subtract the energies (and optionally forces) of :class:`RepulsionXTB`
+    Subtract xTB repulsion energies (and optionally forces)
 
-    Takes same arguments as :class:`RepulsionXTB`
+    Takes same arguments as :class:`torchani.potentials.RepulsionXTB`
     """
 
     def __init__(
@@ -127,9 +132,9 @@ class SubtractRepulsionXTB(Transform):
 
 class SubtractTwoBodyDispersionD3(Transform):
     r"""
-    Subtract the energies (and optionally forces) of :class:`TwoBodyDispersionD3`
+    Subtract two-body DFT-D3 energies (and optionally forces)
 
-    Takes same arguments as :class:`TwoBodyDispersionD3`
+    Takes same arguments as :class:`torchani.potentials.TwoBodyDispersionD3`
     """
 
     def __init__(
@@ -150,7 +155,11 @@ class SubtractTwoBodyDispersionD3(Transform):
 
 
 class SubtractSAE(Transform):
-    r"""Subtract self atomic energies. Takes same arguments as :class:`EnergyAdder`"""
+    r"""
+    Subtract self atomic energies.
+
+    Takes same arguments as :class:`torchani.potentials.EnergyAdder`
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -186,10 +195,10 @@ class AtomicNumbersToIndices(Transform):
 
 # Similar to torchvision.transforms.Compose, but JIT scriptable
 class Compose(Transform):
-    r"""Composes several :class:`Transform` into a pipeline
+    r"""Composes several :class:`torchani.transforms.Transform` into a pipeline
 
     Args:
-        transforms (list[Transform]): Sequence of transforms to compose.
+        transforms: Sequence of transforms to compose.
     """
 
     def __init__(self, transforms: tp.Sequence[Transform]):
