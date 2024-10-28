@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 from parameterized import parameterized
 
 from torchani import ASE_IS_AVAILABLE
+
 if not ASE_IS_AVAILABLE:
     warnings.warn("Skipping all ASE tests, install ase to run them")
     raise unittest.SkipTest("ASE is not available, skipping all ASE tests.")
