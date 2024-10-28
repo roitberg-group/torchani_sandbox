@@ -844,7 +844,7 @@ class Assembler:
         self,
         symbols: tp.Sequence[str] = (),
         model_cls: ModelCls = ANI,
-        neighborlist: NeighborlistArg = "full_pairwise",
+        neighborlist: NeighborlistArg = "all_pairs",
         periodic_table_index: bool = True,
     ) -> None:
         self._global_cutoff_fn: tp.Optional[Cutoff] = None
@@ -1162,7 +1162,7 @@ def simple_ani(
         bias=bias,
     )
     asm.set_atomic_networks(network_factory)
-    asm.set_neighborlist("full_pairwise")
+    asm.set_neighborlist("all_pairs")
     asm.set_gsaes_as_self_energies(lot)
     if repulsion:
         asm.add_pair_potential(
@@ -1268,7 +1268,7 @@ def simple_aniq(
         network_factory,
         container_cls=_ZeroANINetworks if dummy_energies else ANINetworks,
     )
-    asm.set_neighborlist("full_pairwise")
+    asm.set_neighborlist("all_pairs")
     if not dummy_energies:
         asm.set_gsaes_as_self_energies(lot)
     else:

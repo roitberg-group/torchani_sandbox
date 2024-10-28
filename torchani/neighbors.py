@@ -200,7 +200,7 @@ class Neighborlist(torch.nn.Module):
         return self.diff_vectors
 
 
-class FullPairwise(Neighborlist):
+class AllPairs(Neighborlist):
     """Compute pairs of atoms that are neighbors, uses pbc depending on
     wether pbc.any() is True or not"""
 
@@ -229,7 +229,7 @@ class FullPairwise(Neighborlist):
 
         mask = species == -1
         if pbc.any():
-            atom_index12, shift_indices = self._full_pairwise_pbc(
+            atom_index12, shift_indices = self._all_pairs_pbc(
                 species, cutoff, cell, pbc
             )
             shift_values = shift_indices.to(cell.dtype) @ cell
@@ -267,7 +267,7 @@ class FullPairwise(Neighborlist):
                 shift_values=None,
             )
 
-    def _full_pairwise_pbc(
+    def _all_pairs_pbc(
         self,
         species: Tensor,
         cutoff: float,
@@ -430,7 +430,7 @@ class CellList(Neighborlist):
             assert shift_indices is not None
             shift_values = shift_indices.to(cell.dtype) @ cell
             # Before the screening step we map the coordinates to the central cell,
-            # same as with a full pairwise calculation
+            # same as with an all-pairs calculation
             coordinates = map_to_central(coordinates, cell.detach(), pbc)
             return self._screen_with_cutoff(
                 cutoff,
@@ -946,7 +946,7 @@ class VerletCellList(CellList):
 
 NeighborlistArg = tp.Union[
     tp.Literal[
-        "full_pairwise",
+        "all_pairs",
         "cell_list",
         "verlet_cell_list",
         "base",
@@ -956,8 +956,8 @@ NeighborlistArg = tp.Union[
 
 
 def parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
-    if neighborlist == "full_pairwise":
-        neighborlist = FullPairwise()
+    if neighborlist == "all_pairs":
+        neighborlist = AllPairs()
     elif neighborlist == "cell_list":
         neighborlist = CellList()
     elif neighborlist == "verlet_cell_list":
@@ -986,4 +986,4 @@ def _call_global_cell_list(
     return out
 
 
-_call_global_all_pairs = FullPairwise()
+_call_global_all_pairs = AllPairs()

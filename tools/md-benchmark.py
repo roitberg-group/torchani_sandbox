@@ -162,7 +162,7 @@ if __name__ == "__main__":
         num_warm_up=args.num_warm_up,
         num_profile=args.num_profile,
         no_tqdm=args.no_tqdm,
-        neighborlist="full_pairwise",
+        neighborlist="all_pairs",
     )
     main(
         detail=args.detail,
@@ -174,7 +174,7 @@ if __name__ == "__main__":
         num_warm_up=args.num_warm_up,
         num_profile=args.num_profile,
         no_tqdm=args.no_tqdm,
-        neighborlist="full_pairwise",
+        neighborlist="all_pairs",
     )
     main(
         detail=args.detail,

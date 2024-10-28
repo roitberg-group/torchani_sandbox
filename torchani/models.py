@@ -83,7 +83,7 @@ class _ModelFactory(tp.Protocol):
     def __call__(
         self,
         model_index: tp.Optional[int] = None,
-        neighborlist: NeighborlistArg = "full_pairwise",
+        neighborlist: NeighborlistArg = "all_pairs",
         strategy: str = "pyaev",
         periodic_table_index: bool = True,
         device: Device = None,
@@ -94,7 +94,7 @@ class _ModelFactory(tp.Protocol):
 
 def ANI1x(
     model_index: tp.Optional[int] = None,
-    neighborlist: NeighborlistArg = "full_pairwise",
+    neighborlist: NeighborlistArg = "all_pairs",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: Device = None,
@@ -133,7 +133,7 @@ def ANI1x(
 
 def ANI1ccx(
     model_index: tp.Optional[int] = None,
-    neighborlist: NeighborlistArg = "full_pairwise",
+    neighborlist: NeighborlistArg = "all_pairs",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: Device = None,
@@ -172,7 +172,7 @@ def ANI1ccx(
 
 def ANI2x(
     model_index: tp.Optional[int] = None,
-    neighborlist: NeighborlistArg = "full_pairwise",
+    neighborlist: NeighborlistArg = "all_pairs",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: Device = None,
@@ -211,7 +211,7 @@ def ANI2x(
 
 def ANImbis(
     model_index: tp.Optional[int] = None,
-    neighborlist: NeighborlistArg = "full_pairwise",
+    neighborlist: NeighborlistArg = "all_pairs",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: Device = None,
@@ -270,7 +270,7 @@ def ANImbis(
 
 def ANIala(
     model_index: tp.Optional[int] = None,
-    neighborlist: NeighborlistArg = "full_pairwise",
+    neighborlist: NeighborlistArg = "all_pairs",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: Device = None,
@@ -298,7 +298,7 @@ def ANIala(
 
 def ANIdr(
     model_index: tp.Optional[int] = None,
-    neighborlist: NeighborlistArg = "full_pairwise",
+    neighborlist: NeighborlistArg = "all_pairs",
     strategy: str = "pyaev",
     periodic_table_index: bool = True,
     device: Device = None,

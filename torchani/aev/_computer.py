@@ -8,7 +8,7 @@ import typing_extensions as tpx
 
 from torchani.tuples import SpeciesAEV, NeighborData
 from torchani.utils import cumsum_from_zero
-from torchani.neighbors import parse_neighborlist, NeighborlistArg, FullPairwise
+from torchani.neighbors import parse_neighborlist, NeighborlistArg, AllPairs
 from torchani.cutoffs import CutoffArg
 from torchani.aev._terms import (
     parse_angular_term,
@@ -89,7 +89,7 @@ class AEVComputer(torch.nn.Module):
         num_species: int,
         strategy: str = "pyaev",
         cutoff_fn: tp.Optional[CutoffArg] = None,
-        neighborlist: NeighborlistArg = "full_pairwise",
+        neighborlist: NeighborlistArg = "all_pairs",
     ):
         super().__init__()
         self._print_aev_branch = _PRINT_AEV_BRANCH
@@ -187,7 +187,7 @@ class AEVComputer(torch.nn.Module):
         avail = self._check_cuaev_strat_avail(raise_exc=raise_exc)
         if not avail:
             return False
-        if not isinstance(self.neighborlist, FullPairwise):
+        if not isinstance(self.neighborlist, AllPairs):
             if raise_exc:
                 raise ValueError("cuAEV-fused only supports the default neighborlist")
             return False
@@ -582,7 +582,7 @@ class AEVComputer(torch.nn.Module):
         num_species: int = 4,
         strategy: str = "pyaev",
         cutoff_fn: CutoffArg = "cosine",
-        neighborlist: NeighborlistArg = "full_pairwise",
+        neighborlist: NeighborlistArg = "all_pairs",
         # Radial args
         radial_start: float = 0.9,
         radial_cutoff: float = 5.2,
@@ -624,7 +624,7 @@ class AEVComputer(torch.nn.Module):
         num_species: int = 7,
         strategy: str = "pyaev",
         cutoff_fn: CutoffArg = "cosine",
-        neighborlist: NeighborlistArg = "full_pairwise",
+        neighborlist: NeighborlistArg = "all_pairs",
         # Radial args
         radial_start: float = 0.8,
         radial_cutoff: float = 5.1,
@@ -674,7 +674,7 @@ class AEVComputer(torch.nn.Module):
         num_species: int,
         strategy: str = "pyaev",
         cutoff_fn: CutoffArg = "cosine",
-        neighborlist: NeighborlistArg = "full_pairwise",
+        neighborlist: NeighborlistArg = "all_pairs",
     ) -> tpx.Self:
         r"""Initialize an AEVComputer from a set of constants
 
