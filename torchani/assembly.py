@@ -811,7 +811,7 @@ ModelCls = tp.Type[ANI]
 
 # "global" cutoff means the global cutoff_fn will be used
 # Otherwise, a specific cutoff fn can be specified
-class AEVComputerWrapper:
+class _AEVComputerWrapper:
     def __init__(
         self,
         cls: AEVComputerCls,
@@ -832,7 +832,7 @@ class AEVComputerWrapper:
 
 
 @dataclass
-class PairPotentialWrapper:
+class _PairPotentialWrapper:
     cls: PairPotentialCls
     cutoff_fn: CutoffArg = "global"
     cutoff: float = math.inf
@@ -850,8 +850,8 @@ class Assembler:
         self._global_cutoff_fn: tp.Optional[Cutoff] = None
 
         self._neighborlist = parse_neighborlist(neighborlist)
-        self._aevcomp: tp.Optional[AEVComputerWrapper] = None
-        self._pair_potentials: tp.List[PairPotentialWrapper] = []
+        self._aevcomp: tp.Optional[_AEVComputerWrapper] = None
+        self._pair_potentials: tp.List[_PairPotentialWrapper] = []
 
         # This part of the assembler organizes the self-energies, the
         # symbols and the atomic networks
@@ -965,7 +965,7 @@ class Assembler:
         strategy: str = "pyaev",
         aev_computer_cls: AEVComputerCls = AEVComputer,
     ) -> None:
-        self._aevcomp = AEVComputerWrapper(
+        self._aevcomp = _AEVComputerWrapper(
             aev_computer_cls,
             cutoff_fn=cutoff_fn,
             angular_terms=angular_terms,
@@ -993,7 +993,7 @@ class Assembler:
         extra: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ) -> None:
         self._pair_potentials.append(
-            PairPotentialWrapper(
+            _PairPotentialWrapper(
                 pair_cls,
                 cutoff=cutoff,
                 cutoff_fn=cutoff_fn,

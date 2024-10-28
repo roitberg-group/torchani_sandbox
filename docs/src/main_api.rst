@@ -9,6 +9,7 @@ Neighborlists
 
 .. automodule:: torchani.neighbors
     :members:
+    :exclude-members: VerletCellList
 
 Atomic Environment Vectors (AEV)
 ================================
@@ -21,12 +22,14 @@ Atomic Networks and Containers
 
 .. automodule:: torchani.nn
     :members:
+    :exclude-members: ANIModel, Ensemble, Sequential, AtomicMaker
 
 Potentials
 ==========
 
 .. automodule:: torchani.potentials
     :members:
+    :exclude-members: MergedChargesNNPotential, SeparateChargesNNPotential
 
 Assembly of custom ANI-style Models
 ===================================
