@@ -1,11 +1,8 @@
-# <img src=https://raw.githubusercontent.com/aiqm/torchani/master/logo1.png width=180/>  Accurate Neural Network Potential on PyTorch
-
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/GiorgosXou/Random-stuff/main/Programming/StackOverflow/Answers/70200610_11465149/b.png">
-  <img alt="Shows a black logo in light color mode and a white one in dark color mode." src="https://user-images.githubusercontent.com/25423296/163456779-a8556205-d0a5-45e2-ac17-42d089e3c3f8.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/roitberg-group/torchani_model_zoo/logos/torchani-3-logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/roitberg-group/torchani_model_zoo/logos/torchani-3-logo-light.svg">
+  <img alt="TorchANI 3 logo" src="https://raw.githubusercontent.com/roitberg-group/torchani_model_zoo/logos/torchani-3-logo-light.svg">
 </picture>
-
 
 Metrics: (UNTRACKED FOR PRIVATE REPO)
 
@@ -27,14 +24,10 @@ Deployment: (STOPPED FOR PRIVATE REPO)
 [![conda page](https://img.shields.io/badge/conda--package-page-blue)](
     https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
 
-TorchANI is a pytorch implementation of ANI. It is currently under alpha
-release, which means, the API is not stable yet. If you find a bug of TorchANI,
-or have some feature request, feel free to open an issue on GitHub, or send us
-a pull request.
+TorchANI is a pytorch implementation of ANI. If you find a bug of TorchANI, or have some
+feature request, feel free to open an issue on GitHub, or directly open a pull request.
 
-<img src=https://raw.githubusercontent.com/aiqm/torchani/master/logo2.png width=500/>
-
-TorchANI is tested against the (usually) latest PyTorch version
+We test TorchANI against the (usually) latest PyTorch version.
 
 ## Installation
 
