@@ -4,9 +4,8 @@ import torchani
 project = "TorchANI"
 copyright = "2024, Roitberg Group"
 author = "TorchANI developers"
-version = ".".join(torchani.__version__.split(".")[:2])
-if ".dev." in torchani.__version__:
-    version = f'{version}" (development)"'
+_version = ".".join(torchani.__version__.split("."))[:2]
+version = f'{_version} (dev)' if ".dev." in _version else _version
 release = torchani.__version__
 
 extensions = [
