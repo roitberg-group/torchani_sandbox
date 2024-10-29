@@ -38,6 +38,7 @@ sphinx_gallery_conf = {
     "gallery_dirs": "examples_autogen",
     "filename_pattern": r".*\.py",
     "show_signature": False,
+    "min_reported_time": 3600,  # Don't report computation times
 }
 # intersphinx
 intersphinx_mapping = {
