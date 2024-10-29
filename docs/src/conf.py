@@ -39,6 +39,7 @@ sphinx_gallery_conf = {
     "filename_pattern": r".*\.py",
     "show_signature": False,
     "min_reported_time": 3600,  # Don't report computation times
+    "capture_repr": (),  # Don't capture values of last expressions in code blocks
 }
 # intersphinx
 intersphinx_mapping = {
