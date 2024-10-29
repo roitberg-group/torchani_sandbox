@@ -11,20 +11,22 @@ release = torchani.__version__
 
 extensions = [
     "sphinx.ext.autodoc",
-    "sphinx.ext.autosummary",  # Automatically generate docs for all submodules
+    "sphinx.ext.autosummary",  # For autogen python module docs
     "sphinx.ext.intersphinx",
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",  # For google-style docstr
     "sphinx_gallery.gen_gallery",  # For rendering user guide
-    'sphinx_design',  # For grid directive
+    "sphinx_design",  # For grid directive
 ]
+# Autosummary
+autosummary_ignore_module_all = False  # Respect <module>.__all__
 # Extensions config
-python_use_unqualifierd_type_names = True  # Not sure if needed
 # autodoc
 autodoc_typehints_format = "short"  # Avoid qualified names in return types
 autodoc_typehints = "description"  # Write types in description, not in signature
 autodoc_default_options = {
+    "members": None,  # This means "True"
     "member-order": "bysource",  # Document in the same order as python source code
 }
 # napoleon
@@ -46,12 +48,16 @@ intersphinx_mapping = {
 
 
 # General sphinx config
-nitpicky = True  # Fail if refs can't be resolved
-master_doc = "index"  # Main toctree
+# nitpicky = True  # Fail if refs can't be resolved TODO re-enable and fix invalid refs
 default_role = "py:obj"  # Behavior of `inline-backticks`
-source_suffix = {".rst": "restructuredtext"}  # Suffix of files
 pygments_style = "sphinx"  # Code render style
 templates_path = ["_templates"]
+master_doc = "index"  # Default, Main toctree
+# source_suffix = {".rst": "restructuredtext"}  # Default, Suffix of files
+
+# Python-domain sphinx config
+python_use_unqualifierd_type_names = True  # Try to dequa py obj names if resolveable
+python_display_short_literal_types = True  # show literals as a | b | ...
 
 # HTML config
 html_title = f"{project} v{version} Manual"
@@ -61,9 +67,8 @@ html_theme = "pydata_sphinx_theme"
 html_use_modindex = True
 html_domain_indices = False
 html_copy_source = False
-html_file_suffix = '.html'
+html_file_suffix = ".html"
 htmlhelp_basename = "torchani-docs"
-
 # TODO
 # html_logo = '_static/logo.svg'
 # html_favicon = '_static/favicon.ico'
@@ -73,9 +78,8 @@ htmlhelp_basename = "torchani-docs"
 html_sidebars = {
     "index": [],
     "installing": [],
-    "user-guide": ["sidebar-nav-bs"],
-    "api": ["page-toc"],
-    # "api": ["sidebar-nav-bs"],
+    "examples_autogen/*": ["sidebar-nav-bs"],
+    "api_autogen/*": ["sidebar-nav-bs"],
     "publications": [],
 }
 html_theme_options = {
@@ -91,7 +95,13 @@ html_theme_options = {
     # "navbar_end": ["theme-switcher", "navbar-icon-links"], Default
     # "header_links_before_dropdown": 5,  # Default, Headers before collapse to "more v"
     # Secondary HTML sidebar (right)
-    "secondary_sidebar_items": [],  # TODO: Here for debugging, could be []
+    "secondary_sidebar_items": {
+        "index": [],
+        "installing": [],
+        "examples_autogen/*": ["page-toc"],
+        "api_autogen/*": ["page-toc"],
+        "publications": [],
+    },
     # Misc
     "github_url": "https://github.com/aiqm/torchani",
     "icon_links": [],

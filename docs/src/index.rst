@@ -11,7 +11,7 @@ TorchANI documentation
 
    installing
    user-guide
-   api
+   API reference <api_autogen/torchani>
    publications
 
 **Date**: |today| **Version**: |version|
@@ -48,7 +48,7 @@ add link to page).
 
         +++
 
-        .. button-ref:: torchani-installing
+        .. button-ref:: installing
             :color: secondary
             :click-parent:
 
@@ -67,7 +67,7 @@ add link to page).
 
         +++
 
-        .. button-ref:: torchani-user-guide
+        .. button-ref:: user-guide
             :color: secondary
             :click-parent:
 
@@ -86,7 +86,7 @@ add link to page).
 
         +++
 
-        .. button-ref:: torchani-api
+        .. button-ref:: api_autogen/torchani
             :color: secondary
             :click-parent:
 
@@ -105,7 +105,7 @@ add link to page).
 
         +++
 
-        .. button-ref:: torchani-publications
+        .. button-ref:: publications
             :color: secondary
             :click-parent:
 
