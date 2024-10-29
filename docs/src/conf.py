@@ -12,6 +12,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",  # For autogen python module docs
     "sphinx.ext.intersphinx",
+    "sphinx.ext.githubpages",
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",  # For google-style docstr
