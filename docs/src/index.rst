@@ -17,20 +17,18 @@ TorchANI documentation
 **Date**: |today| **Version**: |version|
 
 **Useful links**:
-`Source Repository <https://github.com/aiqm/torchani>`_ |
-`Issue Tracker <https://github.com/aiqm/torchani/issues>`_ |
+`GitHub Repo <https://github.com/aiqm/torchani>`_  |
+`Issue Tracker <https://github.com/aiqm/torchani/issues>`_  |
 `Roitberg Lab <https://roitberg.chem.ufl.edu>`_
 
 **TorchANI** is an open-source library that supports training, development, and research
 of ANI-style neural network interatomic potentials. It was originally developed and is
 currently maintained by the Roitberg group.
 
-If you were using **TorchANI** before version 3, your code may need updating to be
-compatible with its new features. Please consult (ADD LINK) for information on this. If
-you still have problems, please open an issue in github (TODO ADD LINK).
-
-If you use the features in **TorchANI**, please cite the corresponding articles (TODO
-add link to page).
+If you were using TorchANI before version 3, your code may need updating to be
+compatible with its new features. Please consult :ref:`the migration guide
+<torchani-migrating>`_ for more information. If you still have problems, please open an
+issue on the GitHub `issue tracker <https://github.com/aiqm/torchani/issues>`_.
 
 .. grid:: 1 1 2 2
     :gutter: 2 3 4 4
@@ -43,8 +41,8 @@ add link to page).
         ^^^
 
         Want to install the TorchANI library? Read this section for details on how to
-        install using `conda` or `pip`. If you want to build TorchANI from source
-        instead, please consult the ``README`` in the GitHub repo (TODO link).
+        install using ``conda`` or ``pip``. If you want to build TorchANI from source
+        instead, please consult the ``README`` in the GitHub repo.
 
         +++
 
@@ -82,7 +80,7 @@ add link to page).
 
         A detailed description of the TorchANI API. It shows all its *public* functions,
         classes, and their methods and properties. Use this for reference. It assumes a
-        basic understanding of Python and `torch`.
+        basic understanding of Python and ``torch``.
 
         +++
 
