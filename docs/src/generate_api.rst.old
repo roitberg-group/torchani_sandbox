@@ -1,9 +1,0 @@
-:orphan:
-
-.. Only role of this file is to generate the stubs
-
-.. autosummary::
-   :recursive:
-   :toctree: autogen_api
-
-   torchani
