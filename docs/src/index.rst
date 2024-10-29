@@ -27,7 +27,7 @@ currently maintained by the Roitberg group.
 
 If you were using TorchANI before version 3, your code may need updating to be
 compatible with its new features. Please consult :ref:`the migration guide
-<torchani-migrating>`_ for more information. If you still have problems, please open an
+<torchani-migrating>` for more information. If you still have problems, please open an
 issue on the GitHub `issue tracker <https://github.com/aiqm/torchani/issues>`_.
 
 .. grid:: 1 1 2 2

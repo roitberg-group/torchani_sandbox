@@ -10,7 +10,7 @@
    .. rubric:: {{ _('Module Attributes') }}
 
    .. autosummary::
-      :nosignature:
+      :nosignatures:
    {% for item in attributes %}
       {{ item }}
    {%- endfor %}
@@ -22,7 +22,7 @@
    .. rubric:: {{ _('Functions') }}
 
    .. autosummary::
-      :nosignature:
+      :nosignatures:
    {% for item in functions %}
       {{ item }}
    {%- endfor %}
@@ -34,7 +34,7 @@
    .. rubric:: {{ _('Classes') }}
 
    .. autosummary::
-      :nosignature:
+      :nosignatures:
    {% for item in classes %}
       {{ item }}
    {%- endfor %}
@@ -46,7 +46,7 @@
    .. rubric:: {{ _('Exceptions') }}
 
    .. autosummary::
-      :nosignature:
+      :nosignatures:
    {% for item in exceptions %}
       {{ item }}
    {%- endfor %}
@@ -64,8 +64,10 @@
 .. rubric:: Modules
 
 .. autosummary::
+   :nosignatures:
    :toctree:
    :recursive:
+   :template: custom-module.rst
 {% for item in modules %}
    {{ item }}
 {%- endfor %}

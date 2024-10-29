@@ -6,5 +6,6 @@
    :recursive:
    :toctree: api_autogen
    :template: custom-module.rst
+   :nosignatures:
 
    torchani
