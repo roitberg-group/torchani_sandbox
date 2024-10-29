@@ -5,7 +5,7 @@ project = "TorchANI"
 copyright = "2024, Roitberg Group"
 author = "TorchANI developers"
 _version = ".".join(torchani.__version__.split(".")[:2])
-version = f'{_version} (dev)' if "dev" in torchani.__version__ else _version
+version = f"{_version} (dev)" if "dev" in torchani.__version__ else _version
 release = torchani.__version__
 
 extensions = [
@@ -105,7 +105,11 @@ html_theme_options = {
     # Misc
     "github_url": "https://github.com/aiqm/torchani",
     "icon_links": [],
-    "logo": {"text": "TorchANI"},
+    "logo": {
+        "image_light": "_static/torchani-logo-light.svg",
+        "image_dark": "_static/torchani-logo-dark.svg",
+    },
+    # "logo": {"text": "TorchANI"},
     "show_version_warning_banner": True,
 }
 
