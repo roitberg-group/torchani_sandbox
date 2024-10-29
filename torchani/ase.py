@@ -1,6 +1,7 @@
-r"""
-Calculator subclass, used for interfacing with the atomic simulation environment
-(`ASE`_) python library.
+r"""Calculator subclass, used for interfacing with the ASE library
+
+The `ASE`_ library can be used to perform molecular dynamics. For more information
+consult the user guide.
 
 .. _ASE:
     https://wiki.fysik.dtu.dk/ase

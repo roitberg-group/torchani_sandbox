@@ -106,12 +106,12 @@ if torch.cuda.is_available():
             "TorchANI disables TF32 (supported by your GPU) to prevent accuracy loss."
             " To suppress warn set the env var TORCHANI_NO_WARN_TF32=1"
             " For example, if using bash,"
-            " you may add `export TORCHANI_NO_WARN_TF32=1` to your .bashrc"
+            " you may add 'export TORCHANI_NO_WARN_TF32=1' to your .bashrc"
         )
 
-# Optional submodule, depends on 'ase' being available
+# Optional submodule, depends on ase being available
 try:
-    from . import ase  # noqa: F401
+    from torchani import ase  # noqa: F401
 
     __all__.append("ase")
     ASE_IS_AVAILABLE = True
