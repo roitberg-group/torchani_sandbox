@@ -24,37 +24,39 @@ import torchani
 atoms = Diamond(symbol="C", pbc=True)
 print(f"Num atoms in cell: {len(atoms)}")
 # %%
-# Afterwards we create a calculator from an ANI model and attach it to our atoms
+# After, we create a calculator from an ANI model and attach it to our atoms
 atoms.calc = torchani.models.ANI2x().ase()
 # %%
-# Now we minimize our system
+# Then we minimize our system using the
+# `L-BFGS <https://en.wikipedia.org/wiki/Limited-memory_BFGS>`_ optimizer,
+# which is included in `ase`, under `ase.optimize.LBFGS`.
 print("Starting minimization...")
 opt = LBFGS(atoms)
 opt.run(fmax=0.0002)
 print()
 # %%
-# We want to run constant temperature MD, and print some quantities throughout
-# the MD. For this we need to create a callback function that prints
-# the quantities we are interested in
+# We want to run constant temperature MD, and print some quantities throughout the MD.
+# For this we need to create a callback (function) that prints the quantities we are
+# interested in. For example, to print the energy of the system we can use:
 
 
 def print_energy(atoms: ase.Atoms):
-    r"""Function to print the potential, kinetic and total energies"""
-    epot = atoms.get_potential_energy() / len(atoms)
-    ekin = atoms.get_kinetic_energy() / len(atoms)
-    temperature = ekin / (1.5 * ase.units.kB)
-    etot = epot + ekin
+    pot_energy = atoms.get_potential_energy() / len(atoms)
+    kin_energy = atoms.get_kinetic_energy() / len(atoms)
+    temperature = kin_energy / (1.5 * ase.units.kB)
+    tot_energy = pot_energy + kin_energy
     print(
         "Energy per atom: \n"
-        f"    E_pot = {epot:.3f} eV\n"
-        f"    E_kin = {ekin:.3f} eV (T = {temperature:.1f} K)\n"
-        f"    E_tot = {etot:.3f} eV\n"
+        f"    E_pot = {pot_energy:.3f} eV\n"
+        f"    E_kin = {kin_energy:.3f} eV (T = {temperature:.1f} K)\n"
+        f"    E_tot = {tot_energy:.3f} eV\n"
     )
 
 
 # %%
-# We then set up the Langevin thermostat with a time step of 1 fs, a
-# temperature of 300 K and a friction coefficient of 0.2
+# We will use the Langevin thermostat to control the temperature. To do this we need to
+# first construct an `ase.md.langevin.Langevin` object. Here we use with a time step of
+# 1 fs, a temperature of 300 K and a friction coefficient of 0.2
 dyn = Langevin(
     atoms,
     timestep=1 * ase.units.fs,
@@ -63,7 +65,6 @@ dyn = Langevin(
 )
 dyn.attach(print_energy, interval=5, atoms=atoms)
 # %%
-# Finally we run the dynamics
-print("Running dynamics...")
-print_energy(atoms)
+# Finally we run the dynamics using ``dyn.run(steps)``
+print_energy(atoms)  # Print the initial energy
 dyn.run(50)
