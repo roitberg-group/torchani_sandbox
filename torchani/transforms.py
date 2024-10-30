@@ -109,7 +109,7 @@ class SubtractEnergyAndForce(Transform):
 class SubtractRepulsionXTB(Transform):
     r"""Subtract xTB repulsion energies (and optionally forces)
 
-    Takes same arguments as :class:`torchani.potentials.RepulsionXTB`
+    Takes same arguments as `torchani.potentials.RepulsionXTB`
     """
 
     def __init__(
@@ -131,7 +131,7 @@ class SubtractRepulsionXTB(Transform):
 class SubtractTwoBodyDispersionD3(Transform):
     r"""Subtract two-body DFT-D3 energies (and optionally forces)
 
-    Takes same arguments as :class:`torchani.potentials.TwoBodyDispersionD3`
+    Takes same arguments as `torchani.potentials.TwoBodyDispersionD3`
     """
 
     def __init__(
@@ -154,7 +154,7 @@ class SubtractTwoBodyDispersionD3(Transform):
 class SubtractSAE(Transform):
     r"""Subtract self atomic energies.
 
-    Takes same arguments as :class:`torchani.potentials.EnergyAdder`
+    Takes same arguments as `torchani.potentials.EnergyAdder`
     """
 
     def __init__(self, *args, **kwargs):
