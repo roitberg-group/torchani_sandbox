@@ -246,87 +246,6 @@ def map_to_central(coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
     return torch.matmul(coordinates_cell, cell)
 
 
-class EnergyShifter(torch.nn.Module):
-    """Helper class for adding and subtracting self atomic energies
-
-    Note:
-        This class is part of the *Legacy API*. Please use
-        `torchani.potentials.EnergyAddder`, which has equivalent functionality instead
-        of this class.
-
-    Args:
-        self_energies (`list`[`float`]): Sequence of floating
-            numbers for the self energy of each atom type. The numbers should
-            be in order, i.e. ``self_energies[i]`` should be atom type ``i``.
-        fit_intercept (bool): Whether to calculate the intercept during the LSTSQ
-            fit. The intercept will also be taken into account to shift energies.
-    """
-
-    self_energies: Tensor
-
-    def __init__(self, self_energies, fit_intercept=False):
-        super().__init__()
-
-        self.fit_intercept = fit_intercept
-        if self_energies is not None:
-            self_energies = torch.tensor(self_energies, dtype=torch.double)
-
-        self.register_buffer("self_energies", self_energies)
-
-    @staticmethod
-    def _sorted_gsaes(
-        elements: tp.Sequence[str], functional: str, basis_set: str
-    ) -> tp.List[float]:
-        from torchani.constants import GSAES
-        gsaes = GSAES[f"{functional.lower()}-{basis_set.lower()}"]
-        return [gsaes[e] for e in elements]
-
-    @classmethod
-    def with_gsaes(cls, elements: tp.Sequence[str], functional: str, basis_set: str):
-        r"""Instantiate an EnergyShifter with a given set of GSAES"""
-        return cls(
-            cls._sorted_gsaes(elements, functional, basis_set), fit_intercept=False
-        )
-
-    @torch.jit.export
-    def _atomic_saes(self, species: Tensor) -> Tensor:
-        # Compute atomic self energies for a set of species.
-        self_atomic_energies = self.self_energies[species]
-        self_atomic_energies = self_atomic_energies.masked_fill(species == -1, 0.0)
-        return self_atomic_energies
-
-    @torch.jit.export
-    def sae(self, species: Tensor) -> Tensor:
-        """Compute self energies for molecules.
-
-        Padding atoms are automatically excluded.
-
-        Arguments:
-            species: Long tensor in shape
-                ``(conformations, atoms)``.
-
-        Returns:
-            1D tensor of shape ``(molecules,)`` with molecular self-energies
-        """
-        sae = self._atomic_saes(species).sum(dim=1)
-        if self.fit_intercept:
-            sae += self.self_energies[-1]
-        return sae
-
-    def forward(
-        self,
-        species_energies: tp.Tuple[Tensor, Tensor],
-        cell: tp.Optional[Tensor] = None,
-        pbc: tp.Optional[Tensor] = None,
-    ) -> SpeciesEnergies:
-        species, energies = species_energies
-        sae = self._atomic_saes(species).sum(dim=1)
-
-        if self.fit_intercept:
-            sae += self.self_energies[-1]
-        return SpeciesEnergies(species, energies + sae)
-
-
 class _NumbersConvert(torch.nn.Module):
     def __init__(self, symbol_dict: tp.Dict[int, str]):
         self.symbol_dict = symbol_dict
@@ -592,3 +511,70 @@ def merge_state_dicts(paths: tp.Iterable[Path]) -> tp.OrderedDict[str, Tensor]:
                     raise ValueError(f"Incompatible values for key {k}")
         merged_dict.update(state_dict)
     return OrderedDict(merged_dict)
+
+
+# Legacy API
+class EnergyShifter(torch.nn.Module):
+    """Helper class for adding and subtracting self atomic energies
+
+    Note:
+        This class is part of the *Legacy API*. Please use
+        `torchani.potentials.EnergyAddder`, which has equivalent functionality instead
+        of this class.
+
+    Args:
+        self_energies (`list`[`float`]): Sequence of floating
+            numbers for the self energy of each atom type. The numbers should
+            be in order, i.e. ``self_energies[i]`` should be atom type ``i``.
+        fit_intercept (bool): Whether to calculate the intercept during the LSTSQ
+            fit. The intercept will also be taken into account to shift energies.
+    """
+
+    self_energies: Tensor
+
+    def __init__(self, self_energies, fit_intercept=False):
+        super().__init__()
+
+        self.fit_intercept = fit_intercept
+        if self_energies is not None:
+            self_energies = torch.tensor(self_energies, dtype=torch.double)
+
+        self.register_buffer("self_energies", self_energies)
+
+    @torch.jit.export
+    def _atomic_saes(self, species: Tensor) -> Tensor:
+        # Compute atomic self energies for a set of species.
+        self_atomic_energies = self.self_energies[species]
+        self_atomic_energies = self_atomic_energies.masked_fill(species == -1, 0.0)
+        return self_atomic_energies
+
+    @torch.jit.export
+    def sae(self, species: Tensor) -> Tensor:
+        """Compute self energies for molecules.
+
+        Padding atoms are automatically excluded.
+
+        Arguments:
+            species: Long tensor in shape
+                ``(conformations, atoms)``.
+
+        Returns:
+            1D tensor of shape ``(molecules,)`` with molecular self-energies
+        """
+        sae = self._atomic_saes(species).sum(dim=1)
+        if self.fit_intercept:
+            sae += self.self_energies[-1]
+        return sae
+
+    def forward(
+        self,
+        species_energies: tp.Tuple[Tensor, Tensor],
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None,
+    ) -> SpeciesEnergies:
+        species, energies = species_energies
+        sae = self._atomic_saes(species).sum(dim=1)
+
+        if self.fit_intercept:
+            sae += self.self_energies[-1]
+        return SpeciesEnergies(species, energies + sae)
