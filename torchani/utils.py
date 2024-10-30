@@ -5,8 +5,6 @@ import typing as tp
 import tarfile
 import zipfile
 import math
-import os
-import warnings
 import itertools
 from pathlib import Path
 from collections import Counter
