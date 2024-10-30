@@ -85,7 +85,7 @@ intersphinx_mapping = {
 
 
 # General sphinx config
-# nitpicky = True  # Fail if refs can't be resolved TODO re-enable and fix invalid refs
+nitpicky = True  # Fail if refs can't be resolved TODO re-enable and fix invalid refs
 default_role = "py:obj"  # Behavior of `inline-backticks`
 pygments_style = "sphinx"  # Code render style
 templates_path = ["_templates"]

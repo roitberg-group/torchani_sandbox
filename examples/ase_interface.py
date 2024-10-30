@@ -12,7 +12,7 @@ calculator.
     https://wiki.fysik.dtu.dk/ase/tutorials/md/md.html#constant-temperature-md
 """
 # %%
-# As always, we import the necessary modules
+# As always, we start by importing the modules we need
 import ase
 from ase.lattice.cubic import Diamond
 from ase.md.langevin import Langevin

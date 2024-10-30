@@ -45,8 +45,8 @@ Here "sp" stands for a "single-point calculation" (typical chemistry jargon). Th
 changed since it allows models to output more than a single scalar value, which is
 necessary e.g. for models that output charges. Additionally, the new version is simpler
 and allows for outputting forces and hessians without any familiarity with torch (no
-need to do anything with the ``requires_grad`` flag of tensors). Calling a model
-directly is still possible, but *is strongly discouraged*.
+need to do anything with `torch.Tensor.requires_grad`). Calling a model
+directly is still possible, but *discouraged*.
 
 To output other quantities of interest use:
 
@@ -58,8 +58,8 @@ To output other quantities of interest use:
     forces = result["forces"]
     hessians = result["hessians"]
 
-The `AEVComputer`, ``ANIModel``, ``Ensemble``, and ``SpeciesConverter`` classes
--------------------------------------------------------------------------------
+The ``AEVComputer``, ``ANIModel``, ``Ensemble``, and ``SpeciesConverter`` classes
+---------------------------------------------------------------------------------
 
 If you were previously using these classes as:
 
@@ -199,4 +199,4 @@ If you want even *more* flexibility, we recommend you create your own
     model = Model()
     energies = model(atomic_nums, coords, cell, pbc)  # forward is automatically called
 
-This gives you the full flexibility of ``torch``, at the cost of some complexity.
+This gives you the full flexibility of `torch`, at the cost of some complexity.
