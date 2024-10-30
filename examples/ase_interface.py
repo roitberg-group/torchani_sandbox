@@ -22,7 +22,7 @@ import torchani
 # %%
 # First we set up our system (in this case a diamond crystal, with PBC enabled)
 atoms = Diamond(symbol="C", pbc=True)
-print(f"Num atoms in cell: {len(atoms)}")
+len(atoms)  # The number of atoms in the system
 # %%
 # After, we create a calculator from an ANI model and attach it to our atoms
 atoms.calc = torchani.models.ANI2x().ase()
@@ -30,10 +30,8 @@ atoms.calc = torchani.models.ANI2x().ase()
 # Then we minimize our system using the
 # `L-BFGS <https://en.wikipedia.org/wiki/Limited-memory_BFGS>`_ optimizer,
 # which is included in `ase`, under `ase.optimize.LBFGS`.
-print("Starting minimization...")
 opt = LBFGS(atoms)
 opt.run(fmax=0.0002)
-print()
 # %%
 # We want to run constant temperature MD, and print some quantities throughout the MD.
 # For this we need to create a callback (function) that prints the quantities we are
