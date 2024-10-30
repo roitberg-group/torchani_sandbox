@@ -16,7 +16,7 @@ from torch import Tensor
 import torch.utils.data
 
 from torchani.annotations import Device
-from torchani.constants import MASS, ATOMIC_NUMBER, PERIODIC_TABLE, GSAES
+from torchani.constants import MASS, ATOMIC_NUMBER, PERIODIC_TABLE
 from torchani.tuples import SpeciesEnergies
 
 
@@ -277,6 +277,7 @@ class EnergyShifter(torch.nn.Module):
     def _sorted_gsaes(
         elements: tp.Sequence[str], functional: str, basis_set: str
     ) -> tp.List[float]:
+        from torchani.constants import GSAES
         gsaes = GSAES[f"{functional.lower()}-{basis_set.lower()}"]
         return [gsaes[e] for e in elements]
 
@@ -549,7 +550,7 @@ get_atomic_masses = atomic_numbers_to_masses
 
 
 def sort_by_element(it: tp.Iterable[str]) -> tp.Tuple[str, ...]:
-    r"""Sort an iterable of chemical symbols by element
+    r"""Sort an iterable of chemical symbols by atomic number
 
     Args:
         it: Iterable of chemical symbols
