@@ -1,4 +1,3 @@
-import torch
 import torchani
 
 # General variables used in |substitutions|
