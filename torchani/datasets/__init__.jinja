@@ -16,7 +16,7 @@ external freely available datasets published elsewhere, that have been reformatt
 conform to TorchANI's API. If you use any of these datasets in your work please cite the
 relevate article(s).
 """
-from torchani.datasets import utils
+from torchani.datasets import _utils
 from torchani.datasets import filters
 from torchani.datasets.anidataset import ANIDataset, concatenate
 from torchani.datasets.batching import (
@@ -28,8 +28,8 @@ from torchani.datasets.batching import (
     batch_all_in_ram,
 )
 from torchani.datasets.builtin import (
-    DatasetId,
-    LotId,
+    _DatasetId,
+    _LotId,
     # Auto-generated:
 {% for ds in datasets %}
     {{ ds.name | replace("-", "_") | replace("(", "_p") | replace(")", "p_") }},
@@ -45,11 +45,11 @@ __all__ = [
     "Batcher",
     "create_batched_dataset",
     "batch_all_in_ram",
-    "utils",
+    "_utils",
     "filters",
     "concatenate",
-    "DatasetId",
-    "LotId",
+    "_DatasetId",
+    "_LotId",
     # Auto-generated:
 {% for ds in datasets %}
     "{{ ds.name }}",

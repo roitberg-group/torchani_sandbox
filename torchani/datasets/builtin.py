@@ -21,7 +21,7 @@ import typing as tp
 from enum import Enum
 
 from torchani.paths import datasets_dir
-from torchani.datasets.utils import _fetch_and_create_builtin_dataset
+from torchani.datasets._utils import _fetch_and_create_builtin_dataset
 from torchani.datasets.anidataset import ANIDataset
 
 
@@ -1115,7 +1115,7 @@ def ANIExCorr(
     )
 
 
-class DatasetId(Enum):
+class _DatasetId(Enum):
     TESTDATA = "TestData"
     TESTDATAIONS = "TestDataIons"
     TESTDATAFORCESDIPOLES = "TestDataForcesDipoles"
@@ -1160,7 +1160,7 @@ class DatasetId(Enum):
     ANIEXCORR = "ANIExCorr"
 
 
-class LotId(Enum):
+class _LotId(Enum):
     DEFAULT = "default"
     ALL = "all"
     B3LYP_631G_2DF_P = "b3lyp-631g_2df_p"
