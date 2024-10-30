@@ -1,6 +1,4 @@
-r"""
-Misc utilities used throughout the TorchANI code.
-"""
+r"""Misc utilities used throughout the code"""
 
 from collections import OrderedDict
 import typing as tp
