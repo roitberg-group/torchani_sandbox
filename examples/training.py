@@ -1,6 +1,6 @@
 r"""
-Train An ANI-Style Neural Network Potential
-===========================================
+Training an ANI network using a custom script
+=============================================
 
 This example shows how to use TorchANI to train a neural network potential.
 """
