@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 import typing_extensions as tpx
 
-from torchani.cutoffs import parse_cutoff_fn, CutoffArg
+from torchani.cutoffs import _parse_cutoff_fn, CutoffArg
 from torchani.utils import linspace
 
 
@@ -19,7 +19,7 @@ class _Term(torch.nn.Module):
         cutoff_fn: CutoffArg = "cosine",
     ) -> None:
         super().__init__()
-        self.cutoff_fn = parse_cutoff_fn(cutoff_fn)
+        self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
         self.cutoff = cutoff
         self.sublength = 0
 
@@ -70,7 +70,7 @@ class StandardRadial(RadialTerm):
     ):
         super().__init__(cutoff=cutoff, cutoff_fn=cutoff_fn)
         dtype = torch.float
-        self.cutoff_fn = parse_cutoff_fn(cutoff_fn)
+        self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
         self.register_buffer("eta", torch.tensor([eta], dtype=dtype))
         self.register_buffer("shifts", torch.tensor(shifts, dtype=dtype))
         self.sublength = len(shifts)

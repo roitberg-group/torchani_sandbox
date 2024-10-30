@@ -52,7 +52,7 @@ from torchani.tuples import (
 )
 from torchani.annotations import StressKind
 from torchani.neighbors import _parse_neighborlist, NeighborlistArg
-from torchani.cutoffs import parse_cutoff_fn, Cutoff, CutoffArg
+from torchani.cutoffs import _parse_cutoff_fn, Cutoff, CutoffArg
 from torchani.aev import (
     AEVComputer,
     StandardAngular,
@@ -984,7 +984,7 @@ class Assembler:
         self,
         cutoff_fn: CutoffArg,
     ) -> None:
-        self._global_cutoff_fn = parse_cutoff_fn(cutoff_fn)
+        self._global_cutoff_fn = _parse_cutoff_fn(cutoff_fn)
 
     def add_pair_potential(
         self,
@@ -1019,7 +1019,7 @@ class Assembler:
                 "AEVComputer not set. Call 'set_aev_computer' before assembly"
             )
 
-        feat_cutoff_fn = parse_cutoff_fn(
+        feat_cutoff_fn = _parse_cutoff_fn(
             self._aevcomp.cutoff_fn, self._global_cutoff_fn
         )
 
@@ -1077,7 +1077,7 @@ class Assembler:
                     builder(
                         symbols=self.symbols,
                         cutoff=pot.cutoff,
-                        cutoff_fn=parse_cutoff_fn(
+                        cutoff_fn=_parse_cutoff_fn(
                             pot.cutoff_fn, self._global_cutoff_fn
                         ),
                         **pot_kwargs,

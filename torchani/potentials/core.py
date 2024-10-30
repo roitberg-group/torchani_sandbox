@@ -4,7 +4,7 @@ import torch
 from torch import Tensor
 
 from torchani.constants import ATOMIC_NUMBER, PERIODIC_TABLE
-from torchani.cutoffs import parse_cutoff_fn, CutoffArg
+from torchani.cutoffs import _parse_cutoff_fn, CutoffArg
 from torchani.neighbors import (
     Neighbors,
     _call_global_cell_list,
@@ -115,7 +115,7 @@ class PairPotential(Potential):
         cutoff_fn: CutoffArg = "dummy",
     ):
         super().__init__(cutoff=cutoff, symbols=symbols)
-        self.cutoff_fn = parse_cutoff_fn(cutoff_fn)
+        self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
 
     def pair_energies(
         self,
