@@ -69,9 +69,9 @@ from torchani.nn import (
     AtomicNetwork,
     AtomicMakerArg,
     AtomicMaker,
-    parse_network_maker,
     parse_activation,
 )
+from torchani.nn._factories import _parse_network_maker
 from torchani.neighbors import rescreen, Neighbors
 from torchani.electro import ChargeNormalizer
 from torchani.nn._internal import _ZeroANINetworks
@@ -1157,7 +1157,7 @@ def simple_ani(
         strategy=strategy,
     )
     network_factory = functools.partial(
-        parse_network_maker(network_factory),
+        _parse_network_maker(network_factory),
         activation=parse_activation(activation),
         bias=bias,
     )
@@ -1247,14 +1247,14 @@ def simple_aniq(
         if dummy_energies:
             raise ValueError("Can't output dummy energies with merged charge network")
         network_factory = functools.partial(
-            parse_network_maker(network_factory),
+            _parse_network_maker(network_factory),
             out_dim=2,
             activation=parse_activation(activation),
             bias=bias,
         )
     else:
         network_factory = functools.partial(
-            parse_network_maker(network_factory),
+            _parse_network_maker(network_factory),
             out_dim=1,
             activation=parse_activation(activation),
             bias=bias,
