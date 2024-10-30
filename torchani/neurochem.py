@@ -24,12 +24,18 @@ import typing_extensions as tpx
 from torchani.paths import neurochem_dir
 from torchani.assembly import ANI
 from torchani.aev import AEVComputer
-from torchani.nn import ANINetworks, ANIEnsemble, AtomicNetwork, AtomicContainer
+from torchani.nn import (
+    ANINetworks,
+    ANIEnsemble,
+    AtomicNetwork,
+    AtomicContainer,
+    TightCELU,
+)
 from torchani.cutoffs import CutoffArg
 from torchani.neighbors import NeighborlistArg
 from torchani.potentials import EnergyAdder
 from torchani.tuples import SpeciesEnergies
-from torchani.utils import TightCELU, download_and_extract
+from torchani.utils import download_and_extract
 from torchani.annotations import StrPath
 
 

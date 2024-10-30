@@ -34,7 +34,6 @@ __all__ = [
     "get_atomic_masses",
     "PERIODIC_TABLE",
     "ATOMIC_NUMBER",
-    "TightCELU",
 ]
 
 # The second dimension of these keys can be assumed to be "number of atoms"
@@ -55,8 +54,10 @@ ATOMIC_KEYS = (
     "atomic_polarizabilities",
 )
 
-SYMBOLS_1X = ("H", "C", "N", "O")
-SYMBOLS_2X = ("H", "C", "N", "O", "S", "F", "Cl")
+#: Elements used in the ANI-1x and ANI-1ccx models, in order
+SYMBOLS_1X: tp.Tuple[str, ...] = ("H", "C", "N", "O")
+#: Elements used in the ANI-2x model, in order
+SYMBOLS_2X: tp.Tuple[str, ...] = ("H", "C", "N", "O", "S", "F", "Cl")
 
 
 PADDING = {
@@ -67,11 +68,6 @@ PADDING = {
     "forces": 0.0,
     "energies": 0.0,
 }
-
-
-class TightCELU(torch.nn.Module):
-    def forward(self, x: Tensor) -> Tensor:
-        return torch.nn.functional.celu(x, alpha=0.1)
 
 
 def download_and_extract(
@@ -102,24 +98,6 @@ def download_and_extract(
 def linspace(start: float, stop: float, steps: int) -> tp.Tuple[float, ...]:
     r""":meta private:"""
     return tuple(start + ((stop - start) / steps) * j for j in range(steps))
-
-
-def check_openmp_threads(verbose: bool = True) -> None:
-    r""":meta private:"""
-    if "OMP_NUM_THREADS" not in os.environ:
-        warnings.warn(
-            "OMP_NUM_THREADS not set."
-            " MNP works best if OMP_NUM_THREADS >= 2."
-            " You can set this variable by running 'export OMP_NUM_THREADS=4')"
-            " or 'export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK' if using slurm"
-        )
-        return
-
-    num_threads = int(os.environ["OMP_NUM_THREADS"])
-    if num_threads <= 0:
-        raise RuntimeError(f"OMP_NUM_THREADS set to an incorrect value: {num_threads}")
-    if verbose:
-        print(f"OMP_NUM_THREADS set to: {num_threads}")
 
 
 def species_to_formula(species: NDArray[np.str_]) -> tp.List[str]:
