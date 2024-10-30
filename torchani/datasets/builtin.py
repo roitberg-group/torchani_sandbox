@@ -195,7 +195,7 @@ def ANI2qHeavy(
     skip_check: bool = False,
 ) -> ANIDataset:
     r"""
-    Subset of ANI-2x `heavy` for which 'atomic CM5 charges' are available. This dataset
+    Subset of ANI-2x 'heavy' for which 'atomic CM5 charges' are available. This dataset
     is not meant to be trained to on its own. Originally published in *TODO*. DOI:
     `TODO`
     """
@@ -288,10 +288,10 @@ def ANI2x(
     skip_check: bool = False,
 ) -> ANIDataset:
     r"""
-    In all cases the `v2` and `2x` datasets are supersets of the `v1` and `1x` datasets,
+    In all cases the 'v2' and '2x' datasets are supersets of the 'v1' and '1x' datasets,
     so everything that is in the v1/1x datasets is also in the v2/2x datasets, which
     contain extra structures, except for some wb97X/def2-TZVPP data points for which
-    there are `v1` values but not `v2` values. Originally published in *TODO*. DOI:
+    there are 'v1' values but not 'v2' values. Originally published in *TODO*. DOI:
     `TODO`
     """
     return _fetch_and_create_builtin_dataset(
@@ -314,11 +314,11 @@ def COMP6v1(
     skip_check: bool = False,
 ) -> ANIDataset:
     r"""
-    Test set, not meant for direct training. In all cases the `v2` and `2x` datasets are
-    supersets of the `v1` and `1x` datasets, so everything that is in the v1/1x datasets
+    Test set, not meant for direct training. In all cases the 'v2' and '2x' datasets are
+    supersets of the 'v1' and '1x' datasets, so everything that is in the v1/1x datasets
     is also in the v2/2x datasets, which contain extra structures, except for some
-    wb97X/def2-TZVPP data points for which there are `v1` values but not `v2` values.
-    Note that the ANI-BenchMD, S66x8 and the `13` molecules (with 13 heavy atoms) of
+    wb97X/def2-TZVPP data points for which there are 'v1' values but not 'v2' values.
+    Note that the ANI-BenchMD, S66x8 and the ``13`` molecules (with 13 heavy atoms) of
     GDB-10to13 were recalculated using ORCA 5.0 instead of 4.2, with default integration
     grids. The numerical difference is not significant for the purposes of training.
     Originally published in *TODO*. DOI: `TODO`
@@ -344,8 +344,8 @@ def COMP6v2(
 ) -> ANIDataset:
     r"""
     Test set, not meant for direct training. Note that the ANI-BenchMD, S66x8 and the
-    `13` molecules (with 13 heavy atoms) of GDB-10to13 were recalculated using ORCA 5.0
-    instead of 4.2, with default integration grids. The numerical difference is not
+    ``13`` molecules (with 13 heavy atoms) of GDB-10to13 were recalculated using ORCA
+    5.0 instead of 4.2, with default integration grids. The numerical difference is not
     significant for the purposes of training. Originally published in *TODO*. DOI:
     `TODO`
     """
@@ -397,11 +397,12 @@ def QM9(
     r"""
     Clean version of the QM9 dataset, without structures that failed geometry
     consistency checks. It has no forces, but contains various other physical
-    quantities. Vibrational freqs, are always 3 A - 5. Linear molecules the `is_linear`
-    flag set. For non linear molecules the last freq is 0.0 and should be discarded.
-    Molecules with a second set of freqs have the `has_alternative_frequencies` flag
-    set. Molecules that don't have this second set have zeros for this field. Originally
-    published in *TODO*. DOI: `https://doi.org/10.1038/sdata.2014.22`
+    quantities. Vibrational freqs, are always 3 A - 5. Linear molecules the
+    ``is_linear`` flag set. For non linear molecules the last freq is 0.0 and should be
+    discarded. Molecules with a second set of freqs have the
+    ``has_alternative_frequencies`` flag set. Molecules that don't have this second set
+    have zeros for this field. Originally published in *TODO*. DOI:
+    `https://doi.org/10.1038/sdata.2014.22`
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -675,7 +676,7 @@ def SPICEDes370K(
     counterions, but there are no structures with net charge. Also: Some of the fields
     in these sets are missing for some conformations, namely, the MBIS fields and bond-
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
-    missing for the PubChem data (except the subset `6`). Originally published in
+    missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
     Potentials*. DOI: `TODO`
     """
@@ -705,7 +706,7 @@ def SPICEDesMonomers(
     counterions, but there are no structures with net charge. Also: Some of the fields
     in these sets are missing for some conformations, namely, the MBIS fields and bond-
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
-    missing for the PubChem data (except the subset `6`). Originally published in
+    missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
     Potentials*. DOI: `TODO`
     """
@@ -735,7 +736,7 @@ def SPICEDipeptides(
     counterions, but there are no structures with net charge. Also: Some of the fields
     in these sets are missing for some conformations, namely, the MBIS fields and bond-
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
-    missing for the PubChem data (except the subset `6`). Originally published in
+    missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
     Potentials*. DOI: `TODO`
     """
@@ -765,7 +766,7 @@ def SPICEIonPairs(
     counterions, but there are no structures with net charge. Also: Some of the fields
     in these sets are missing for some conformations, namely, the MBIS fields and bond-
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
-    missing for the PubChem data (except the subset `6`). Originally published in
+    missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
     Potentials*. DOI: `TODO`
     """
@@ -795,7 +796,7 @@ def SPICEPubChem2xCompatible(
     counterions, but there are no structures with net charge. Also: Some of the fields
     in these sets are missing for some conformations, namely, the MBIS fields and bond-
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
-    missing for the PubChem data (except the subset `6`). Originally published in
+    missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
     Potentials*. DOI: `TODO`
     """
@@ -825,7 +826,7 @@ def SPICEPubChem(
     counterions, but there are no structures with net charge. Also: Some of the fields
     in these sets are missing for some conformations, namely, the MBIS fields and bond-
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
-    missing for the PubChem data (except the subset `6`). Originally published in
+    missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
     Potentials*. DOI: `TODO`
     """
@@ -855,7 +856,7 @@ def SPICESolvatedAminoacids(
     counterions, but there are no structures with net charge. Also: Some of the fields
     in these sets are missing for some conformations, namely, the MBIS fields and bond-
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
-    missing for the PubChem data (except the subset `6`). Originally published in
+    missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
     Potentials*. DOI: `TODO`
     """
@@ -1100,8 +1101,8 @@ def ANIExCorr(
     skip_check: bool = False,
 ) -> ANIDataset:
     r"""
-    Has `coefficients` which correspond to atomic coefficients for the fitting density,
-    and `energies-xc`, the exchange-correlation energies
+    Has ``coefficients`` which correspond to atomic coefficients for the fitting
+    density, and ``energies-xc``, the exchange-correlation energies
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
