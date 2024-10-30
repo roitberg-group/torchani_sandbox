@@ -168,7 +168,7 @@ def pad_atomic_properties(
     r"""
     Combine a sequence of properties together into single tensor.
 
-    Inputs are ``[{'species': tensor, ...}, {'species': tensor, ...}, ...]`j` and the
+    Inputs are ``[{'species': tensor, ...}, {'species': tensor, ...}, ...]`` and the
     output is of the form ``{'species': padded_tensor, ...}``.
 
     Arguments:
@@ -455,6 +455,10 @@ def atomic_numbers_to_masses(
     atomic_numbers: Tensor,
     dtype: torch.dtype = torch.float,
 ) -> Tensor:
+    r"""Convert a sequence of atomic nubmers to masses
+
+    Convenience wrapper over `AtomicNumbersToMasses`
+    """
     if torch.jit.is_scripting():
         raise RuntimeError(
             "'torchani.utils.atomic_numbers_to_masses' doesn't support JIT, "
@@ -517,7 +521,7 @@ def merge_state_dicts(paths: tp.Iterable[Path]) -> tp.OrderedDict[str, Tensor]:
 class EnergyShifter(torch.nn.Module):
     """Helper class for adding and subtracting self atomic energies
 
-    Note:
+    Deprecated:
         This class is part of the *Legacy API*. Please use
         `torchani.potentials.EnergyAddder`, which has equivalent functionality instead
         of this class.
@@ -550,11 +554,11 @@ class EnergyShifter(torch.nn.Module):
 
     @torch.jit.export
     def sae(self, species: Tensor) -> Tensor:
-        """Compute self energies for molecules.
+        r"""Compute self energies for molecules.
 
         Padding atoms are automatically excluded.
 
-        Arguments:
+        Args:
             species: Long tensor in shape
                 ``(conformations, atoms)``.
 

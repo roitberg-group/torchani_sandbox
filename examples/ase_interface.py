@@ -2,9 +2,8 @@ r"""
 Molecular dynamics using ASE
 ============================
 
-This example is modified from the official `home page` and
-`Constant temperature MD`_ to use the ASE interface of TorchANI as energy
-calculator.
+This example is modified from the official `home page`_ and `Constant temperature MD`_
+to use the ASE interface of TorchANI as energy calculator.
 
 .. _home page:
     https://wiki.fysik.dtu.dk/ase/

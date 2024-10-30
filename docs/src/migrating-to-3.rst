@@ -1,5 +1,7 @@
 .. _torchani-migrating:
 
+.. currentmodule:: torchani
+
 Migrating to TorchANI 3
 =======================
 
