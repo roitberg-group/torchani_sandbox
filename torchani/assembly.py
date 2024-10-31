@@ -170,45 +170,61 @@ class ANI(torch.nn.Module):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
         total_charge: int = 0,
-        atomic: bool = False,
-        ensemble_values: bool = False,
         forces: bool = False,
         hessians: bool = False,
+        atomic: bool = False,
+        ensemble_values: bool = False,
         keep_vars: bool = False,
     ) -> tp.Dict[str, Tensor]:
         r"""Calculate properties for a batch of molecules
 
-        This is the main entrypoint of TorchANI models
+        This is the main entrypoint of ANI-style models
 
         Args:
             species: Int tensor with the atomic numbers of molecules in the batch, shape
                 (molecules, atoms).
             coordinates: Float tensor with coords of molecules
-                in the batch, shape (molecules, atoms, 3)
+                in the batch, shape ``(molecules, atoms, 3)``
             cell: Float tensorwith the cell used for PBC computations. Set to None if
-                PBC is not enabled, shape (3, 3)
+                PBC is not enabled, Shape ``(3, 3)``
             pbc: Bool tensor that indicates enabled PBC directions. Set
-                to None if PBC is not enabled. shape (3,)
+                to None if PBC is not enabled. Shape ``(3,)``
             total_charge: The total charge of the molecules. Only
                 the scalar 0 is currently supported.
+            forces: Calculate the associated forces. Shape ``(molecules, atoms, 3)``
+            hessians: Calculate the hessians. Shape ``(molecules, atoms, atoms, 3)``
             atomic: Perform atomic decoposition of the energies
             ensemble_values: Differentiate values of different models of the ensemble
                 Also output ensemble standard deviation and qbc factors
+            keep_vars: The output scalars are detached from the graph unless
+                ``keep_vars=True``.
         Returns:
-            Result of the single point calculation
+            Result of the single point calculation. Dictionary that maps strings to
+            various result tensors.
         """
         saved_requires_grad = coordinates.requires_grad
         if forces or hessians:
             coordinates.requires_grad_(True)
-        _, energies = self(
-            species_coordinates=(species, coordinates),
-            cell=cell,
-            pbc=pbc,
-            total_charge=total_charge,
-            atomic=atomic,
-            ensemble_values=ensemble_values,
-        )
         out: tp.Dict[str, Tensor] = {}
+        if hasattr(self, "energies_and_atomic_charges"):
+            _, energies, atomic_charges = self.energies_and_atomic_charges(
+                species_coordinates=(species, coordinates),
+                cell=cell,
+                pbc=pbc,
+                total_charge=total_charge,
+                atomic=atomic,
+                ensemble_values=ensemble_values,
+            )
+            out["atomic_charges"] = atomic_charges
+        else:
+            _, energies = self(
+                species_coordinates=(species, coordinates),
+                cell=cell,
+                pbc=pbc,
+                total_charge=total_charge,
+                atomic=atomic,
+                ensemble_values=ensemble_values,
+            )
         if ensemble_values:
             if atomic:
                 out["atomic_energies"] = energies.mean(dim=0)
@@ -411,14 +427,6 @@ class ANI(torch.nn.Module):
     @torch.jit.unused
     def symbols(self) -> tp.Tuple[str, ...]:
         return tuple(PERIODIC_TABLE[z] for z in self.atomic_numbers)
-
-    # TODO make this be useful
-    @torch.jit.unused
-    def disable_non_nnp(self):
-        r""":meta private:"""
-        for p in self.potentials:
-            if hasattr(p, "neural_networks"):
-                p.is_enabled = False
 
     # TODO This is confusing, it may be a good idea to deprecate it, or at least warn
     def __len__(self):
@@ -694,33 +702,6 @@ class ANIq(ANI):
                 break
         # Re-register the ModuleList
         self.potentials = torch.nn.ModuleList(potentials)
-
-    @torch.jit.export
-    def sp(
-        self,
-        species: Tensor,
-        coordinates: Tensor,
-        cell: tp.Optional[Tensor] = None,
-        pbc: tp.Optional[Tensor] = None,
-        total_charge: int = 0,
-        atomic: bool = False,
-        ensemble_values: bool = False,
-    ) -> tp.Dict[str, Tensor]:
-        _, energies, atomic_charges = self.energies_and_atomic_charges(
-            (species, coordinates),
-            cell=cell,
-            pbc=pbc,
-            total_charge=total_charge,
-            atomic=atomic,
-            ensemble_values=ensemble_values,
-        )
-        if atomic:
-            return {
-                "energies": energies.sum(dim=-1),
-                "atomic_energies": energies,
-                "atomic_charges": atomic_charges,
-            }
-        return {"energies": energies, "atomic_charges": atomic_charges}
 
     # TODO: must also support this from internal neighbors right?
     # TODO: Remove code duplication, the next two functions should be reformulated so
