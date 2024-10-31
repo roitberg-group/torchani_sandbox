@@ -94,7 +94,7 @@ def _parse_cutoff_fn(
         cutoff_fn = CutoffDummy()
     elif cutoff_fn == "cosine":
         cutoff_fn = CutoffCosine()
-    elif cutoff_fn in "smooth":
+    elif cutoff_fn == "smooth":
         cutoff_fn = CutoffSmooth()
     elif not isinstance(cutoff_fn, Cutoff):
         raise ValueError(f"Unsupported cutoff fn: {cutoff_fn}")
