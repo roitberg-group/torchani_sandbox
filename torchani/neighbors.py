@@ -24,11 +24,9 @@ def rescreen(
 
 
 class Neighborlist(torch.nn.Module):
-    """
-    Compute pairs of atoms that are neighbors, uses pbc depending on
-    weather pbc.any() is True or not
+    r"""Base class for modules that compute pairs of neighbors. Can support PBC.
 
-    Subclasses must override ``forward``
+    Subclasses *must* override `Neighborlist.forward`
     """
     default_pbc: Tensor
     default_cell: Tensor
@@ -53,7 +51,17 @@ class Neighborlist(torch.nn.Module):
         pbc: tp.Optional[Tensor] = None,
         return_shift_values: bool = False,
     ) -> Neighbors:
-        return Neighbors(torch.empty(0), torch.empty(0), torch.empty(0))
+        r"""Calculate all pairs of atoms that are neighbors, given a cutoff.
+
+        Args:
+            species: |elem_idxs|
+            coordinates: |coords|
+            cutoff: Cutoff value for the neighborlist. Pairs further away than this
+                are not included.
+        Returns:
+            `typing.NamedTuple` with all pairs of atoms that are neighbors.
+        """
+        raise NotImplementedError("Must be implemented by subclasses")
 
     @torch.jit.export
     def compute_bounding_cell(
@@ -214,9 +222,10 @@ class Neighborlist(torch.nn.Module):
 
 
 class AllPairs(Neighborlist):
-    r"""
-    Compute all pairs of distances within a cutoff. This is a naive implementation, with
-    :math:`O(N^2)` scaling. Supports PBC
+    r"""Compute pairs of neighbors. Uses a naive algorithm.
+
+    This is a naive implementation, with :math:`O(N^2)` scaling. It computes all pairs
+    and then discards those that are further away from the cutoff. Supports PBC.
     """
 
     def forward(
@@ -228,16 +237,6 @@ class AllPairs(Neighborlist):
         pbc: tp.Optional[Tensor] = None,
         return_shift_values: bool = False,
     ) -> Neighbors:
-        r"""
-        Args:
-            species: The elements
-            coordinates: tensor of shape
-                (molecules, atoms, 3) for atom coordinates.
-            cell: tensor of shape (3, 3) of the three vectors
-                defining unit cell: tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
-            cutoff: the cutoff inside which atoms are considered pairs
-            pbc: boolean tensor of shape (3,) storing wheather pbc is required
-        """
         assert (cell is not None and pbc is not None) or (cell is None and pbc is None)
         cell = cell if cell is not None else self.default_cell
         pbc = pbc if pbc is not None else self.default_pbc
@@ -346,7 +345,13 @@ class AllPairs(Neighborlist):
 
 
 class CellList(Neighborlist):
-    r""" Linearly scaling implementation that subdivides the space into cells """
+    r"""Compute pairs of neighbors using the 'Cell List' algorithm.
+
+    This is a linearly scaling implementation that uses the 'cell list' algorithm. It
+    subdivides space into cells and then computes all pairs within each cell and between
+    each cell and neighboring cells. and then discards those that are further away from
+    the cutoff.
+    """
     _offset_idx3: Tensor
 
     def __init__(self):
@@ -828,6 +833,7 @@ def lower_image_pairs_between(
 
 # TODO: Currently broken
 class _VerletCellList(CellList):
+    r"""Compute pairs of neighbors. Uses a cell-list algorithm with 'verlet' skin."""
     _old_shift_indices: Tensor
     _old_atom_pairs: Tensor
     _old_coordinates: Tensor
