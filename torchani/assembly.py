@@ -335,7 +335,7 @@ class ANI(torch.nn.Module):
                 object with the wrapped positions.
             jit: Whether to JIT-compile the model before wrapping in a
                 Calculator
-            stress_kind ('scaling' | 'fdotr' | 'numerical'): Strategy to calculate
+            stress_kind: Strategy to calculate
                 stress. The fdotr approach does not need the cell's box information and
                 can be used for multiple domians when running parallel on multi-GPUs.
 
