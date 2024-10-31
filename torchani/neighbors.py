@@ -971,7 +971,6 @@ NeighborlistArg = tp.Union[
 
 
 def _parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
-    r""":meta private:"""
     if neighborlist == "all_pairs":
         neighborlist = AllPairs()
     elif neighborlist == "cell_list":

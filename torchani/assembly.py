@@ -220,7 +220,7 @@ class ANI(torch.nn.Module):
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> SpeciesEnergies:
-        r""":meta private:"""
+        r"""Obtain a species-energies tuple from an input species-coords tuple"""
         species, coords = species_coordinates
         self._check_inputs(species, coords, total_charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
