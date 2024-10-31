@@ -184,7 +184,7 @@ class ANI(torch.nn.Module):
 
         Args:
             species: |atomic_nums|
-            coordinates: |coordds|
+            coordinates: |coords|
             cell: |cell|
             pbc: |pbc|
             total_charge: The total charge of the molecules. Only
