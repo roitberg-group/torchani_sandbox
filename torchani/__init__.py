@@ -115,7 +115,7 @@ if torch.cuda.is_available():
 try:
     from torchani import ase  # noqa: F401
 
-    __all__.append("ase")
+    __all__.insert(19, "ase")  # Insert in a nice location for docs
     ASE_IS_AVAILABLE = True
 except ImportError:
     ASE_IS_AVAILABLE = False
