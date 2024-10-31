@@ -172,7 +172,7 @@ def ANI1q(
     r"""
     Very limited subset of ANI-1x for which 'atomic CM5 charges' are available. This
     dataset is not meant to be trained to on its own. Originally published in *TODO*.
-    DOI: `TODO`
+    DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -196,7 +196,7 @@ def ANI2qHeavy(
     r"""
     Subset of ANI-2x 'heavy' for which 'atomic CM5 charges' are available. This dataset
     is not meant to be trained to on its own. Originally published in *TODO*. DOI:
-    `TODO`
+    'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -221,7 +221,7 @@ def ANI1ccx(
     This dataset also has Hartree Fock (HF) energies, RI-MP2 energies and forces and
     DPLNO-CCSD(T) energies for different basis sets and PNO settings. This dataset was
     originally used for transfer learning, not direct training. Originally published in
-    *TODO*. DOI: `TODO`
+    *TODO*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -265,7 +265,7 @@ def ANI1x(
     skip_check: bool = False,
 ) -> ANIDataset:
     r"""
-    Originally published in *TODO*. DOI: `TODO`
+    Originally published in *TODO*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -291,7 +291,7 @@ def ANI2x(
     so everything that is in the v1/1x datasets is also in the v2/2x datasets, which
     contain extra structures, except for some wb97X/def2-TZVPP data points for which
     there are 'v1' values but not 'v2' values. Originally published in *TODO*. DOI:
-    `TODO`
+    'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -320,7 +320,7 @@ def COMP6v1(
     Note that the ANI-BenchMD, S66x8 and the ``13`` molecules (with 13 heavy atoms) of
     GDB-10to13 were recalculated using ORCA 5.0 instead of 4.2, with default integration
     grids. The numerical difference is not significant for the purposes of training.
-    Originally published in *TODO*. DOI: `TODO`
+    Originally published in *TODO*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -346,7 +346,7 @@ def COMP6v2(
     ``13`` molecules (with 13 heavy atoms) of GDB-10to13 were recalculated using ORCA
     5.0 instead of 4.2, with default integration grids. The numerical difference is not
     significant for the purposes of training. Originally published in *TODO*. DOI:
-    `TODO`
+    'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -372,7 +372,7 @@ def QM9C7O2H10(
     theory. Note that the rest of the properties in this dataset are calculated at the
     B3LYP/631G_2df_p level of theory. Properties correspond only to conformations of the
     stoichiometry C7O2H10. Originally published in *TODO*. DOI:
-    `https://doi.org/10.1038/sdata.2014.22`
+    'https://doi.org/10.1038/sdata.2014.22'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -401,7 +401,7 @@ def QM9(
     discarded. Molecules with a second set of freqs have the
     ``has_alternative_frequencies`` flag set. Molecules that don't have this second set
     have zeros for this field. Originally published in *TODO*. DOI:
-    `https://doi.org/10.1038/sdata.2014.22`
+    'https://doi.org/10.1038/sdata.2014.22'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -429,7 +429,7 @@ def Iso17EquilibriumSet1(
     stoichiometry. TestSet2 and EquilibriumSet2 contain different molecules with the
     same stoichiometry. Test... and Train... datasets contain trajectories, and
     Equilibrium... contain optimized geometries. Originally published in *A continuous-
-    filter convolutional neural network for modeling quantum interactions*. DOI: `TODO`
+    filter convolutional neural network for modeling quantum interactions*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -457,7 +457,7 @@ def Iso17EquilibriumSet2(
     stoichiometry. TestSet2 and EquilibriumSet2 contain different molecules with the
     same stoichiometry. Test... and Train... datasets contain trajectories, and
     Equilibrium... contain optimized geometries. Originally published in *A continuous-
-    filter convolutional neural network for modeling quantum interactions*. DOI: `TODO`
+    filter convolutional neural network for modeling quantum interactions*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -485,7 +485,7 @@ def Iso17TestSet1(
     stoichiometry. TestSet2 and EquilibriumSet2 contain different molecules with the
     same stoichiometry. Test... and Train... datasets contain trajectories, and
     Equilibrium... contain optimized geometries. Originally published in *A continuous-
-    filter convolutional neural network for modeling quantum interactions*. DOI: `TODO`
+    filter convolutional neural network for modeling quantum interactions*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -513,7 +513,7 @@ def Iso17TestSet2(
     stoichiometry. TestSet2 and EquilibriumSet2 contain different molecules with the
     same stoichiometry. Test... and Train... datasets contain trajectories, and
     Equilibrium... contain optimized geometries. Originally published in *A continuous-
-    filter convolutional neural network for modeling quantum interactions*. DOI: `TODO`
+    filter convolutional neural network for modeling quantum interactions*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -541,7 +541,7 @@ def Iso17TrainSet1(
     stoichiometry. TestSet2 and EquilibriumSet2 contain different molecules with the
     same stoichiometry. Test... and Train... datasets contain trajectories, and
     Equilibrium... contain optimized geometries. Originally published in *A continuous-
-    filter convolutional neural network for modeling quantum interactions*. DOI: `TODO`
+    filter convolutional neural network for modeling quantum interactions*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -570,7 +570,7 @@ def SN2(
     unclear what the reference point for the dipoles in the dataset are, the units are
     eA, the reference is most likely the center-of-charge. Originally published in
     *PhysNet: A Neural Network for Predicting Energies, Forces, Dipole Moments, and
-    Partial Charges*. DOI: `10.1021/acs.jctc.9b00181`
+    Partial Charges*. DOI: '10.1021/acs.jctc.9b00181'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -593,7 +593,7 @@ def ANICCScan(
 ) -> ANIDataset:
     r"""
     Dataset includes relaxed scans of stretching carbon-carbon single bonds for a number
-    of compounds. UwB97x means UKS was used. Originally published in *TODO*. DOI: `TODO`
+    of compounds. UwB97x means UKS was used. Originally published in *TODO*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -647,7 +647,7 @@ def ANI1e(
     and HOMO-LUMO gap (Ha); average <r^2> (spatial extent, a_0^2); zero point
     vibrational energies (ZPVE, Ha); zero Kelvin internal energy (Ha); thermal
     quantities, U, H, G, C_v, at 298.15 K (C_v in cal/K/mol, rest in Ha). Originally
-    published in *ANI-1E: An equilibrium database from the ANI-1 database*. DOI: `TODO`
+    published in *ANI-1E: An equilibrium database from the ANI-1 database*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -677,7 +677,7 @@ def SPICEDes370K(
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
     missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
-    Potentials*. DOI: `TODO`
+    Potentials*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -707,7 +707,7 @@ def SPICEDesMonomers(
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
     missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
-    Potentials*. DOI: `TODO`
+    Potentials*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -737,7 +737,7 @@ def SPICEDipeptides(
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
     missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
-    Potentials*. DOI: `TODO`
+    Potentials*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -767,7 +767,7 @@ def SPICEIonPairs(
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
     missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
-    Potentials*. DOI: `TODO`
+    Potentials*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -797,7 +797,7 @@ def SPICEPubChem2xCompatible(
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
     missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
-    Potentials*. DOI: `TODO`
+    Potentials*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -827,7 +827,7 @@ def SPICEPubChem(
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
     missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
-    Potentials*. DOI: `TODO`
+    Potentials*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -857,7 +857,7 @@ def SPICESolvatedAminoacids(
     indices are missing for IonPairs and Des370K, and the bond-indices fields only are
     missing for the PubChem data (except the subset ``6``). Originally published in
     *SPICE, A Dataset of Drug-like Molecules and Peptides for Training Machine Learning
-    Potentials*. DOI: `TODO`
+    Potentials*. DOI: 'TODO'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -886,7 +886,7 @@ def SolvatedProteinFragments(
     can be derived from chemical graphs of proteins containing the 20 natural amino
     acids connected via peptide bonds or disulfide bridges. Originally published in
     *PhysNet: A Neural Network for Predicting Energies, Forces, Dipole Moments, and
-    Partial Charges*. DOI: `10.1021/acs.jctc.9b00181`
+    Partial Charges*. DOI: '10.1021/acs.jctc.9b00181'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -910,7 +910,7 @@ def Train3BPAMixedT(
     r"""
     Group of datasets consisting on 8 different datasts. Two meant for training and 6
     for testing / validation. For more information consult the corresponding article.
-    Originally published in *TODO*. DOI: `https://doi.org/10.1021/acs.jctc.1c00647`
+    Originally published in *TODO*. DOI: 'https://doi.org/10.1021/acs.jctc.1c00647'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -934,7 +934,7 @@ def Train3BPA300K(
     r"""
     Group of datasets consisting on 8 different datasts. Two meant for training and 6
     for testing / validation. For more information consult the corresponding article.
-    Originally published in *TODO*. DOI: `https://doi.org/10.1021/acs.jctc.1c00647`
+    Originally published in *TODO*. DOI: 'https://doi.org/10.1021/acs.jctc.1c00647'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -958,7 +958,7 @@ def Test3BPA300K(
     r"""
     Group of datasets consisting on 8 different datasts. Two meant for training and 6
     for testing / validation. For more information consult the corresponding article.
-    Originally published in *TODO*. DOI: `https://doi.org/10.1021/acs.jctc.1c00647`
+    Originally published in *TODO*. DOI: 'https://doi.org/10.1021/acs.jctc.1c00647'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -982,7 +982,7 @@ def Test3BPA600K(
     r"""
     Group of datasets consisting on 8 different datasts. Two meant for training and 6
     for testing / validation. For more information consult the corresponding article.
-    Originally published in *TODO*. DOI: `https://doi.org/10.1021/acs.jctc.1c00647`
+    Originally published in *TODO*. DOI: 'https://doi.org/10.1021/acs.jctc.1c00647'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -1006,7 +1006,7 @@ def Test3BPA1200K(
     r"""
     Group of datasets consisting on 8 different datasts. Two meant for training and 6
     for testing / validation. For more information consult the corresponding article.
-    Originally published in *TODO*. DOI: `https://doi.org/10.1021/acs.jctc.1c00647`
+    Originally published in *TODO*. DOI: 'https://doi.org/10.1021/acs.jctc.1c00647'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -1030,7 +1030,7 @@ def Test3BPADihedral180(
     r"""
     Group of datasets consisting on 8 different datasts. Two meant for training and 6
     for testing / validation. For more information consult the corresponding article.
-    Originally published in *TODO*. DOI: `https://doi.org/10.1021/acs.jctc.1c00647`
+    Originally published in *TODO*. DOI: 'https://doi.org/10.1021/acs.jctc.1c00647'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -1054,7 +1054,7 @@ def Test3BPADihedral150(
     r"""
     Group of datasets consisting on 8 different datasts. Two meant for training and 6
     for testing / validation. For more information consult the corresponding article.
-    Originally published in *TODO*. DOI: `https://doi.org/10.1021/acs.jctc.1c00647`
+    Originally published in *TODO*. DOI: 'https://doi.org/10.1021/acs.jctc.1c00647'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
@@ -1078,7 +1078,7 @@ def Test3BPADihedral120(
     r"""
     Group of datasets consisting on 8 different datasts. Two meant for training and 6
     for testing / validation. For more information consult the corresponding article.
-    Originally published in *TODO*. DOI: `https://doi.org/10.1021/acs.jctc.1c00647`
+    Originally published in *TODO*. DOI: 'https://doi.org/10.1021/acs.jctc.1c00647'
     """
     return _fetch_and_create_builtin_dataset(
         root=datasets_dir(),
