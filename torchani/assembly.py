@@ -89,6 +89,7 @@ from torchani.potentials import (
     TwoBodyDispersionD3,
     SelfEnergy,
 )
+from torchani.grad import forces as calc_forces, forces_and_hessians
 
 
 class ANI(torch.nn.Module):
@@ -168,6 +169,8 @@ class ANI(torch.nn.Module):
         total_charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
+        forces: bool = False,
+        hessians: bool = False,
     ) -> tp.Dict[str, Tensor]:
         r"""Calculate properties for a batch of molecules
 
@@ -203,16 +206,26 @@ class ANI(torch.nn.Module):
             else:
                 _values = energies
             out["energies"] = _values.mean(dim=0)
+
             if _values.shape[0] == 1:
                 out["ensemble_std"] = _values.new_zeros(energies.shape)
             else:
                 out["ensemble_std"] = _values.std(dim=0, unbiased=True)
             out["ensemble_values"] = _values
-            return out
+        else:
+            if atomic:
+                out = {"energies": energies.sum(dim=-1), "atomic_energies": energies}
+            else:
+                out = {"energies": energies}
 
-        if atomic:
-            return {"energies": energies.sum(dim=-1), "atomic_energies": energies}
-        return {"energies": energies}
+        if hessians:
+            _forces, _hessians = forces_and_hessians(out["energies"], coordinates)
+            out["forces"], out["hessians"] = _forces, _hessians
+            if forces:
+                out["forces"] = calc_forces(out["energies"], coordinates)
+        elif forces:
+            out["forces"] = calc_forces(out["energies"], coordinates)
+        return out
 
     def forward(
         self,
