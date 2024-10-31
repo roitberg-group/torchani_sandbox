@@ -382,10 +382,10 @@ class ANI(torch.nn.Module):
         ensemble_values: bool = False,
     ) -> SpeciesEnergies:
         r"""Calculate predicted atomic energies of all atoms in a molecule
-        :meta private:
 
         Arguments and return value are the same as that of `ANI.forward`, but
         the returned energies have shape (molecules, atoms)
+        :meta private:
         """
         return self(
             species_coordinates,
@@ -495,7 +495,6 @@ class ANI(torch.nn.Module):
         total_charge: int = 0,
     ) -> SpeciesForces:
         r"""Calculates predicted forces from ensemble members
-        :meta private:
 
         Args:
             species_coordinates: minibatch of configurations
@@ -507,6 +506,7 @@ class ANI(torch.nn.Module):
         Returns:
             species, molecular energies, and atomic forces predicted by an ensemble of
             neural network models
+        :meta private:
         """
         species, coordinates = species_coordinates
         coordinates.requires_grad_(True)
@@ -536,7 +536,6 @@ class ANI(torch.nn.Module):
         total_charge: int = 0,
     ) -> SpeciesEnergiesQBC:
         r"""Calculates predicted predicted energies and qbc factors
-        :meta private:
 
         QBC factors are used for query-by-committee (QBC) based active learning
         (as described in the ANI-1x paper `less-is-more`_ ).
@@ -555,6 +554,7 @@ class ANI(torch.nn.Module):
         Returns:
             Tuple of species, energies and qbc factor tensors for the given
             configurations. The shapes of qbcs and energies are equal.
+        :meta private:
         """
         elem_idxs, energies = self(
             species_coordinates,
@@ -590,10 +590,8 @@ class ANI(torch.nn.Module):
         unbiased: bool = True,
     ) -> AtomicStdev:
         r"""Returns standard deviation of atomic energies across an ensemble
-        :meta private:
 
         If the model has only 1 network, a value of 0.0 is output for the stdev
-
         :meta private:
         """
         elem_idxs, energies = self(
@@ -624,7 +622,6 @@ class ANI(torch.nn.Module):
         ensemble_values: bool = False,
     ) -> ForceMagnitudes:
         r"""Computes the L2 norm of predicted atomic force vectors
-        :meta private:
 
         Args:
             species_coordinates: minibatch of configurations
@@ -632,6 +629,7 @@ class ANI(torch.nn.Module):
 
         Returns:
             Force magnitudes, averaged by default.
+        :meta private:
         """
         species, _, members_forces = self.members_forces(species_coordinates, cell, pbc)
         magnitudes = members_forces.norm(dim=-1)
@@ -649,13 +647,13 @@ class ANI(torch.nn.Module):
         unbiased: bool = True,
     ) -> ForceStdev:
         r"""Return the mean force magnitudes, relative range, and std across an ensemble
-        :meta private:
 
         Args:
             species_coordinates: minibatch of configurations
             ensemble_values: Return magnitudes of each model of the ensemble
             unbiased: whether or not to use Bessel's correction in computing
                 the standard deviation, True by default
+        :meta private:
         """
         species, mags = self.force_magnitudes(
             species_coordinates, cell, pbc, ensemble_values=True
