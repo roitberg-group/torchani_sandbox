@@ -148,6 +148,9 @@ class ANI(torch.nn.Module):
             if hasattr(p, "neural_networks"):
                 p.neural_networks.set_active_members(idxs)
 
+    def shifts_energy(self, enable: bool = True) -> None:
+        self.energy_shifter._is_enabled = enable
+
     @torch.jit.export
     def set_strategy(self, strategy: str = "pyaev") -> None:
         self.aev_computer.set_strategy(strategy)
