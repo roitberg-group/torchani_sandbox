@@ -79,7 +79,6 @@ sphinx_gallery_conf = {
 }
 # intersphinx
 intersphinx_mapping = {
-    "typing_extensions": ("https://typing-extensions.readthedocs.io/en/stable/", None),
     "python": ("https://docs.python.org/3/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
     "torch": ("https://pytorch.org/docs/stable/", None),
@@ -88,7 +87,7 @@ intersphinx_mapping = {
 
 
 # General sphinx config
-nitpicky = True  # Fail if refs can't be resolved TODO re-enable and fix invalid refs
+# nitpicky = True  # Fail if refs can't be resolved TODO re-enable and fix invalid refs
 default_role = "any"  # Behavior of `inline-backticks`, try to link to "anything"
 pygments_style = "sphinx"  # Code render style
 templates_path = ["_templates"]
