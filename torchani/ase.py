@@ -44,10 +44,10 @@ class Calculator(AseCalculator):
         overwrite (bool): After wrapping atoms into central box, whether
             to replace the original positions stored in `ase.Atoms`
             object with the wrapped positions.
-        stress_kind (str): Strategy to calculate stress, valid options are ``'fdotr'``,
-            ``'scaling'``, and ``'numerical'``. The fdotr approach does not need the
-            cell's box information and can be used for multiple domians when running
-            parallel on multi-GPUs. Default is ``'scaling'``.
+        stress_kind (str): Strategy to calculate stress, valid options are *fdotr*,
+            *scaling*, and *numerical*. The fdotr approach does not need the cell's box
+            information and can be used for multiple domians when running parallel on
+            multi-GPUs.
     """
 
     implemented_properties = ["energy", "free_energy", "forces", "stress"]

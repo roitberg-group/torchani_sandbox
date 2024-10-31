@@ -9,10 +9,10 @@ there are no compatibility issues among them.
 An ANI-style model consists of:
 
 - `torchani.aev.AEVComputer` (or subclass)
-- A container for atomic networks (typically `ANINetworks` or subclass)
+- A container for atomic networks (typically `torchani.nn.ANINetworks` or subclass)
 - An `torchani.nn.AtomicNetwork` mapping for example, this may take the shape
     ``{"H": AtomicNetwork(...), "C": AtomicNetwork(...), ...}``. Its also possible
-    to pass a function that, given a symbol (e.g. ``"C"``) returns an atomic network,
+    to pass a function that, given a symbol (e.g. "C") returns an atomic network,
     such as `torchani.nn.make_2x_network`.
 - A self energies `dict` (in Hartree): ``{"H": -12.0, "C": -75.0, ...}``
 
@@ -315,7 +315,7 @@ class ANI(torch.nn.Module):
         optimized for inference.
 
         Assumes that the atomic networks are multi layer perceptrons (MLPs)
-        with `torchani.utils.TightCELU` activation functions.
+        with `torchani.nn.TightCELU` activation functions.
         """
         self.neural_networks = self.neural_networks.to_infer_model(use_mnp=use_mnp)
         return self

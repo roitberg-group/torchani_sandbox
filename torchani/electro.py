@@ -92,11 +92,9 @@ class DipoleComputer(torch.nn.Module):
     Compute dipoles in eA
 
     Args:
-        masses (list[float]): Sequence of atomic masses
+        masses: Sequence of atomic masses
         reference ('center_of_mass' | 'center_of_geometry' | 'origin'): Reference frame
             to use when calculating dipole.
-        device ('cpu' | 'cuda'): TODO
-        dtype (:class:`torch.float` | :class:`torch.double`): TODO
     """
 
     def __init__(
@@ -160,8 +158,7 @@ def compute_dipole(
     r"""
     Compute dipoles in eA
 
-    A convenience wrapper over :class:`DipoleComputer` that is non-jittable.
-    See :class:`DipoleComputer` for details.
+    Convenience wrapper over `DipoleComputer`. Non-jittable.
     """
     if torch.jit.is_scripting():
         raise RuntimeError(

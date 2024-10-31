@@ -40,9 +40,9 @@ main = Typer(
     A PyTorch library for training, development and research of
     ANI-style neural networks, maintained by the *Roitberg Group*.
 
-    Datasets and Models are saved in `$TORCHANI_DATA_DIR/Datasets` and
-    `$TORCHANI_DATA_DIR/StateDicts` respectively. By default
-    `TORCHANI_DATA_DIR=~/.local/share/Torchani`.
+    Datasets and Models are saved in ``$TORCHANI_DATA_DIR/Datasets`` and
+    ``$TORCHANI_DATA_DIR/StateDicts`` respectively. By default
+    ``TORCHANI_DATA_DIR=~/.local/share/Torchani``.
     """,
 )
 
@@ -67,7 +67,7 @@ def data_pull(
             "'default' (a default dataset-dependent LoT)"
             " and 'all' (all available LoT for the dataset) are also supported options."
             " Note that not all datasets support all LoT. To check which LoT"
-            " are available for a given dataset run `ani data info <dataset-name>`",
+            " are available for a given dataset run ``ani data info <dataset-name>``",
         ),
     ] = None,
     ds_dir: tpx.Annotated[

@@ -1,7 +1,8 @@
-r"""
-This submodule provides access to all published ANI models, which are subclasses of
-:class:`ANI`. Some models have been published in previous articles, and some in TorchANI
-3. If you use any of these models in your work please cite the corresponding article(s).
+r"""Provides access to all published ANI models.
+
+Provided models are subclasses of `torchani.assembly.ANI`. Some models have been
+published in previous articles, and some in TorchANI 3. If you use any of these models
+in your work please cite the corresponding article(s).
 
 If for a given model you discover a bug, performance problem, or incorrect behavior in
 some region of chemical space, please open an issue in GitHub. The TorchANI developers
@@ -12,17 +13,17 @@ time they are instantiated. If this is an issue for your application we recommen
 pre-download the parameters by instantiating the models once before use.
 
 The models can be used directly once they are instantiated. Alternatively, they can be
-converted to an ASE calculator by calling :attr:`ANI.ase`.
+converted to an ASE calculator by calling `torchani.assembly.ANI.ase`.
 
-Some models have an interanl set of neural networks (:class:`ANIEnsemble`), and they
-output their averaged values. Individual members of these ensembles can be accessed by
-indexing, and ``len(ANI)`` can be used to query the number of networks in it.
+Some models have an interanl set of neural networks (`torchani.nn.ANIEnsemble`), and
+they output their averaged values. Individual members of these ensembles can be accessed
+by indexing, and ``len(ANI)`` can be used to query the number of networks in it.
 
 The models also have three extra entry points for more specific use cases:
 atomic_energies and energies_qbcs.
 
-All entrypoints expect a tuple of tensors ``(species, coordinates)`` as input, together
-with two optional tensors, `cell` and `pbc`. ``coordinates`` and ``cell`` should be in
+All entrypoints expect a tuple of tensors ``(species, coords)`` as input, together
+with two optional tensors, ``cell`` and ``pbc``. ``coords`` and ``cell`` should be in
 units of Angstroms, and the output energies are always in Hartrees
 
 For more details consult the examples documentation

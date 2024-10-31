@@ -305,25 +305,16 @@ class IntsToChemicalSymbols(_NumbersConvert):
     is a callable object, which can be called with an arbitrary list or tensor
     of the supported indicies that is converted into a list of strings.
 
-    Usage example:
+    Args:
+        symbols: |symbols|
 
-        #species list used for indexing
+    .. code-block:: python
+
+        # Species list used for indexing
         elements = ['H','C','N','O','S','F', 'Cl']
-
         species_converter = IntsToChemicalSymbols(elements)
-
         species = torch.Tensor([3, 0, 0, -1, -1, -1])
-
-        species_converter(species)
-
-        Output:
-            ['O', 'H', 'H']
-
-    Arguments:
-        elements: list of species in your model, used for indexing
-        species: list or tensor of species integer values you wish to convert
-        (must be 1-D)
-
+        species_converter(species)  # Output: ['O', 'H', 'H']
     """
 
     def __init__(self, symbols: tp.Sequence[str]):
@@ -354,11 +345,9 @@ class _ChemicalSymbolsConvert(torch.nn.Module):
 class ChemicalSymbolsToAtomicNumbers(_ChemicalSymbolsConvert):
     r"""Converts a sequence of chemical symbols into a tensor of atomic numbers
 
-
-    On initialization, it is optional to supply the class with a `dict`
-    containing custom numbers and symbols. This is not necessary, as the
-    class is provided ATOMIC_NUMBER by default.
-    Output is a tensor of dtype `torch.long`. Usage example:
+    On initialization, it is optional to supply the class with a `dict` containing
+    custom numbers and symbols. This is not necessary, as the class is provided
+    ATOMIC_NUMBER by default. Output is a tensor of dtype `torch.long`. Usage example:
 
     .. code-block:: python
 
@@ -367,9 +356,6 @@ class ChemicalSymbolsToAtomicNumbers(_ChemicalSymbolsConvert):
         species_convert = ['C', 'S', 'O', 'F', 'H', 'H']
         atomic_numbers = symbols_to_numbers(species_convert)
         # atomic_numbers is now torch.tensor([ 6, 16,  8,  9,  1,  1])
-
-    Arguments:
-        species_convert: list of chemical symbols to convert to atomic numbers
     """
 
     def __init__(self, device: Device = "cpu"):
@@ -379,29 +365,24 @@ class ChemicalSymbolsToAtomicNumbers(_ChemicalSymbolsConvert):
 class ChemicalSymbolsToInts(_ChemicalSymbolsConvert):
     r"""Helper that can be called to convert chemical symbol string to integers
 
-    On initialization the class should be supplied with a `list` of
-    `str`. The returned instance is a callable object, which can be
-    called with an arbitrary list of the supported species that is converted
-    into a tensor of dtype `torch.long`. Usage example:
+    On initialization the class should be supplied with a `list` of `str`. The returned
+    instance is a callable object, which can be called with an arbitrary list of the
+    supported species that is converted into a tensor of dtype `torch.long`. Usage
+    example:
 
     .. code-block:: python
 
         from torchani.utils import ChemicalSymbolsToInts
-
         # We initialize ChemicalSymbolsToInts with the supported species
         elements = ['H', 'C', 'N', 'O', 'S', 'F', 'Cl']
         species_to_tensor = ChemicalSymbolsToInts(elements)
-
         species_convert = ['C', 'S', 'O', 'F', 'H', 'H']
-
         # We have a species list which we want to convert to an index tensor
         index_tensor = species_to_tensor(species_convert)
-
         # index_tensor is now [1, 4, 3, 5, 0, 0]
 
-    Arguments:
-        elements: list of species in your model, used for indexing
-        species_convert: list of chemical symbols to convert to atomic numbers
+    Args:
+        symbols: |symbols|
     """
 
     def __init__(self, symbols: tp.Sequence[str], device: Device = "cpu"):
@@ -412,10 +393,7 @@ class ChemicalSymbolsToInts(_ChemicalSymbolsConvert):
 
 
 class AtomicNumbersToMasses(torch.nn.Module):
-    r"""Convert a tensor of atomic numbers into a tensor of atomic masses
-
-
-    """
+    r"""Convert a tensor of atomic numbers into a tensor of atomic masses"""
 
     atomic_masses: Tensor
 
@@ -435,7 +413,7 @@ class AtomicNumbersToMasses(torch.nn.Module):
         )
 
     def forward(self, atomic_numbers: Tensor) -> Tensor:
-        r"""Convert a sequence of atomic nubmers to masses
+        r"""Perform conversion to atomic masses
 
         Args:
             atomic_numbers: |atomic_nums|
@@ -450,14 +428,13 @@ class AtomicNumbersToMasses(torch.nn.Module):
         return masses
 
 
-# Convenience fn around AtomicNumbersToMasses that is non-jittable
 def atomic_numbers_to_masses(
     atomic_numbers: Tensor,
     dtype: torch.dtype = torch.float,
 ) -> Tensor:
     r"""Convert a sequence of atomic nubmers to masses
 
-    Convenience wrapper over `AtomicNumbersToMasses`
+    Convenience wrapper over `AtomicNumbersToMasses`. Non-jittable.
     """
     if torch.jit.is_scripting():
         raise RuntimeError(

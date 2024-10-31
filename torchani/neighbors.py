@@ -1,6 +1,4 @@
-r"""
-Modular neighborlists to improve scaling for large systems.
-"""
+r"""Modular neighborlists to improve scaling for large systems"""
 
 import typing as tp
 import math
