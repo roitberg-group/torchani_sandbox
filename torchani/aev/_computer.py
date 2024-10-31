@@ -586,10 +586,10 @@ class AEVComputer(torch.nn.Module):
         Uses the same defaults as those in the `torchani.models.ANI1x` model.
 
         Args:
-            cutoff_fn (`Cutoff` object | "cosine" | "smooth"): The cutoff
+            cutoff_fn (`~torchani.cutoffs.Cutoff` | "cosine" | "smooth"): The cutoff
                 function used for the calculation.
-            neighborlist (`Neighborlist` object | "all_pairs" | "cell_list"): The
-                neighborlist usied for the calculation.
+            neighborlist (`~torchani.neighbors.Neighborlist` | "all_pairs" |
+            "cell_list"): The neighborlist usied for the calculation.
         Returns:
             The constructed `AEVComputer`, ready for use.
         """
