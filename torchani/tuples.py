@@ -37,15 +37,6 @@ class VibAnalysis(tp.NamedTuple):
     rmasses: Tensor
 
 
-class Neighbors(tp.NamedTuple):
-    r"""Output data of the neighborlist module"""
-
-    indices: Tensor
-    distances: Tensor
-    diff_vectors: Tensor
-    shift_values: tp.Optional[Tensor] = None
-
-
 class SpeciesCoordinates(tp.NamedTuple):
     r"""Group of molecules"""
 

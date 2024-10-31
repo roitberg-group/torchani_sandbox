@@ -8,7 +8,23 @@ import torch
 from torch import Tensor
 
 from torchani.utils import map_to_central, cumsum_from_zero, fast_masked_select
-from torchani.tuples import Neighbors
+
+
+class Neighbors(tp.NamedTuple):
+    r"""Named tuple with the result of a neighborlist calculation
+
+    Attributes:
+        indices: Float tensor with the indices of the pairs of neighbors in the second
+            dimension of a coordinates tensor, shape ``(2, pairs)``.
+        distances: The associated pair distances.
+        diff_vectors: The associated cartesian difference vectors
+        shift_values: shifts in positions for atoms that wrap around PBC
+    """
+
+    indices: Tensor
+    distances: Tensor
+    diff_vectors: Tensor
+    shift_values: tp.Optional[Tensor] = None
 
 
 def rescreen(
@@ -58,6 +74,9 @@ class Neighborlist(torch.nn.Module):
             coordinates: |coords|
             cutoff: Cutoff value for the neighborlist. Pairs further away than this
                 are not included.
+            cell: |cell|
+            pbc: |pbc|
+            return_shift_values: Whether to return the shift-values
         Returns:
             `typing.NamedTuple` with all pairs of atoms that are neighbors.
         """
@@ -411,16 +430,6 @@ class CellList(Neighborlist):
         pbc: tp.Optional[Tensor] = None,
         return_shift_values: bool = False,
     ) -> Neighbors:
-        r"""
-        Args:
-            species: The elements
-            coordinates: tensor of shape
-                (molecules, atoms, 3) for atom coordinates.
-            cell: tensor of shape (3, 3) of the three vectors
-                defining unit cell: tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
-            cutoff: the cutoff inside which atoms are considered pairs
-            pbc: boolean tensor of shape (3,) storing wheather pbc is required
-        """
         assert cutoff >= 0.0, "Cutoff must be a positive float"
         assert coordinates.shape[0] == 1, "Cell list doesn't support batches"
         # Coordinates are displaced only if (pbc=False, cell=None), in which
