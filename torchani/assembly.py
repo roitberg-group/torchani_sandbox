@@ -416,15 +416,14 @@ class ANI(torch.nn.Module):
     ):
         r"""Obtain an ASE Calculator that uses this model
 
-        Arg:
-            overwrite: After wrapping atoms into central box, whether
-                to replace the original positions stored in the `ase.Atoms`
-                object with the wrapped positions.
-            jit: Whether to JIT-compile the model before wrapping in a
-                Calculator
-            stress_kind: Strategy to calculate
-                stress. The fdotr approach does not need the cell's box information and
-                can be used for multiple domians when running parallel on multi-GPUs.
+        Args:
+            overwrite: After wrapping atoms into central box, whether to replace the
+                original positions stored in the `ase.Atoms` object with the wrapped
+                positions.
+            stress_kind: Strategy to calculate stress. The fdotr approach does not need
+                the cell's box information and can be used for multiple domians when
+                running parallel on multi-GPUs.
+            jit: Whether to JIT-compile the model before wrapping in a Calculator
         Returns:
             An ASE-compatible Calculator
         """
