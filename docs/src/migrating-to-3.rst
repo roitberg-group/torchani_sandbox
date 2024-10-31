@@ -164,6 +164,7 @@ The simplest way of creating a model for training, with random initial weights, 
 the factory functions in `torchani.assembly`, such as `torchani.assembly.simple_ani`:
 
 .. code-block:: python
+
     from torchani.assembly import simple_ani
 
     # LoT is used for the ground state energies
