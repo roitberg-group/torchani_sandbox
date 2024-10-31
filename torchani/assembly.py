@@ -16,8 +16,7 @@ An ANI-style model consists of:
     such as `torchani.nn.make_2x_network`.
 - A self energies `dict` (in Hartree): ``{"H": -12.0, "C": -75.0, ...}``
 
-These pieces are combined when the
-``Assembler.assemble(size=<num-networks-in-ensemble>)`` method is called.
+These pieces are combined when the `Assembler.assemble` method is called.
 
 An energy-predicting model may also have one or more `torchani.potentials.Potential`
 (`torchani.potentials.RepulsionXTB`, `torchani.potentials.TwoBodyDispersionD3`, etc.).
@@ -311,17 +310,6 @@ class ANI(torch.nn.Module):
         )
         return SpeciesEnergies(elem_idxs, energies)
 
-    # Needed for client classes that depend on aev_computer and neural_networks
-    @property
-    @torch.jit.unused
-    def neural_networks(self) -> AtomicContainer:
-        return self.potentials["nnp"].neural_networks
-
-    @property
-    @torch.jit.unused
-    def aev_computer(self) -> AEVComputer:
-        return self.potentials["nnp"].aev_computer
-
     # Entrypoint that uses *external* neighbors, which need re-screening
     @torch.jit.export
     def compute_from_external_neighbors(
@@ -394,6 +382,7 @@ class ANI(torch.nn.Module):
         ensemble_values: bool = False,
     ) -> SpeciesEnergies:
         r"""Calculate predicted atomic energies of all atoms in a molecule
+        :meta private:
 
         Arguments and return value are the same as that of `ANI.forward`, but
         the returned energies have shape (molecules, atoms)
@@ -425,10 +414,9 @@ class ANI(torch.nn.Module):
         stress_kind: StressKind = "scaling",
         jit: bool = False,
     ):
-        r"""
-        Obtain an ASE Calculator that uses this model
+        r"""Obtain an ASE Calculator that uses this model
 
-        Arguments:
+        Arg:
             overwrite: After wrapping atoms into central box, whether
                 to replace the original positions stored in the `ase.Atoms`
                 object with the wrapped positions.
@@ -437,7 +425,6 @@ class ANI(torch.nn.Module):
             stress_kind: Strategy to calculate
                 stress. The fdotr approach does not need the cell's box information and
                 can be used for multiple domians when running parallel on multi-GPUs.
-
         Returns:
             An ASE-compatible Calculator
         """
@@ -463,6 +450,20 @@ class ANI(torch.nn.Module):
         self.potentials["nnp"].neural_networks = _nn
         model.potentials["nnp"].neural_networks = deepcopy(_nn.member(idx))
         return model
+
+    # Needed for client classes that depend on accessing aev_computer directly
+    @property
+    @torch.jit.unused
+    def neural_networks(self) -> AtomicContainer:
+        r""":meta private:"""
+        return self.potentials["nnp"].neural_networks
+
+    # Needed for client classes that depend on accessing neural_networks directly
+    @property
+    @torch.jit.unused
+    def aev_computer(self) -> AEVComputer:
+        r""":meta private:"""
+        return self.potentials["nnp"].aev_computer
 
     # Needed for bw compatibility
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
@@ -495,6 +496,7 @@ class ANI(torch.nn.Module):
         total_charge: int = 0,
     ) -> SpeciesForces:
         r"""Calculates predicted forces from ensemble members
+        :meta private:
 
         Args:
             species_coordinates: minibatch of configurations
@@ -535,6 +537,7 @@ class ANI(torch.nn.Module):
         total_charge: int = 0,
     ) -> SpeciesEnergiesQBC:
         r"""Calculates predicted predicted energies and qbc factors
+        :meta private:
 
         QBC factors are used for query-by-committee (QBC) based active learning
         (as described in the ANI-1x paper `less-is-more`_ ).
@@ -588,8 +591,11 @@ class ANI(torch.nn.Module):
         unbiased: bool = True,
     ) -> AtomicStdev:
         r"""Returns standard deviation of atomic energies across an ensemble
+        :meta private:
 
         If the model has only 1 network, a value of 0.0 is output for the stdev
+
+        :meta private:
         """
         elem_idxs, energies = self(
             species_coordinates,
@@ -619,6 +625,7 @@ class ANI(torch.nn.Module):
         ensemble_values: bool = False,
     ) -> ForceMagnitudes:
         r"""Computes the L2 norm of predicted atomic force vectors
+        :meta private:
 
         Args:
             species_coordinates: minibatch of configurations
@@ -642,9 +649,8 @@ class ANI(torch.nn.Module):
         ensemble_values: bool = False,
         unbiased: bool = True,
     ) -> ForceStdev:
-        r"""
-        Returns the mean force magnitudes and relative range and standard deviation
-        of predicted forces across an ensemble of networks.
+        r"""Return the mean force magnitudes, relative range, and std across an ensemble
+        :meta private:
 
         Args:
             species_coordinates: minibatch of configurations
@@ -1012,6 +1018,13 @@ class Assembler:
         return OrderedDict([(s, fn_for_networks(s, in_dim)) for s in self.symbols])
 
     def assemble(self, ensemble_size: int = 1) -> ANI:
+        r"""Construct an `ANI` model from the passed arguments
+
+        Args:
+            ensemble_size: The size of the constructed ensemble
+        Returns:
+            `ANI` model, ready to train.
+        """
         if ensemble_size < 0:
             raise ValueError("Ensemble size must be positive")
         if not self.symbols:
@@ -1121,13 +1134,15 @@ def simple_ani(
     strategy: str = "pyaev",
     use_cuda_ops: bool = False,
 ) -> ANI:
-    r"""Flexible builder to create ANI-style models. Defaults are similar to ANI-2x
+    r"""Flexible builder to create ANI-style models
+
+    Defaults are similar to ANI-2x, with some improvements.
 
     To reproduce the ANI-2x AEV exactly use the following args:
-        - cutoff_fn='cosine'
-        - radial_start=0.8
-        - angular_start=0.8
-        - radial_cutoff=5.1
+        - ``cutoff_fn='cosine'``
+        - ``radial_start=0.8``
+        - ``angular_start=0.8``
+        - ``radial_cutoff=5.1``
     """
     if strategy not in ["pyaev", "cuaev"]:
         raise ValueError(f"Unavailable strategy: {strategy}")
@@ -1206,13 +1221,13 @@ def simple_aniq(
 ) -> ANI:
     r"""Flexible builder to create ANI-style models that output charges
 
-    Defaults are similar to ANI-2x.
+    Defaults are similar to ANI-2x, with some improvements.
 
     To reproduce the ANI-2x AEV exactly use the following args:
-        - cutoff_fn='cosine'
-        - radial_start=0.8
-        - angular_start=0.8
-        - radial_cutoff=5.1
+        - ``cutoff_fn='cosine'``
+        - ``radial_start=0.8``
+        - ``angular_start=0.8``
+        - ``radial_cutoff=5.1``
     """
     if strategy not in ["pyaev", "cuaev"]:
         raise ValueError(f"Unavailable strategy: {strategy}")
