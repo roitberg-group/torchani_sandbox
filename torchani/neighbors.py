@@ -838,23 +838,7 @@ def _parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
     return tp.cast(Neighborlist, neighborlist)
 
 
-_global_cell_list = CellList()
-
-
-def _call_global_cell_list(
-    species: Tensor,
-    coords: Tensor,
-    cutoff: float,
-    cell: tp.Optional[Tensor] = None,
-    pbc: tp.Optional[Tensor] = None,
-    return_shift_values: bool = False,
-) -> Neighbors:
-    out = _global_cell_list(species, coords, cutoff, cell, pbc)
-    # Reset state
-    _global_cell_list.diff_vectors = torch.empty(0)
-    return out
-
-
+_call_global_cell_list = CellList()
 _call_global_all_pairs = AllPairs()
 
 
