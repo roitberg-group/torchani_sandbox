@@ -398,6 +398,7 @@ class TransformableIterable:
 
 
 def load(path, additional_properties=()):
+    r"""Load a dataset"""
     properties = PROPERTIES + additional_properties
 
     def h5_files(path):

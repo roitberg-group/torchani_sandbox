@@ -1,7 +1,7 @@
 r"""Contains the TorchANI CLI entrypoints.
 
 The actual implementation of the functions is considered internal. Please don't rely on
-calling functions inside `torchani.cli` directly.
+calling functions inside :mod:`torchani.cli` directly.
 """
 
 import shutil

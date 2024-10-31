@@ -29,6 +29,8 @@ __all__ = [
     "ChemicalSymbolsToInts",
     "ChemicalSymbolsToAtomicNumbers",
     "AtomicNumbersToMasses",
+    "sort_by_element",
+    "EnergyShifter",
     "get_atomic_masses",
     "PERIODIC_TABLE",
     "ATOMIC_NUMBER",
@@ -336,7 +338,7 @@ class _ChemicalSymbolsConvert(torch.nn.Module):
         self.register_buffer("_dummy", torch.empty(0, device=device), persistent=False)
 
     def forward(self, species: tp.List[str]) -> Tensor:
-        r"""Converts a list of chemical symbols to a `torch.long` tensor"""
+        r"""Converts a list of chemical symbols to an integer tensor"""
         # This can't be an in-place loop to be jit-compilable
         numbers_list: tp.List[int] = []
         for x in species:
@@ -352,7 +354,7 @@ class ChemicalSymbolsToAtomicNumbers(_ChemicalSymbolsConvert):
 
     On initialization, it is optional to supply the class with a `dict` containing
     custom numbers and symbols. This is not necessary, as the class is provided
-    ATOMIC_NUMBER by default. Output is a tensor of dtype `torch.long`. Usage example:
+    ATOMIC_NUMBER by default. Output is an integer tensor. Usage example:
 
     .. code-block:: python
 
@@ -372,7 +374,7 @@ class ChemicalSymbolsToInts(_ChemicalSymbolsConvert):
 
     On initialization the class should be supplied with a `list` of `str`. The returned
     instance is a callable object, which can be called with an arbitrary list of the
-    supported species that is converted into a tensor of dtype `torch.long`. Usage
+    supported species that is converted into an integer tensor. Usage
     example:
 
     .. code-block:: python
@@ -461,7 +463,7 @@ def sort_by_element(it: tp.Iterable[str]) -> tp.Tuple[str, ...]:
         it: Iterable of chemical symbols
     Returns:
         Sorted tuple of chemical symbols
-    """,
+    """
     if isinstance(it, str):
         it = (it,)
     return tuple(sorted(it, key=lambda x: ATOMIC_NUMBER[x]))
@@ -501,12 +503,11 @@ def merge_state_dicts(paths: tp.Iterable[Path]) -> tp.OrderedDict[str, Tensor]:
 
 # Legacy API
 class EnergyShifter(torch.nn.Module):
-    """Helper class for adding and subtracting self atomic energies
+    r"""Helper class for adding and subtracting self atomic energies
 
     Deprecated:
         This class is part of the *Legacy API*. Please use
-        `torchani.potentials.EnergyAddder`, which has equivalent functionality instead
-        of this class.
+        `torchani.potentials.SelfEnergy`, which has equivalent functionality, instead.
 
     Args:
         self_energies (list[float]): Sequence of floating

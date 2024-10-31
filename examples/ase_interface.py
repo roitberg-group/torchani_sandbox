@@ -28,7 +28,7 @@ atoms.calc = torchani.models.ANI2x().ase()
 # %%
 # Then we minimize our system using the
 # `L-BFGS <https://en.wikipedia.org/wiki/Limited-memory_BFGS>`_ optimizer,
-# which is included in `ase`, under `ase.optimize.LBFGS`.
+# which is included in ASE, under `ase.optimize.LBFGS`.
 opt = LBFGS(atoms)
 opt.run(fmax=0.0002)
 # %%
