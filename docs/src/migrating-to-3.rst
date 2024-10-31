@@ -60,8 +60,8 @@ To output other quantities of interest use:
     forces = result["forces"]
     hessians = result["hessians"]
 
-The `~torchani.aevAEVComputer`, `~torchani.nn.ANIModel`, `~torchani.nn.Ensemble`, and `~torchani.nn.SpeciesConverter` classes
------------------------------------------------------------------------------------------------------------------------------
+The :obj:`~torchani.aevAEVComputer`, :obj:`~torchani.nn.ANIModel`, :obj:`~torchani.nn.Ensemble`, and :obj:`~torchani.nn.SpeciesConverter` classes
+-------------------------------------------------------------------------------------------------------------------------------------------------
 
 If you were previously using these classes as:
 
@@ -105,8 +105,8 @@ discouraged. An example:
     aevc = torchani.AEVComputer(...)
     _, aevs = aevc.call((species, coords), cell, pbc)
 
-Extra notes on the `~torchani.aev.AEVComputer`
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Extra notes on the :obj:`~torchani.aev.AEVComputer`
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 It is possible (and recommended) to separate the AEVComputer and Neighborlist
 calculation like this:
@@ -134,8 +134,8 @@ its use is discouraged, and moving forward it will not be maintained. Use
 `torchani.datasets` instead (it is similar to ``torchvision.datasets`` which you may
 be familiar with).
 
-Usage of `~torchani.nn.Sequential`
-----------------------------------
+Usage of :obj:`~torchani.nn.Sequential`
+---------------------------------------
 
 The `torchani.nn.Sequential` class is still available, but *its use is highly
 discouraged*.
