@@ -60,8 +60,8 @@ To output other quantities of interest use:
     forces = result["forces"]
     hessians = result["hessians"]
 
-The :obj:`~torchani.aevAEVComputer`, :obj:`~torchani.nn.ANIModel`, :obj:`~torchani.nn.Ensemble`, and :obj:`~torchani.nn.SpeciesConverter` classes
--------------------------------------------------------------------------------------------------------------------------------------------------
+The :obj:`~torchani.aev.AEVComputer`, :obj:`~torchani.nn.ANIModel`, :obj:`~torchani.nn.Ensemble`, and :obj:`~torchani.nn.SpeciesConverter` classes
+--------------------------------------------------------------------------------------------------------------------------------------------------
 
 If you were previously using these classes as:
 
