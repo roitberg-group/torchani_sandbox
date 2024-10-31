@@ -295,17 +295,11 @@ class ANI(torch.nn.Module):
             # Separate the values of the potential that has ensemble values if requested
             if ensemble_values and hasattr(pot, "ensemble_values"):
                 _values = pot.ensemble_values(
-                    elem_idxs,
-                    neighbors,
-                    _coordinates=_coords,
-                    atomic=atomic,
+                    elem_idxs, neighbors, _coordinates=_coords, atomic=atomic
                 )
             else:
                 energies += pot(
-                    elem_idxs,
-                    neighbors,
-                    _coordinates=_coords,
-                    atomic=atomic,
+                    elem_idxs, neighbors, _coordinates=_coords, atomic=atomic
                 )
         energies += self.energy_shifter(elem_idxs, atomic=atomic)
         if ensemble_values:
