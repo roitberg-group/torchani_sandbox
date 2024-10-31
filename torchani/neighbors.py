@@ -1,5 +1,6 @@
 r"""Modular neighborlists to improve scaling for large systems"""
 
+import warnings
 import typing as tp
 import math
 
@@ -826,7 +827,7 @@ def lower_image_pairs_between(
 
 
 # TODO: Currently broken
-class VerletCellList(CellList):
+class _VerletCellList(CellList):
     _old_shift_indices: Tensor
     _old_atom_pairs: Tensor
     _old_coordinates: Tensor
@@ -976,7 +977,8 @@ def _parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
     elif neighborlist == "cell_list":
         neighborlist = CellList()
     elif neighborlist == "verlet_cell_list":
-        neighborlist = VerletCellList()
+        neighborlist = _VerletCellList()
+        warnings.warn("Verlet cell list is under development, do NOT use")
     elif neighborlist == "base":
         neighborlist = Neighborlist()
     elif not isinstance(neighborlist, Neighborlist):
