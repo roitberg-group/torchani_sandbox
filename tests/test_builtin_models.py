@@ -5,6 +5,7 @@ import torch
 from torchani._testing import ANITestCase, expand
 from torchani.models import ANI1x, ANI2x, ANIdr, ANImbis
 from torchani.datasets import batch_all_in_ram, TestData
+from torchani.neighbors import compute_bounding_cell
 
 
 @expand()
@@ -57,10 +58,7 @@ class TestExternalEntryPoints(ANITestCase):
         properties = next(iter(self.ds))
         species = properties["species"].to(self.device)
         coords = properties["coordinates"].to(self.device, dtype=torch.float)
-        coords, cell = model.aev_computer.neighborlist.compute_bounding_cell(
-            coords.detach(),
-            eps=1e-3,
-        )
+        coords, cell = compute_bounding_cell(coords.detach(), eps=1e-3)
         pbc = torch.tensor([True, True, True], dtype=torch.bool, device=self.device)
         if hasattr(model, "potentials"):
             cutoff = model.potentials[0].cutoff

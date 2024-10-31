@@ -9,7 +9,7 @@ import traceback
 import torch
 
 from torchani._testing import TestCase
-from torchani.neighbors import AllPairs
+from torchani.neighbors import AllPairs, compute_bounding_cell
 from torchani.nn import SpeciesConverter
 from torchani.utils import ChemicalSymbolsToInts, pad_atomic_properties, map_to_central
 from torchani.aev import AEVComputer, StandardAngular, StandardRadial
@@ -29,7 +29,7 @@ class _TestAEVBase(TestCase):
 
     def assertAEVEqual(self, expected_radial, expected_angular, aev):
         radial = aev[..., : self.radial_length]
-        angular = aev[..., self.radial_length:]
+        angular = aev[..., self.radial_length :]
         if self._debug_aev:
             aid = 1
             print(torch.stack([expected_radial[0, aid, :], radial[0, aid, :]]))
@@ -195,9 +195,7 @@ class TestAEV(_TestAEVBase):
             coords = torch.from_numpy(coords)
             species = torch.from_numpy(species)
 
-        coords, cell = self.aev_computer.neighborlist.compute_bounding_cell(
-            coords, 1e-5
-        )
+        coords, cell = compute_bounding_cell(coords, 1e-5)
         self.assertTrue((coords > 0.0).all())
         self.assertTrue((coords < torch.norm(cell, dim=1)).all())
 
@@ -222,7 +220,7 @@ class TestAEV(_TestAEVBase):
         for expected_radial, expected_angular in radial_angular:
             conformations = expected_radial.shape[0]
             atoms = expected_radial.shape[1]
-            aev_ = aev[start:(start + conformations), 0:atoms]
+            aev_ = aev[start : (start + conformations), 0:atoms]
             start += conformations
             self.assertAEVEqual(expected_radial, expected_angular, aev_)
 
