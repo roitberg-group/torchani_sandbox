@@ -172,7 +172,9 @@ class ANI(torch.nn.Module):
         total_charge: int = 0,
         forces: bool = False,
         hessians: bool = False,
-        atomic: bool = False,
+        atomic_energies: bool = False,
+        atomic_charges: bool = False,
+        atomic_charges_grad: bool = False,
         ensemble_values: bool = False,
         keep_vars: bool = False,
     ) -> tp.Dict[str, Tensor]:
@@ -181,19 +183,20 @@ class ANI(torch.nn.Module):
         This is the main entrypoint of ANI-style models
 
         Args:
-            species: Int tensor with the atomic numbers of molecules in the batch, shape
-                (molecules, atoms).
-            coordinates: Float tensor with coords of molecules
-                in the batch, shape ``(molecules, atoms, 3)``
-            cell: Float tensorwith the cell used for PBC computations. Set to None if
-                PBC is not enabled, Shape ``(3, 3)``
-            pbc: Bool tensor that indicates enabled PBC directions. Set
-                to None if PBC is not enabled. Shape ``(3,)``
+            species: |atomic_nums|
+            coordinates: |coordds|
+            cell: |cell|
+            pbc: |pbc|
             total_charge: The total charge of the molecules. Only
                 the scalar 0 is currently supported.
             forces: Calculate the associated forces. Shape ``(molecules, atoms, 3)``
-            hessians: Calculate the hessians. Shape ``(molecules, atoms, atoms, 3)``
-            atomic: Perform atomic decoposition of the energies
+            hessians: Calculate the hessians. Shape is
+                ``(molecules, atoms * 3, atoms * 3)``
+            atomic_energies: Perform atomic decoposition of the energies
+            atomic_charges: Only for models that support it, output atomic charges.
+                Shape ``(molecules, atoms)``
+            atomic_charges_grad: Only for models that support it, output atomic charge
+                gradients. Shape ``(molecules, atoms, 3)``.
             ensemble_values: Differentiate values of different models of the ensemble
                 Also output ensemble standard deviation and qbc factors
             keep_vars: The output scalars are detached from the graph unless
@@ -203,30 +206,38 @@ class ANI(torch.nn.Module):
             various result tensors.
         """
         saved_requires_grad = coordinates.requires_grad
-        if forces or hessians:
+        if forces or hessians or atomic_charges_grad:
             coordinates.requires_grad_(True)
         out: tp.Dict[str, Tensor] = {}
-        if hasattr(self, "energies_and_atomic_charges"):
-            _, energies, atomic_charges = self.energies_and_atomic_charges(
+        if atomic_charges:
+            if not hasattr(self, "energies_and_atomic_charges"):
+                raise ValueError("Model doesn't support atomic charges")
+            _, energies, qs = self.energies_and_atomic_charges(
                 species_coordinates=(species, coordinates),
                 cell=cell,
                 pbc=pbc,
                 total_charge=total_charge,
-                atomic=atomic,
+                atomic=atomic_energies,
                 ensemble_values=ensemble_values,
             )
-            out["atomic_charges"] = atomic_charges
+            out["atomic_charges"] = qs
+            if atomic_charges_grad:
+                retain = forces or hessians
+                out["atomic_charges_grad"] = -_calc_forces(
+                    qs, coordinates, retain_graph=retain
+                )
         else:
             _, energies = self(
                 species_coordinates=(species, coordinates),
                 cell=cell,
                 pbc=pbc,
                 total_charge=total_charge,
-                atomic=atomic,
+                atomic=atomic_energies,
                 ensemble_values=ensemble_values,
             )
+
         if ensemble_values:
-            if atomic:
+            if atomic_energies:
                 out["atomic_energies"] = energies.mean(dim=0)
                 _values = energies.sum(dim=-1)
             else:
@@ -242,7 +253,7 @@ class ANI(torch.nn.Module):
             if _values.shape[0] == 1:
                 qbc_factors = torch.zeros_like(_values).squeeze(0)
             else:
-                # standard deviation is taken across ensemble members
+                # std is taken across ensemble members
                 qbc_factors = _values.std(0, unbiased=True)
             # rho's (qbc factors) are weighted by dividing by the square root of
             # the number of atoms in each molecule
@@ -251,10 +262,11 @@ class ANI(torch.nn.Module):
             assert qbc_factors.shape == out["energies"].shape
             out["qbcs"] = qbc_factors
         else:
-            if atomic:
-                out = {"energies": energies.sum(dim=-1), "atomic_energies": energies}
+            if atomic_energies:
+                out["energies"] = energies.sum(dim=-1)
+                out["atomic_energies"] = energies
             else:
-                out = {"energies": energies}
+                out["energies"] = energies
         if hessians:
             _forces, _hessians = _calc_forces_and_hessians(out["energies"], coordinates)
             out["forces"], out["hessians"] = _forces, _hessians
