@@ -1114,7 +1114,7 @@ def simple_ani(
     radial_precision: float = 19.7,
     angular_precision: float = 12.5,
     angular_zeta: float = 14.1,
-    cutoff_fn: CutoffArg = "smooth2",
+    cutoff_fn: CutoffArg = "smooth",
     dispersion: bool = False,
     repulsion: bool = True,
     network_factory: AtomicMakerArg = "ani2x",
@@ -1192,7 +1192,7 @@ def simple_aniq(
     radial_precision: float = 19.7,
     angular_precision: float = 12.5,
     angular_zeta: float = 14.1,
-    cutoff_fn: CutoffArg = "smooth2",
+    cutoff_fn: CutoffArg = "smooth",
     dispersion: bool = False,
     repulsion: bool = True,
     network_factory: AtomicMakerArg = "ani2x",
@@ -1287,7 +1287,7 @@ def simple_aniq(
     return asm.assemble(ensemble_size)
 
 
-def fetch_state_dict(
+def _fetch_state_dict(
     state_dict_file: str,
     local: bool = False,
     private: bool = False,

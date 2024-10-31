@@ -74,8 +74,8 @@ def download_and_extract(
     dest_dir: Path,
     verbose: bool = False,
 ) -> None:
-    dest_dir.mkdir(exist_ok=True)
     r"""Download and extract a .tar.gz or .zip file form a given url"""
+    dest_dir.mkdir(exist_ok=True)
     # Download
     dest_path = dest_dir / file_name
     if verbose:
@@ -92,9 +92,12 @@ def download_and_extract(
     dest_path.unlink()
 
 
-# Pure python linspace to ensure reproducibility
 def linspace(start: float, stop: float, steps: int) -> tp.Tuple[float, ...]:
-    r""":meta private:"""
+    r"""Pure python linspace
+
+    Used to ensure repro of constants in case `numpy` changes its internal
+    implementation.
+    """
     return tuple(start + ((stop - start) / steps) * j for j in range(steps))
 
 
@@ -154,6 +157,7 @@ def nonzero_in_chunks(tensor: Tensor, chunk_size: int = 2**31 - 1):
 
 
 def fast_masked_select(x: Tensor, mask: Tensor, idx: int) -> Tensor:
+    r"""Has the same effect as `torch.masked_select` but faster"""
     # x.index_select(0, tensor.view(-1).nonzero().view(-1)) is EQUIVALENT to:
     # torch.masked_select(x, tensor) but FASTER
     # nonzero_in_chunks calls tensor.view(-1).nonzero().view(-1)
@@ -172,11 +176,11 @@ def pad_atomic_properties(
     output is of the form ``{'species': padded_tensor, ...}``.
 
     Arguments:
-        properties (list[dict[str, Tensor]]): Sequence of properties
-        padding_values (Optional[list[dict[str, float]]]): Values to use for padding.
+        properties: Sequence of properties
+        padding_values: Values to use for padding.
 
     Returns:
-        dict[str, Tensor]: Padded tensors.
+        Padded tensors.
     """
     if padding_values is None:
         padding_values = PADDING
@@ -214,6 +218,7 @@ def strip_redundant_padding(
     properties: tp.Dict[str, Tensor],
     atomic_properties: tp.Iterable[str] = ATOMIC_KEYS,
 ) -> tp.Dict[str, Tensor]:
+    r"""Strip padding from a sequence of padded properties"""
     # NOTE: Assume that the padding value is -1
     species = properties["species"]
     non_padding = (species >= 0).any(dim=0).nonzero().squeeze()
@@ -224,14 +229,12 @@ def strip_redundant_padding(
 
 
 def map_to_central(coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
-    r"""
-    Map atoms outside the unit cell into the cell using PBC
+    r"""Map atoms outside the unit cell into the cell using PBC
 
     Args:
         coordinates: |coords|
         cell: |cell|
         pbc: |pbc|
-
     Returns:
         Tensor of coordinates of atoms mapped to the unit cell.
     """
@@ -252,6 +255,7 @@ class _NumbersConvert(torch.nn.Module):
         super().__init__()
 
     def forward(self, species: Tensor) -> tp.List[str]:
+        r"""Convert species to a list of chemical symbols"""
         assert species.dim() == 1, "Only 1D tensors supported"
         species = species[species != -1]
         # This can't be an in-place loop to be jit-compilable
@@ -332,6 +336,7 @@ class _ChemicalSymbolsConvert(torch.nn.Module):
         self.register_buffer("_dummy", torch.empty(0, device=device), persistent=False)
 
     def forward(self, species: tp.List[str]) -> Tensor:
+        r"""Converts a list of chemical symbols to a `torch.long` tensor"""
         # This can't be an in-place loop to be jit-compilable
         numbers_list: tp.List[int] = []
         for x in species:
@@ -504,7 +509,7 @@ class EnergyShifter(torch.nn.Module):
         of this class.
 
     Args:
-        self_energies (`list`[`float`]): Sequence of floating
+        self_energies (list[float]): Sequence of floating
             numbers for the self energy of each atom type. The numbers should
             be in order, i.e. ``self_energies[i]`` should be atom type ``i``.
         fit_intercept (bool): Whether to calculate the intercept during the LSTSQ
@@ -536,9 +541,7 @@ class EnergyShifter(torch.nn.Module):
         Padding atoms are automatically excluded.
 
         Args:
-            species: Long tensor in shape
-                ``(conformations, atoms)``.
-
+            species: |elem_idxs|
         Returns:
             1D tensor of shape ``(molecules,)`` with molecular self-energies
         """
@@ -553,6 +556,7 @@ class EnergyShifter(torch.nn.Module):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
     ) -> SpeciesEnergies:
+        r"""Transforms a species_energies tuples by adding self-energies"""
         species, energies = species_energies
         sae = self._atomic_saes(species).sum(dim=1)
 
