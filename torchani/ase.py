@@ -25,6 +25,7 @@ except ImportError:
     ) from None
 
 from torchani.annotations import StressKind
+from torchani.neighbors import Neighbors
 from torchani.utils import map_to_central
 
 
@@ -118,6 +119,12 @@ class Calculator(AseCalculator):
             neighbors = self.model.neighborlist(species, coords, cutoff, cell, pbc)
             if self.stress_kind == "fdotr":
                 neighbors.diff_vectors.requires_grad_(True)
+                neighbors = Neighbors(
+                    neighbors.indices,
+                    neighbors.diff_vectors.norm(2, -1),
+                    neighbors.diff_vectors,
+                    neighbors.shift_values,
+                )
             energy = self.model.compute_from_neighbors(elem_idxs, neighbors, coords)
         else:
             energy = self.model((species, coords), cell, pbc).energies
