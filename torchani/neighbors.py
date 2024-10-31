@@ -62,12 +62,6 @@ class Neighborlist(torch.nn.Module):
     Subclasses *must* override `Neighborlist.forward`
     """
 
-    diff_vectors: Tensor
-
-    def __init__(self):
-        super().__init__()
-        self.diff_vectors = torch.empty(0)
-
     def forward(
         self,
         species: Tensor,
@@ -146,58 +140,31 @@ class Neighborlist(torch.nn.Module):
         diff_vectors = coords0 - coords1
         if shift_values is not None:
             diff_vectors += shift_values
-
-        # This is the very first `diff_vectors` that are used to calculate
-        # various potentials: 2-body (radial), 3-body (angular), repulsion,
-        # dispersion and etc. To enable stress calculation using partial_fdotr
-        # approach, `diff_vectors` requires the `requires_grad` flag to be set
-        # and needs to be saved for future differentiation.
-        diff_vectors.requires_grad_()
-        self.diff_vectors = diff_vectors
-
         distances = diff_vectors.norm(2, -1)
         if not return_shift_values:
             shift_values = None
         return Neighbors(neighbor_idxs, distances, diff_vectors, shift_values)
 
     @torch.jit.export
-    def process_external_input(
+    def screen_external_neighbors(
         self,
         species: Tensor,
         coords: Tensor,
         neighbor_idxs: Tensor,
         shift_values: Tensor,
         cutoff: float = 0.0,
-        input_needs_screening: bool = True,
     ) -> Neighbors:
         # Check shapes
         num_pairs = neighbor_idxs.shape[1]
         assert neighbor_idxs.shape == (2, num_pairs)
         assert shift_values.shape == (num_pairs, 3)
-
-        if input_needs_screening:
-            # Discard dist larger than the cutoff, which may be present if the neighbors
-            # come from a program that uses a skin value to conditionally rebuild
-            # (Verlet lists in MD engine). Also discard dummy atoms
-            mask = species == -1
-            return self._screen_with_cutoff(
-                cutoff, coords, neighbor_idxs, mask, shift_values
-            )
-        # If the input neighbor idxs are pre screened then
-        # directly calculate the distances and diff_vectors from them
-        coords = coords.view(-1, 3)
-        coords0 = coords.index_select(0, neighbor_idxs[0])
-        coords1 = coords.index_select(0, neighbor_idxs[1])
-        diff_vectors = coords0 - coords1 + shift_values
-        distances = diff_vectors.norm(2, -1)
-
-        # Store diff vectors internally for calculation of stress
-        self.diff_vectors = diff_vectors
-        return Neighbors(neighbor_idxs, distances, diff_vectors)
-
-    def get_diff_vectors(self):
-        r""":meta private:"""
-        return self.diff_vectors
+        # Discard dist larger than the cutoff, which may be present if the neighbors
+        # come from a program that uses a skin value to conditionally rebuild
+        # (Verlet lists in MD engine). Also discard dummy atoms
+        mask = species == -1
+        return self._screen_with_cutoff(
+            cutoff, coords, neighbor_idxs, mask, shift_values
+        )
 
 
 class AllPairs(Neighborlist):

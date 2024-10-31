@@ -37,7 +37,7 @@ class TestActiveModelsPoints(ANITestCase):
 
 
 @expand()
-class TestExternalEntryPoints(ANITestCase):
+class TestExternalNeighborsEntryPoint(ANITestCase):
     def setUp(self):
         self.ds = batch_all_in_ram(
             TestData(verbose=False, skip_check=True),
@@ -60,16 +60,16 @@ class TestExternalEntryPoints(ANITestCase):
         coords = properties["coordinates"].to(self.device, dtype=torch.float)
         coords, cell = compute_bounding_cell(coords.detach(), eps=1e-3)
         pbc = torch.tensor([True, True, True], dtype=torch.bool, device=self.device)
-        if hasattr(model, "potentials"):
-            cutoff = model.potentials[0].cutoff
-        else:
-            cutoff = model.aev_computer.radial_terms.cutoff
-        neighbors = model.aev_computer.neighborlist(
+        cutoff = model.potentials[0].cutoff
+        # Emulate external neighbors:
+        # - don't pass diff_vectors or distances.
+        # - pass shift values
+        neighbors = model.neighborlist(
             species, coords, cutoff, cell, pbc, return_shift_values=True
         )
         if not charges:
             _, e = model((species, coords), cell, pbc)
-            _, e2 = model.from_neighborlist(
+            e2 = model.compute_from_external_neighbors(
                 species,
                 coords,
                 neighbors.indices,
@@ -83,7 +83,7 @@ class TestExternalEntryPoints(ANITestCase):
                 pbc=pbc,
                 total_charge=0,
             )
-            _, e2, q2 = model.energies_and_atomic_charges_from_neighborlist(
+            _, e2, q2 = model.energies_and_atomic_charges_from_external_neighbors(
                 species,
                 coords,
                 neighbors.indices,
@@ -91,6 +91,26 @@ class TestExternalEntryPoints(ANITestCase):
                 total_charge=0,
             )
             self.assertEqual(q, q2)
+        self.assertEqual(e, e2)
+
+
+@expand()
+class TestInternalNeighborsEntryPoint(TestExternalNeighborsEntryPoint):
+    def testANImbis(self) -> None:
+        self._test_model(self._setup(ANImbis()))
+
+    def _test_model(self, model, charges: bool = False):
+        assert not charges, "Not yet implemented for charges"
+        properties = next(iter(self.ds))
+        species = properties["species"].to(self.device)
+        coords = properties["coordinates"].to(self.device, dtype=torch.float)
+        coords, cell = compute_bounding_cell(coords.detach(), eps=1e-3)
+        pbc = torch.tensor([True, True, True], dtype=torch.bool, device=self.device)
+        cutoff = model.potentials[0].cutoff
+        elem_idxs = model.species_converter(species)
+        neighbors = model.neighborlist(elem_idxs, coords, cutoff, cell, pbc)
+        e2 = model.compute_from_neighbors(elem_idxs, neighbors, coords, total_charge=0)
+        _, e = model((species, coords), cell, pbc)
         self.assertEqual(e, e2)
 
 
