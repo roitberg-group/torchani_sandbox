@@ -1,5 +1,5 @@
 r"""
-Advanced usage of `torchani.datasets.ANIDataset`
+Advanced usage of `~torchani.datasets.ANIDataset`
 ================================================
 
 Example showing more involved conformer and property manipulation.

@@ -60,8 +60,8 @@ To output other quantities of interest use:
     forces = result["forces"]
     hessians = result["hessians"]
 
-The ``AEVComputer``, ``ANIModel``, ``Ensemble``, and ``SpeciesConverter`` classes
----------------------------------------------------------------------------------
+The `~torchani.aevAEVComputer`, `~torchani.nn.ANIModel`, `~torchani.nn.Ensemble`, and `~torchani.nn.SpeciesConverter` classes
+-----------------------------------------------------------------------------------------------------------------------------
 
 If you were previously using these classes as:
 
@@ -105,8 +105,8 @@ discouraged. An example:
     aevc = torchani.AEVComputer(...)
     _, aevs = aevc.call((species, coords), cell, pbc)
 
-Extra notes on the ``AEVComputer``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Extra notes on the `~torchani.aev.AEVComputer`
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 It is possible (and recommended) to separate the AEVComputer and Neighborlist
 calculation like this:
@@ -116,28 +116,28 @@ calculation like this:
     import torchani
     neighborlist = torchani.neighbors.AllPairs(...)
     aevc = torchani.AEVComputer(...)
-    converter = torchani.utils.AtomicNumsToIdxs(...)
+    converter = torchani.nn.SpeciesConverter(...)
 
     idxs = converter(atomic_nums)
     neighbors = neighborlist(idxs, coords, cell, pbc)
     aevc = aevc.compute_from_neighbors(idxs, neighbors)
 
-Additionally, ``AEVComputer`` is now initialized with different inputs. If you prefer
-the old signature you can use ``AEVComputer.from_constants(...)`` instead. (we
-recommend using the new constructors however).
+Additionally, `torchani.aev.AEVComputer` is now initialized with different inputs. If
+you prefer the old signature you can use `torchani.aev.AEVComputer.from_constants`
+instead (we recommend using the new constructors however).
 
 Usage of ``torchani.data``
 --------------------------
 
-This module is deprecated, you can still access it under ``torchani.legacy_data``, but
+This module is deprecated, you can still access it under `torchani.legacy_data`, but
 its use is discouraged, and moving forward it will not be maintained. Use
-``torchani.datasets`` instead (it is similar to ``torchvision.datasets`` which you may
+`torchani.datasets` instead (it is similar to ``torchvision.datasets`` which you may
 be familiar with).
 
-Creating models for training with ``torchani.nn.Sequential``
-------------------------------------------------------------
+Usage of `~torchani.nn.Sequential`
+----------------------------------
 
-The ``torchani.nn.Sequential`` class is still available, but *its use is highly
+The `torchani.nn.Sequential` class is still available, but *its use is highly
 discouraged*.
 
 If you were previously doing:
@@ -150,9 +150,9 @@ If you were previously doing:
     energy_shifter = torchani.EnergyShifter(...)
     model = torchani.nn.Sequential(aev_computer, neural_networks, energy_shifter)
 
-You can instead use the torchani ``Assembler`` to create your model. For example, to
-create a model just like ``ANI2x``, but with random weights and the cuAEV strategy for
-faster training, do this:
+You can instead use the torchani `torchani.assembly.Assembler` to create your model. For
+example, to create a model just like `torchani.models.ANI2x`, but with random weights
+and the cuAEV strategy for faster training, do this:
 
 .. code-block:: python
 
@@ -175,7 +175,7 @@ also avoids having to return irrelevant outputs and accept irrelevant inputs in 
 modules.
 
 If you want even *more* flexibility, we recommend you create your own
-``torch.nn.Module``, which is way easier than it sounds. As an example:
+`torch.nn.Module`, which is way easier than it sounds. As an example:
 
 .. code-block:: python
 

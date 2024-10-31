@@ -1,5 +1,5 @@
 r"""
-Basic usage of `torchani.datasets.ANIDataset`
+Basic usage of `~torchani.datasets.ANIDataset`
 =============================================
 
 This supersedes the obsolete anidataloader. There are also builtin datasets
