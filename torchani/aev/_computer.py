@@ -6,9 +6,9 @@ from torch import Tensor
 from torch.jit import Final
 import typing_extensions as tpx
 
-from torchani.tuples import SpeciesAEV, Neighbors
+from torchani.tuples import SpeciesAEV
 from torchani.utils import cumsum_from_zero
-from torchani.neighbors import _parse_neighborlist, NeighborlistArg, AllPairs
+from torchani.neighbors import _parse_neighborlist, NeighborlistArg, AllPairs, Neighbors
 from torchani.cutoffs import CutoffArg
 from torchani.aev._terms import (
     _parse_angular_term,

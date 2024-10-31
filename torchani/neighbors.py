@@ -11,19 +11,15 @@ from torchani.utils import map_to_central, cumsum_from_zero, fast_masked_select
 
 
 class Neighbors(tp.NamedTuple):
-    r"""Named tuple with the result of a neighborlist calculation
+    r"""Named tuple with the result of a neighborlist calculation"""
 
-    Attributes:
-        indices: Float tensor with the indices of the pairs of neighbors in the second
-            dimension of a coordinates tensor, shape ``(2, pairs)``.
-        distances: The associated pair distances.
-        diff_vectors: The associated cartesian difference vectors
-        shift_values: shifts in positions for atoms that wrap around PBC
-    """
-
+    #: Float tensor with idxs of pairs of neighbors. shape is ``(2, pairs)``
     indices: Tensor
+    #: The associated pair distances. Shape is ``(pairs,)``
     distances: Tensor
+    #: The associated cartesian difference vectors. Shape is ``(pairs, 3)``
     diff_vectors: Tensor
+    #: shifts in positions for atoms that wrap around PBC
     shift_values: tp.Optional[Tensor] = None
 
 
