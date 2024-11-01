@@ -71,11 +71,11 @@ from torchani.nn import (
 )
 from torchani.nn._factories import _parse_network_maker
 from torchani.neighbors import (
-    rescreen,
     Neighbors,
     _parse_neighborlist,
     NeighborlistArg,
     narrow_down,
+    discard_outside_cutoff,
 )
 from torchani.electro import ChargeNormalizer
 from torchani.nn._internal import _ZeroANINetworks
@@ -361,7 +361,7 @@ class ANI(torch.nn.Module):
             energies = neighbors.distances.new_zeros(elem_idxs.shape[0])
         _values: tp.Optional[Tensor] = None
         for pot in self.potentials.values():
-            neighbors = rescreen(pot.cutoff, neighbors)
+            neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
             # Separate the values of the potential that has ensemble values if requested
             if ensemble_values and hasattr(pot, "ensemble_values"):
                 _values = pot.ensemble_values(
@@ -758,7 +758,7 @@ class ANIq(ANI):
             energies = coords.new_zeros(elem_idxs.shape[0])
         atomic_charges = coords.new_zeros(elem_idxs.shape)
         for pot in self.potentials.values():
-            neighbors = rescreen(pot.cutoff, neighbors)
+            neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
             if hasattr(pot, "energies_and_atomic_charges"):
                 output = pot.energies_and_atomic_charges(
                     elem_idxs,
@@ -786,12 +786,12 @@ class ANIq(ANI):
         ensemble_values: bool = False,
     ) -> SpeciesEnergiesAtomicCharges:
         if ensemble_values:
-            raise ValueError("atomic E and ensemble values not supported")
+            raise ValueError("Ensemble values not supported")
         species, coords = species_coordinates
         self._check_inputs(species, coords, total_charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
 
-        neighbor_data = self.neighborlist(elem_idxs, coords, self.cutoff, cell, pbc)
+        neighbors = self.neighborlist(elem_idxs, coords, self.cutoff, cell, pbc)
         energies = coords.new_zeros(elem_idxs.shape[0])
         atomic_charges = coords.new_zeros(elem_idxs.shape)
         if atomic:
@@ -799,11 +799,11 @@ class ANIq(ANI):
         else:
             energies = coords.new_zeros(elem_idxs.shape[0])
         for pot in self.potentials.values():
-            neighbor_data = rescreen(self.cutoff, neighbor_data)
+            neighbors = discard_outside_cutoff(neighbors, self.cutoff)
             if hasattr(pot, "energies_and_atomic_charges"):
                 output = pot.energies_and_atomic_charges(
                     elem_idxs,
-                    neighbor_data,
+                    neighbors,
                     _coordinates=coords,
                     ghost_flags=None,
                     total_charge=total_charge,
@@ -812,7 +812,7 @@ class ANIq(ANI):
                 energies += output.energies
                 atomic_charges += output.atomic_charges
             else:
-                energies += pot(elem_idxs, neighbor_data, _coordinates=coords)
+                energies += pot(elem_idxs, neighbors, _coordinates=coords)
         energies += self.energy_shifter(elem_idxs)
         return SpeciesEnergiesAtomicCharges(elem_idxs, energies, atomic_charges)
 

@@ -19,10 +19,11 @@ class Neighbors(tp.NamedTuple):
     shift_values: tp.Optional[Tensor] = None  #: Shifts in coords for wraped through PBC
 
 
-def rescreen(
-    cutoff: float,
+def discard_outside_cutoff(
     neighbors: Neighbors,
+    cutoff: float,
 ) -> Neighbors:
+    r"""Discard neighbors with distances that lie outside of the given cutoff"""
     closer_indices = (neighbors.distances <= cutoff).nonzero().flatten()
     indices = neighbors.indices.index_select(1, closer_indices)
     distances = neighbors.distances.index_select(0, closer_indices)
