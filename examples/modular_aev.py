@@ -4,6 +4,7 @@ Extending AEVs with custom terms
 
 TorchANI allows for modification and customization of the AEV features
 """
+
 # To begin with, let's first import the modules and setup devices we will use:
 import math
 
@@ -98,37 +99,25 @@ print()
 
 
 class AngularCosDiff(AngularTerm):
-    sublen: int
-    ShfZ: Tensor
-    Gamma: Tensor
-    ShfA: Tensor
-    EtaA: Tensor
-
     def __init__(self, eta, shifts, gamma, angle_sections, cutoff, cutoff_fn="cosine"):
         super().__init__(cutoff=cutoff, cutoff_fn=cutoff_fn)
-        dtype = torch.float
-        self.register_buffer("gamma", torch.tensor(gamma, dtype=dtype))
-        self.register_buffer("eta", torch.tensor([eta], dtype=dtype))
-        self.register_buffer("shifts", torch.tensor(shifts, dtype=dtype))
-        self.register_buffer(
-            "angle_sections", torch.tensor(angle_sections, dtype=dtype)
-        )
+        self.register_buffer("gamma", torch.tensor(gamma))
+        self.register_buffer("eta", torch.tensor([eta]))
+        self.register_buffer("shifts", torch.tensor(shifts))
+        self.register_buffer("angle_sections", torch.tensor(angle_sections))
         assert len(angle_sections) == len(gamma)
-
-        # set the sublen
         self.sublen = len(shifts) * len(angle_sections)
 
-    def forward(self, vectors12: Tensor, distances12: Tensor) -> Tensor:
-        vectors12 = vectors12.view(2, -1, 3, 1, 1)
-        distances12 = distances12.view(2, -1, 1, 1)
-        cos_angles = vectors12.prod(0).sum(1) / torch.clamp(
-            distances12.prod(0), min=1e-10
+    def forward(self, triple_distances: Tensor, triple_vectors: Tensor) -> Tensor:
+        triple_vectors = triple_vectors.view(2, -1, 3, 1, 1)
+        triple_distances = triple_distances.view(2, -1, 1, 1)
+        cos_angles = triple_vectors.prod(0).sum(1) / torch.clamp(
+            triple_distances.prod(0), min=1e-10
         )
-
-        fcj12 = self.cutoff_fn(distances12, self.cutoff)
-        term1 = distances12.sum(0) / 2 - self.shifts.view(-1, 1)
+        fcj12 = self.cutoff_fn(triple_distances, self.cutoff)
+        term1 = triple_distances.sum(0) / 2 - self.shifts.view(-1, 1)
         term2 = cos_angles - torch.cos(self.angle_sections.view(1, -1))
-        exponent = self.eta * term1 ** 2 + self.gamma.view(1, -1) * term2 ** 2
+        exponent = self.eta * term1**2 + self.gamma.view(1, -1) * term2**2
         ret = 4 * torch.exp(-exponent) * (fcj12[0] * fcj12[1])
         return ret.view(-1, self.sublen)
 
