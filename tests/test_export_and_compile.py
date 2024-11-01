@@ -29,16 +29,6 @@ class TestExport(ANITestCase):
             dynamic_shapes={"distances": {0: pairs_dim}},
         )
 
-    # def testAngular(self) -> None:
-        # neighbors = make_neighbors(10, seed=1234)
-        # mod = StandardAngular.like_1x()
-        # pairs_dim = torch.export.Dim("pairs")
-        # _ = torch.export.export(
-            # mod,
-            # args=(neighbors.diff_vectors, neighbors.distances),
-            # dynamic_shapes={"vectors12": {1: pairs_dim}, "distances12": {1: pairs_dim}},
-        # )
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

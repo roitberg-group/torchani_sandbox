@@ -145,4 +145,5 @@ def make_neighbors(
     molec = make_molec(atoms, 10.0, False, symbols, seed, dtype, device)
     return all_pairs(molec.atomic_nums, molec.coords, cutoff)
 
+
 __all__ = ["make_tensor", "TestCase", "ANITestCase", "expand"]
