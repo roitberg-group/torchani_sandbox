@@ -53,8 +53,8 @@ from torchani.annotations import StressKind
 from torchani.cutoffs import _parse_cutoff_fn, Cutoff, CutoffArg
 from torchani.aev import (
     AEVComputer,
-    StandardAngular,
-    StandardRadial,
+    ANIAngular,
+    ANIRadial,
     RadialTermArg,
     AngularTermArg,
 )
@@ -1163,13 +1163,13 @@ def simple_ani(
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
     asm.set_aev_computer(
-        radial_terms=StandardRadial.cover_linearly(
+        radial_terms=ANIRadial.cover_linearly(
             start=radial_start,
             cutoff=radial_cutoff,
             eta=radial_precision,
             num_shifts=radial_shifts,
         ),
-        angular_terms=StandardAngular.cover_linearly(
+        angular_terms=ANIAngular.cover_linearly(
             start=angular_start,
             eta=angular_precision,
             zeta=angular_zeta,
@@ -1248,13 +1248,13 @@ def simple_aniq(
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
     asm.set_aev_computer(
-        radial_terms=StandardRadial.cover_linearly(
+        radial_terms=ANIRadial.cover_linearly(
             start=radial_start,
             cutoff=radial_cutoff,
             eta=radial_precision,
             num_shifts=radial_shifts,
         ),
-        angular_terms=StandardAngular.cover_linearly(
+        angular_terms=ANIAngular.cover_linearly(
             start=angular_start,
             eta=angular_precision,
             zeta=angular_zeta,

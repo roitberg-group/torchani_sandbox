@@ -18,8 +18,8 @@ from torchani.cutoffs import CutoffArg
 from torchani.aev._terms import (
     _parse_angular_term,
     _parse_radial_term,
-    StandardAngular,
-    StandardRadial,
+    ANIAngular,
+    ANIRadial,
     RadialTermArg,
     AngularTermArg,
 )
@@ -153,12 +153,12 @@ class AEVComputer(torch.nn.Module):
             return False
         if (
             not self._cuaev_cutoff_fn
-            or type(self.angular_terms) is not StandardAngular
-            or type(self.radial_terms) is not StandardRadial
+            or type(self.angular_terms) is not ANIAngular
+            or type(self.radial_terms) is not ANIRadial
         ):
             if raise_exc:
                 raise ValueError(
-                    "cuAEV only supports StandardAngular and StandardAngular terms, "
+                    "cuAEV only supports ANIAngular and ANIAngular terms, "
                     "and CosineCutoff or SmoothCutoff functions (with default args)"
                 )
             return False
@@ -549,14 +549,14 @@ class AEVComputer(torch.nn.Module):
             The constructed `AEVComputer`, ready for use.
         """
         return cls(
-            radial_terms=StandardRadial.cover_linearly(
+            radial_terms=ANIRadial.cover_linearly(
                 start=radial_start,
                 cutoff=radial_cutoff,
                 eta=radial_eta,
                 num_shifts=radial_num_shifts,
                 cutoff_fn=cutoff_fn,
             ),
-            angular_terms=StandardAngular.cover_linearly(
+            angular_terms=ANIAngular.cover_linearly(
                 start=angular_start,
                 cutoff=angular_cutoff,
                 eta=angular_eta,
@@ -601,14 +601,14 @@ class AEVComputer(torch.nn.Module):
             The constructed `AEVComputer`, ready for use.
         """
         return cls(
-            radial_terms=StandardRadial.cover_linearly(
+            radial_terms=ANIRadial.cover_linearly(
                 start=radial_start,
                 cutoff=radial_cutoff,
                 eta=radial_eta,
                 num_shifts=radial_num_shifts,
                 cutoff_fn=cutoff_fn,
             ),
-            angular_terms=StandardAngular.cover_linearly(
+            angular_terms=ANIAngular.cover_linearly(
                 start=angular_start,
                 cutoff=angular_cutoff,
                 eta=angular_eta,
@@ -669,13 +669,13 @@ class AEVComputer(torch.nn.Module):
             http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
         """
         return cls(
-            radial_terms=StandardRadial(
+            radial_terms=ANIRadial(
                 radial_eta,
                 radial_shifts,
                 radial_cutoff,
                 cutoff_fn=cutoff_fn,
             ),
-            angular_terms=StandardAngular(
+            angular_terms=ANIAngular(
                 angular_eta,
                 angular_zeta,
                 angular_shifts,

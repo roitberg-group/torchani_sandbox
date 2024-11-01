@@ -40,7 +40,7 @@ class RadialTerm(_Term):
         raise NotImplementedError("Must be implemented by subclasses")
 
 
-class StandardRadial(RadialTerm):
+class ANIRadial(RadialTerm):
     r"""Compute the radial sub-AEV terms given a sequence of atom pair distances
 
     This correspond to equation (3) in the `ANI paper`_. This function just
@@ -166,7 +166,7 @@ class StandardRadial(RadialTerm):
         )
 
 
-class StandardAngular(AngularTerm):
+class ANIAngular(AngularTerm):
     """Compute the angular sub-AEV terms of the center atom given neighbor pairs.
 
     This correspond to equation (4) in the `ANI paper`_. This function just
@@ -347,9 +347,9 @@ RadialTermArg = tp.Union[_Models, RadialTerm]
 
 def _parse_angular_term(angular_term: AngularTermArg) -> AngularTerm:
     if angular_term in ["ani1x", "ani1ccx"]:
-        angular_term = StandardAngular.like_1x()
+        angular_term = ANIAngular.like_1x()
     elif angular_term == "ani2x":
-        angular_term = StandardAngular.like_2x()
+        angular_term = ANIAngular.like_2x()
     elif not isinstance(angular_term, AngularTerm):
         raise ValueError(f"Unsupported angular term: {angular_term}")
     return tp.cast(AngularTerm, angular_term)
@@ -357,9 +357,9 @@ def _parse_angular_term(angular_term: AngularTermArg) -> AngularTerm:
 
 def _parse_radial_term(radial_term: RadialTermArg) -> RadialTerm:
     if radial_term in ["ani1x", "ani1ccx"]:
-        radial_term = StandardRadial.like_1x()
+        radial_term = ANIRadial.like_1x()
     elif radial_term == "ani2x":
-        radial_term = StandardRadial.like_2x()
+        radial_term = ANIRadial.like_2x()
     elif not isinstance(radial_term, RadialTerm):
         raise ValueError(f"Unsupported radial term: {radial_term}")
     return tp.cast(RadialTerm, radial_term)

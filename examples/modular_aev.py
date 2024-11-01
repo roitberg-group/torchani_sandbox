@@ -12,7 +12,7 @@ import torch
 from torch import Tensor
 
 from torchani.cutoffs import Cutoff
-from torchani.aev import StandardRadial, AEVComputer, AngularTerm
+from torchani.aev import ANIRadial, AEVComputer, AngularTerm
 from torchani.utils import linspace
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -93,7 +93,7 @@ print()
 # Now lets try something a bit more complicated. I want to experiment with
 # different angular terms that have a form of exp(-gamma * (cos(theta) -
 # cos(theta0))**2) how can I do that? I can pass this function to torchani, as
-# long as it exposes the same API as StandardAngular (it has to have a
+# long as it exposes the same API as ANIAngular (it has to have a
 # *sublen*, a *cutoff*, a *cutoff_fn* and a *forward method* with the same
 # signature)
 
@@ -132,7 +132,7 @@ gamma = [1023, 146.5, 36, 18.6, 15.5, 18.6, 36, 146.5, 1023]
 # We will use standard radial terms in the ani-1x style but our custom angular
 # terms, and we need to pass the same cutoff_fn to both
 aev_computer_cosdiff = AEVComputer(
-    radial_terms=StandardRadial.like_1x(cutoff_fn="cosine"),
+    radial_terms=ANIRadial.like_1x(cutoff_fn="cosine"),
     angular_terms=AngularCosDiff(
         eta, shifts, gamma, angle_sections, cutoff, cutoff_fn="cosine"
     ),

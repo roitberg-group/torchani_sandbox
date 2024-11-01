@@ -12,7 +12,7 @@ from torchani._testing import TestCase
 from torchani.neighbors import AllPairs, compute_bounding_cell
 from torchani.nn import SpeciesConverter
 from torchani.utils import ChemicalSymbolsToInts, pad_atomic_properties, map_to_central
-from torchani.aev import AEVComputer, StandardAngular, StandardRadial
+from torchani.aev import AEVComputer, ANIAngular, ANIRadial
 from torchani.io import read_xyz
 from torchani.neighbors import CellList
 
@@ -39,15 +39,15 @@ class _TestAEVBase(TestCase):
 
 class TestAEVConstructor(TestCase):
     def testTerms2x(self):
-        exact_angular = StandardAngular.like_2x()
-        exact_radial = StandardRadial.like_2x()
+        exact_angular = ANIAngular.like_2x()
+        exact_radial = ANIRadial.like_2x()
         computer = AEVComputer(exact_radial, exact_angular, num_species=7)
         computer_alt = AEVComputer.like_2x()
         self._compare_constants(computer, computer_alt)
 
     def testTerms1x(self):
-        exact_angular = StandardAngular.like_1x()
-        exact_radial = StandardRadial.like_1x()
+        exact_angular = ANIAngular.like_1x()
+        exact_radial = ANIRadial.like_1x()
         computer = AEVComputer(exact_radial, exact_angular, num_species=4)
         computer_alt = AEVComputer.like_1x()
         self._compare_constants(computer, computer_alt)
