@@ -41,7 +41,7 @@ print("AEV computer similar to 2x")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
     "for first atom, first 5 terms of angular:",
-    aevs[0, 0, radial_len : radial_len + 5].tolist(),
+    aevs[0, 0, radial_len:radial_len + 5].tolist(),
 )
 print()
 
@@ -58,7 +58,7 @@ print("AEV computer similar to 1x, but with a smooth cutoff")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
     "for first atom, first 5 terms of angular:",
-    aevs[0, 0, radial_len : radial_len + 5].tolist(),
+    aevs[0, 0, radial_len:radial_len + 5].tolist(),
 )
 print()
 
@@ -85,7 +85,7 @@ print("AEV computer similar to 1x, but with a custom cutoff function")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
     "for first atom, first 5 terms of angular:",
-    aevs[0, 0, radial_len : radial_len + 5].tolist(),
+    aevs[0, 0, radial_len:radial_len + 5].tolist(),
 )
 print()
 
