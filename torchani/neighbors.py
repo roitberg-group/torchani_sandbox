@@ -30,6 +30,67 @@ def rescreen(
     return Neighbors(indices, distances, diff_vectors)
 
 
+# Screen a given neighborlist using a cutoff and return a neighborlist with
+# atoms that are within that cutoff, for all molecules in a coordinate set.
+# neighbor_idxs must correctly index flattened coords.view(-1, 3)
+#
+# passing an infinite cutoff will only work for non pbc conditions
+# (shift values must be None)
+def narrow_down(
+    elem_idxs: Tensor,
+    coords: Tensor,
+    cutoff: float,
+    neighbor_idxs: Tensor,
+    shift_values: tp.Optional[Tensor] = None,
+    return_shift_values: bool = False,
+) -> Neighbors:
+    r"""Takes a set of potential neighbor idxs and narrows it down to true neighbors"""
+    mask = elem_idxs == -1
+    if mask.any():
+        # Discard dumy atoms to prevent wasting resources in calculating
+        # dummy distances
+        mask = mask.view(-1)[neighbor_idxs.view(-1)].view(2, -1)
+        non_dummy_pairs = (~torch.any(mask, dim=0)).nonzero().flatten()
+        neighbor_idxs = neighbor_idxs.index_select(1, non_dummy_pairs)
+        # shift_values can be None when there are no pbc conditions to prevent
+        # torch from launching kernels with only zeros
+        if shift_values is not None:
+            shift_values = shift_values.index_select(0, non_dummy_pairs)
+
+    # Interpret as single molecule
+    coords = coords.view(-1, 3)
+    if cutoff == math.inf:
+        if shift_values is not None:
+            raise ValueError("PBC can't use an infinite cutoff")
+    else:
+        # Diff vector and distances need to be calculated to screen unfortunately
+        # distances need to be recalculated again later, since otherwise torch
+        # prepares to calculate derivatives of distances that are later discarded
+
+        # no grad tracking on coords #
+        _coords = coords.detach()
+        _coords0 = _coords.index_select(0, neighbor_idxs[0])
+        _coords1 = _coords.index_select(0, neighbor_idxs[1])
+        _diff_vectors = _coords0 - _coords1
+        if shift_values is not None:
+            _diff_vectors += shift_values
+        in_cutoff = (_diff_vectors.norm(2, -1) <= cutoff).nonzero().flatten()
+        neighbor_idxs = neighbor_idxs.index_select(1, in_cutoff)
+        if shift_values is not None:
+            shift_values = shift_values.index_select(0, in_cutoff)
+        # ------------------- #
+
+    coords0 = coords.index_select(0, neighbor_idxs[0])
+    coords1 = coords.index_select(0, neighbor_idxs[1])
+    diff_vectors = coords0 - coords1
+    if shift_values is not None:
+        diff_vectors += shift_values
+    distances = diff_vectors.norm(2, -1)
+    if not return_shift_values:
+        shift_values = None
+    return Neighbors(neighbor_idxs, distances, diff_vectors, shift_values)
+
+
 def compute_bounding_cell(
     coords: Tensor, eps: float = 1e-3, displace: bool = True, square: bool = False
 ) -> tp.Tuple[Tensor, Tensor]:
@@ -87,83 +148,6 @@ class Neighborlist(torch.nn.Module):
         raise NotImplementedError("Must be implemented by subclasses")
 
 
-# Screen a given neighborlist using a cutoff and return a neighborlist with
-# atoms that are within that cutoff, for all molecules in a coordinate set.
-# neighbor_idxs must correctly index flattened coords.view(-1, 3)
-#
-# passing an infinite cutoff will only work for non pbc conditions
-# (shift values must be None)
-def _screen_with_cutoff(
-    cutoff: float,
-    coords: Tensor,
-    neighbor_idxs: Tensor,
-    mask: Tensor,
-    shift_values: tp.Optional[Tensor] = None,
-    return_shift_values: bool = False,
-) -> Neighbors:
-    if mask.any():
-        # Discard dumy atoms to prevent wasting resources in calculating
-        # dummy distances
-        mask = mask.view(-1)[neighbor_idxs.view(-1)].view(2, -1)
-        non_dummy_pairs = (~torch.any(mask, dim=0)).nonzero().flatten()
-        neighbor_idxs = neighbor_idxs.index_select(1, non_dummy_pairs)
-        # shift_values can be None when there are no pbc conditions to prevent
-        # torch from launching kernels with only zeros
-        if shift_values is not None:
-            shift_values = shift_values.index_select(0, non_dummy_pairs)
-
-    # Interpret as single molecule
-    coords = coords.view(-1, 3)
-    if cutoff == math.inf:
-        if shift_values is not None:
-            raise ValueError("PBC can't use an infinite cutoff")
-    else:
-        # Diff vector and distances need to be calculated to screen unfortunately
-        # distances need to be recalculated again later, since otherwise torch
-        # prepares to calculate derivatives of distances that are later discarded
-
-        # no grad tracking on coords #
-        _coords = coords.detach()
-        _coords0 = _coords.index_select(0, neighbor_idxs[0])
-        _coords1 = _coords.index_select(0, neighbor_idxs[1])
-        _diff_vectors = _coords0 - _coords1
-        if shift_values is not None:
-            _diff_vectors += shift_values
-        in_cutoff = (_diff_vectors.norm(2, -1) <= cutoff).nonzero().flatten()
-        neighbor_idxs = neighbor_idxs.index_select(1, in_cutoff)
-        if shift_values is not None:
-            shift_values = shift_values.index_select(0, in_cutoff)
-        # ------------------- #
-
-    coords0 = coords.index_select(0, neighbor_idxs[0])
-    coords1 = coords.index_select(0, neighbor_idxs[1])
-    diff_vectors = coords0 - coords1
-    if shift_values is not None:
-        diff_vectors += shift_values
-    distances = diff_vectors.norm(2, -1)
-    if not return_shift_values:
-        shift_values = None
-    return Neighbors(neighbor_idxs, distances, diff_vectors, shift_values)
-
-
-def screen_external_neighbors(
-    species: Tensor,
-    coords: Tensor,
-    neighbor_idxs: Tensor,
-    shift_values: Tensor,
-    cutoff: float = 0.0,
-) -> Neighbors:
-    # Check shapes
-    num_pairs = neighbor_idxs.shape[1]
-    assert neighbor_idxs.shape == (2, num_pairs)
-    assert shift_values.shape == (num_pairs, 3)
-    # Discard dist larger than the cutoff, which may be present if the neighbors
-    # come from a program that uses a skin value to conditionally rebuild
-    # (Verlet lists in MD engine). Also discard dummy atoms
-    mask = species == -1
-    return _screen_with_cutoff(cutoff, coords, neighbor_idxs, mask, shift_values)
-
-
 class AllPairs(Neighborlist):
     r"""Compute pairs of neighbors. Uses a naive algorithm.
 
@@ -192,27 +176,26 @@ def all_pairs(
     return_shift_values: bool = False,
 ) -> Neighbors:
     cell, pbc = _validate_cell_pbc(species, cell, pbc)
-    mask = species == -1
     if pbc.any():
         neighbor_idxs, shift_indices = _all_pairs_pbc(species, cutoff, cell, pbc)
         shift_values = shift_indices.to(cell.dtype) @ cell
         # Before screening coords, must map to central cell (not need if no PBC)
         coords = map_to_central(coords, cell, pbc)
-        return _screen_with_cutoff(
-            cutoff, coords, neighbor_idxs, mask, shift_values, return_shift_values
+        return narrow_down(
+            species, coords, cutoff, neighbor_idxs, shift_values, return_shift_values
         )
     num_molecs, num_atoms = species.shape
     # Create a neighborlist for all molecules and all atoms.
     # Later screen dummy atoms
     device = species.device
-    atom_index12 = torch.triu_indices(num_atoms, num_atoms, 1, device=device)
+    neighbor_idxs = torch.triu_indices(num_atoms, num_atoms, 1, device=device)
     if num_molecs > 1:
-        atom_index12 = atom_index12.unsqueeze(1).repeat(1, num_molecs, 1)
-        atom_index12 += num_atoms * torch.arange(num_molecs, device=device).view(
+        neighbor_idxs = neighbor_idxs.unsqueeze(1).repeat(1, num_molecs, 1)
+        neighbor_idxs += num_atoms * torch.arange(num_molecs, device=device).view(
             1, -1, 1
         )
-        atom_index12 = atom_index12.view(-1).view(2, -1)
-    return _screen_with_cutoff(cutoff, coords, atom_index12, mask, None)
+        neighbor_idxs = neighbor_idxs.view(-1).view(2, -1)
+    return narrow_down(species, coords, cutoff, neighbor_idxs)
 
 
 def _all_pairs_pbc(
@@ -334,17 +317,16 @@ def cell_list(
     neighbor_idxs, shift_indices = _cell_list(
         displ_coords.detach(), grid_shape, cell, pbc
     )
-    mask = species == -1
     if pbc.any():
         assert shift_indices is not None
         shift_values = shift_indices.to(cell.dtype) @ cell
         # Before the screening step we map the coords to the central cell,
         # same as with an all-pairs calculation
         coords = map_to_central(coords, cell.detach(), pbc)
-        return _screen_with_cutoff(
-            cutoff, coords, neighbor_idxs, mask, shift_values, return_shift_values
+        return narrow_down(
+            species, coords, cutoff, neighbor_idxs, shift_values, return_shift_values
         )
-    return _screen_with_cutoff(cutoff, coords, neighbor_idxs, mask, None)
+    return narrow_down(species, coords, cutoff, neighbor_idxs)
 
 
 def _cell_list(
@@ -773,15 +755,19 @@ class _VerletCellList(CellList):
             self._cache_values(
                 neighbor_idxs, shift_indices, displ_coords.detach(), cell_lengths
             )
-        mask = species == -1
         if pbc.any():
             assert shift_indices is not None
             shift_values = shift_indices.to(cell.dtype) @ cell
             coords = map_to_central(coords, cell.detach(), pbc)
-            return _screen_with_cutoff(
-                cutoff, coords, neighbor_idxs, mask, shift_values, return_shift_values
+            return narrow_down(
+                species,
+                coords,
+                cutoff,
+                neighbor_idxs,
+                shift_values,
+                return_shift_values,
             )
-        return _screen_with_cutoff(cutoff, coords, neighbor_idxs, mask, None)
+        return narrow_down(species, coords, cutoff, neighbor_idxs)
 
     def _cache_values(
         self,

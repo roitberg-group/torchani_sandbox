@@ -50,7 +50,6 @@ from torchani.tuples import (
     ForceMagnitudes,
 )
 from torchani.annotations import StressKind
-from torchani.neighbors import _parse_neighborlist, NeighborlistArg
 from torchani.cutoffs import _parse_cutoff_fn, Cutoff, CutoffArg
 from torchani.aev import (
     AEVComputer,
@@ -71,7 +70,13 @@ from torchani.nn import (
     parse_activation,
 )
 from torchani.nn._factories import _parse_network_maker
-from torchani.neighbors import rescreen, Neighbors
+from torchani.neighbors import (
+    rescreen,
+    Neighbors,
+    _parse_neighborlist,
+    NeighborlistArg,
+    narrow_down,
+)
 from torchani.electro import ChargeNormalizer
 from torchani.nn._internal import _ZeroANINetworks
 from torchani.constants import GSAES
@@ -328,8 +333,8 @@ class ANI(torch.nn.Module):
         # Discard dist larger than the cutoff, which may be present if the neighbors
         # come from a program that uses a skin value to conditionally rebuild
         # (Verlet lists in MD engine). Also discard dummy atoms
-        neighbors = self.neighborlist._screen_with_cutoff(
-            self.cutoff, coords, neighbor_idxs, elem_idxs == -1, shift_values
+        neighbors = narrow_down(
+            species, coords, self.cutoff, neighbor_idxs, shift_values
         )
         return self.compute_from_neighbors(
             elem_idxs, neighbors, coords, total_charge, atomic, ensemble_values
@@ -744,8 +749,8 @@ class ANIq(ANI):
         # Discard dist larger than the cutoff, which may be present if the neighbors
         # come from a program that uses a skin value to conditionally rebuild
         # (Verlet lists in MD engine). Also discard dummy atoms
-        neighbors = self.neighborlist._screen_with_cutoff(
-            self.cutoff, coords, neighbor_idxs, species == -1, shift_values
+        neighbors = narrow_down(
+            species, coords, self.cutoff, neighbor_idxs, shift_values
         )
         if atomic:
             energies = coords.new_zeros(elem_idxs.shape)
