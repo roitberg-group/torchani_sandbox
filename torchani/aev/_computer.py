@@ -54,10 +54,8 @@ class AEVComputer(torch.nn.Module):
     num_species_pairs: Final[int]
 
     angular_len: Final[int]
-    angular_sublen: Final[int]
     radial_len: Final[int]
-    radial_sublen: Final[int]
-    dim_out: Final[int]
+    out_dim: Final[int]
 
     triu_index: Tensor
     _strategy: str
@@ -96,11 +94,9 @@ class AEVComputer(torch.nn.Module):
         self.neighborlist = _parse_neighborlist(neighborlist)
 
         # Lenghts
-        self.radial_sublen = self.radial.sublen
-        self.angular_sublen = self.angular.sublen
-        self.radial_len = self.radial_sublen * self.num_species
-        self.angular_len = self.angular_sublen * self.num_species_pairs
-        self.dim_out = self.radial_len + self.angular_len
+        self.radial_len = self.radial.num_feats * self.num_species
+        self.angular_len = self.angular.num_feats * self.num_species_pairs
+        self.out_dim = self.radial_len + self.angular_len
 
         # Perform init and checks of cuAEV
         # Check if the cuaev and the cuaev fused are available for use
@@ -176,10 +172,10 @@ class AEVComputer(torch.nn.Module):
 
     def extra_repr(self) -> str:
         r""":meta private:"""
-        radial_perc = f"{self.radial_len / self.dim_out * 100:.2f}% of feats"
-        angular_perc = f"{self.angular_len / self.dim_out * 100:.2f}% of feats"
+        radial_perc = f"{self.radial_len / self.num_feats * 100:.2f}% of feats"
+        angular_perc = f"{self.angular_len / self.num_feats * 100:.2f}% of feats"
         parts = [
-            r"#  " f"dim_out={self.dim_out}",
+            r"#  " f"out_dim={self.out_dim}",
             r"#  " f"radial_len={self.radial_len} ({radial_perc})",
             r"#  " f"angular_len={self.angular_len} ({angular_perc})",
             f"num_species={self.num_species},",
@@ -342,7 +338,7 @@ class AEVComputer(torch.nn.Module):
         )
         # shape (CxAxSp, Z)
         angular_aev = terms.new_zeros(
-            (num_molecules * num_atoms * self.num_species_pairs, self.angular_sublen)
+            (num_molecules * num_atoms * self.num_species_pairs, self.angular.num_feats)
         )
         # shape (T,)
         # NOTE: Casting is necessary in C++ due to a LibTorch bug
@@ -363,7 +359,7 @@ class AEVComputer(torch.nn.Module):
     ) -> Tensor:
         # shape (CxAxS, R)
         radial_aev = terms.new_zeros(
-            (num_molecules * num_atoms * self.num_species, self.radial_sublen)
+            (num_molecules * num_atoms * self.num_species, self.radial.num_feats)
         )
         # shape (2, P)
         index12 = neighbor_idxs * self.num_species + neighbor_elem_idxs.flip(0)

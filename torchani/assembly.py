@@ -1063,20 +1063,20 @@ class Assembler:
                 containers.append(
                     self._container_cls(
                         self._build_atomic_networks(
-                            self.fn_for_atomics, aevcomp.dim_out
+                            self.fn_for_atomics, aevcomp.out_dim
                         )
                     )
                 )
             neural_networks = ANIEnsemble(containers)
         else:
             neural_networks = self._container_cls(
-                self._build_atomic_networks(self.fn_for_atomics, aevcomp.dim_out)
+                self._build_atomic_networks(self.fn_for_atomics, aevcomp.out_dim)
             )
 
         charge_networks: tp.Optional[AtomicContainer] = None
         if self._charge_container_cls is not None:
             charge_networks = self._charge_container_cls(
-                self._build_atomic_networks(self.fn_for_charges, aevcomp.dim_out)
+                self._build_atomic_networks(self.fn_for_charges, aevcomp.out_dim)
             )
 
         self_energies = self.self_energies

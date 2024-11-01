@@ -11,7 +11,7 @@ from torchani.utils import linspace
 
 class _Term(torch.nn.Module):
     cutoff: float
-    sublen: int
+    num_feats: int
 
     def __init__(
         self,
@@ -21,22 +21,55 @@ class _Term(torch.nn.Module):
         super().__init__()
         self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
         self.cutoff = cutoff
-        self.sublen = 0
+        self.num_feats = 0
 
 
 class AngularTerm(_Term):
-    r"""Base class for angular terms"""
+    r"""Base class for angular term modules"""
 
-    def forward(self, vectors: Tensor, distances: Tensor) -> Tensor:
-        r"""Compute the angular terms from difference vectors and distances"""
+    def forward(self, triples_distances: Tensor, triples_vectors: Tensor) -> Tensor:
+        r""":meta private:"""
+        # Wraps computation of terms with cutoff function
+        triples_factor = self.cutoff_fn(triples_distances, self.cutoff)
+        terms = self.compute_terms(triples_distances, triples_vectors)
+        assert terms.shape == (triples_distances.shape[0], self.num_feats)
+        # Use `fcj12[0] * fcj12[1]` instead of `fcj12.prod(0)` to avoid the INFs/NaNs
+        # problem for smooth cutoff function, for more detail please check issue:
+        # https://github.com/roitberg-group/torchani_sandbox/issues/178
+        # shape (T, shifts, sections)
+        return terms * (triples_factor[0] * triples_factor[1]).view(-1, 1)
+
+    def compute_terms(
+        self, triples_distances: Tensor, triples_vectors: Tensor
+    ) -> Tensor:
+        r"""Compute the angular terms. Output shape is: ``(triples, self.num_feats)``
+
+        Subclasses must implement this method
+
+        Note:
+            Don't call this method directly, instead call,
+            ``module(triple_distances, triple_vectors)``.
+        """
         raise NotImplementedError("Must be implemented by subclasses")
 
 
 class RadialTerm(_Term):
-    r"""Base class for radial terms calculators"""
+    r"""Base class for radial term modules"""
 
     def forward(self, distances: Tensor) -> Tensor:
-        r"""Compute the radial terms from difference vectors and distances"""
+        r""":meta private:"""
+        # Wraps computation of terms with cutoff function
+        return self.compute_terms(distances) * self.cutoff_fn(distances, self.cutoff)
+
+    def compute_terms(self, distances: Tensor) -> Tensor:
+        r"""Compute the radial terms. Output shape is: ``(pairs, self.num_feats)``
+
+        Subclasses must implement this method to
+
+        Note:
+            Don't call this method directly, instead call,
+            ``module(triple_distances, triple_vectors)``.
+        """
         raise NotImplementedError("Must be implemented by subclasses")
 
 
@@ -47,7 +80,7 @@ class ANIRadial(RadialTerm):
     computes the terms. The sum in the equation is not computed.  The input
     tensor has shape (conformations, atoms, N), where ``N`` is the number of
     neighbor atoms within the cutoff radius and the output tensor should have
-    shape (conformations, atoms, ``self.sublen``)
+    shape (conformations, atoms, ``self.num_feats``)
 
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
@@ -79,13 +112,13 @@ class ANIRadial(RadialTerm):
         self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
         self.register_buffer("eta", torch.tensor([eta], dtype=dtype))
         self.register_buffer("shifts", torch.tensor(shifts, dtype=dtype))
-        self.sublen = len(shifts)
+        self.num_feats = len(shifts)
 
     def extra_repr(self) -> str:
         r""":meta private:"""
         _shifts = [f"{s:.4f}" for s in self.shifts]
         parts = [
-            r"#  " f"sublen={self.sublen}",
+            r"#  " f"num_feats={self.num_feats}",
             r"#  " f"num_shifts={len(self.shifts)}",
             f"eta={self.eta.item():.4f},",
             f"shifts=[{', '.join(_shifts)}],",
@@ -93,22 +126,23 @@ class ANIRadial(RadialTerm):
         ]
         return " \n".join(parts)
 
-    def forward(self, distances: Tensor) -> Tensor:
-        r"""Computes the terms given a tensor of distances
+    def compute_terms(self, distances: Tensor) -> Tensor:
+        r"""Computes the terms associated with a group of pairs
 
+        Note:
+            Don't call this method directly, instead call the module,
+            ``module(distances)``.
         Args:
             distances: |distances|
-
         Returns:
-            A float `torch.Tensor` of shape ``(pairs, shifts)``. Note that by
-            design this function does *not* sum over atoms.
+            A float `torch.Tensor` of shape ``(pairs, shifts)``. Note that by design
+            this function does *not* sum over atoms.
         """
-        distances = distances.view(-1, 1)
         # Note that in the equation in the paper there is no 0.25
         # coefficient, but in NeuroChem there is such a coefficient.
         # We choose to be consistent with NeuroChem instead of the paper here.
-        ret = 0.25 * torch.exp(-self.eta * (distances - self.shifts.view(1, -1)) ** 2)
-        return ret * self.cutoff_fn(distances, self.cutoff)  # shape (pairs, shifts)
+        distances = distances.view(-1, 1)
+        return 0.25 * torch.exp(-self.eta * (distances - self.shifts.view(1, -1)) ** 2)
 
     @classmethod
     def cover_linearly(
@@ -173,7 +207,7 @@ class ANIAngular(AngularTerm):
     compute the terms. The sum is not computed.  The input tensor has shape
     (conformations, atoms, N), where N is the number of neighbor atom pairs
     within the cutoff radius and the output tensor should have shape
-    (conformations, atoms, ``self.sublen``)
+    (conformations, atoms, ``self.num_feats``)
 
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
@@ -197,9 +231,7 @@ class ANIAngular(AngularTerm):
             if suffix == "ShfA":
                 state_dict["".join((prefix, "shifts"))] = state_dict.pop(k).view(-1)
             if suffix == "ShfZ":
-                state_dict["".join((prefix, "sections"))] = state_dict.pop(
-                    k
-                ).view(-1)
+                state_dict["".join((prefix, "sections"))] = state_dict.pop(k).view(-1)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def __init__(
@@ -216,17 +248,15 @@ class ANIAngular(AngularTerm):
         self.register_buffer("eta", torch.tensor([eta], dtype=dtype))
         self.register_buffer("zeta", torch.tensor([zeta], dtype=dtype))
         self.register_buffer("shifts", torch.tensor(shifts, dtype=dtype))
-        self.register_buffer(
-            "sections", torch.tensor(sections, dtype=dtype)
-        )
-        self.sublen = len(shifts) * len(sections)
+        self.register_buffer("sections", torch.tensor(sections, dtype=dtype))
+        self.num_feats = len(shifts) * len(sections)
 
     def extra_repr(self) -> str:
         r""":meta private:"""
         _shifts = [f"{s:.4f}" for s in self.shifts]
         _sections = [f"{s:.4f}" for s in self.sections]
         parts = [
-            r"#  " f"sublen={self.sublen}",
+            r"#  " f"num_feats={self.num_feats}",
             r"#  " f"num_shifts={len(self.shifts)}",
             r"#  " f"num_sections={len(self.sections)}",
             f"eta={self.eta.item():.4f},",
@@ -237,18 +267,20 @@ class ANIAngular(AngularTerm):
         ]
         return " \n".join(parts)
 
-    def forward(self, triple_distances: Tensor, triple_vectors: Tensor) -> Tensor:
-        r"""Computes the terms given a tensor of distances
+    def compute_terms(self, triple_distances: Tensor, triple_vectors: Tensor) -> Tensor:
+        r"""Computes the terms associated with a group of triples
 
+        Note:
+            Don't call this method directly, instead call, ``module(triple_distances,
+            triple_vectors)``.
         Args:
-            triple_distances: Shape ``(2, triples,)`` .Holds distances central -> left
+            triple_distances: Shape ``(2, triples,)``. Holds distances central -> left
                 and central -> right
             triple_vectors: Shape ``(2, triples, 3)`` Holds difference vectors
                 central -> left and central -> right.
-
         Returns:
-            Shape ``(pairs, shifts, sections)``. Note that by design this function
-            does *not* sum over atoms.
+            Shape ``(pairs, num_feats = shifts * sections)``. Note that by design this
+            function does *not* sum over atoms.
         """
         triple_vectors = triple_vectors.view(2, -1, 3, 1, 1)
         triple_distances = triple_distances.view(2, -1, 1, 1)
@@ -262,15 +294,7 @@ class ANIAngular(AngularTerm):
 
         mean_distance_deviations = triple_distances.sum(0) / 2 - self.shifts.view(-1, 1)
         factor2 = torch.exp(-self.eta * mean_distance_deviations**2)
-
-        fcj12 = self.cutoff_fn(triple_distances, self.cutoff)
-        # Use `fcj12[0] * fcj12[1]` instead of `fcj12.prod(0)` to avoid the INFs/NaNs
-        # problem for smooth cutoff function, for more detail please check issue:
-        # https://github.com/roitberg-group/torchani_sandbox/issues/178
-        # shape (T, shifts, sections)
-        ret = 2 * factor1 * factor2 * (fcj12[0] * fcj12[1])
-        # shape (T, sublen)
-        return ret.view(-1, self.sublen)
+        return (2 * factor1 * factor2).view(-1, self.num_feats)
 
     @classmethod
     def cover_linearly(
@@ -292,9 +316,7 @@ class ANIAngular(AngularTerm):
         """
         shifts = linspace(start, cutoff, num_shifts)
         angle_start = math.pi / num_sections / 2
-        sections = linspace(
-            angle_start, math.pi + angle_start, num_sections
-        )
+        sections = linspace(angle_start, math.pi + angle_start, num_sections)
         return cls(eta, zeta, shifts, sections, cutoff, cutoff_fn)
 
     @classmethod
