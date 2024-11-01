@@ -197,7 +197,7 @@ class ANIAngular(AngularTerm):
             if suffix == "ShfA":
                 state_dict["".join((prefix, "shifts"))] = state_dict.pop(k).view(-1)
             if suffix == "ShfZ":
-                state_dict["".join((prefix, "angle_sections"))] = state_dict.pop(
+                state_dict["".join((prefix, "sections"))] = state_dict.pop(
                     k
                 ).view(-1)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
@@ -207,7 +207,7 @@ class ANIAngular(AngularTerm):
         eta: float,
         zeta: float,
         shifts: tp.Sequence[float],
-        angle_sections: tp.Sequence[float],
+        sections: tp.Sequence[float],
         cutoff: float,
         cutoff_fn: CutoffArg = "cosine",
     ):
@@ -217,22 +217,22 @@ class ANIAngular(AngularTerm):
         self.register_buffer("zeta", torch.tensor([zeta], dtype=dtype))
         self.register_buffer("shifts", torch.tensor(shifts, dtype=dtype))
         self.register_buffer(
-            "angle_sections", torch.tensor(angle_sections, dtype=dtype)
+            "sections", torch.tensor(sections, dtype=dtype)
         )
-        self.sublen = len(shifts) * len(angle_sections)
+        self.sublen = len(shifts) * len(sections)
 
     def extra_repr(self) -> str:
         r""":meta private:"""
         _shifts = [f"{s:.4f}" for s in self.shifts]
-        _angle_sections = [f"{s:.4f}" for s in self.angle_sections]
+        _sections = [f"{s:.4f}" for s in self.sections]
         parts = [
             r"#  " f"sublen={self.sublen}",
             r"#  " f"num_shifts={len(self.shifts)}",
-            r"#  " f"num_angle_sections={len(self.angle_sections)}",
+            r"#  " f"num_sections={len(self.sections)}",
             f"eta={self.eta.item():.4f},",
             f"zeta={self.zeta.item():.4f},",
             f"shifts=[{', '.join(_shifts)}],",
-            f"angle_sections=[{', '.join(_angle_sections)}],",
+            f"sections=[{', '.join(_sections)}],",
             f"cutoff={self.cutoff:.4f},",
         ]
         return " \n".join(parts)
@@ -247,7 +247,7 @@ class ANIAngular(AngularTerm):
                 central -> left and central -> right.
 
         Returns:
-            Shape ``(pairs, shifts, angle_sections)``. Note that by design this function
+            Shape ``(pairs, shifts, sections)``. Note that by design this function
             does *not* sum over atoms.
         """
         triple_vectors = triple_vectors.view(2, -1, 3, 1, 1)
@@ -257,7 +257,7 @@ class ANIAngular(AngularTerm):
         )
         # 0.95 is multiplied to the cos values to prevent acos from returning NaN.
         angles = torch.acos(0.95 * cos_angles)
-        angle_deviations = angles - self.angle_sections.view(1, -1)
+        angle_deviations = angles - self.sections.view(1, -1)
         factor1 = ((1 + torch.cos(angle_deviations)) / 2) ** self.zeta
 
         mean_distance_deviations = triple_distances.sum(0) / 2 - self.shifts.view(-1, 1)
@@ -280,22 +280,22 @@ class ANIAngular(AngularTerm):
         eta: float = 12.5,
         zeta: float = 14.1,
         num_shifts: int = 8,
-        num_angle_sections: int = 4,
+        num_sections: int = 4,
         cutoff_fn: CutoffArg = "cosine",
     ) -> tpx.Self:
         r"""Builds angular terms by dividing angular and radial coords, up to a cutoff
 
         The divisions are equally spaced "num_shifts" are created, starting from "start"
-        until "cutoff", excluding it. "num_angle_sections" does a similar thing for the
+        until "cutoff", excluding it. "num_sections" does a similar thing for the
         angles. This is the way angular and radial shifts were originally created in
         ANI.
         """
         shifts = linspace(start, cutoff, num_shifts)
-        angle_start = math.pi / num_angle_sections / 2
-        angle_sections = linspace(
-            angle_start, math.pi + angle_start, num_angle_sections
+        angle_start = math.pi / num_sections / 2
+        sections = linspace(
+            angle_start, math.pi + angle_start, num_sections
         )
-        return cls(eta, zeta, shifts, angle_sections, cutoff, cutoff_fn)
+        return cls(eta, zeta, shifts, sections, cutoff, cutoff_fn)
 
     @classmethod
     def like_1x(
@@ -305,7 +305,7 @@ class ANIAngular(AngularTerm):
         eta: float = 8.0,
         zeta: float = 32.0,
         num_shifts: int = 4,
-        num_angle_sections: int = 8,
+        num_sections: int = 8,
         cutoff_fn: CutoffArg = "cosine",
     ) -> tpx.Self:
         return cls.cover_linearly(
@@ -314,7 +314,7 @@ class ANIAngular(AngularTerm):
             eta=eta,
             zeta=zeta,
             num_shifts=num_shifts,
-            num_angle_sections=num_angle_sections,
+            num_sections=num_sections,
             cutoff_fn=cutoff_fn,
         )
 
@@ -326,7 +326,7 @@ class ANIAngular(AngularTerm):
         eta: float = 12.5,
         zeta: float = 14.1,
         num_shifts: int = 8,
-        num_angle_sections: int = 4,
+        num_sections: int = 4,
         cutoff_fn: CutoffArg = "cosine",
     ) -> tpx.Self:
         return cls.cover_linearly(
@@ -335,7 +335,7 @@ class ANIAngular(AngularTerm):
             eta=eta,
             zeta=zeta,
             num_shifts=num_shifts,
-            num_angle_sections=num_angle_sections,
+            num_sections=num_sections,
             cutoff_fn=cutoff_fn,
         )
 

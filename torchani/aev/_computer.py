@@ -396,7 +396,7 @@ class AEVComputer(torch.nn.Module):
             self.angular_terms.eta,
             self.angular_terms.zeta,
             self.angular_terms.shifts,
-            self.angular_terms.angle_sections,
+            self.angular_terms.sections,
             self.num_species,
             (self._cuaev_cutoff_fn == "cosine"),
         )
@@ -536,7 +536,7 @@ class AEVComputer(torch.nn.Module):
         angular_eta: float = 8.0,
         angular_zeta: float = 32.0,
         angular_num_shifts: int = 4,
-        angular_num_angle_sections: int = 8,
+        angular_num_sections: int = 8,
     ) -> tpx.Self:
         r"""Build an AEVComputer with standard radial and angular terms
 
@@ -562,7 +562,7 @@ class AEVComputer(torch.nn.Module):
                 eta=angular_eta,
                 zeta=angular_zeta,
                 num_shifts=angular_num_shifts,
-                num_angle_sections=angular_num_angle_sections,
+                num_sections=angular_num_sections,
                 cutoff_fn=cutoff_fn,
             ),
             num_species=num_species,
@@ -588,7 +588,7 @@ class AEVComputer(torch.nn.Module):
         angular_eta: float = 12.5,
         angular_zeta: float = 14.1,
         angular_num_shifts: int = 8,
-        angular_num_angle_sections: int = 4,
+        angular_num_sections: int = 4,
     ) -> tpx.Self:
         r"""Build an AEVComputer with standard radial and angular terms
 
@@ -614,7 +614,7 @@ class AEVComputer(torch.nn.Module):
                 eta=angular_eta,
                 zeta=angular_zeta,
                 num_shifts=angular_num_shifts,
-                num_angle_sections=angular_num_angle_sections,
+                num_sections=angular_num_sections,
                 cutoff_fn=cutoff_fn,
             ),
             num_species=num_species,
@@ -633,7 +633,7 @@ class AEVComputer(torch.nn.Module):
         angular_eta: float,
         angular_zeta: float,
         angular_shifts: tp.Sequence[float],
-        angle_sections: tp.Sequence[float],
+        sections: tp.Sequence[float],
         num_species: int,
         strategy: str = "pyaev",
         cutoff_fn: CutoffArg = "cosine",
@@ -656,7 +656,7 @@ class AEVComputer(torch.nn.Module):
             angluar_eta: The 1D tensor of :math:`\eta` in eq. (4)
             angular_zeta: The 1D tensor of :math:`\zeta` in eq. (4)
             angular_shifts: The 1D tensor of :math:`R_s` in eq. (4)
-            angle_sections: The 1D tensor of :math:`\theta_s` in eq. (4)
+            sections: The 1D tensor of :math:`\theta_s` in eq. (4)
             num_species: Number of supported atom types.
             strategy: Compute strategy to use.
             cutoff_fn: The cutoff function used for the calculation.
@@ -679,7 +679,7 @@ class AEVComputer(torch.nn.Module):
                 angular_eta,
                 angular_zeta,
                 angular_shifts,
-                angle_sections,
+                sections,
                 angular_cutoff,
                 cutoff_fn=cutoff_fn,
             ),

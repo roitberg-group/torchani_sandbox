@@ -41,7 +41,7 @@ print("AEV computer similar to 2x")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
     "for first atom, first 5 terms of angular:",
-    aevs[0, 0, radial_len:radial_len + 5].tolist(),
+    aevs[0, 0, radial_len : radial_len + 5].tolist(),
 )
 print()
 
@@ -58,7 +58,7 @@ print("AEV computer similar to 1x, but with a smooth cutoff")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
     "for first atom, first 5 terms of angular:",
-    aevs[0, 0, radial_len:radial_len + 5].tolist(),
+    aevs[0, 0, radial_len : radial_len + 5].tolist(),
 )
 print()
 
@@ -85,29 +85,31 @@ print("AEV computer similar to 1x, but with a custom cutoff function")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
     "for first atom, first 5 terms of angular:",
-    aevs[0, 0, radial_len:radial_len + 5].tolist(),
+    aevs[0, 0, radial_len : radial_len + 5].tolist(),
 )
 print()
 
 
-# Now lets try something a bit more complicated. I want to experiment with
-# different angular terms that have a form of exp(-gamma * (cos(theta) -
-# cos(theta0))**2) how can I do that? I can pass this function to torchani, as
-# long as it exposes the same API as ANIAngular (it has to have a
-# *sublen*, a *cutoff*, a *cutoff_fn* and a *forward method* with the same
-# signature)
+# Lets try something a bit more complicated. Lets experiment with different angular
+# terms that have a form of ``exp(-gamma * (cos(theta) - cos(theta0))**2)`` how can we
+# do that?
+#
+# We can pass a custom module to the ``AEVComputer``. As long as it exposes the same API
+# as ANIAngular (it has to have a *sublen*, a *cutoff*, a *cutoff_fn* and a *forward
+# method* with the same signature)
 
 
-class AngularCosDiff(AngularTerm):
-    def __init__(self, eta, shifts, gamma, angle_sections, cutoff, cutoff_fn="cosine"):
-        super().__init__(cutoff=cutoff, cutoff_fn=cutoff_fn)
+class AngularCos(AngularTerm):
+    def __init__(self, eta, shifts, gamma, sections, cutoff, cutoff_fn="cosine"):
+        super().__init__(cutoff=cutoff, cutoff_fn=cutoff_fn)  # *Must* be called
+        assert len(sections) == len(gamma)
         self.register_buffer("gamma", torch.tensor(gamma))
         self.register_buffer("eta", torch.tensor([eta]))
         self.register_buffer("shifts", torch.tensor(shifts))
-        self.register_buffer("angle_sections", torch.tensor(angle_sections))
-        assert len(angle_sections) == len(gamma)
-        self.sublen = len(shifts) * len(angle_sections)
+        self.register_buffer("sections", torch.tensor(sections))
+        self.sublen = len(shifts) * len(sections)  # *Must* have a sublen
 
+    # The inputs are two tensors, of shapes (triples,) and (triples, 3)
     def forward(self, triple_distances: Tensor, triple_vectors: Tensor) -> Tensor:
         triple_vectors = triple_vectors.view(2, -1, 3, 1, 1)
         triple_distances = triple_distances.view(2, -1, 1, 1)
@@ -116,31 +118,29 @@ class AngularCosDiff(AngularTerm):
         )
         fcj12 = self.cutoff_fn(triple_distances, self.cutoff)
         term1 = triple_distances.sum(0) / 2 - self.shifts.view(-1, 1)
-        term2 = cos_angles - torch.cos(self.angle_sections.view(1, -1))
+        term2 = cos_angles - torch.cos(self.sections.view(1, -1))
         exponent = self.eta * term1**2 + self.gamma.view(1, -1) * term2**2
         ret = 4 * torch.exp(-exponent) * (fcj12[0] * fcj12[1])
-        return ret.view(-1, self.sublen)
+        return ret.view(-1, self.sublen)  # *Must* have shape (triples, sublen)
 
 
 # Now lets initialize this function with some parameters
 eta = 8.0
 cutoff = 3.5
 shifts = [0.9000, 1.5500, 2.2000, 2.8500]
-angle_sections = linspace(0, math.pi, 9)
-gamma = [1023, 146.5, 36, 18.6, 15.5, 18.6, 36, 146.5, 1023]
+sections = linspace(0.0, math.pi, 9)
+gamma = [1023.0, 146.5, 36.0, 18.6, 15.5, 18.6, 36.0, 146.5, 1023.0]
 
 # We will use standard radial terms in the ani-1x style but our custom angular
 # terms, and we need to pass the same cutoff_fn to both
-aev_computer_cosdiff = AEVComputer(
-    radial_terms=ANIRadial.like_1x(cutoff_fn="cosine"),
-    angular_terms=AngularCosDiff(
-        eta, shifts, gamma, angle_sections, cutoff, cutoff_fn="cosine"
-    ),
+aev_computer_cos = AEVComputer(
+    radial_terms=ANIRadial.like_1x(cutoff_fn="smooth"),
+    angular_terms=AngularCos(eta, shifts, gamma, sections, cutoff, cutoff_fn="smooth"),
     num_species=4,
 ).to(device)
 
-radial_len = aev_computer_cosdiff.radial_len
-aevs = aev_computer_cosdiff(species, coords)
+radial_len = aev_computer_cos.radial_len
+aevs = aev_computer_cos(species, coords)
 print("AEV computer similar to 1x, but with custom angular terms")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
