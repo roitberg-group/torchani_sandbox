@@ -7,8 +7,13 @@ from torch.jit import Final
 import typing_extensions as tpx
 
 from torchani.tuples import SpeciesAEV
-from torchani.utils import cumsum_from_zero
-from torchani.neighbors import _parse_neighborlist, NeighborlistArg, AllPairs, Neighbors
+from torchani.neighbors import (
+    _parse_neighborlist,
+    _triple_idxs_from_neighbors,
+    NeighborlistArg,
+    AllPairs,
+    Neighbors,
+)
 from torchani.cutoffs import CutoffArg
 from torchani.aev._terms import (
     _parse_angular_term,
@@ -44,14 +49,15 @@ class AEVComputer(torch.nn.Module):
         angular_terms: The module used to compute the angular part of the AEVs
         num_species: The number of elements this module supports
     """
+
     num_species: Final[int]
     num_species_pairs: Final[int]
 
-    angular_length: Final[int]
-    angular_sublength: Final[int]
-    radial_length: Final[int]
-    radial_sublength: Final[int]
-    aev_length: Final[int]
+    angular_len: Final[int]
+    angular_sublen: Final[int]
+    radial_len: Final[int]
+    radial_sublen: Final[int]
+    aev_len: Final[int]
 
     triu_index: Tensor
     _strategy: str
@@ -90,27 +96,25 @@ class AEVComputer(torch.nn.Module):
         self.neighborlist = _parse_neighborlist(neighborlist)
 
         # Lenghts
-        self.radial_sublength = self.radial_terms.sublength
-        self.angular_sublength = self.angular_terms.sublength
-        self.radial_length = self.radial_sublength * self.num_species
-        self.angular_length = self.angular_sublength * self.num_species_pairs
-        self.aev_length = self.radial_length + self.angular_length
+        self.radial_sublen = self.radial_terms.sublen
+        self.angular_sublen = self.angular_terms.sublen
+        self.radial_len = self.radial_sublen * self.num_species
+        self.angular_len = self.angular_sublen * self.num_species_pairs
+        self.aev_len = self.radial_len + self.angular_len
 
-        # The following corresponds to initialization and checks for the cuAEV:
-
-        # Check if the cuaev and the cuaev fused are available for used
+        # Perform init and checks of cuAEV
+        # Check if the cuaev and the cuaev fused are available for use
         self._cuaev_fused_strat_is_avail = self._check_cuaev_fused_strat_avail()
         self._cuaev_strat_is_avail = self._check_cuaev_strat_avail()
 
-        # cuAEV dummy initialization ('registration') happens here, as long as
-        # cuAEV is installed, even if it is not used. This is required by JIT
+        # Do cuAEV dummy init ('registration'), even if not used. Required by JIT
         if CUAEV_IS_INSTALLED:
             self._register_cuaev_computer()
 
-        # cuAEV init is delayed until fwd, to ensure tensors are in the correct device
+        # Delay cuAEV true init to fwd, to put tensors in correct device
         self._cuaev_computer_is_init = False
 
-        # Check that the requested strategy is available
+        # Check the requested strategy is available
         if strategy == "pyaev":
             pass
         elif strategy == "cuaev":
@@ -172,12 +176,12 @@ class AEVComputer(torch.nn.Module):
 
     def extra_repr(self) -> str:
         r""":meta private:"""
-        radial_perc = f"{self.radial_length / self.aev_length * 100:.2f}% of features"
-        angular_perc = f"{self.angular_length / self.aev_length * 100:.2f}% of features"
+        radial_perc = f"{self.radial_len / self.aev_len * 100:.2f}% of features"
+        angular_perc = f"{self.angular_len / self.aev_len * 100:.2f}% of features"
         parts = [
-            r"#  " f"aev_length={self.aev_length}",
-            r"#  " f"radial_length={self.radial_length} ({radial_perc})",
-            r"#  " f"angular_length={self.angular_length} ({angular_perc})",
+            r"#  " f"aev_len={self.aev_len}",
+            r"#  " f"radial_len={self.radial_len} ({radial_perc})",
+            r"#  " f"angular_len={self.angular_len} ({angular_perc})",
             f"num_species={self.num_species},",
             f"strategy={self._strategy},",
         ]
@@ -264,7 +268,7 @@ class AEVComputer(torch.nn.Module):
 
     def _compute_pyaev(
         self,
-        element_idxs: Tensor,  # shape (C, A)
+        elem_idxs: Tensor,  # shape (C, A)
         neighbors: Neighbors,
     ) -> Tensor:
         if self._print_aev_branch:
@@ -272,16 +276,16 @@ class AEVComputer(torch.nn.Module):
         neighbor_idxs = neighbors.indices  # shape (2, P)
         distances = neighbors.distances  # shape (P,)
         diff_vectors = neighbors.diff_vectors  # shape (P, 3)
-        num_molecules, num_atoms = element_idxs.shape
+        num_molecules, num_atoms = elem_idxs.shape
         # shape (2, P)
-        neighbor_element_idxs = element_idxs.view(-1)[neighbor_idxs]
+        neighbor_elem_idxs = elem_idxs.view(-1)[neighbor_idxs]
         # shape (P, R)
         terms = self.radial_terms(distances)
         # shape (C, A, SxZ)
         radial_aev = self._collect_radial_terms(
             num_molecules,
             num_atoms,
-            neighbor_element_idxs,
+            neighbor_elem_idxs,
             neighbor_idxs=neighbor_idxs,
             terms=terms,
         )
@@ -292,24 +296,24 @@ class AEVComputer(torch.nn.Module):
         closer_indices = (distances <= self.angular_terms.cutoff).nonzero().view(-1)
         # new shapes: (2, P') (2, P')  (P', 3)
         neighbor_idxs = neighbor_idxs.index_select(1, closer_indices)
-        neighbor_element_idxs = neighbor_element_idxs.index_select(1, closer_indices)
+        neighbor_elem_idxs = neighbor_elem_idxs.index_select(1, closer_indices)
         diff_vectors = diff_vectors.index_select(0, closer_indices)
         distances = distances.index_select(0, closer_indices)
 
         # shapes: (T,) (2, T) (2, T)
-        central_idx, side_idxs, sign12 = self._triple_idxs_from_neighbors(neighbor_idxs)
+        central_idx, side_idxs, sign12 = _triple_idxs_from_neighbors(neighbor_idxs)
         # shape (2, T, 3)
         triple_vectors = diff_vectors.index_select(0, side_idxs.view(-1)).view(2, -1, 3)
         triple_vectors = triple_vectors * sign12.view(2, -1, 1)
         triple_distances = distances.index_select(0, side_idxs.view(-1)).view(2, -1)
 
         # shape (T, Z)
-        terms = self.angular_terms(triple_vectors, triple_distances)
+        terms = self.angular_terms(triple_distances, triple_vectors)
         # shape (C, A, SpxZ)
         angular_aev = self._collect_angular_terms(
             num_molecules,
             num_atoms,
-            neighbor_element_idxs,
+            neighbor_elem_idxs,
             central_idx,
             side_idxs,
             sign12,
@@ -322,14 +326,14 @@ class AEVComputer(torch.nn.Module):
         self,
         num_molecules: int,
         num_atoms: int,
-        neighbor_element_idxs: Tensor,  # shape (2, P')
+        neighbor_elem_idxs: Tensor,  # shape (2, P')
         central_idx: Tensor,  # shape (T,)
         side_idxs: Tensor,  # shape (2, T)
         sign12: Tensor,  # shape (2, T)
         terms: Tensor,  # shape (T, Z)
     ) -> Tensor:
         # shape (2, 2, T)
-        species12_small = neighbor_element_idxs[:, side_idxs]
+        species12_small = neighbor_elem_idxs[:, side_idxs]
         # shape (2, T)
         triple_element_side_idxs = torch.where(
             sign12 == 1,
@@ -338,7 +342,7 @@ class AEVComputer(torch.nn.Module):
         )
         # shape (CxAxSp, Z)
         angular_aev = terms.new_zeros(
-            (num_molecules * num_atoms * self.num_species_pairs, self.angular_sublength)
+            (num_molecules * num_atoms * self.num_species_pairs, self.angular_sublen)
         )
         # shape (T,)
         # NOTE: Casting is necessary in C++ due to a LibTorch bug
@@ -347,73 +351,26 @@ class AEVComputer(torch.nn.Module):
         ].to(torch.long)
         angular_aev.index_add_(0, index, terms)
         # shape (C, A, SpxZ)
-        return angular_aev.reshape(num_molecules, num_atoms, self.angular_length)
+        return angular_aev.reshape(num_molecules, num_atoms, self.angular_len)
 
     def _collect_radial_terms(
         self,
         num_molecules: int,
         num_atoms: int,
-        neighbor_element_idxs: Tensor,  # shape (2, P)
+        neighbor_elem_idxs: Tensor,  # shape (2, P)
         neighbor_idxs: Tensor,  # shape (2, P)
         terms: Tensor,  # shape (P, R)
     ) -> Tensor:
         # shape (CxAxS, R)
         radial_aev = terms.new_zeros(
-            (num_molecules * num_atoms * self.num_species, self.radial_sublength)
+            (num_molecules * num_atoms * self.num_species, self.radial_sublen)
         )
         # shape (2, P)
-        index12 = neighbor_idxs * self.num_species + neighbor_element_idxs.flip(0)
+        index12 = neighbor_idxs * self.num_species + neighbor_elem_idxs.flip(0)
         radial_aev.index_add_(0, index12[0], terms)
         radial_aev.index_add_(0, index12[1], terms)
         # shape (C, A, SxR)
-        return radial_aev.reshape(num_molecules, num_atoms, self.radial_length)
-
-    # NOTE: This function is very complex, please read the followin carefully
-    # Input: indices for pairs of atoms that are close to each other. each pair only
-    # appear once, i.e. only one of the pairs (1, 2) and (2, 1) exists.
-    # Output: indices for all central atoms and it pairs of neighbors. For example, if
-    # input has pair
-    # (0, 1), (0, 2), (0, 3), (0, 4), (1, 2), (1, 3), (1, 4), (2, 3), (2, 4), (3, 4)
-    # then the output would have central atom 0, 1, 2, 3, 4 and for cental atom 0, its
-    # pairs of neighbors are (1, 2), (1, 3), (1, 4), (2, 3), (2, 4), (3, 4)
-    def _triple_idxs_from_neighbors(
-        self, neighbor_idxs: Tensor
-    ) -> tp.Tuple[Tensor, Tensor, Tensor]:
-        # convert representation from pair to central-others and sort
-        sorted_flat_neighbor_idxs, rev_idxs = neighbor_idxs.view(-1).sort()
-
-        # sort compute unique key
-        uniqued_central_atom_idx, counts = torch.unique_consecutive(
-            sorted_flat_neighbor_idxs, return_inverse=False, return_counts=True
-        )
-
-        # compute central_atom_idx
-        pair_sizes = (counts * (counts - 1)).div(2, rounding_mode="floor")
-        pair_indices = torch.repeat_interleave(pair_sizes)
-        central_atom_idx = uniqued_central_atom_idx.index_select(0, pair_indices)
-
-        # do local combinations within unique key, assuming sorted
-        m = counts.max().item() if counts.numel() > 0 else 0
-        n = pair_sizes.shape[0]
-        intra_pair_indices = (
-            torch.tril_indices(m, m, -1, device=neighbor_idxs.device)
-            .unsqueeze(1)
-            .expand(-1, n, -1)
-        )
-        mask = (
-            torch.arange(intra_pair_indices.shape[2], device=neighbor_idxs.device)
-            < pair_sizes.unsqueeze(1)
-        ).view(-1)
-        sorted_local_idx12 = intra_pair_indices.flatten(1, 2)[:, mask]
-        sorted_local_idx12 += cumsum_from_zero(counts).index_select(0, pair_indices)
-
-        # unsort result from last part
-        local_idx12 = rev_idxs[sorted_local_idx12]
-
-        # compute mapping between representation of central-other to pair
-        n = neighbor_idxs.shape[1]
-        sign12 = ((local_idx12 < n).to(torch.int8) * 2) - 1
-        return central_atom_idx, local_idx12 % n, sign12
+        return radial_aev.reshape(num_molecules, num_atoms, self.radial_len)
 
     @jit_unused_if_no_cuaev()
     def _register_cuaev_computer(self) -> None:

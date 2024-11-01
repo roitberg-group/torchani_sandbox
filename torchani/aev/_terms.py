@@ -11,7 +11,7 @@ from torchani.utils import linspace
 
 class _Term(torch.nn.Module):
     cutoff: float
-    sublength: int
+    sublen: int
 
     def __init__(
         self,
@@ -21,7 +21,7 @@ class _Term(torch.nn.Module):
         super().__init__()
         self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
         self.cutoff = cutoff
-        self.sublength = 0
+        self.sublen = 0
 
 
 class AngularTerm(_Term):
@@ -47,7 +47,7 @@ class StandardRadial(RadialTerm):
     computes the terms. The sum in the equation is not computed.  The input
     tensor has shape (conformations, atoms, N), where ``N`` is the number of
     neighbor atoms within the cutoff radius and the output tensor should have
-    shape (conformations, atoms, ``self.sublength``)
+    shape (conformations, atoms, ``self.sublen``)
 
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
@@ -79,13 +79,13 @@ class StandardRadial(RadialTerm):
         self.cutoff_fn = _parse_cutoff_fn(cutoff_fn)
         self.register_buffer("eta", torch.tensor([eta], dtype=dtype))
         self.register_buffer("shifts", torch.tensor(shifts, dtype=dtype))
-        self.sublength = len(shifts)
+        self.sublen = len(shifts)
 
     def extra_repr(self) -> str:
         r""":meta private:"""
         _shifts = [f"{s:.4f}" for s in self.shifts]
         parts = [
-            r"#  " f"sublength={self.sublength}",
+            r"#  " f"sublen={self.sublen}",
             r"#  " f"num_shifts={len(self.shifts)}",
             f"eta={self.eta.item():.4f},",
             f"shifts=[{', '.join(_shifts)}],",
@@ -101,7 +101,7 @@ class StandardRadial(RadialTerm):
 
         Returns:
             A float `torch.Tensor` of shape ``(pairs, shifts)``. Note that by
-            design this function does *not* sum over shifts.
+            design this function does *not* sum over atoms.
         """
         distances = distances.view(-1, 1)
         # Note that in the equation in the paper there is no 0.25
@@ -173,7 +173,7 @@ class StandardAngular(AngularTerm):
     compute the terms. The sum is not computed.  The input tensor has shape
     (conformations, atoms, N), where N is the number of neighbor atom pairs
     within the cutoff radius and the output tensor should have shape
-    (conformations, atoms, ``self.sublength``)
+    (conformations, atoms, ``self.sublen``)
 
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
@@ -219,14 +219,14 @@ class StandardAngular(AngularTerm):
         self.register_buffer(
             "angle_sections", torch.tensor(angle_sections, dtype=dtype)
         )
-        self.sublength = len(shifts) * len(angle_sections)
+        self.sublen = len(shifts) * len(angle_sections)
 
     def extra_repr(self) -> str:
         r""":meta private:"""
         _shifts = [f"{s:.4f}" for s in self.shifts]
         _angle_sections = [f"{s:.4f}" for s in self.angle_sections]
         parts = [
-            r"#  " f"sublength={self.sublength}",
+            r"#  " f"sublen={self.sublen}",
             r"#  " f"num_shifts={len(self.shifts)}",
             r"#  " f"num_angle_sections={len(self.angle_sections)}",
             f"eta={self.eta.item():.4f},",
@@ -237,28 +237,40 @@ class StandardAngular(AngularTerm):
         ]
         return " \n".join(parts)
 
-    def forward(self, vectors12: Tensor, distances12: Tensor) -> Tensor:
-        vectors12 = vectors12.view(2, -1, 3, 1, 1)
-        distances12 = distances12.view(2, -1, 1, 1)
-        cos_angles = vectors12.prod(0).sum(1) / torch.clamp(
-            distances12.prod(0), min=1e-10
+    def forward(self, triple_distances: Tensor, triple_vectors: Tensor) -> Tensor:
+        r"""Computes the terms given a tensor of distances
+
+        Args:
+            triple_distances: Shape ``(2, triples,)`` .Holds distances central -> left
+                and central -> right
+            triple_vectors: Shape ``(2, triples, 3)`` Holds difference vectors
+                central -> left and central -> right.
+
+        Returns:
+            Shape ``(pairs, shifts, angle_sections)``. Note that by design this function
+            does *not* sum over atoms.
+        """
+        triple_vectors = triple_vectors.view(2, -1, 3, 1, 1)
+        triple_distances = triple_distances.view(2, -1, 1, 1)
+        cos_angles = triple_vectors.prod(0).sum(1) / torch.clamp(
+            triple_distances.prod(0), min=1e-10
         )
         # 0.95 is multiplied to the cos values to prevent acos from returning NaN.
         angles = torch.acos(0.95 * cos_angles)
         angle_deviations = angles - self.angle_sections.view(1, -1)
         factor1 = ((1 + torch.cos(angle_deviations)) / 2) ** self.zeta
 
-        mean_distance_deviations = distances12.sum(0) / 2 - self.shifts.view(-1, 1)
+        mean_distance_deviations = triple_distances.sum(0) / 2 - self.shifts.view(-1, 1)
         factor2 = torch.exp(-self.eta * mean_distance_deviations**2)
 
-        fcj12 = self.cutoff_fn(distances12, self.cutoff)
+        fcj12 = self.cutoff_fn(triple_distances, self.cutoff)
         # Use `fcj12[0] * fcj12[1]` instead of `fcj12.prod(0)` to avoid the INFs/NaNs
         # problem for smooth cutoff function, for more detail please check issue:
         # https://github.com/roitberg-group/torchani_sandbox/issues/178
         # shape (T, shifts, sections)
         ret = 2 * factor1 * factor2 * (fcj12[0] * fcj12[1])
-        # shape (T, sublength)
-        return ret.view(-1, self.sublength)
+        # shape (T, sublen)
+        return ret.view(-1, self.sublen)
 
     @classmethod
     def cover_linearly(

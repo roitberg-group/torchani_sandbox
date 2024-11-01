@@ -35,12 +35,12 @@ species = torch.tensor([[1, 0, 0, 0, 0]], device=device)
 # Suppose that we want to make an aev computer in the ANI 2x style:
 aev_computer = AEVComputer.like_2x().to(device)
 aevs = aev_computer(species, coords)
-radial_length = aev_computer.radial_length
+radial_len = aev_computer.radial_len
 print("AEV computer similar to 2x")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
     "for first atom, first 5 terms of angular:",
-    aevs[0, 0, radial_length:radial_length + 5].tolist(),
+    aevs[0, 0, radial_len:radial_len + 5].tolist(),
 )
 print()
 
@@ -51,13 +51,13 @@ print()
 # then using this aev computer with it will give nonsensical results
 
 aev_computer_smooth = AEVComputer.like_1x(cutoff_fn="smooth").to(device)
-radial_length = aev_computer_smooth.radial_length
+radial_len = aev_computer_smooth.radial_len
 aevs = aev_computer_smooth(species, coords)
 print("AEV computer similar to 1x, but with a smooth cutoff")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
     "for first atom, first 5 terms of angular:",
-    aevs[0, 0, radial_length:radial_length + 5].tolist(),
+    aevs[0, 0, radial_len:radial_len + 5].tolist(),
 )
 print()
 
@@ -78,13 +78,13 @@ class CutoffBiweight(Cutoff):
 
 
 aev_computer_bw = AEVComputer.like_1x(cutoff_fn=CutoffBiweight()).to(device)
-radial_length = aev_computer_bw.radial_length
+radial_len = aev_computer_bw.radial_len
 aevs = aev_computer_smooth(species, coords)
 print("AEV computer similar to 1x, but with a custom cutoff function")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
     "for first atom, first 5 terms of angular:",
-    aevs[0, 0, radial_length:radial_length + 5].tolist(),
+    aevs[0, 0, radial_len:radial_len + 5].tolist(),
 )
 print()
 
@@ -93,12 +93,12 @@ print()
 # different angular terms that have a form of exp(-gamma * (cos(theta) -
 # cos(theta0))**2) how can I do that? I can pass this function to torchani, as
 # long as it exposes the same API as StandardAngular (it has to have a
-# *sublength*, a *cutoff*, a *cutoff_fn* and a *forward method* with the same
+# *sublen*, a *cutoff*, a *cutoff_fn* and a *forward method* with the same
 # signature)
 
 
 class AngularCosDiff(AngularTerm):
-    sublength: int
+    sublen: int
     ShfZ: Tensor
     Gamma: Tensor
     ShfA: Tensor
@@ -115,8 +115,8 @@ class AngularCosDiff(AngularTerm):
         )
         assert len(angle_sections) == len(gamma)
 
-        # set the sublength
-        self.sublength = len(shifts) * len(angle_sections)
+        # set the sublen
+        self.sublen = len(shifts) * len(angle_sections)
 
     def forward(self, vectors12: Tensor, distances12: Tensor) -> Tensor:
         vectors12 = vectors12.view(2, -1, 3, 1, 1)
@@ -130,7 +130,7 @@ class AngularCosDiff(AngularTerm):
         term2 = cos_angles - torch.cos(self.angle_sections.view(1, -1))
         exponent = self.eta * term1 ** 2 + self.gamma.view(1, -1) * term2 ** 2
         ret = 4 * torch.exp(-exponent) * (fcj12[0] * fcj12[1])
-        return ret.view(-1, self.sublength)
+        return ret.view(-1, self.sublen)
 
 
 # Now lets initialize this function with some parameters
@@ -150,12 +150,12 @@ aev_computer_cosdiff = AEVComputer(
     num_species=4,
 ).to(device)
 
-radial_length = aev_computer_cosdiff.radial_length
+radial_len = aev_computer_cosdiff.radial_len
 aevs = aev_computer_cosdiff(species, coords)
 print("AEV computer similar to 1x, but with custom angular terms")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
     "for first atom, first 5 terms of angular:",
-    aevs[0, 0, radial_length:radial_length + 5].tolist(),
+    aevs[0, 0, radial_len:radial_len + 5].tolist(),
 )
 print()
