@@ -829,18 +829,18 @@ class _AEVComputerWrapper:
     def __init__(
         self,
         cls: AEVComputerCls,
-        radial_terms: RadialTermArg,
-        angular_terms: AngularTermArg,
+        radial: RadialTermArg,
+        angular: AngularTermArg,
         cutoff_fn: CutoffArg = "global",
         strategy: str = "pyaev",
     ) -> None:
         self.cls = cls
         self.cutoff_fn = cutoff_fn
-        self.radial_terms = _parse_radial_term(radial_terms)
-        self.angular_terms = _parse_angular_term(angular_terms)
-        if self.angular_terms.cutoff > self.radial_terms.cutoff:
+        self.radial = _parse_radial_term(radial)
+        self.angular = _parse_angular_term(angular)
+        if self.angular.cutoff > self.radial.cutoff:
             raise ValueError("Angular cutoff must be smaller or equal to radial cutoff")
-        if self.angular_terms.cutoff <= 0 or self.radial_terms.cutoff <= 0:
+        if self.angular.cutoff <= 0 or self.radial.cutoff <= 0:
             raise ValueError("Cutoffs must be strictly positive")
         self.strategy = strategy
 
@@ -975,8 +975,8 @@ class Assembler:
 
     def set_aev_computer(
         self,
-        angular_terms: AngularTermArg,
-        radial_terms: RadialTermArg,
+        angular: AngularTermArg,
+        radial: RadialTermArg,
         cutoff_fn: CutoffArg = "global",
         strategy: str = "pyaev",
         aev_computer_cls: AEVComputerCls = AEVComputer,
@@ -984,8 +984,8 @@ class Assembler:
         self._aevcomp = _AEVComputerWrapper(
             aev_computer_cls,
             cutoff_fn=cutoff_fn,
-            angular_terms=angular_terms,
-            radial_terms=radial_terms,
+            angular=angular,
+            radial=radial,
             strategy=strategy,
         )
 
@@ -1046,13 +1046,13 @@ class Assembler:
             self._aevcomp.cutoff_fn, self._global_cutoff_fn
         )
 
-        self._aevcomp.angular_terms.cutoff_fn = feat_cutoff_fn
-        self._aevcomp.radial_terms.cutoff_fn = feat_cutoff_fn
+        self._aevcomp.angular.cutoff_fn = feat_cutoff_fn
+        self._aevcomp.radial.cutoff_fn = feat_cutoff_fn
         aevcomp = self._aevcomp.cls(
             neighborlist=self._neighborlist,
             cutoff_fn=feat_cutoff_fn,
-            angular_terms=self._aevcomp.angular_terms,
-            radial_terms=self._aevcomp.radial_terms,
+            angular=self._aevcomp.angular,
+            radial=self._aevcomp.radial,
             num_species=len(self.symbols),
             strategy=self._aevcomp.strategy,
         )
@@ -1063,20 +1063,20 @@ class Assembler:
                 containers.append(
                     self._container_cls(
                         self._build_atomic_networks(
-                            self.fn_for_atomics, aevcomp.aev_len
+                            self.fn_for_atomics, aevcomp.dim_out
                         )
                     )
                 )
             neural_networks = ANIEnsemble(containers)
         else:
             neural_networks = self._container_cls(
-                self._build_atomic_networks(self.fn_for_atomics, aevcomp.aev_len)
+                self._build_atomic_networks(self.fn_for_atomics, aevcomp.dim_out)
             )
 
         charge_networks: tp.Optional[AtomicContainer] = None
         if self._charge_container_cls is not None:
             charge_networks = self._charge_container_cls(
-                self._build_atomic_networks(self.fn_for_charges, aevcomp.aev_len)
+                self._build_atomic_networks(self.fn_for_charges, aevcomp.dim_out)
             )
 
         self_energies = self.self_energies
@@ -1163,13 +1163,13 @@ def simple_ani(
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
     asm.set_aev_computer(
-        radial_terms=ANIRadial.cover_linearly(
+        radial=ANIRadial.cover_linearly(
             start=radial_start,
             cutoff=radial_cutoff,
             eta=radial_precision,
             num_shifts=radial_shifts,
         ),
-        angular_terms=ANIAngular.cover_linearly(
+        angular=ANIAngular.cover_linearly(
             start=angular_start,
             eta=angular_precision,
             zeta=angular_zeta,
@@ -1248,13 +1248,13 @@ def simple_aniq(
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
     asm.set_aev_computer(
-        radial_terms=ANIRadial.cover_linearly(
+        radial=ANIRadial.cover_linearly(
             start=radial_start,
             cutoff=radial_cutoff,
             eta=radial_precision,
             num_shifts=radial_shifts,
         ),
-        angular_terms=ANIAngular.cover_linearly(
+        angular=ANIAngular.cover_linearly(
             start=angular_start,
             eta=angular_precision,
             zeta=angular_zeta,

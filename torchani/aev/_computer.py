@@ -45,8 +45,8 @@ class AEVComputer(torch.nn.Module):
     given a batch of molecules.
 
     Args:
-        radial_terms: The module used to compute the radial part of the AEVs
-        angular_terms: The module used to compute the angular part of the AEVs
+        radial: The module used to compute the radial part of the AEVs
+        angular: The module used to compute the angular part of the AEVs
         num_species: The number of elements this module supports
     """
 
@@ -57,7 +57,7 @@ class AEVComputer(torch.nn.Module):
     angular_sublen: Final[int]
     radial_len: Final[int]
     radial_sublen: Final[int]
-    aev_len: Final[int]
+    dim_out: Final[int]
 
     triu_index: Tensor
     _strategy: str
@@ -67,8 +67,8 @@ class AEVComputer(torch.nn.Module):
 
     def __init__(
         self,
-        radial_terms: RadialTermArg,
-        angular_terms: AngularTermArg,
+        radial: RadialTermArg,
+        angular: AngularTermArg,
         num_species: int,
         strategy: str = "pyaev",
         cutoff_fn: tp.Optional[CutoffArg] = None,
@@ -81,26 +81,26 @@ class AEVComputer(torch.nn.Module):
         self.register_buffer("triu_index", self._calculate_triu_index(num_species))
 
         # Terms
-        self.radial_terms = _parse_radial_term(radial_terms)
-        self.angular_terms = _parse_angular_term(angular_terms)
-        if not (self.angular_terms.cutoff_fn.is_same(self.radial_terms.cutoff_fn)):
+        self.radial = _parse_radial_term(radial)
+        self.angular = _parse_angular_term(angular)
+        if not (self.angular.cutoff_fn.is_same(self.radial.cutoff_fn)):
             raise ValueError("Cutoff fn must be the same for angular and radial terms")
-        if self.angular_terms.cutoff > self.radial_terms.cutoff:
+        if self.angular.cutoff > self.radial.cutoff:
             raise ValueError(
-                f"Angular cutoff {self.angular_terms.cutoff}"
-                f" should be smaller than radial cutoff {self.radial_terms.cutoff}"
+                f"Angular cutoff {self.angular.cutoff}"
+                f" should be smaller than radial cutoff {self.radial.cutoff}"
             )
-        self._cuaev_cutoff_fn = self.angular_terms.cutoff_fn._cuaev_name
+        self._cuaev_cutoff_fn = self.angular.cutoff_fn._cuaev_name
 
         # Neighborlist
         self.neighborlist = _parse_neighborlist(neighborlist)
 
         # Lenghts
-        self.radial_sublen = self.radial_terms.sublen
-        self.angular_sublen = self.angular_terms.sublen
+        self.radial_sublen = self.radial.sublen
+        self.angular_sublen = self.angular.sublen
         self.radial_len = self.radial_sublen * self.num_species
         self.angular_len = self.angular_sublen * self.num_species_pairs
-        self.aev_len = self.radial_len + self.angular_len
+        self.dim_out = self.radial_len + self.angular_len
 
         # Perform init and checks of cuAEV
         # Check if the cuaev and the cuaev fused are available for use
@@ -153,8 +153,8 @@ class AEVComputer(torch.nn.Module):
             return False
         if (
             not self._cuaev_cutoff_fn
-            or type(self.angular_terms) is not ANIAngular
-            or type(self.radial_terms) is not ANIRadial
+            or type(self.angular) is not ANIAngular
+            or type(self.radial) is not ANIRadial
         ):
             if raise_exc:
                 raise ValueError(
@@ -176,10 +176,10 @@ class AEVComputer(torch.nn.Module):
 
     def extra_repr(self) -> str:
         r""":meta private:"""
-        radial_perc = f"{self.radial_len / self.aev_len * 100:.2f}% of features"
-        angular_perc = f"{self.angular_len / self.aev_len * 100:.2f}% of features"
+        radial_perc = f"{self.radial_len / self.dim_out * 100:.2f}% of feats"
+        angular_perc = f"{self.angular_len / self.dim_out * 100:.2f}% of feats"
         parts = [
-            r"#  " f"aev_len={self.aev_len}",
+            r"#  " f"dim_out={self.dim_out}",
             r"#  " f"radial_len={self.radial_len} ({radial_perc})",
             r"#  " f"angular_len={self.angular_len} ({angular_perc})",
             f"num_species={self.num_species},",
@@ -228,13 +228,13 @@ class AEVComputer(torch.nn.Module):
         # Check input shape correctness and validate cutoffs
         assert elem_idxs.dim() == 2
         assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
-        assert self.angular_terms.cutoff < self.radial_terms.cutoff
+        assert self.angular.cutoff < self.radial.cutoff
 
         # IMPORTANT: If a neighborlist is used, the coords that input to neighborlist
         # are **not required** to be mapped to the central cell for pbc calculations.
         if self._strategy == "pyaev" or self._strategy == "cuaev":
             neighbors = self.neighborlist(
-                elem_idxs, coords, self.radial_terms.cutoff, cell, pbc
+                elem_idxs, coords, self.radial.cutoff, cell, pbc
             )
             return self.compute_from_neighbors(elem_idxs, neighbors, _coords=coords)
         elif self._strategy == "cuaev-fused":
@@ -280,9 +280,9 @@ class AEVComputer(torch.nn.Module):
         # shape (2, P)
         neighbor_elem_idxs = elem_idxs.view(-1)[neighbor_idxs]
         # shape (P, R)
-        terms = self.radial_terms(distances)
+        terms = self.radial(distances)
         # shape (C, A, SxZ)
-        radial_aev = self._collect_radial_terms(
+        radial_aev = self._collect_radial(
             num_molecules,
             num_atoms,
             neighbor_elem_idxs,
@@ -293,7 +293,7 @@ class AEVComputer(torch.nn.Module):
         # Angular cutoff is smaller than radial. Here we discard neighbors
         # outside the angular cutoff to improve performance
         # New shape: (P')
-        closer_indices = (distances <= self.angular_terms.cutoff).nonzero().view(-1)
+        closer_indices = (distances <= self.angular.cutoff).nonzero().view(-1)
         # new shapes: (2, P') (2, P')  (P', 3)
         neighbor_idxs = neighbor_idxs.index_select(1, closer_indices)
         neighbor_elem_idxs = neighbor_elem_idxs.index_select(1, closer_indices)
@@ -308,9 +308,9 @@ class AEVComputer(torch.nn.Module):
         triple_distances = distances.index_select(0, side_idxs.view(-1)).view(2, -1)
 
         # shape (T, Z)
-        terms = self.angular_terms(triple_distances, triple_vectors)
+        terms = self.angular(triple_distances, triple_vectors)
         # shape (C, A, SpxZ)
-        angular_aev = self._collect_angular_terms(
+        angular_aev = self._collect_angular(
             num_molecules,
             num_atoms,
             neighbor_elem_idxs,
@@ -322,7 +322,7 @@ class AEVComputer(torch.nn.Module):
         # shape (C, A, SxR + SpxZ)
         return torch.cat([radial_aev, angular_aev], dim=-1)
 
-    def _collect_angular_terms(
+    def _collect_angular(
         self,
         num_molecules: int,
         num_atoms: int,
@@ -353,7 +353,7 @@ class AEVComputer(torch.nn.Module):
         # shape (C, A, SpxZ)
         return angular_aev.reshape(num_molecules, num_atoms, self.angular_len)
 
-    def _collect_radial_terms(
+    def _collect_radial(
         self,
         num_molecules: int,
         num_atoms: int,
@@ -389,14 +389,14 @@ class AEVComputer(torch.nn.Module):
         # If we reach this part of the code then the radial and
         # angular terms must be Standard*, so these tensors will exist
         self.cuaev_computer = torch.classes.cuaev.CuaevComputer(
-            self.radial_terms.cutoff,
-            self.angular_terms.cutoff,
-            self.radial_terms.eta,
-            self.radial_terms.shifts,
-            self.angular_terms.eta,
-            self.angular_terms.zeta,
-            self.angular_terms.shifts,
-            self.angular_terms.sections,
+            self.radial.cutoff,
+            self.angular.cutoff,
+            self.radial.eta,
+            self.radial.shifts,
+            self.angular.eta,
+            self.angular.zeta,
+            self.angular.shifts,
+            self.angular.sections,
             self.num_species,
             (self._cuaev_cutoff_fn == "cosine"),
         )
@@ -549,14 +549,14 @@ class AEVComputer(torch.nn.Module):
             The constructed `AEVComputer`, ready for use.
         """
         return cls(
-            radial_terms=ANIRadial.cover_linearly(
+            radial=ANIRadial.cover_linearly(
                 start=radial_start,
                 cutoff=radial_cutoff,
                 eta=radial_eta,
                 num_shifts=radial_num_shifts,
                 cutoff_fn=cutoff_fn,
             ),
-            angular_terms=ANIAngular.cover_linearly(
+            angular=ANIAngular.cover_linearly(
                 start=angular_start,
                 cutoff=angular_cutoff,
                 eta=angular_eta,
@@ -601,14 +601,14 @@ class AEVComputer(torch.nn.Module):
             The constructed `AEVComputer`, ready for use.
         """
         return cls(
-            radial_terms=ANIRadial.cover_linearly(
+            radial=ANIRadial.cover_linearly(
                 start=radial_start,
                 cutoff=radial_cutoff,
                 eta=radial_eta,
                 num_shifts=radial_num_shifts,
                 cutoff_fn=cutoff_fn,
             ),
-            angular_terms=ANIAngular.cover_linearly(
+            angular=ANIAngular.cover_linearly(
                 start=angular_start,
                 cutoff=angular_cutoff,
                 eta=angular_eta,
@@ -669,13 +669,13 @@ class AEVComputer(torch.nn.Module):
             http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
         """
         return cls(
-            radial_terms=ANIRadial(
+            radial=ANIRadial(
                 radial_eta,
                 radial_shifts,
                 radial_cutoff,
                 cutoff_fn=cutoff_fn,
             ),
-            angular_terms=ANIAngular(
+            angular=ANIAngular(
                 angular_eta,
                 angular_zeta,
                 angular_shifts,

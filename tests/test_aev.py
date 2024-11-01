@@ -66,8 +66,8 @@ class TestIsolated(TestCase):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.aev_computer = AEVComputer.like_1x().to(self.device)
         self.symbols_to_idxs = ChemicalSymbolsToInts(["H", "C", "N", "O"])
-        self.rcr = self.aev_computer.radial_terms.cutoff
-        self.rca = self.aev_computer.angular_terms.cutoff
+        self.rcr = self.aev_computer.radial.cutoff
+        self.rca = self.aev_computer.angular.cutoff
 
     def testCO2(self):
         species = self.symbols_to_idxs(["O", "C", "O"]).to(self.device).unsqueeze(0)

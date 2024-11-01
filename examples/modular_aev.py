@@ -1,6 +1,6 @@
 r"""
-Extending AEVs with custom terms
-================================
+Extending the local atomic features: AEVs with custom terms and cutoffs
+=======================================================================
 
 TorchANI allows for modification and customization of the AEV features
 """
@@ -34,9 +34,9 @@ coords = torch.tensor(
 species = torch.tensor([[1, 0, 0, 0, 0]], device=device)
 
 # Suppose that we want to make an aev computer in the ANI 2x style:
-aev_computer = AEVComputer.like_2x().to(device)
-aevs = aev_computer(species, coords)
-radial_len = aev_computer.radial_len
+aevcomp = AEVComputer.like_2x().to(device)
+aevs = aevcomp(species, coords)
+radial_len = aevcomp.radial_len
 print("AEV computer similar to 2x")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
@@ -51,9 +51,9 @@ print()
 # WARNING: Be very careful, if a model has not been trained using this cutoff function
 # then using this aev computer with it will give nonsensical results
 
-aev_computer_smooth = AEVComputer.like_1x(cutoff_fn="smooth").to(device)
-radial_len = aev_computer_smooth.radial_len
-aevs = aev_computer_smooth(species, coords)
+aevcomp_smooth = AEVComputer.like_1x(cutoff_fn="smooth").to(device)
+radial_len = aevcomp_smooth.radial_len
+aevs = aevcomp_smooth(species, coords)
 print("AEV computer similar to 1x, but with a smooth cutoff")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
@@ -78,9 +78,10 @@ class CutoffBiweight(Cutoff):
         return (cutoff**2 - distances**2) ** 2 / cutoff**4
 
 
-aev_computer_bw = AEVComputer.like_1x(cutoff_fn=CutoffBiweight()).to(device)
-radial_len = aev_computer_bw.radial_len
-aevs = aev_computer_smooth(species, coords)
+cutoff_fn_biw = CutoffBiweight()
+aevcomp_biw = AEVComputer.like_1x(cutoff_fn=cutoff_fn_biw).to(device)
+radial_len = aevcomp_biw.radial_len
+aevs = aevcomp_smooth(species, coords)
 print("AEV computer similar to 1x, but with a custom cutoff function")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
@@ -99,7 +100,7 @@ print()
 # method* with the same signature)
 
 
-class AngularCos(AngularTerm):
+class CosAngular(AngularTerm):
     def __init__(self, eta, shifts, gamma, sections, cutoff, cutoff_fn="cosine"):
         super().__init__(cutoff=cutoff, cutoff_fn=cutoff_fn)  # *Must* be called
         assert len(sections) == len(gamma)
@@ -133,14 +134,14 @@ gamma = [1023.0, 146.5, 36.0, 18.6, 15.5, 18.6, 36.0, 146.5, 1023.0]
 
 # We will use standard radial terms in the ani-1x style but our custom angular
 # terms, and we need to pass the same cutoff_fn to both
-aev_computer_cos = AEVComputer(
-    radial_terms=ANIRadial.like_1x(cutoff_fn="smooth"),
-    angular_terms=AngularCos(eta, shifts, gamma, sections, cutoff, cutoff_fn="smooth"),
-    num_species=4,
-).to(device)
+ani_radial = ANIRadial.like_1x(cutoff_fn="smooth")
+cos_angular = CosAngular(eta, shifts, gamma, sections, cutoff, cutoff_fn="smooth")
+aevcomp_cos = AEVComputer(radial=ani_radial, angular=cos_angular, num_species=4).to(
+    device
+)
 
-radial_len = aev_computer_cos.radial_len
-aevs = aev_computer_cos(species, coords)
+radial_len = aevcomp_cos.radial_len
+aevs = aevcomp_cos(species, coords)
 print("AEV computer similar to 1x, but with custom angular terms")
 print("for first atom, first 5 terms of radial:", aevs[0, 0, :5].tolist())
 print(
