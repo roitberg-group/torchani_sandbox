@@ -38,10 +38,10 @@ class ANITestCasePT2(ANITestCase):
 
 class TestCompile(ANITestCasePT2):
     def testRadial(self) -> None:
-        _ = torch.compile(ANIRadial.like_2x(), fullgraph=True)
+        _ = ANIRadial.like_2x().compile(fullgraph=True)
 
     def testAngular(self) -> None:
-        _ = torch.compile(ANIAngular.like_2x(), fullgraph=True)
+        _ = ANIAngular.like_2x().compile(fullgraph=True)
 
     def testDiscardNeighbors(self) -> None:
         _ = torch.compile(discard_outside_cutoff, fullgraph=True)
@@ -53,11 +53,10 @@ class TestCompile(ANITestCasePT2):
         _ = torch.compile(AEVComputer.like_2x().compute_from_neighbors, fullgraph=True)
 
     def testAtomicNetwork(self) -> None:
-        _ = torch.compile(make_2x_network("H"), fullgraph=True)
+        _ = make_2x_network("H").compile(fullgraph=True)
 
     def testANINetworks(self) -> None:
-        m = ANINetworks({s: make_2x_network(s) for s in SYMBOLS_2X})
-        _ = torch.compile(m, fullgraph=True)
+        ANINetworks({s: make_2x_network(s) for s in SYMBOLS_2X}).compile(fullgraph=True)
 
     def tearDown(self) -> None:
         torch.compiler.reset()
