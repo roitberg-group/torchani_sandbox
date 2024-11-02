@@ -32,7 +32,7 @@ class AngularTerm(_Term):
         # Wraps computation of terms with cutoff function
         triples_factor = self.cutoff_fn(triples_distances, self.cutoff)
         terms = self.compute_terms(triples_distances, triples_vectors)
-        assert terms.shape == (triples_distances.shape[0], self.num_feats)
+        assert terms.shape == (triples_distances.shape[1], self.num_feats)
         # Use `fcj12[0] * fcj12[1]` instead of `fcj12.prod(0)` to avoid the INFs/NaNs
         # problem for smooth cutoff function, for more detail please check issue:
         # https://github.com/roitberg-group/torchani_sandbox/issues/178
@@ -59,7 +59,8 @@ class RadialTerm(_Term):
     def forward(self, distances: Tensor) -> Tensor:
         r""":meta private:"""
         # Wraps computation of terms with cutoff function
-        return self.compute_terms(distances) * self.cutoff_fn(distances, self.cutoff)
+        factor = self.cutoff_fn(distances, self.cutoff).view(-1, 1)
+        return self.compute_terms(distances) * factor
 
     def compute_terms(self, distances: Tensor) -> Tensor:
         r"""Compute the radial terms. Output shape is: ``(pairs, self.num_feats)``
