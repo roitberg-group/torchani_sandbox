@@ -3,12 +3,14 @@ import os
 import torch
 import unittest
 
-from torchani._testing import ANITestCase, make_neighbors
+from torchani._testing import ANITestCase, make_neighbors, make_molec
 from torchani.utils import SYMBOLS_2X
 from torchani.nn import ANINetworks, make_2x_network
 from torchani.neighbors import (
     discard_outside_cutoff,
     neighbors_to_triples,
+    AllPairs,
+    CellList,
     Neighbors,
     Triples,
 )
@@ -126,6 +128,40 @@ class TestExport(ANITestCasePT2):
             dynamic_shapes={
                 # shift_values is fixed to None on export
                 "neighbors": ((None, pairs), (pairs,), (pairs, None), None)
+            },
+        )
+
+    @unittest.skipIf(True, "Currently fails due to pbc.any() control flow")
+    def testCellList(self) -> None:
+        molec = make_molec(10, seed=1234)
+        atoms_d = torch.export.Dim("atoms")
+        _ = torch.export.export(
+            CellList(),
+            args=(molec.coords, molec.atomic_nums, 5.2, molec.cell, molec.pbc),
+            dynamic_shapes={
+                # specialize to 1 molecule
+                "species": (None, atoms_d),
+                "coords": (None, atoms_d, None),
+                "cutoff": None,  # cutoff is fixed on export
+                "cell": (None, None),
+                "pbc": (None,),
+            },
+        )
+
+    @unittest.skipIf(True, "Currently fails due to pbc.any() control flow")
+    def testAllPairs(self) -> None:
+        molec = make_molec(10, seed=1234)
+        atoms_d = torch.export.Dim("atoms")
+        _ = torch.export.export(
+            AllPairs(),
+            args=(molec.coords, molec.atomic_nums, 5.2, molec.cell, molec.pbc),
+            dynamic_shapes={
+                # specialize to 1 molecule
+                "species": (None, atoms_d),
+                "coords": (None, atoms_d, None),
+                "cutoff": None,  # cutoff is fixed on export
+                "cell": (None, None),
+                "pbc": (None,),
             },
         )
 
