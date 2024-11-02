@@ -914,3 +914,11 @@ def neighbors_to_triples(neighbors: Neighbors) -> Triples:
     diff_vectors = diff_vectors * sign12.view(2, -1, 1)
     distances = neighbors.distances.index_select(0, side_idxs.view(-1)).view(2, -1)
     return Triples(central_idxs, side_idxs, sign12, distances, diff_vectors)
+
+
+# Reconstruct the shift values used to calculate the diff vectors
+def _reconstruct_shift_values(coords: Tensor, neighbors: Neighbors) -> Tensor:
+    coords0 = coords.view(-1, 3).index_select(0, neighbors.indices[0])
+    coords1 = coords.view(-1, 3).index_select(0, neighbors.indices[1])
+    unshifted_diff_vectors = coords0 - coords1
+    return neighbors.diff_vectors - unshifted_diff_vectors
