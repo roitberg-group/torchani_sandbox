@@ -855,6 +855,7 @@ def _validate_cell_pbc(
 # then the output would have central atom 0, 1, 2, 3, 4 and for cental atom 0, its
 # pairs of neighbors are (1, 2), (1, 3), (1, 4), (2, 3), (2, 4), (3, 4)
 def neighbors_to_triples(neighbors: Neighbors) -> Triples:
+    r"""Converts output of a neighborlist calculation into triples of atoms"""
     # convert representation from pair to central-others and sort
     sorted_flat_neighbor_idxs, rev_idxs = neighbors.indices.view(-1).sort()
 
