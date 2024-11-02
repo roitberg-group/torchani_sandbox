@@ -73,7 +73,7 @@ class TestExport(ANITestCasePT2):
         _ = torch.export.export(
             mod,
             args=(neighbors.distances,),
-            dynamic_shapes={"distances": {0: pairs_dim}},
+            dynamic_shapes={"distances": (pairs_dim,)},
         )
 
     def testAngular(self) -> None:
@@ -85,8 +85,8 @@ class TestExport(ANITestCasePT2):
             mod,
             args=(triples.distances, triples.diff_vectors),
             dynamic_shapes={
-                "tri_distances": {0: None, 1: triples_dim},
-                "tri_vectors": {0: None, 1: triples_dim, 2: None},
+                "tri_distances": (None, triples_dim),
+                "tri_vectors": (None, triples_dim, None),
             },
         )
 
@@ -104,8 +104,7 @@ class TestExport(ANITestCasePT2):
             m,
             args=(neighbors, 5.2),
             dynamic_shapes={
-                # shift_values is fixed to None on export
-                "neighbors": ((None, pairs), (pairs,), (pairs, None), None),
+                "neighbors": ((None, pairs), (pairs,), (pairs, None)),
                 "cutoff": None,  # cutoff is fixed on export
             },
         )
@@ -126,8 +125,7 @@ class TestExport(ANITestCasePT2):
             m,
             args=(neighbors,),
             dynamic_shapes={
-                # shift_values is fixed to None on export
-                "neighbors": ((None, pairs), (pairs,), (pairs, None), None)
+                "neighbors": ((None, pairs), (pairs,), (pairs, None))
             },
         )
 

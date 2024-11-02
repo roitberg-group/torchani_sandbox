@@ -16,7 +16,6 @@ class Neighbors(tp.NamedTuple):
     indices: Tensor  #: Long tensor with idxs of neighbor pairs. Shape ``(2, pairs)``
     distances: Tensor  #: The associated pair distances. Shape is ``(pairs,)``
     diff_vectors: Tensor  #: The associated difference vectors. Shape is ``(pairs, 3)``
-    shift_values: tp.Optional[Tensor] = None  #: Shifts in coords for wraped through PBC
 
 
 class Triples(tp.NamedTuple):
@@ -53,7 +52,6 @@ def narrow_down(
     cutoff: float,
     neighbor_idxs: Tensor,
     shift_values: tp.Optional[Tensor] = None,
-    return_shift_values: bool = False,
 ) -> Neighbors:
     r"""Takes a set of potential neighbor idxs and narrows it down to true neighbors"""
     mask = elem_idxs == -1
@@ -97,9 +95,7 @@ def narrow_down(
     if shift_values is not None:
         diff_vectors += shift_values
     distances = diff_vectors.norm(2, -1)
-    if not return_shift_values:
-        shift_values = None
-    return Neighbors(neighbor_idxs, distances, diff_vectors, shift_values)
+    return Neighbors(neighbor_idxs, distances, diff_vectors)
 
 
 def compute_bounding_cell(
@@ -141,7 +137,6 @@ class Neighborlist(torch.nn.Module):
         cutoff: float,
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        return_shift_values: bool = False,
     ) -> Neighbors:
         r"""Calculate all pairs of atoms that are neighbors, given a cutoff.
 
@@ -152,7 +147,6 @@ class Neighborlist(torch.nn.Module):
                 are not included.
             cell: |cell|
             pbc: |pbc|
-            return_shift_values: Whether to return the shift-values
         Returns:
             `typing.NamedTuple` with all pairs of atoms that are neighbors.
         """
@@ -173,9 +167,8 @@ class AllPairs(Neighborlist):
         cutoff: float,
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        return_shift_values: bool = False,
     ) -> Neighbors:
-        return all_pairs(species, coords, cutoff, cell, pbc, return_shift_values)
+        return all_pairs(species, coords, cutoff, cell, pbc)
 
 
 def all_pairs(
@@ -184,7 +177,6 @@ def all_pairs(
     cutoff: float,
     cell: tp.Optional[Tensor] = None,
     pbc: tp.Optional[Tensor] = None,
-    return_shift_values: bool = False,
 ) -> Neighbors:
     cell, pbc = _validate_cell_pbc(species, cell, pbc)
     if pbc.any():
@@ -192,9 +184,7 @@ def all_pairs(
         shift_values = shift_indices.to(cell.dtype) @ cell
         # Before screening coords, must map to central cell (not need if no PBC)
         coords = map_to_central(coords, cell, pbc)
-        return narrow_down(
-            species, coords, cutoff, neighbor_idxs, shift_values, return_shift_values
-        )
+        return narrow_down(species, coords, cutoff, neighbor_idxs, shift_values)
     num_molecs, num_atoms = species.shape
     # Create a neighborlist for all molecules and all atoms.
     # Later screen dummy atoms
@@ -288,9 +278,8 @@ class CellList(Neighborlist):
         cutoff: float,
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        return_shift_values: bool = False,
     ) -> Neighbors:
-        return cell_list(species, coords, cutoff, cell, pbc, return_shift_values)
+        return cell_list(species, coords, cutoff, cell, pbc)
 
 
 def cell_list(
@@ -299,7 +288,6 @@ def cell_list(
     cutoff: float,
     cell: tp.Optional[Tensor] = None,
     pbc: tp.Optional[Tensor] = None,
-    return_shift_values: bool = False,
 ) -> Neighbors:
     assert cutoff >= 0.0, "Cutoff must be a positive float"
     cell, pbc = _validate_cell_pbc(species, cell, pbc)
@@ -334,9 +322,7 @@ def cell_list(
         # Before the screening step we map the coords to the central cell,
         # same as with an all-pairs calculation
         coords = map_to_central(coords, cell.detach(), pbc)
-        return narrow_down(
-            species, coords, cutoff, neighbor_idxs, shift_values, return_shift_values
-        )
+        return narrow_down(species, coords, cutoff, neighbor_idxs, shift_values)
     return narrow_down(species, coords, cutoff, neighbor_idxs)
 
 
@@ -735,7 +721,6 @@ class _VerletCellList(CellList):
         cutoff: float,
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        return_shift_values: bool = False,
     ) -> Neighbors:
         assert cutoff >= 0.0, "Cutoff must be a positive float"
         cell, pbc = _validate_cell_pbc(species, cell, pbc)
@@ -776,7 +761,6 @@ class _VerletCellList(CellList):
                 cutoff,
                 neighbor_idxs,
                 shift_values,
-                return_shift_values,
             )
         return narrow_down(species, coords, cutoff, neighbor_idxs)
 
