@@ -303,7 +303,7 @@ class AEVComputer(torch.nn.Module):
         sign12: Tensor,
         terms: Tensor,
     ) -> Tensor:
-        num_atoms, num_molecs = elem_idxs
+        num_molecs, num_atoms = elem_idxs.shape
         neighbor_elem_idxs = elem_idxs.view(-1)[neighbor_idxs]  # shape (2, pairs)
 
         # shape (2, 2, T)
@@ -332,7 +332,7 @@ class AEVComputer(torch.nn.Module):
     def _collect_radial(
         self, elem_idxs: Tensor, neighbor_idxs: Tensor, terms: Tensor
     ) -> Tensor:
-        num_atoms, num_molecs = elem_idxs
+        num_molecs, num_atoms = elem_idxs.shape
         neighbor_elem_idxs = elem_idxs.view(-1)[neighbor_idxs]  # shape (2, pairs)
         # shape (CxAxS, R)
         radial_aev = terms.new_zeros(
