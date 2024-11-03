@@ -24,9 +24,10 @@ class ANITestCasePT2(ANITestCase):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
-        # Set up logging (high verbosity with +) for Dynamo, AOT and Inductor
-        os.environ["TORCH_LOGS"] = "+dynamo,+aot,+inductor"
+        # Set up logging (high verbosity with +) for Dynamo
+        os.environ["TORCH_LOGS"] = "+dynamo"
         os.environ["TORCHDYNAMO_VERBOSE"] = "1"  # (needed according to log msgs?)
+        os.environ["TORCHDYNAMO_EXTENDED_DEBUG_CREATE_SYMBOL"] = "u2"
         # Many models use dynamic output shape ops (nonzero, unique, unique_consecutive)
         torch._dynamo.config.capture_dynamic_output_shape_ops = True
 
@@ -118,7 +119,7 @@ class TestExport(ANITestCasePT2):
             },
         )
 
-    @unittest.skipIf(True, "Fails in pytorch 2.5, unique_consecutive is unsupported")
+    @unittest.skipIf(True, "Fails in pytorch 2.5, due to m: int = int(counts.max())")
     def testNeighborsToTriples(self) -> None:
         neighbors = make_neighbors(10, seed=1234)
 
