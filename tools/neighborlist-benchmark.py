@@ -18,7 +18,7 @@ app = Typer()
 
 
 @app.command()
-def cmd(
+def run(
     device_str: tpx.Annotated[
         str,
         Option("--device", help="Device to use for benchmark (cpu or cuda)"),
@@ -47,7 +47,6 @@ def cmd(
         bool,
         Option("-p/-P", "--pbc/--no-pbc", help="Benchmark for the PBC case"),
     ] = True,
-    plot: tpx.Annotated[bool, Option("--plot/--no-plot"),] = True,
 ) -> None:
     import torch
     from torchani.neighbors import _parse_neighborlist
@@ -139,22 +138,25 @@ def cmd(
                     Path(__file__).parent / f"{k}{'-nopbc' if not pbc else ''}.csv"
                 )
         timer.display()
-    if plot:
-        fig, ax = plt.subplots()
-        for k in (
-            "cell_list-nopbc",
-            "all_pairs-nopbc",
-            "adaptive-nopbc",
-            "cell_list",
-            "all_pairs",
-            "adaptive",
-        ):
-            csv = Path(__file__).parent / f"{k}.csv"
-            if csv.is_file():
-                df = pd.read_csv(csv, sep=",")
-            plt.scatter(df["timing"], df["median"], label=k, s=3)
-            plt.legend()
-        plt.show()
+
+
+@app.command()
+def plot() -> None:
+    fig, ax = plt.subplots()
+    for k in (
+        "cell_list-nopbc",
+        "all_pairs-nopbc",
+        "adaptive-nopbc",
+        "cell_list",
+        "all_pairs",
+        "adaptive",
+    ):
+        csv = Path(__file__).parent / f"{k}.csv"
+        if csv.is_file():
+            df = pd.read_csv(csv, sep=",")
+        plt.scatter(df["timing"], df["median"], label=k, s=3)
+        plt.legend()
+    plt.show()
 
 
 if __name__ == "__main__":
