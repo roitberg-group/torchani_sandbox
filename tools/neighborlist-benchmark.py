@@ -19,10 +19,10 @@ app = Typer()
 
 @app.command()
 def run(
-    device_str: tpx.Annotated[
-        str,
-        Option("--device", help="Device to use for benchmark (cpu or cuda)"),
-    ] = "cpu",
+    cuda: tpx.Annotated[
+        bool,
+        Option("--cuda/--no-cuda", help="Use a CUDA enabled gpu for benchmark"),
+    ] = True,
     sync: tpx.Annotated[
         bool,
         Option(
@@ -59,17 +59,14 @@ def run(
     # which is around ~0.1 Ang^-1
 
     no_tqdm = not use_tqdm
-    device_str = tp.cast(tp.Literal["cpu", "cuda"], device_str)
-    device = torch.device(device_str)
+    device = torch.device("cuda" if cuda else "cpu")
 
-    if device.type == "cuda":
-        console.print(
-            f"CUDA sync {'[green]ENABLED[/green]' if sync else '[red]DISABLED[/red]'}"
-        )
+    if cuda:
+        console.print(f"CUDA sync {'[green]ON[/green]' if sync else '[red]OFF[/red]'}")
 
     # Set up required models for benchmark
     models = {
-        "dummy": _parse_neighborlist("all_pairs"),  # Only for general warm-up
+        "dummy": _parse_neighborlist("adaptive"),  # Only for general warm-up
         "all_pairs": _parse_neighborlist("all_pairs"),
         "cell_list": _parse_neighborlist("cell_list"),
         "adaptive": _parse_neighborlist("adaptive"),
@@ -82,9 +79,12 @@ def run(
         atoms_num: tp.Iterable[int]
         if pbc:
             # Smaller than 25 atoms risks self-interaction
-            atoms_num = range(25, 300)
+            atoms_num = range(25, 301)
         else:
-            atoms_num = itertools.chain(range(25, 100, 1), range(1000, 3500, 500))
+            atoms_num = itertools.chain(
+                range(30, 2500, 10),
+                range(2500, 10000, 500),
+            )
         cutoff = 5.2
         for n in map(int, atoms_num):
             cell_side = (n / target_atomic_density) ** (1 / 3)
@@ -93,7 +93,7 @@ def run(
                 n,
                 cell_side,
                 pbc=pbc,
-                device=device_str,
+                device=tp.cast(tp.Literal["cpu", "cuda"], device.type),
                 seed=1234,
             )
             slice_ = slice(None, num_warm_up)
@@ -111,7 +111,8 @@ def run(
                     cell=molecs.cell if molecs.pbc.any() else None,
                     pbc=molecs.pbc,
                 )
-                torch.cuda.empty_cache()
+                if cuda:
+                    torch.cuda.empty_cache()
             if k != "dummy":
                 timer.start_profiling()
             slice_ = slice(num_warm_up, num_warm_up + num_profile)
@@ -131,7 +132,8 @@ def run(
                     pbc=molecs.pbc,
                 )
                 timer.end_range(str(n))
-                torch.cuda.empty_cache()
+                if cuda:
+                    torch.cuda.empty_cache()
             if k != "dummy":
                 timer.stop_profiling()
                 timer.dump_csv(
@@ -144,9 +146,6 @@ def run(
 def plot() -> None:
     fig, ax = plt.subplots()
     for k in (
-        "cell_list-nopbc",
-        "all_pairs-nopbc",
-        "adaptive-nopbc",
         "cell_list",
         "all_pairs",
         "adaptive",
@@ -154,8 +153,27 @@ def plot() -> None:
         csv = Path(__file__).parent / f"{k}.csv"
         if csv.is_file():
             df = pd.read_csv(csv, sep=",")
-        plt.scatter(df["timing"], df["median"], label=k, s=3)
-        plt.legend()
+        ax.scatter(df["timing"], df["median"], label=k, s=3)
+        ax.set_xlabel("Num. atoms")
+        ax.set_ylabel("Walltime (ms)")
+        ax.set_title("PBC benchmark")
+        ax.legend()
+    plt.show(block=False)
+
+    fig, ax = plt.subplots()
+    for k in (
+        "cell_list-nopbc",
+        "all_pairs-nopbc",
+        "adaptive-nopbc",
+    ):
+        csv = Path(__file__).parent / f"{k}.csv"
+        if csv.is_file():
+            df = pd.read_csv(csv, sep=",")
+        ax.scatter(df["timing"], df["median"], label=k.replace("-nopbc", ""), s=3)
+        ax.set_xlabel("Num. atoms")
+        ax.set_ylabel("Walltime (ms)")
+        ax.set_title("No-PBC benchmark")
+        ax.legend()
     plt.show()
 
 

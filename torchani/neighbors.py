@@ -287,10 +287,10 @@ class AdaptiveList(Neighborlist):
     large system sizes and the naive 'all pairs' for small sizes.
     """
 
-    # no-pbc threshold not tested
-    def __init__(self, threshold: int = 190) -> None:
+    def __init__(self, threshold: int = 190, threshold_nopbc: int = 1770) -> None:
         super().__init__()
-        self.threshold = threshold
+        self._thresh = threshold
+        self._thresh_nopbc = threshold_nopbc
 
     def forward(
         self,
@@ -300,7 +300,10 @@ class AdaptiveList(Neighborlist):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
     ) -> Neighbors:
-        return adaptive_list(species, coords, cutoff, cell, pbc, self.threshold)
+        if pbc is not None:
+            if pbc.any():
+                return adaptive_list(species, coords, cutoff, cell, pbc, self._thresh)
+        return adaptive_list(species, coords, cutoff, cell, pbc, self._thresh_nopbc)
 
 
 def adaptive_list(
@@ -311,36 +314,14 @@ def adaptive_list(
     pbc: tp.Optional[Tensor] = None,
     threshold: int = 190,
 ) -> Neighbors:
-    assert cutoff >= 0.0, "Cutoff must be a positive float"
-    cell, pbc = _validate_cell_pbc(species, cell, pbc)
-
-    # Forward directly to all_pairs if below threshold or in the non-pbc case
-    if coords.shape[1] < threshold or not pbc.any():
-        return all_pairs(species, coords, cutoff, cell if pbc.any() else None, pbc)
-
-    # Extra cell-list checks
+    # Cell list check (disallowed for both for consistency)
     if coords.shape[0] != 1:
         raise ValueError("Adaptive list doesn't support batches")
-    assert pbc.all(), "Internal assert"
-    # The cell is spanned by a 3D grid of "buckets" or "grid elements",
-    # which has grid_shape=(GX, GY, GZ) and grid_numel=G=(GX * GY * GZ)
-    #
-    # Set up grid shape each step. Cheap and avoids state in the cls
-    grid_shape = setup_grid(cell.detach(), cutoff)
-    # NOTE: This allows pbc with self interactions! which may not be desirable
-    if (grid_shape == 0).any():
+    # Forward directly to all_pairs if below threshold or in the non-pbc case
+    if coords.shape[1] < threshold:
         return all_pairs(species, coords, cutoff, cell, pbc)
-
-    # Since coords will be fractionalized they may lie outside the cell before this
-    neighbor_idxs, shift_indices = _cell_list(coords.detach(), grid_shape, cell, pbc)
-    if pbc.any():
-        assert shift_indices is not None
-        shift_values = shift_indices.to(cell.dtype) @ cell
-        # Before the screening step we map the coords to the central cell,
-        # same as with an all-pairs calculation
-        coords = map_to_central(coords, cell.detach(), pbc)
-        return narrow_down(species, coords, cutoff, neighbor_idxs, shift_values)
-    return narrow_down(species, coords, cutoff, neighbor_idxs)
+    # NOTE: This disallows pbc with self interactions, which may or may not be desirable
+    return cell_list(species, coords, cutoff, cell, pbc)
 
 
 def cell_list(
@@ -367,7 +348,7 @@ def cell_list(
     else:
         # Make cell large enough to deny PBC interaction (fast, not bottleneck)
         displ_coords, cell = compute_bounding_cell(
-            coords.detach(), eps=1.5 * cutoff + 1e-3
+            coords.detach(), eps=(cutoff + 1e-3),
         )
 
     # The cell is spanned by a 3D grid of "buckets" or "grid elements",
@@ -791,7 +772,7 @@ class _VerletCellList(CellList):
         else:
             # Make cell large enough to deny PBC interaction (fast, not bottleneck)
             displ_coords, cell = compute_bounding_cell(
-                coords.detach(), eps=1.5 * cutoff + 1e-3
+                coords.detach(), eps=(cutoff + 1e-3),
             )
 
         grid_shape = setup_grid(cell.detach(), cutoff)

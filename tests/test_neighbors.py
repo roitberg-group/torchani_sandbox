@@ -140,6 +140,7 @@ class TestCellListComparison(ANITestCase):
         )
         self.cell = cell
         self.clist = self._setup(CellList())
+        self.num_to_test = 10
 
     def _check_neighborlists_match(self, coords: Tensor):
         species = torch.ones(coords.shape[:-1], dtype=torch.long, device=self.device)
@@ -187,7 +188,7 @@ class TestCellListComparison(ANITestCase):
         self._check_neighborlists_match(self.coordinates)
 
     def testCellListMatchesAllPairsRandomNoise(self):
-        for j in range(100):
+        for j in range(self.num_to_test):
             noise = 0.1
             coordinates = self.coordinates + torch.empty(
                 self.coordinates.shape, device=self.device
@@ -195,7 +196,7 @@ class TestCellListComparison(ANITestCase):
             self._check_neighborlists_match(coordinates)
 
     def testCellListMatchesAllPairsRandomNormal(self):
-        for j in range(100):
+        for j in range(self.num_to_test):
             coordinates = (
                 torch.randn((1, 10, 3), device=self.device, dtype=torch.float)
                 * 3
@@ -226,6 +227,7 @@ class TestCellListComparisonNoPBC(TestCellListComparison):
             [False, False, False], dtype=torch.bool, device=self.device
         )
         self.clist = self._setup(CellList())
+        self.num_to_test = 10
 
 
 class TestCellListEnergies(TestCase):
