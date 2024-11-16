@@ -76,7 +76,6 @@ from torchani.neighbors import (
     NeighborlistArg,
     narrow_down,
     discard_outside_cutoff,
-    map_to_central,
 )
 from torchani.electro import ChargeNormalizer
 from torchani.nn._internal import _ZeroANINetworks
