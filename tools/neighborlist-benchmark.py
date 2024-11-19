@@ -1,4 +1,3 @@
-import sys
 import itertools
 from typer import Option, Typer
 import typing_extensions as tpx
