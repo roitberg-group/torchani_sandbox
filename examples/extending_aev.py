@@ -12,7 +12,6 @@ import torch
 
 from torchani.cutoffs import Cutoff
 from torchani.aev import AEVComputer, Angular, Radial
-from torchani.utils import linspace
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %%
@@ -97,7 +96,7 @@ radial_len = aevcomp_biweight.radial_len
 aevs[0, 0, radial_len:radial_len + 5].tolist()
 # %%
 # Lets try something a bit more complicated. Lets experiment with different 2-body and
-# 3-body terms. Our 3-body terms will have a form of ``exp(-gamma * (cos(theta) -
+# 3-body terms. Our 3-body terms will include a term ``exp(-eta_a * (cos(theta) -
 # cos_phi)**2)``, and our 2-body terms will be lorentzians, with the form ``1 / (1 +
 # x**2)``, where ``x = ((r - shifts) / fwhm)``. How can we do that?
 #
@@ -123,24 +122,24 @@ class Lorentzian(Radial):
 
 
 class ExpCosine(Angular):
-    angles_tensors = ["cos_phi", "gamma"]  # Tensors we will use in the angular part
-    radial_tensors = ["shifts", "eta"]  # Tensors we will use in the radial part
+    angles_tensors = ["cos_phi", "eta_a"]  # Tensors we will use in A(cos(theta_ijk))
+    radial_tensors = ["shifts", "eta_r"]  # Tensors we will use in R(r_ij, r_ik)
 
     def compute_cos_angles(self, cos_angles):
-        return 2 * torch.exp(-self.gamma * (cos_angles - self.cos_phi) ** 2)
+        return 2 * torch.exp(-self.eta_a * (cos_angles - self.cos_phi) ** 2)
 
     def compute_radial(self, distances_ji, distances_jk):
         mean_dists = (distances_ji + distances_jk) / 2
-        return 2 * torch.exp(-self.eta * (mean_dists - self.shifts) ** 2)
+        return 2 * torch.exp(-self.eta_r * (mean_dists - self.shifts) ** 2)
 
 
 # %%
 # Now lets initialize the angular module with constants
 custom_3body = ExpCosine(
-    eta=8.0,
+    eta_r=8.0,
     shifts=[0.9000, 1.5500, 2.2000, 2.8500],
-    gamma=[1023.0, 146.5, 36.0, 18.6, 15.5, 18.6, 36.0, 146.5, 1023.0],
-    cos_phi=linspace(1., -1., 9),  # linspace includes end of the range
+    eta_a=[1023.0, 146.5, 36.0, 18.6, 15.5, 18.6, 36.0, 146.5, 1023.0],
+    cos_phi=[1.0, 0.75, 0.5, 0.25, 0.0, -0.25, -0.5, -0.75, -1.0],
     cutoff=3.5,
     cutoff_fn="smooth",
 )
@@ -149,9 +148,11 @@ custom_3body = ExpCosine(
 # if we wanted to make both ``fwhm`` and ``shifts`` trainable we could use
 # ``trainable=["shifts", "fwhm"]``
 custom_2body = Lorentzian(
-    fwhm=1.5, shifts=[0.0, 1.0, 2.0, 3.0, 4.0],
+    fwhm=1.5,
+    shifts=[0.0, 1.0, 2.0, 3.0, 4.0],
     trainable="shifts",
-    cutoff=5.2, cutoff_fn="smooth",
+    cutoff=5.2,
+    cutoff_fn="smooth",
 )
 # %%
 # Finally we create our custom AEVComputer, which will use the specified terms
