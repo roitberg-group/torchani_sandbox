@@ -60,9 +60,8 @@ class RepulsionXTB(BasePairPotential):
         neighbors: Neighbors,
     ) -> Tensor:
         # Clamp distances to prevent singularities when dividing by zero
-        # Also, all internal calculations of this module are made with atomic units,
-        # so distances are first converted to bohr
-        distances = self.clamp(neighbors.distances) * self.ANGSTROM_TO_BOHR
+        # All internal calcs use atomic units, so convert to Bohr
+        dists = self.clamp(neighbors.distances) * self.ANGSTROM_TO_BOHR
 
         # Distances has all interaction pairs within a given cutoff, for a
         # molecule or set of molecules and atom_index12 holds all pairs of
@@ -75,4 +74,4 @@ class RepulsionXTB(BasePairPotential):
         k_rep_ab = self.k_rep_ab[species12[0], species12[1]]
 
         # calculates repulsion energies using distances and constants
-        return (y_ab / distances) * torch.exp(-sqrt_alpha_ab * (distances**k_rep_ab))
+        return (y_ab / dists) * torch.exp(-sqrt_alpha_ab * (dists**k_rep_ab))

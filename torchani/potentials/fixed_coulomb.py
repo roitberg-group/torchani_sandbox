@@ -26,10 +26,13 @@ class FixedCoulomb(BasePairPotential):
         self.register_buffer("_charges", torch.tensor(charges), persistent=False)
 
     def pair_energies(self, elem_idxs: Tensor, neighbors: Neighbors) -> Tensor:
+        # Clamp distances to prevent singularities when dividing by zero
+        # All internal calcs use atomic units, so convert to Bohr
+        dists = self.clamp(neighbors.distances) * self.ANGSTROM_TO_BOHR
         elem_pairs = elem_idxs.flatten()[neighbors.indices]
         charge_prod = self._charges[elem_pairs[0]] * self._charges[elem_pairs[1]]
         charge_prod /= self._dielectric
-        return charge_prod / self.clamp(neighbors.distances)
+        return charge_prod / dists
 
 
 # TODO: Trainable?
@@ -63,8 +66,10 @@ class FixedMNOK(BasePairPotential):
         return 2 / (self._eta[elem_pairs[0]] + self._eta[elem_pairs[1]])
 
     def pair_energies(self, elem_idxs: Tensor, neighbors: Neighbors) -> Tensor:
+        # No need to clamp as long as inv_eta ** 2 is nonzero
+        # All internal calcs use atomic units, so convert to Bohr
+        dists = neighbors.distances * self.ANGSTROM_TO_BOHR
         elem_pairs = elem_idxs.flatten()[neighbors.indices]
         inv_eta = self.combine_inv_eta(elem_pairs)
         charge_prod = self._charges[elem_pairs[0]] * self._charges[elem_pairs[1]]
-        #  No need to clamp as long as inv_eta ** 2 is nonzero
-        return charge_prod / (neighbors.distances**2 + inv_eta**2).sqrt()
+        return charge_prod / (dists**2 + inv_eta**2).sqrt()
