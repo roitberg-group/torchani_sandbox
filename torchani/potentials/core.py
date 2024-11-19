@@ -250,7 +250,7 @@ class BasePairPotential(Potential):
         return energies
 
     @torch.jit.unused
-    def plot(
+    def _plot(
         self,
         symbol_pairs: tp.Sequence[tp.Tuple[str, str]] = (),
         xmin: float = 0.1,
