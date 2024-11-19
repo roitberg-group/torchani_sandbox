@@ -451,7 +451,7 @@ def _validate_kwargs(
 
 class Angular(BaseAngular):
 
-    cos_angles_tensors: tp.List[str]
+    angles_tensors: tp.List[str]
     radial_tensors: tp.List[str]
 
     def __init__(
@@ -463,7 +463,7 @@ class Angular(BaseAngular):
         **kwargs,
     ) -> None:
         super().__init__(cutoff, cutoff_fn)
-        cos_angles_feats = 1
+        angles_feats = 1
         radial_feats = 1
         if isinstance(trainable, str):
             trainable = [trainable]
@@ -472,7 +472,7 @@ class Angular(BaseAngular):
             self.__class__.__name__,
             {
                 "radial_tensors": self.radial_tensors,
-                "cos_angles_tensors": self.cos_angles_tensors,
+                "angles_tensors": self.angles_tensors,
             },
             kwargs,
             trainable,
@@ -485,11 +485,11 @@ class Angular(BaseAngular):
             else:
                 self.register_buffer(k, tensor)
 
-            if k in self.cos_angles_tensors:
-                cos_angles_feats = max(cos_angles_feats, tensor.shape[1])
+            if k in self.angles_tensors:
+                angles_feats = max(angles_feats, tensor.shape[1])
             else:
                 radial_feats = max(radial_feats, tensor.shape[1])
-        self.num_feats = radial_feats * cos_angles_feats
+        self.num_feats = radial_feats * angles_feats
 
 
 class Radial(BaseRadial):

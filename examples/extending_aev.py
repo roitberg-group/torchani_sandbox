@@ -108,8 +108,7 @@ aevs[0, 0, radial_len:radial_len + 5].tolist()
 
 
 class Lorentzian(Radial):
-    # Here we write the names of the tensors we will use in our computation
-    tensors = ["shifts", "fwhm"]  # fwhm = Full Width at Half Maximum
+    tensors = ["shifts", "fwhm"]  # Tensors we will use. fwhm = Full Width at Half Max
 
     def compute(self, distances):
         x = 2 * (distances - self.shifts) / self.fwhm
@@ -124,14 +123,11 @@ class Lorentzian(Radial):
 
 
 class ExpCosine(Angular):
-    # Here we write the names of the tensors we will use in the cos_angles part
-    cos_angles_tensors = ["cos_phi", "gamma"]
+    angles_tensors = ["cos_phi", "gamma"]  # Tensors we will use in the angular part
+    radial_tensors = ["shifts", "eta"]  # Tensors we will use in the radial part
 
     def compute_cos_angles(self, cos_angles):
         return 2 * torch.exp(-self.gamma * (cos_angles - self.cos_phi) ** 2)
-
-    # Here we write the names of the ones we will use in the radial part
-    radial_tensors = ["shifts", "eta"]
 
     def compute_radial(self, distances_ji, distances_jk):
         mean_dists = (distances_ji + distances_jk) / 2
