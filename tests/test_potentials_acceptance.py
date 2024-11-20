@@ -17,6 +17,8 @@ from torchani.potentials import (
 )
 from torchani.utils import SYMBOLS_2X
 
+this_dir = Path(__file__).parent
+
 
 @expand()
 class TestAcceptEnergies(ANITestCase):
@@ -51,7 +53,9 @@ class TestAcceptEnergies(ANITestCase):
         device = tp.cast(tp.Literal["cpu", "cuda"], self.device.type)
         molec = make_molecs(10, 10, seed=1234, device=device)
         energies = pot.calc(molec.atomic_nums, molec.coords)
-        with open(Path(f"./resources/potentials/{name}-energies.pkl"), mode="rb") as f:
+        with open(
+            Path(this_dir, "resources", "potentials", "{name}-energies.pkl"), mode="rb"
+        ) as f:
             expect_energies = pickle.load(f)
         self.assertEqual(energies, torch.tensor(expect_energies, device=self.device))
 
@@ -69,7 +73,8 @@ class TestAcceptForces(ANITestCase):
         )
         forces = -torch.autograd.grad(energies.sum(), molec.coords)[0]
         with open(
-            Path(f"./resources/potentials/{name}-energies-forces.pkl"), mode="rb"
+            Path(this_dir, "resources", "potentials", "{name}-energies-forces.pkl"),
+            mode="rb",
         ) as f:
             expect_energies, expect_forces = pickle.load(f)
         self.assertEqual(energies, torch.tensor(expect_energies, device=self.device))
