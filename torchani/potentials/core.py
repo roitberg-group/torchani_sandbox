@@ -254,12 +254,16 @@ class BasePairPotential(Potential):
         return energies
 
     @staticmethod
-    def symm(pairs: Tensor) -> Tensor:
+    def symm(x: Tensor) -> Tensor:
         r"""Takes an NxN tensor with 0 lower triangle and returns it symmetrized"""
-        assert pairs.ndim == 2, "Arg to symm must be an N x N tensor"
-        assert pairs.shape[0] == pairs.shape[1], "Arg to symm must be an N x N tensor"
-        assert (pairs.tril(-1) == 0).all(), "Arg to symm must have 0 low triangle part"
-        return pairs + pairs.triu(1).T
+        assert x.ndim == 2, "Arg to symm must be an N x N tensor"
+        assert x.shape[0] == x.shape[1], "Arg to symm must be an N x N tensor"
+        assert (x.tril(-1) == 0).all(), "Arg to symm must have 0 low triangle part"
+        return x + x.triu(1).T
+
+    def to_pair_values(self, x: Tensor, elem_idxs: Tensor) -> Tensor:
+        r"""Returns values of elem pairs from a NxN tensor with 0 low triangle"""
+        return self.symm(x)[elem_idxs[0], elem_idxs[1]]  # shape(num-elem, num-elem)
 
 
 class PairPotential(BasePairPotential):
@@ -285,8 +289,8 @@ class PairPotential(BasePairPotential):
 
             def pair_energies(self, elem_idxs, neighbors):
                 elem_pairs = elem_idxs.view(-1)[neighbors.indices]
-                eq = self.symm(self.eq)[elem_pairs.unbind()]
-                k = self.symm(self.k)[elem_pairs.unbind()]
+                eq = self.to_pair_values(self.eq, elem_pairs)
+                k = self.to_pair_values(self.k, elem_pairs)
                 return self.bias + k / 2 * (neighbors.distances - eq) ** 2
 
 
