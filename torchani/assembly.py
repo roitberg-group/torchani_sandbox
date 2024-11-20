@@ -90,8 +90,8 @@ from torchani.potentials import (
     Potential,
     RepulsionXTB,
     TwoBodyDispersionD3,
-    SelfEnergy,
 )
+from torchani.sae import SelfEnergy
 from torchani._grad import (
     forces as _calc_forces,
     forces_and_hessians as _calc_forces_and_hessians,
