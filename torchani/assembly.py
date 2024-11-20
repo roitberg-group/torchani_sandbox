@@ -309,7 +309,7 @@ class ANI(torch.nn.Module):
             energies = self.potentials["nnp"].neural_networks(
                 elem_idxs, aevs, atomic=atomic
             )
-            energies += self.energy_shifter(elem_idxs, atomic=atomic)
+            energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
             return SpeciesEnergies(elem_idxs, energies)
 
         # Branch that goes through internal neighborlist
