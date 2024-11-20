@@ -367,14 +367,13 @@ class ANI(torch.nn.Module):
             energies = energies.unsqueeze(0)
         for pot in self.potentials.values():
             neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
-            if ensemble_values:
-                energies = energies + pot.ensemble_values(
-                    elem_idxs, neighbors, _coords=_coords, atomic=atomic
-                )
-            else:
-                energies = energies + pot(
-                    elem_idxs, neighbors, _coords=_coords, atomic=atomic
-                )
+            energies = energies + pot(
+                elem_idxs,
+                neighbors,
+                _coords=_coords,
+                atomic=atomic,
+                ensemble_values=ensemble_values,
+            )
         return energies + self.energy_shifter(elem_idxs, atomic=atomic)
 
     @torch.jit.export

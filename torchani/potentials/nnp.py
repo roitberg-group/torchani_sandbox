@@ -26,24 +26,12 @@ class NNPotential(Potential):
         _coords: tp.Optional[Tensor] = None,
         ghost_flags: tp.Optional[Tensor] = None,
         atomic: bool = False,
+        ensemble_values: bool = False,
     ) -> Tensor:
         aevs = self.aev_computer.compute_from_neighbors(elem_idxs, neighbors, _coords)
-        return self.neural_networks(elem_idxs, aevs, atomic=atomic)
-
-    def ensemble_values(
-        self,
-        elem_idxs: Tensor,
-        neighbors: Neighbors,
-        _coords: tp.Optional[Tensor] = None,
-        ghost_flags: tp.Optional[Tensor] = None,
-        atomic: bool = False,
-    ) -> Tensor:
-        if hasattr(self.neural_networks, "ensemble_values"):
-            aevs = self.aev_computer.compute_from_neighbors(
-                elem_idxs, neighbors, _coords
-            )
+        if ensemble_values and hasattr(self.neural_networks, "ensemble_values"):
             return self.neural_networks.ensemble_values(elem_idxs, aevs, atomic=atomic)
-        return self(elem_idxs, neighbors, _coords, ghost_flags, atomic).unsqueeze(0)
+        return self.neural_networks(elem_idxs, aevs, atomic=atomic)
 
 
 # Output of NN is assumed to be of shape (molecules, 2) with

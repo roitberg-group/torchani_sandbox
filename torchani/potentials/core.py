@@ -133,28 +133,15 @@ class Potential(torch.nn.Module):
         _coords: tp.Optional[Tensor] = None,
         ghost_flags: tp.Optional[Tensor] = None,
         atomic: bool = False,
+        ensemble_values: bool = False,
     ) -> Tensor:
         if not self._enabled:
             if atomic:
                 return neighbors.distances.new_zeros(elem_idxs.shape)
             return neighbors.distances.new_zeros(elem_idxs.shape[0])
-        return self.compute(elem_idxs, neighbors, _coords, ghost_flags, atomic)
-
-    def ensemble_values(
-        self,
-        elem_idxs: Tensor,
-        neighbors: Neighbors,
-        _coords: tp.Optional[Tensor] = None,
-        ghost_flags: tp.Optional[Tensor] = None,
-        atomic: bool = False,
-    ) -> Tensor:
-        r"""If the potential is an ensemble of multiple models, this function returns
-        the individual values of the models.
-
-        Output shape is ``(submodels, ...)``
-        """
-        out = self(elem_idxs, neighbors, _coords, ghost_flags, atomic)
-        return out.unsqueeze(0)
+        return self.compute(
+            elem_idxs, neighbors, _coords, ghost_flags, atomic, ensemble_values
+        )
 
     def compute(
         self,
@@ -163,8 +150,13 @@ class Potential(torch.nn.Module):
         _coords: tp.Optional[Tensor] = None,
         ghost_flags: tp.Optional[Tensor] = None,
         atomic: bool = False,
+        ensemble_values: bool = False,
     ) -> Tensor:
         r"""Compute the energies associated with the potential
+
+        If the potential is an ensemble of multiple models, ensemble_values=True should
+        return the individual values of the models, in the first dimension ``(submodels,
+        ...)``. Otherwise it should *disregard* ``ensemble_values``.
 
         Must be implemented by subclasses
         """
@@ -253,7 +245,10 @@ class BasePairPotential(Potential):
         _coords: tp.Optional[Tensor] = None,
         ghost_flags: tp.Optional[Tensor] = None,
         atomic: bool = False,
+        ensemble_values: bool = False,
     ) -> Tensor:
+        # NOTE: Currently having ensembles of pair potentials is not supported, so
+        # ensemble_values is disregarded
         pair_energies = self._pair_energies_wrapper(elem_idxs, neighbors, ghost_flags)
         molecs_num, atoms_num = elem_idxs.shape
         if atomic:
