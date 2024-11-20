@@ -175,23 +175,23 @@ def all_pairs(
     cell: tp.Optional[Tensor] = None,
     pbc: tp.Optional[Tensor] = None,
 ) -> Neighbors:
-    cell, pbc = _validate_cell_pbc(species, cell, pbc)
-    if pbc.any():
+    _validate_inputs(species, coords, cutoff, cell, pbc)
+
+    if pbc is not None:
+        assert cell is not None
         neighbor_idxs, shift_idxs = _all_pairs_pbc(species, cutoff, cell, pbc)
         shifts = shift_idxs.to(cell.dtype) @ cell
         # Before screening coords, must map to central cell (not need if no PBC)
         coords = map_to_central(coords, cell, pbc)
         return narrow_down(species, coords, cutoff, neighbor_idxs, shifts)
-    num_molecs, num_atoms = species.shape
+    molecs, atoms = species.shape
     # Create a neighborlist for all molecules and all atoms.
     # Later screen dummy atoms
     device = species.device
-    neighbor_idxs = torch.triu_indices(num_atoms, num_atoms, 1, device=device)
-    if num_molecs > 1:
-        neighbor_idxs = neighbor_idxs.unsqueeze(1).repeat(1, num_molecs, 1)
-        neighbor_idxs += num_atoms * torch.arange(num_molecs, device=device).view(
-            1, -1, 1
-        )
+    neighbor_idxs = torch.triu_indices(atoms, atoms, 1, device=device)
+    if molecs > 1:
+        neighbor_idxs = neighbor_idxs.unsqueeze(1).repeat(1, molecs, 1)
+        neighbor_idxs += atoms * torch.arange(molecs, device=device).view(1, -1, 1)
         neighbor_idxs = neighbor_idxs.view(-1).view(2, -1)
     return narrow_down(species, coords, cutoff, neighbor_idxs)
 
@@ -300,8 +300,7 @@ class AdaptiveList(Neighborlist):
         pbc: tp.Optional[Tensor] = None,
     ) -> Neighbors:
         if pbc is not None:
-            if pbc.any():
-                return adaptive_list(species, coords, cutoff, cell, pbc, self._thresh)
+            return adaptive_list(species, coords, cutoff, cell, pbc, self._thresh)
         return adaptive_list(species, coords, cutoff, cell, pbc, self._thresh_nopbc)
 
 
@@ -313,9 +312,15 @@ def adaptive_list(
     pbc: tp.Optional[Tensor] = None,
     threshold: int = 190,
 ) -> Neighbors:
-    # Cell list check (disallowed for both for consistency)
-    if coords.shape[0] != 1:
-        raise ValueError("Adaptive list doesn't support batches")
+    _validate_inputs(
+        species,
+        coords,
+        cutoff,
+        cell,
+        pbc,
+        supports_batches=False,
+        supports_individual_pbc=False,
+    )
     # Forward directly to all_pairs if below threshold or in the non-pbc case
     if coords.shape[1] < threshold:
         return all_pairs(species, coords, cutoff, cell, pbc)
@@ -330,19 +335,21 @@ def cell_list(
     cell: tp.Optional[Tensor] = None,
     pbc: tp.Optional[Tensor] = None,
 ) -> Neighbors:
-    assert cutoff >= 0.0, "Cutoff must be a positive float"
-    cell, pbc = _validate_cell_pbc(species, cell, pbc)
-
-    # Extra cell-list checks
-    if coords.shape[0] != 1:
-        raise ValueError("Cell list doesn't support batches")
-    if not ((~pbc).all() or pbc.all()):
-        raise ValueError("Cell list only supports PBC in all or no directions")
+    _validate_inputs(
+        species,
+        coords,
+        cutoff,
+        cell,
+        pbc,
+        supports_batches=False,
+        supports_individual_pbc=False,
+    )
 
     # Coordinates are displaced only in the non-pbc case, in which case the
     # displaced coords lie all inside the created cell. otherwise they are
     # the same as the input coords, but "detached"
-    if pbc.any():
+    if pbc is not None:
+        assert cell is not None
         displ_coords = coords.detach()
     else:
         # Make cell large enough to deny PBC interaction (fast, not bottleneck)
@@ -356,7 +363,7 @@ def cell_list(
     #
     # Set up grid shape each step. Cheap and avoids state in the cls
     grid_shape = setup_grid(cell.detach(), cutoff)
-    if pbc.any():
+    if pbc is not None:
         if (grid_shape == 0).any():
             raise RuntimeError("Cell is too small to perform pbc calculations")
     else:
@@ -364,7 +371,7 @@ def cell_list(
 
     # Since coords will be fractionalized they may lie outside the cell before this
     neighbor_idxs, shift_idxs = _cell_list(displ_coords.detach(), grid_shape, cell, pbc)
-    if pbc.any():
+    if pbc is not None:
         shifts = shift_idxs.to(cell.dtype) @ cell
         # Before the screening step we map the coords to the central cell,
         # same as with an all-pairs calculation
@@ -377,7 +384,7 @@ def _cell_list(
     coords: Tensor,  # shape (C, A, 3)
     grid_shape: Tensor,  # shape (3,)
     cell: Tensor,  # shape (3, 3)
-    pbc: Tensor,  # shape (3,)
+    pbc: tp.Optional[Tensor],  # shape (3,)
 ) -> tp.Tuple[Tensor, Tensor]:
     # 1) Get location of each atom in the grid, given by a "grid_idx3" (g3) or by a
     # single flat "grid_idx" (g).
@@ -756,16 +763,18 @@ class VerletCellList(CellList):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
     ) -> Neighbors:
-        assert cutoff >= 0.0, "Cutoff must be a positive float"
-        cell, pbc = _validate_cell_pbc(species, cell, pbc)
+        _validate_inputs(
+            species,
+            coords,
+            cutoff,
+            cell,
+            pbc,
+            supports_batches=False,
+            supports_individual_pbc=False,
+        )
 
-        # Cell-list checks
-        if coords.shape[0] != 1:
-            raise ValueError("Cell list doesn't support batches")
-        if not ((~pbc).all() or pbc.all()):
-            raise ValueError("Cell list only supports PBC in all or no directions")
-
-        if pbc.any():
+        if pbc is not None:
+            assert cell is not None
             displ_coords = coords.detach()
         else:
             # Make cell large enough to avoid PBC interaction (fast, not bottleneck)
@@ -776,7 +785,7 @@ class VerletCellList(CellList):
 
         # The grid uses a skin, but the narrowing uses the actual cutoff
         grid_shape = setup_grid(cell.detach(), cutoff + self.skin)
-        if pbc.any():
+        if pbc is not None:
             if (grid_shape == 0).any():
                 raise RuntimeError("Cell is too small to perform pbc calculations")
         else:
@@ -794,7 +803,7 @@ class VerletCellList(CellList):
             self._cache_values(
                 neighbor_idxs, shift_idxs, displ_coords.detach(), cell.detach()
             )
-        if pbc.any():
+        if pbc is not None:
             shifts = shift_idxs.to(cell.dtype) @ cell
             coords = map_to_central(coords, cell.detach(), pbc)
             return narrow_down(species, coords, cutoff, neighbor_idxs, shifts)
@@ -875,18 +884,38 @@ def _parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
 
 
 # Used to check the correctness of the cell and pbc inputs for fn and met that take them
-def _validate_cell_pbc(
-    species: Tensor, cell: tp.Optional[Tensor], pbc: tp.Optional[Tensor]
-) -> tp.Tuple[Tensor, Tensor]:
-    if cell is None and not (pbc is None or not pbc.any()):
-        raise ValueError("If cell is None, pbc should be None or [False, False, False]")
-    if cell is not None and (pbc is None or not pbc.any()):
-        raise ValueError("If cell is not None, at least one PBC should be enabled")
-    if cell is None:
-        cell = torch.eye(3, dtype=torch.float, device=species.device)
-    if pbc is None:
-        pbc = torch.zeros(3, dtype=torch.bool, device=species.device)
-    return cell, pbc
+def _validate_inputs(
+    species: Tensor,
+    coords: Tensor,
+    cutoff: float,
+    cell: tp.Optional[Tensor],
+    pbc: tp.Optional[Tensor],
+    supports_batches: bool = True,
+    supports_individual_pbc: bool = True,
+):
+    # No validation if compiling or jit-scripting
+    if torch.compiler.is_compiling() or torch.jit.is_scripting():
+        return
+    if cutoff <= 0.0:
+        raise ValueError("Cutoff must be a strictly positive float")
+    if not supports_batches and coords.shape[0] != 1:
+        raise ValueError("This neighborlist doesn't support batches")
+
+    if pbc is not None:
+        if not pbc.any():
+            raise ValueError(
+                "pbc = torch.tensor([False, False, False]) is not supported anymore"
+                " please use pbc = None"
+            )
+        if cell is None:
+            raise ValueError("If pbc is not None, cell should be present")
+        if not supports_individual_pbc and not pbc.all():
+            raise ValueError(
+                "This neighborlist doesn't support PBC only in some directions"
+            )
+    else:
+        if cell is not None:
+            raise ValueError("Cell is not supported if not using pbc")
 
 
 # Wrapper because unique_consecutive doesn't have a dynamic meta kernel asof pytorch 2.5
