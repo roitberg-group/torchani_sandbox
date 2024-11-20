@@ -359,28 +359,23 @@ class ANI(torch.nn.Module):
     ) -> Tensor:
         r"""This entrypoint supports input from TorchANI neighbors"""
         self._check_inputs(elem_idxs, _coords, total_charge)
-        # Output shape depends on the atomic flag
+        # Output shape depends on the atomic and ensemble_values flags
+        energies = neighbors.distances.new_zeros(elem_idxs.shape[0])
         if atomic:
-            energies = neighbors.distances.new_zeros(elem_idxs.shape)
-        else:
-            energies = neighbors.distances.new_zeros(elem_idxs.shape[0])
-        _values: tp.Optional[Tensor] = None
+            energies = energies.unsqueeze(1)
+        if ensemble_values:
+            energies = energies.unsqueeze(0)
         for pot in self.potentials.values():
             neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
-            # Separate the values of the potential that has ensemble values if requested
-            if ensemble_values and hasattr(pot, "ensemble_values"):
-                _values = pot.ensemble_values(
+            if ensemble_values:
+                energies = energies + pot.ensemble_values(
                     elem_idxs, neighbors, _coordinates=_coords, atomic=atomic
                 )
             else:
-                energies += pot(
+                energies = energies + pot(
                     elem_idxs, neighbors, _coordinates=_coords, atomic=atomic
                 )
-        energies += self.energy_shifter(elem_idxs, atomic=atomic)
-        if ensemble_values:
-            assert _values is not None
-            return _values + energies.unsqueeze(0)
-        return energies
+        return energies + self.energy_shifter(elem_idxs, atomic=atomic)
 
     @torch.jit.export
     def atomic_energies(

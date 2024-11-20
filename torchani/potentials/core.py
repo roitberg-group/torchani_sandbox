@@ -140,6 +140,22 @@ class Potential(torch.nn.Module):
             return neighbors.distances.new_zeros(elem_idxs.shape[0])
         return self.compute(elem_idxs, neighbors, _coordinates, ghost_flags, atomic)
 
+    def ensemble_values(
+        self,
+        elem_idxs: Tensor,
+        neighbors: Neighbors,
+        _coordinates: tp.Optional[Tensor] = None,
+        ghost_flags: tp.Optional[Tensor] = None,
+        atomic: bool = False,
+    ) -> Tensor:
+        r"""If the potential is an ensemble of multiple models, this function returns
+        the individual values of the models.
+
+        Output shape is ``(submodels, ...)``
+        """
+        out = self(elem_idxs, neighbors, _coordinates, ghost_flags, atomic)
+        return out.unsqueeze(0)
+
     def compute(
         self,
         elem_idxs: Tensor,
