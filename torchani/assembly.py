@@ -307,7 +307,7 @@ class ANI(torch.nn.Module):
                 elem_idxs, coords, cell=cell, pbc=pbc
             )
             energies = self.potentials["nnp"].neural_networks(
-                elem_idxs, aevs, atomic=atomic
+                elem_idxs, aevs, atomic=atomic, ensemble_values=ensemble_values
             )
             energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
             return SpeciesEnergies(elem_idxs, energies)
