@@ -45,6 +45,7 @@ Untitled.ipynb
 # Output of tests
 /tests/runs/
 /tests/.hypothesis
+!/tests/resources/potentials/
 
 # Output of tools
 /tools/plots/
