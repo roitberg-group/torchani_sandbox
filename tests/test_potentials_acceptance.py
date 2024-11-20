@@ -54,7 +54,7 @@ class TestAcceptEnergies(ANITestCase):
         molec = make_molecs(10, 10, seed=1234, device=device)
         energies = pot.calc(molec.atomic_nums, molec.coords)
         with open(
-            Path(this_dir, "resources", "potentials", "{name}-energies.pkl"), mode="rb"
+            Path(this_dir, "resources", "potentials", f"{name}-energies.pkl"), mode="rb"
         ) as f:
             expect_energies = pickle.load(f)
         self.assertEqual(energies, torch.tensor(expect_energies, device=self.device))
@@ -73,7 +73,7 @@ class TestAcceptForces(ANITestCase):
         )
         forces = -torch.autograd.grad(energies.sum(), molec.coords)[0]
         with open(
-            Path(this_dir, "resources", "potentials", "{name}-energies-forces.pkl"),
+            Path(this_dir, "resources", "potentials", f"{name}-energies-forces.pkl"),
             mode="rb",
         ) as f:
             expect_energies, expect_forces = pickle.load(f)
