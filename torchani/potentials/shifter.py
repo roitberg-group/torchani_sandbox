@@ -50,7 +50,7 @@ class SelfEnergy(Potential):
         neighbors: Neighbors = Neighbors(
             torch.empty(0), torch.empty(0), torch.empty(0)
         ),
-        _coordinates: tp.Optional[Tensor] = None,
+        _coords: tp.Optional[Tensor] = None,
         ghost_flags: tp.Optional[Tensor] = None,
         atomic: bool = False,
     ) -> Tensor:
@@ -58,13 +58,13 @@ class SelfEnergy(Potential):
             if atomic:
                 return neighbors.distances.new_zeros(elem_idxs.shape)
             return neighbors.distances.new_zeros(elem_idxs.shape[0])
-        return self.compute(elem_idxs, neighbors, _coordinates, ghost_flags, atomic)
+        return self.compute(elem_idxs, neighbors, _coords, ghost_flags, atomic)
 
     def compute(
         self,
         elem_idxs: Tensor,
         neighbors: Neighbors,
-        _coordinates: tp.Optional[Tensor] = None,
+        _coords: tp.Optional[Tensor] = None,
         ghost_flags: tp.Optional[Tensor] = None,
         atomic: bool = False,
     ) -> Tensor:

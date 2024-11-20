@@ -369,11 +369,11 @@ class ANI(torch.nn.Module):
             neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
             if ensemble_values:
                 energies = energies + pot.ensemble_values(
-                    elem_idxs, neighbors, _coordinates=_coords, atomic=atomic
+                    elem_idxs, neighbors, _coords=_coords, atomic=atomic
                 )
             else:
                 energies = energies + pot(
-                    elem_idxs, neighbors, _coordinates=_coords, atomic=atomic
+                    elem_idxs, neighbors, _coords=_coords, atomic=atomic
                 )
         return energies + self.energy_shifter(elem_idxs, atomic=atomic)
 
@@ -765,7 +765,7 @@ class ANIq(ANI):
                 output = pot.energies_and_atomic_charges(
                     elem_idxs,
                     neighbors,
-                    _coordinates=coords,
+                    _coords=coords,
                     ghost_flags=None,
                     total_charge=total_charge,
                     atomic=atomic,
@@ -773,7 +773,7 @@ class ANIq(ANI):
                 energies += output.energies
                 atomic_charges += output.atomic_charges
             else:
-                energies += pot(elem_idxs, neighbors, _coordinates=coords)
+                energies += pot(elem_idxs, neighbors, _coords=coords)
         energies += self.energy_shifter(elem_idxs, atomic=atomic)
         return SpeciesEnergiesAtomicCharges(elem_idxs, energies, atomic_charges)
 
@@ -806,7 +806,7 @@ class ANIq(ANI):
                 output = pot.energies_and_atomic_charges(
                     elem_idxs,
                     neighbors,
-                    _coordinates=coords,
+                    _coords=coords,
                     ghost_flags=None,
                     total_charge=total_charge,
                     atomic=atomic,
@@ -814,7 +814,7 @@ class ANIq(ANI):
                 energies += output.energies
                 atomic_charges += output.atomic_charges
             else:
-                energies += pot(elem_idxs, neighbors, _coordinates=coords)
+                energies += pot(elem_idxs, neighbors, _coords=coords)
         energies += self.energy_shifter(elem_idxs)
         return SpeciesEnergiesAtomicCharges(elem_idxs, energies, atomic_charges)
 

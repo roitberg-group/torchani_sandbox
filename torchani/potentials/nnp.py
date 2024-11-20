@@ -23,31 +23,27 @@ class NNPotential(Potential):
         self,
         elem_idxs: Tensor,
         neighbors: Neighbors,
-        _coordinates: tp.Optional[Tensor] = None,
+        _coords: tp.Optional[Tensor] = None,
         ghost_flags: tp.Optional[Tensor] = None,
         atomic: bool = False,
     ) -> Tensor:
-        aevs = self.aev_computer.compute_from_neighbors(
-            elem_idxs, neighbors, _coordinates
-        )
+        aevs = self.aev_computer.compute_from_neighbors(elem_idxs, neighbors, _coords)
         return self.neural_networks(elem_idxs, aevs, atomic=atomic)
 
     def ensemble_values(
         self,
         elem_idxs: Tensor,
         neighbors: Neighbors,
-        _coordinates: tp.Optional[Tensor] = None,
+        _coords: tp.Optional[Tensor] = None,
         ghost_flags: tp.Optional[Tensor] = None,
         atomic: bool = False,
     ) -> Tensor:
         if hasattr(self.neural_networks, "ensemble_values"):
             aevs = self.aev_computer.compute_from_neighbors(
-                elem_idxs, neighbors, _coordinates
+                elem_idxs, neighbors, _coords
             )
-            out = self.neural_networks.ensemble_values(elem_idxs, aevs, atomic=atomic)
-            return out
-        out = self(elem_idxs, neighbors, _coordinates, ghost_flags, atomic).unsqueeze(0)
-        return out
+            return self.neural_networks.ensemble_values(elem_idxs, aevs, atomic=atomic)
+        return self(elem_idxs, neighbors, _coords, ghost_flags, atomic).unsqueeze(0)
 
 
 # Output of NN is assumed to be of shape (molecules, 2) with
@@ -70,14 +66,12 @@ class MergedChargesNNPotential(NNPotential):
         self,
         elem_idxs: Tensor,
         neighbors: Neighbors,
-        _coordinates: tp.Optional[Tensor] = None,
+        _coords: tp.Optional[Tensor] = None,
         ghost_flags: tp.Optional[Tensor] = None,
         total_charge: int = 0,
         atomic: bool = False,
     ) -> EnergiesAtomicCharges:
-        aevs = self.aev_computer.compute_from_neighbors(
-            elem_idxs, neighbors, _coordinates
-        )
+        aevs = self.aev_computer.compute_from_neighbors(elem_idxs, neighbors, _coords)
         energies_qs = self.neural_networks(elem_idxs, aevs, atomic=True)
         energies = energies_qs[:, :, 0]
         if not atomic:
@@ -105,14 +99,12 @@ class SeparateChargesNNPotential(NNPotential):
         self,
         elem_idxs: Tensor,
         neighbors: Neighbors,
-        _coordinates: tp.Optional[Tensor] = None,
+        _coords: tp.Optional[Tensor] = None,
         ghost_flags: tp.Optional[Tensor] = None,
         total_charge: int = 0,
         atomic: bool = False,
     ) -> EnergiesAtomicCharges:
-        aevs = self.aev_computer.compute_from_neighbors(
-            elem_idxs, neighbors, _coordinates
-        )
+        aevs = self.aev_computer.compute_from_neighbors(elem_idxs, neighbors, _coords)
         energies = self.neural_networks(elem_idxs, aevs, atomic=atomic)
         qs = self.charge_networks(elem_idxs, aevs, atomic=True)
         qs = self.charge_normalizer(elem_idxs, qs, total_charge)
