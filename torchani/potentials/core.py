@@ -1,4 +1,3 @@
-import itertools
 import math
 import typing as tp
 import typing_extensions as tpx
@@ -6,18 +5,11 @@ import typing_extensions as tpx
 import torch
 from torch import Tensor
 
-try:
-    import matplotlib.pyplot as plt
-
-    _MPL_AVAIL = True
-except ImportError:
-    _MPL_AVAIL = False
-
 from torchani.constants import ATOMIC_NUMBER, PERIODIC_TABLE
 from torchani.cutoffs import _parse_cutoff_fn, CutoffArg, CutoffDummy
 from torchani.neighbors import Neighbors, adaptive_list, all_pairs
 from torchani.utils import _validate_user_kwargs
-from torchani.units import ANGSTROM_TO_BOHR, HARTREE_TO_EV, HARTREE_TO_KCALPERMOL
+from torchani.units import ANGSTROM_TO_BOHR
 
 
 # TODO: The "_coordinates" input is only required due to a quirk of the
@@ -248,71 +240,6 @@ class BasePairPotential(Potential):
             )
             energies.index_add_(0, molecs_idxs, pair_energies)
         return energies
-
-    @torch.jit.unused
-    def _plot(
-        self,
-        symbol_pairs: tp.Sequence[tp.Tuple[str, str]] = (),
-        xmin: float = 0.1,
-        xmax: tp.Optional[float] = None,
-        ymin: tp.Optional[float] = None,
-        ymax: tp.Optional[float] = None,
-        steps: int = 1000,
-        force: bool = False,
-        units: str = "hartree",
-        ylog: bool = False,
-        block: bool = True,
-    ) -> None:
-        factors = {
-            "ev": HARTREE_TO_EV,
-            "kcalpermol": HARTREE_TO_KCALPERMOL,
-            "hartree": 1,
-        }
-        factor = factors.get(units.lower(), None)
-        if factor is None:
-            raise ValueError(
-                f"Unsupported unit {units}. Supported are {set(factors.keys())}"
-            )
-        if not _MPL_AVAIL:
-            raise RuntimeError("Please install matplotlib to plot this potential")
-        if not symbol_pairs:
-            symbol_pairs = tuple(itertools.combinations(self.symbols, 2))
-        fig, ax = plt.subplots()
-        if xmax is None:
-            xmax = self.cutoff if self.cutoff != math.inf else 10.0
-        r = torch.linspace(xmin, xmax, steps)
-        for pair in symbol_pairs:
-            atomic_nums = torch.zeros((steps, 2), dtype=torch.long)
-            atomic_nums[:, 0] = ATOMIC_NUMBER[pair[0]]
-            atomic_nums[:, 1] = ATOMIC_NUMBER[pair[1]]
-            coords = torch.zeros((steps, 2, 3))
-            if force:
-                r = r.detach().requires_grad_(True)
-            coords[:, 0, 0] = r
-            energies = self.calc(atomic_nums, coords)
-            energies *= factor
-            if force:
-                forces = -torch.autograd.grad(energies.sum(), r)[0]
-                r.detach_()
-                energies.detach_()
-                ax.plot(r, forces, label=f"{pair[0]}-{pair[1]}")
-            else:
-                ax.plot(r, energies, label=f"{pair[0]}-{pair[1]}")
-        ax.legend()
-        ax.set_title(f"{self.__class__.__name__}")
-        ax.set_xlabel(r"Inter atomic distance, ($\AA$)")
-        unit_symbol = {
-            "hartree": r"$E_h$",
-            "ev": r"$\mathrm{eV}$",
-            "kcalpermol": r"$\frac{\text{kcal}}{\text{mol}}$",
-        }[units.lower()]
-        ax.set_ylabel(f"Energy, ({unit_symbol})")
-        if force:
-            ax.set_ylabel(f"Force, ({unit_symbol}/" r"$\AA$)")
-        if ylog:
-            ax.set_yscale("log")
-        ax.set_ylim(ymin, ymax)
-        plt.show(block=block)
 
 
 class PairPotential(BasePairPotential):
