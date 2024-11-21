@@ -54,7 +54,7 @@ def narrow_down(
 ) -> Neighbors:
     r"""Takes a set of potential neighbor idxs and narrows it down to true neighbors"""
     mask = elem_idxs == -1
-    if mask.any():
+    if not torch.compiler.is_compiling() and mask.any():
         # Discard dumy atoms to prevent wasting resources in calculating
         # dummy distances
         mask = mask.view(-1)[neighbor_idxs.view(-1)].view(2, -1)
@@ -938,42 +938,35 @@ def neighbors_to_triples(neighbors: Neighbors) -> Triples:
     r"""Converts output of a neighborlist calculation into triples of atoms"""
     # convert representation from pair to central-others and sort
     sorted_flat_idxs, rev_idxs = neighbors.indices.view(-1).sort()
-    uniqued_central_idx, counts = _unique_and_counts(sorted_flat_idxs)
+    unique_central_idxs, counts = _unique_and_counts(sorted_flat_idxs)
 
     # compute central_idxs
     pair_sizes = (counts * (counts - 1)).div(2, rounding_mode="floor")
     pair_indices = torch.repeat_interleave(pair_sizes)
-    central_idxs = uniqued_central_idx.index_select(0, pair_indices)
+    central_idxs = unique_central_idxs.index_select(0, pair_indices)  # Shape (T,)
 
-    # do local combinations within unique key, assuming sorted
+    # For each center atom, calculate idxs
+    # for all pairs of its 'local, sorted-order' side-atoms
     zcounts = torch.cat((counts.new_zeros(1), counts))
-    m: int = int(zcounts.max())  # Dynamo can't get past this
-    n = pair_sizes.shape[0]
-    intra_pair_indices = (
-        torch.tril_indices(m, m, -1, device=neighbors.indices.device)
-        .unsqueeze(1)
-        .expand(-1, n, -1)
-    )
-    mask = (
-        torch.arange(intra_pair_indices.shape[2], device=neighbors.indices.device)
-        < pair_sizes.unsqueeze(1)
-    ).view(-1)
-    sorted_local_idx12 = intra_pair_indices.flatten(1, 2)[:, mask]
-    sorted_local_idx12 += torch.cumsum(zcounts, dim=0).index_select(0, pair_indices)
+    dev = zcounts.device
+    counts_max: int = int(zcounts.max())  # Dynamo can't get past this
+    max_local_pairs = torch.tril_indices(counts_max, counts_max, -1, device=dev)
+    mask = torch.arange(max_local_pairs.shape[1], device=dev) < pair_sizes.view(-1, 1)
+    sort_local_pairs = max_local_pairs.repeat(1, pair_sizes.shape[0])[:, mask.view(-1)]
+    sort_local_pairs += torch.cumsum(zcounts, dim=0).index_select(0, pair_indices)
 
-    # unsort result from last part
-    local_idx12 = rev_idxs[sorted_local_idx12]
+    # Convert back from sorted-idxs to atom-idxs
+    local_pairs = rev_idxs[sort_local_pairs]
 
     # compute mapping between representation of central-other to pair
-    n = neighbors.indices.shape[1]
-    sign12 = ((local_idx12 < n).to(torch.int8) * 2) - 1
-    side_idxs = local_idx12 % n
+    num_neigh = neighbors.indices.shape[1]
+    # tensor[bool].mul_(2).sub_(1) converts True False -> 1, -1
+    # Casting to int8 seems to make this operation a tiny bit faster (not sure why)
+    sign12 = (local_pairs < num_neigh).to(torch.int8) * 2 - 1
+    side_idxs = local_pairs % num_neigh
 
-    # Shape (2, T, 3)
-    diff_vectors = neighbors.diff_vectors.index_select(0, side_idxs.view(-1)).view(
-        2, -1, 3
-    )
-    diff_vectors = diff_vectors * sign12.view(2, -1, 1)
+    flat_diff_vectors = neighbors.diff_vectors.index_select(0, side_idxs.view(-1))
+    diff_vectors = flat_diff_vectors.view(2, -1, 3) * sign12.view(2, -1, 1)  # (2, T, 3)
     distances = neighbors.distances.index_select(0, side_idxs.view(-1)).view(2, -1)
     return Triples(central_idxs, side_idxs, sign12, distances, diff_vectors)
 
