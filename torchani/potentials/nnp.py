@@ -19,7 +19,7 @@ class NNPotential(Potential):
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
 
-    def forward(
+    def compute_from_neighbors(
         self,
         elem_idxs: Tensor,
         coords: Tensor,
@@ -46,6 +46,7 @@ class MergedChargesNNPotential(NNPotential):
         if charge_normalizer is None:
             charge_normalizer = ChargeNormalizer(self.symbols)
         self.charge_normalizer = charge_normalizer
+        raise ValueError("This class is currently under development")
 
     @torch.jit.export
     def energies_and_atomic_charges(

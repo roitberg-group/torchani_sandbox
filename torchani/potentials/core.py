@@ -12,8 +12,6 @@ from torchani.units import ANGSTROM_TO_BOHR
 from torchani._core import _ChemModule
 
 
-# TODO: The "_coords" input is only required due to a quirk of the
-# implementation of the cuAEV
 class Potential(_ChemModule):
     r"""Base class for all atomic potentials
 
@@ -58,6 +56,7 @@ class Potential(_ChemModule):
         pbc: tp.Optional[Tensor] = None,
         periodic_table_index: bool = True,
         atomic: bool = False,
+        ensemble_values: bool = False,
     ) -> Tensor:
         r"""
         Outputs energy, as calculated by the potential
@@ -73,14 +72,11 @@ class Potential(_ChemModule):
         assert elem_idxs.dim() == 2
         assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
 
-        if self.cutoff > 0.0:
-            if coords.shape[0] == 1:
-                neighbors = adaptive_list(elem_idxs, coords, self.cutoff, cell, pbc)
-            else:
-                neighbors = all_pairs(elem_idxs, coords, self.cutoff, cell, pbc)
+        if coords.shape[0] == 1:
+            neighbors = adaptive_list(elem_idxs, coords, self.cutoff, cell, pbc)
         else:
-            neighbors = Neighbors(torch.empty(0), torch.empty(0), torch.empty(0))
-        return self(elem_idxs, coords, neighbors, atomic=atomic)
+            neighbors = all_pairs(elem_idxs, coords, self.cutoff, cell, pbc)
+        return self(elem_idxs, coords, neighbors, atomic, ensemble_values)
 
     def forward(
         self,
@@ -93,13 +89,13 @@ class Potential(_ChemModule):
     ) -> Tensor:
         if not self._enabled:
             if atomic:
-                return neighbors.distances.new_zeros(elem_idxs.shape)
-            return neighbors.distances.new_zeros(elem_idxs.shape[0])
-        return self.compute(
+                return coords.new_zeros(elem_idxs.shape)
+            return coords.new_zeros(elem_idxs.shape[0])
+        return self.compute_from_neighbors(
             elem_idxs, coords, neighbors, atomic, ensemble_values, ghost_flags
         )
 
-    def compute(
+    def compute_from_neighbors(
         self,
         elem_idxs: Tensor,
         coords: Tensor,
@@ -193,8 +189,8 @@ class BasePairPotential(Potential):
             pair_energies = torch.where(ghost_mask, pair_energies * 0.5, pair_energies)
         return pair_energies
 
-    # Compute should not be modified by subclasses of BasePairPotential
-    def compute(
+    # Compute_form_neighbors should not be modified by subclasses of BasePairPotential
+    def compute_from_neighbors(
         self,
         elem_idxs: Tensor,
         coords: Tensor,
