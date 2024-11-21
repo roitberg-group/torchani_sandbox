@@ -54,7 +54,7 @@ class MergedChargesNNPotential(NNPotential):
         elem_idxs: Tensor,
         coords: Tensor,
         neighbors: Neighbors,
-        total_charge: int = 0,
+        charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
         ghost_flags: tp.Optional[Tensor] = None,
@@ -65,7 +65,7 @@ class MergedChargesNNPotential(NNPotential):
         energies = energies_qs[:, :, 0]
         if not atomic:
             energies = energies.sum(dim=-1)
-        qs = self.charge_normalizer(elem_idxs, energies_qs[:, :, 1], total_charge)
+        qs = self.charge_normalizer(elem_idxs, energies_qs[:, :, 1], charge)
         return EnergiesAtomicCharges(energies, qs)
 
 
@@ -89,7 +89,7 @@ class SeparateChargesNNPotential(NNPotential):
         elem_idxs: Tensor,
         coords: Tensor,
         neighbors: Neighbors,
-        total_charge: int = 0,
+        charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
         ghost_flags: tp.Optional[Tensor] = None,
@@ -98,5 +98,5 @@ class SeparateChargesNNPotential(NNPotential):
         aevs = self.aev_computer.compute_from_neighbors(elem_idxs, coords, neighbors)
         energies = self.neural_networks(elem_idxs, aevs, atomic=atomic)
         qs = self.charge_networks(elem_idxs, aevs, atomic=True)
-        qs = self.charge_normalizer(elem_idxs, qs, total_charge)
+        qs = self.charge_normalizer(elem_idxs, qs, charge)
         return EnergiesAtomicCharges(energies, qs)

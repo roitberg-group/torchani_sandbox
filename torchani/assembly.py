@@ -174,7 +174,7 @@ class ANI(torch.nn.Module):
         coordinates: Tensor,
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        total_charge: int = 0,
+        charge: int = 0,
         forces: bool = False,
         hessians: bool = False,
         atomic_energies: bool = False,
@@ -192,7 +192,7 @@ class ANI(torch.nn.Module):
             coordinates: |coords|
             cell: |cell|
             pbc: |pbc|
-            total_charge: The total charge of the molecules. Only
+            charge: The total charge of the molecules. Only
                 the scalar 0 is currently supported.
             forces: Calculate the associated forces. Shape ``(molecules, atoms, 3)``
             hessians: Calculate the hessians. Shape is
@@ -221,7 +221,7 @@ class ANI(torch.nn.Module):
                 species_coordinates=(species, coordinates),
                 cell=cell,
                 pbc=pbc,
-                total_charge=total_charge,
+                charge=charge,
                 atomic=atomic_energies,
                 ensemble_values=ensemble_values,
             )
@@ -236,7 +236,7 @@ class ANI(torch.nn.Module):
                 species_coordinates=(species, coordinates),
                 cell=cell,
                 pbc=pbc,
-                total_charge=total_charge,
+                charge=charge,
                 atomic=atomic_energies,
                 ensemble_values=ensemble_values,
             )
@@ -289,13 +289,13 @@ class ANI(torch.nn.Module):
         species_coordinates: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        total_charge: int = 0,
+        charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> SpeciesEnergies:
         r"""Obtain a species-energies tuple from an input species-coords tuple"""
         species, coords = species_coordinates
-        self._check_inputs(species, coords, total_charge)
+        self._check_inputs(species, coords, charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
 
         # Optimized branch that uses the cuAEV-fused strategy
@@ -315,7 +315,7 @@ class ANI(torch.nn.Module):
         # Branch that goes through internal neighborlist
         neighbors = self.neighborlist(elem_idxs, coords, self.cutoff, cell, pbc)
         energies = self.compute_from_neighbors(
-            elem_idxs, coords, neighbors, total_charge, atomic, ensemble_values
+            elem_idxs, coords, neighbors, charge, atomic, ensemble_values
         )
         return SpeciesEnergies(elem_idxs, energies)
 
@@ -327,7 +327,7 @@ class ANI(torch.nn.Module):
         coords: Tensor,
         neighbor_idxs: Tensor,  # External neighbors
         shifts: Tensor,  # External neighbors
-        total_charge: int = 0,
+        charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> Tensor:
@@ -335,14 +335,14 @@ class ANI(torch.nn.Module):
 
         IMPORTANT: coords input to this function *must be* mapped to the central cell
         """
-        self._check_inputs(species, coords, total_charge)
+        self._check_inputs(species, coords, charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
         # Discard dist larger than the cutoff, which may be present if the neighbors
         # come from a program that uses a skin value to conditionally rebuild
         # (Verlet lists in MD engine). Also discard dummy atoms
         neighbors = narrow_down(species, coords, self.cutoff, neighbor_idxs, shifts)
         return self.compute_from_neighbors(
-            elem_idxs, coords, neighbors, total_charge, atomic, ensemble_values
+            elem_idxs, coords, neighbors, charge, atomic, ensemble_values
         )
 
     # Entrypoint that uses neighbors
@@ -353,12 +353,12 @@ class ANI(torch.nn.Module):
         elem_idxs: Tensor,
         coords: Tensor,
         neighbors: Neighbors,
-        total_charge: int = 0,
+        charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> Tensor:
         r"""This entrypoint supports input from TorchANI neighbors"""
-        self._check_inputs(elem_idxs, coords, total_charge)
+        self._check_inputs(elem_idxs, coords, charge)
         # Output shape depends on the atomic and ensemble_values flags
         energies = neighbors.distances.new_zeros(elem_idxs.shape[0])
         if atomic:
@@ -378,7 +378,7 @@ class ANI(torch.nn.Module):
         species_coordinates: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        total_charge: int = 0,
+        charge: int = 0,
         ensemble_values: bool = False,
     ) -> SpeciesEnergies:
         r"""Calculate predicted atomic energies of all atoms in a molecule
@@ -392,7 +392,7 @@ class ANI(torch.nn.Module):
             species_coordinates,
             cell,
             pbc,
-            total_charge=total_charge,
+            charge=charge,
             atomic=True,
             ensemble_values=ensemble_values,
         )
@@ -481,10 +481,10 @@ class ANI(torch.nn.Module):
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     @staticmethod
-    def _check_inputs(elem_idxs: Tensor, coords: Tensor, total_charge: int = 0) -> None:
+    def _check_inputs(elem_idxs: Tensor, coords: Tensor, charge: int = 0) -> None:
         assert elem_idxs.dim() == 2
         assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
-        assert total_charge == 0, "Model only supports neutral molecules"
+        assert charge == 0, "Model only supports neutral molecules"
 
     @torch.jit.unused
     def members_forces(
@@ -492,7 +492,7 @@ class ANI(torch.nn.Module):
         species_coordinates: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        total_charge: int = 0,
+        charge: int = 0,
     ) -> SpeciesForces:
         r"""Calculates predicted forces from ensemble members
 
@@ -515,7 +515,7 @@ class ANI(torch.nn.Module):
             (species, coordinates),
             cell,
             pbc,
-            total_charge=total_charge,
+            charge=charge,
             atomic=False,
             ensemble_values=True,
         )
@@ -534,7 +534,7 @@ class ANI(torch.nn.Module):
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
         unbiased: bool = True,
-        total_charge: int = 0,
+        charge: int = 0,
     ) -> SpeciesEnergiesQBC:
         r"""Calculates predicted predicted energies and qbc factors
 
@@ -562,7 +562,7 @@ class ANI(torch.nn.Module):
             species_coordinates,
             cell,
             pbc,
-            total_charge=total_charge,
+            charge=charge,
             atomic=False,
             ensemble_values=True,
         )
@@ -587,7 +587,7 @@ class ANI(torch.nn.Module):
         species_coordinates: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        total_charge: int = 0,
+        charge: int = 0,
         ensemble_values: bool = False,
         unbiased: bool = True,
     ) -> AtomicStdev:
@@ -601,7 +601,7 @@ class ANI(torch.nn.Module):
             species_coordinates,
             cell=cell,
             pbc=pbc,
-            total_charge=total_charge,
+            charge=charge,
             atomic=True,
             ensemble_values=True,
         )
@@ -731,7 +731,7 @@ class ANIq(ANI):
         coords: Tensor,
         neighbor_idxs: Tensor,  # External neighbors
         shifts: Tensor,  # External neighbors
-        total_charge: int = 0,
+        charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> SpeciesEnergiesAtomicCharges:
@@ -741,7 +741,7 @@ class ANIq(ANI):
         """
         if ensemble_values:
             raise ValueError("ensemble_values not supported for ANIq")
-        self._check_inputs(species, coords, total_charge)
+        self._check_inputs(species, coords, charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
 
         # Discard dist larger than the cutoff, which may be present if the neighbors
@@ -757,7 +757,7 @@ class ANIq(ANI):
             neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
             if hasattr(pot, "energies_and_atomic_charges"):
                 output = pot.energies_and_atomic_charges(
-                    elem_idxs, coords, neighbors, total_charge, atomic, ensemble_values
+                    elem_idxs, coords, neighbors, charge, atomic, ensemble_values
                 )
                 energies = energies + output.energies
                 atomic_charges = atomic_charges + output.atomic_charges
@@ -774,14 +774,14 @@ class ANIq(ANI):
         species_coordinates: tp.Tuple[Tensor, Tensor],
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        total_charge: int = 0,
+        charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> SpeciesEnergiesAtomicCharges:
         if ensemble_values:
             raise ValueError("Ensemble values not supported")
         species, coords = species_coordinates
-        self._check_inputs(species, coords, total_charge)
+        self._check_inputs(species, coords, charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
 
         neighbors = self.neighborlist(elem_idxs, coords, self.cutoff, cell, pbc)
@@ -795,7 +795,7 @@ class ANIq(ANI):
             neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
             if hasattr(pot, "energies_and_atomic_charges"):
                 output = pot.energies_and_atomic_charges(
-                    elem_idxs, coords, neighbors, total_charge, atomic, ensemble_values
+                    elem_idxs, coords, neighbors, charge, atomic, ensemble_values
                 )
                 energies = energies + output.energies
                 atomic_charges = atomic_charges + output.atomic_charges
