@@ -22,13 +22,13 @@ class NNPotential(Potential):
     def forward(
         self,
         elem_idxs: Tensor,
+        coords: Tensor,
         neighbors: Neighbors,
-        _coords: tp.Optional[Tensor] = None,
-        ghost_flags: tp.Optional[Tensor] = None,
         atomic: bool = False,
         ensemble_values: bool = False,
+        ghost_flags: tp.Optional[Tensor] = None,
     ) -> Tensor:
-        aevs = self.aev_computer.compute_from_neighbors(elem_idxs, neighbors, _coords)
+        aevs = self.aev_computer.compute_from_neighbors(elem_idxs, coords, neighbors)
         return self.neural_networks(elem_idxs, aevs, atomic, ensemble_values)
 
 
@@ -51,13 +51,15 @@ class MergedChargesNNPotential(NNPotential):
     def energies_and_atomic_charges(
         self,
         elem_idxs: Tensor,
+        coords: Tensor,
         neighbors: Neighbors,
-        _coords: tp.Optional[Tensor] = None,
-        ghost_flags: tp.Optional[Tensor] = None,
         total_charge: int = 0,
         atomic: bool = False,
+        ensemble_values: bool = False,
+        ghost_flags: tp.Optional[Tensor] = None,
     ) -> EnergiesAtomicCharges:
-        aevs = self.aev_computer.compute_from_neighbors(elem_idxs, neighbors, _coords)
+        assert not ensemble_values, "Unsupported"
+        aevs = self.aev_computer.compute_from_neighbors(elem_idxs, coords, neighbors)
         energies_qs = self.neural_networks(elem_idxs, aevs, atomic=True)
         energies = energies_qs[:, :, 0]
         if not atomic:
@@ -84,13 +86,15 @@ class SeparateChargesNNPotential(NNPotential):
     def energies_and_atomic_charges(
         self,
         elem_idxs: Tensor,
+        coords: Tensor,
         neighbors: Neighbors,
-        _coords: tp.Optional[Tensor] = None,
-        ghost_flags: tp.Optional[Tensor] = None,
         total_charge: int = 0,
         atomic: bool = False,
+        ensemble_values: bool = False,
+        ghost_flags: tp.Optional[Tensor] = None,
     ) -> EnergiesAtomicCharges:
-        aevs = self.aev_computer.compute_from_neighbors(elem_idxs, neighbors, _coords)
+        assert not ensemble_values, "Unsupported"
+        aevs = self.aev_computer.compute_from_neighbors(elem_idxs, coords, neighbors)
         energies = self.neural_networks(elem_idxs, aevs, atomic=atomic)
         qs = self.charge_networks(elem_idxs, aevs, atomic=True)
         qs = self.charge_normalizer(elem_idxs, qs, total_charge)

@@ -315,7 +315,7 @@ class ANI(torch.nn.Module):
         # Branch that goes through internal neighborlist
         neighbors = self.neighborlist(elem_idxs, coords, self.cutoff, cell, pbc)
         energies = self.compute_from_neighbors(
-            elem_idxs, neighbors, coords, total_charge, atomic, ensemble_values
+            elem_idxs, coords, neighbors, total_charge, atomic, ensemble_values
         )
         return SpeciesEnergies(elem_idxs, energies)
 
@@ -342,7 +342,7 @@ class ANI(torch.nn.Module):
         # (Verlet lists in MD engine). Also discard dummy atoms
         neighbors = narrow_down(species, coords, self.cutoff, neighbor_idxs, shifts)
         return self.compute_from_neighbors(
-            elem_idxs, neighbors, coords, total_charge, atomic, ensemble_values
+            elem_idxs, coords, neighbors, total_charge, atomic, ensemble_values
         )
 
     # Entrypoint that uses neighbors
@@ -351,14 +351,14 @@ class ANI(torch.nn.Module):
     def compute_from_neighbors(
         self,
         elem_idxs: Tensor,
+        coords: Tensor,
         neighbors: Neighbors,
-        _coords: Tensor,
         total_charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> Tensor:
         r"""This entrypoint supports input from TorchANI neighbors"""
-        self._check_inputs(elem_idxs, _coords, total_charge)
+        self._check_inputs(elem_idxs, coords, total_charge)
         # Output shape depends on the atomic and ensemble_values flags
         energies = neighbors.distances.new_zeros(elem_idxs.shape[0])
         if atomic:
@@ -368,11 +368,7 @@ class ANI(torch.nn.Module):
         for pot in self.potentials.values():
             neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
             energies = energies + pot(
-                elem_idxs,
-                neighbors,
-                _coords=_coords,
-                atomic=atomic,
-                ensemble_values=ensemble_values,
+                elem_idxs, coords, neighbors, atomic, ensemble_values
             )
         return energies + self.energy_shifter(elem_idxs, atomic=atomic)
 
@@ -484,9 +480,8 @@ class ANI(torch.nn.Module):
             state_dict[k] = state_dict.pop(oldk)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
-    def _check_inputs(
-        self, elem_idxs: Tensor, coords: Tensor, total_charge: int = 0
-    ) -> None:
+    @staticmethod
+    def _check_inputs(elem_idxs: Tensor, coords: Tensor, total_charge: int = 0) -> None:
         assert elem_idxs.dim() == 2
         assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
         assert total_charge == 0, "Model only supports neutral molecules"
@@ -762,18 +757,15 @@ class ANIq(ANI):
             neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
             if hasattr(pot, "energies_and_atomic_charges"):
                 output = pot.energies_and_atomic_charges(
-                    elem_idxs,
-                    neighbors,
-                    _coords=coords,
-                    ghost_flags=None,
-                    total_charge=total_charge,
-                    atomic=atomic,
+                    elem_idxs, coords, neighbors, total_charge, atomic, ensemble_values
                 )
-                energies += output.energies
-                atomic_charges += output.atomic_charges
+                energies = energies + output.energies
+                atomic_charges = atomic_charges + output.atomic_charges
             else:
-                energies += pot(elem_idxs, neighbors, _coords=coords)
-        energies += self.energy_shifter(elem_idxs, atomic=atomic)
+                energies = energies + pot(
+                    elem_idxs, coords, neighbors, atomic, ensemble_values
+                )
+        energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
         return SpeciesEnergiesAtomicCharges(elem_idxs, energies, atomic_charges)
 
     @torch.jit.export
@@ -800,21 +792,18 @@ class ANIq(ANI):
         else:
             energies = coords.new_zeros(elem_idxs.shape[0])
         for pot in self.potentials.values():
-            neighbors = discard_outside_cutoff(neighbors, self.cutoff)
+            neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
             if hasattr(pot, "energies_and_atomic_charges"):
                 output = pot.energies_and_atomic_charges(
-                    elem_idxs,
-                    neighbors,
-                    _coords=coords,
-                    ghost_flags=None,
-                    total_charge=total_charge,
-                    atomic=atomic,
+                    elem_idxs, coords, neighbors, total_charge, atomic, ensemble_values
                 )
-                energies += output.energies
-                atomic_charges += output.atomic_charges
+                energies = energies + output.energies
+                atomic_charges = atomic_charges + output.atomic_charges
             else:
-                energies += pot(elem_idxs, neighbors, _coords=coords)
-        energies += self.energy_shifter(elem_idxs)
+                energies = energies + pot(
+                    elem_idxs, coords, neighbors, atomic, ensemble_values
+                )
+        energies = energies + self.energy_shifter(elem_idxs)
         return SpeciesEnergiesAtomicCharges(elem_idxs, energies, atomic_charges)
 
 
