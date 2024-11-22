@@ -16,8 +16,15 @@ NumberOrStrArray = tp.Union[NDArray[np.int_], NDArray[np.float64], NDArray[np.st
 NumpyConformers = tp.MutableMapping[str, NumberOrStrArray]
 MixedConformers = tp.MutableMapping[str, tp.Union[Tensor, NumberOrStrArray]]
 
-Device = tp.Union[str, torch.device, None]
-DType = tp.Union[torch.dtype, None]
+# ConcreteDevice can be an arg for torch.device
+# Device can be passed to `device=`
+# e.g. Tensor.to(device: Device) or tensor(..., device: Device)
+ConcreteDevice = tp.Union[torch.device, str, int]
+Device = tp.Optional[ConcreteDevice]
+# DType can be passed to `dtype=`
+# e.g. Tensor.to(dtype: DType) or tensor(..., device: DType)
+ConcreteDType = torch.dtype
+DType = tp.Optional[ConcreteDType]
 
 # Mimic typeshed
 StrPath = tp.Union[str, Path]

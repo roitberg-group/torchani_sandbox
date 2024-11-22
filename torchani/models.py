@@ -126,10 +126,7 @@ def ANI1x(
     model.load_state_dict(_fetch_state_dict("ani1x_state_dict.pt", private=False))
     model.requires_grad_(False)
     # TODO: Fix this
-    if device is not None:
-        model = model.to(device)
-    if dtype is not None:
-        model = model.to(dtype)
+    model.to(device=device, dtype=dtype)
     return model if model_index is None else model[model_index]
 
 
@@ -165,10 +162,7 @@ def ANI1ccx(
     model = asm.assemble(8)
     model.load_state_dict(_fetch_state_dict("ani1ccx_state_dict.pt", private=False))
     model.requires_grad_(False)
-    if device is not None:
-        model = model.to(device)
-    if dtype is not None:
-        model = model.to(dtype)
+    model.to(device=device, dtype=dtype)
     return model if model_index is None else model[model_index]
 
 
@@ -203,10 +197,7 @@ def ANI2x(
     model = asm.assemble(8)
     model.load_state_dict(_fetch_state_dict("ani2x_state_dict.pt", private=False))
     model.requires_grad_(False)
-    if device is not None:
-        model = model.to(device)
-    if dtype is not None:
-        model = model.to(dtype)
+    model.to(device=device, dtype=dtype)
     return model if model_index is None else model[model_index]
 
 
@@ -259,10 +250,7 @@ def ANImbis(
     model.potentials["nnp"].neural_networks.load_state_dict(energy_nn_state_dict)
     model.potentials["nnp"].charge_networks.load_state_dict(charge_nn_state_dict)
     model.requires_grad_(False)
-    if device is not None:
-        model = model.to(device)
-    if dtype is not None:
-        model = model.to(dtype)
+    model.to(device=device, dtype=dtype)
     return model if model_index is None else model[model_index]
 
 
@@ -287,10 +275,7 @@ def ANIala(
     model = asm.assemble(1)
     model.load_state_dict(_fetch_state_dict("aniala_state_dict.pt", private=True))
     model.requires_grad_(False)
-    if device is not None:
-        model = model.to(device)
-    if dtype is not None:
-        model = model.to(dtype)
+    model.to(device=device, dtype=dtype)
     return model
 
 
@@ -326,8 +311,5 @@ def ANIdr(
     model = asm.assemble(7)
     model.load_state_dict(_fetch_state_dict("anidr_state_dict.pt", private=True))
     model.requires_grad_(False)
-    if device is not None:
-        model = model.to(device)
-    if dtype is not None:
-        model = model.to(dtype)
+    model.to(device=device, dtype=dtype)
     return model if model_index is None else model[model_index]

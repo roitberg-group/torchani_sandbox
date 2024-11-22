@@ -13,7 +13,7 @@ from parameterized import parameterized_class
 from torch.testing._internal.common_utils import TestCase, make_tensor
 
 from torchani.constants import ATOMIC_NUMBER
-from torchani.annotations import Device
+from torchani.annotations import Device, DType
 from torchani.neighbors import adaptive_list, Neighbors
 
 
@@ -21,19 +21,20 @@ def _get_cls_name(cls: type, idx: int, params: tp.Dict[str, tp.Any]) -> str:
     return f"{cls.__name__}_{params['_device'].type}{'_jit' if params['_jit'] else ''}"
 
 
+# As an exception, device = None means "both" here
 def expand(
-    device: tp.Optional[Device] = None,
+    device: tp.Literal["cpu", "cuda", "both"] = "both",
     jit: tp.Optional[bool] = None,
 ):
-    _device: tp.Tuple[torch.device, ...]
-    if device is None:
-        _device = (torch.device("cpu"), torch.device("cuda"))
+    devices: tp.Tuple[torch.device, ...]
+    if device == "both":
+        devices = (torch.device("cpu"), torch.device("cuda"))
     else:
-        _device = (torch.device(device),)
+        devices = (torch.device(device),)
     _jit = (False, True) if jit is None else (jit,)
     decorator = parameterized_class(
         ("_device", "_jit"),
-        product(_device, _jit),
+        product(devices, _jit),
         class_name_func=_get_cls_name,
     )
     return decorator
@@ -76,7 +77,7 @@ class ANITestCase(TestCase):
     # jit-scripting should for the most part be transparent to users, so we
     # assume the input and output types of this function are actually the same
     def _setup(self, model: _T) -> _T:
-        model = model.to(self.device)
+        model.to(self.device)
         if self.jit:
             return tp.cast(_T, torch.jit.script(model))
         return model
@@ -97,8 +98,8 @@ def make_molecs(
     pbc: bool = False,
     symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
     seed: tp.Optional[int] = None,
-    dtype: torch.dtype = torch.float,
-    device: tp.Literal["cpu", "cuda"] = "cpu",
+    device: Device = None,
+    dtype: DType = None,
 ) -> Molecs:
     # CUDA rng is strange and maybe non deterministic even with seeds?
     rng = torch.Generator(device="cpu")
@@ -139,10 +140,10 @@ def make_molec(
     pbc: bool = False,
     symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
     seed: tp.Optional[int] = None,
-    dtype: torch.dtype = torch.float,
-    device: tp.Literal["cpu", "cuda"] = "cpu",
+    device: Device = None,
+    dtype: DType = None,
 ) -> Molecs:
-    return make_molecs(1, atoms, cell_size, pbc, symbols, seed, dtype, device)
+    return make_molecs(1, atoms, cell_size, pbc, symbols, seed, device, dtype)
 
 
 def make_neighbors(
@@ -150,10 +151,10 @@ def make_neighbors(
     cutoff: float = 5.2,
     symbols: tp.Sequence[str] = ("H", "C", "N", "O"),
     seed: tp.Optional[int] = None,
-    dtype: torch.dtype = torch.float,
-    device: tp.Literal["cpu", "cuda"] = "cpu",
+    device: Device = None,
+    dtype: DType = None,
 ) -> Neighbors:
-    molec = make_molec(atoms, 10.0, False, symbols, seed, dtype, device)
+    molec = make_molec(atoms, 10.0, False, symbols, seed, device, dtype)
     return adaptive_list(cutoff, molec.atomic_nums, molec.coords)
 
 
