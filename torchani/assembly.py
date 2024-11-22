@@ -137,9 +137,7 @@ class ANI(torch.nn.Module):
         self._has_extra_potentials = self._check_has_extra_potentials()
 
     def _check_has_extra_potentials(self) -> bool:
-        return (len(self.potentials) > 1) and any(
-            p._enabled for k, p in self.potentials.items() if k != "nnp"
-        )
+        return any(p._enabled for k, p in self.potentials.items() if k != "nnp")
 
     @torch.jit.export
     def set_active_members(self, idxs: tp.List[int]) -> None:
@@ -294,10 +292,11 @@ class ANI(torch.nn.Module):
                 energies = energies.unsqueeze(1)
             if ensemble_values:
                 energies = energies.unsqueeze(0)
-            aevs = self.potentials["nnp"].aev_computer(elem_idxs, coords)
-            energies = energies + self.potentials["nnp"].neural_networks(
-                elem_idxs, aevs, atomic, ensemble_values
-            )
+            if self.potentials["nnp"]._enabled:
+                aevs = self.potentials["nnp"].aev_computer(elem_idxs, coords, cell, pbc)
+                energies = energies + self.potentials["nnp"].neural_networks(
+                    elem_idxs, aevs, atomic, ensemble_values,
+                )
             if self.energy_shifter._enabled:
                 energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
             return SpeciesEnergies(elem_idxs, energies)

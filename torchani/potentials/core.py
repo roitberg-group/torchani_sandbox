@@ -39,9 +39,9 @@ class Potential(_ChemModule):
         coords: Tensor,
         cell: tp.Optional[Tensor] = None,
         pbc: tp.Optional[Tensor] = None,
-        periodic_table_index: bool = True,
         atomic: bool = False,
         ensemble_values: bool = False,
+        atomic_nums_input: bool = True,
     ) -> Tensor:
         r"""
         Outputs energy, as calculated by the potential
@@ -49,7 +49,7 @@ class Potential(_ChemModule):
         Output shape depends on the value of ``atomic``, it is either
         ``(molecs, atoms)`` or ``(molecs,)``
         """
-        if periodic_table_index:
+        if atomic_nums_input:
             elem_idxs = self._conv_tensor.to(species.device)[species]
         else:
             elem_idxs = species
