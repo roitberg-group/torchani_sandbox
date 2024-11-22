@@ -122,7 +122,8 @@ It is possible now to separate the ``AEVComputer`` and
     converter = torchani.SpeciesConverter(("H", "C", "N", "O"))
 
     idxs = converter(atomic_nums)
-    neighbors = neighborlist(idxs, coords, cell, pbc)
+    cutoff = aevc.radial.cutoff
+    neighbors = neighborlist(cutoff, idxs, coords, cell, pbc)
     aevc = aevc.compute_from_neighbors(idxs, neighbors)
 
 This may be useful if you are want to use the computed neighborlist in more modules
@@ -217,7 +218,8 @@ which is way easier than it sounds. As an example:
 
         def forward(self, atomic_nums, coords, cell, pbc):
             idxs = self.converter(atomic_nums)
-            neighbors = self.neighborlist(idxs, coords, cell, pbc)
+            cutoff = self.aevc.radial.cutoff
+            neighbors = self.neighborlist(cutoff, idxs, coords, cell, pbc)
             aevs = self.aevc.compute_from_neighbors(idxs, neighbors)
             return self.nn(idxs, aevs) + self.shifter(idxs)
 

@@ -220,24 +220,20 @@ class AEVComputer(torch.nn.Module):
         assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
         assert self.angular.cutoff < self.radial.cutoff
 
+        if self._strategy == "cuev-fused":
+            if pbc is not None:
+                raise RuntimeError("cuAEV-fused doesn't support PBC")
+            return self._cuaev_fused(elem_idxs, coords)
+        if self._strategy == "cuaev" and pbc is None:
+            return self._cuaev_fused(elem_idxs, coords)
+
         # IMPORTANT: If a neighborlist is used, the coords that input to neighborlist
         # are **not required** to be mapped to the central cell for pbc calculations.
-        cutoff = self.radial.cutoff
-        if self._strategy == "cuaev":  # Dispatch the best cuaev for this situation
-            if pbc is None:
-                return self._cuaev_fused(elem_idxs, coords)
-            neighbors = self.neighborlist(elem_idxs, coords, cutoff, cell, pbc)
+        neighbors = self.neighborlist(self.radial.cutoff, elem_idxs, coords, cell, pbc)
+        if self._strategy == "cuaev" or self._strategy == "cuaev-interface":
             return self._cuaev_compute_from_neighbors(elem_idxs, coords, neighbors)
         if self._strategy == "pyaev":
-            neighbors = self.neighborlist(elem_idxs, coords, cutoff, cell, pbc)
             return self._pyaev_compute_from_neighbors(elem_idxs, coords, neighbors)
-        if self._strategy == "cuaev-interface":
-            neighbors = self.neighborlist(elem_idxs, coords, cutoff, cell, pbc)
-            return self._cuaev_compute_from_neighbors(elem_idxs, coords, neighbors)
-        if self._strategy == "cuaev-fused":
-            if pbc is None:
-                return self._cuaev_fused(elem_idxs, coords)
-            raise ValueError("cuaev-fused strategy doesn't support PBC")
         raise RuntimeError(f"Invalid strategy {self._strategy}")
 
     def compute_from_neighbors(
@@ -259,6 +255,8 @@ class AEVComputer(torch.nn.Module):
             return self._pyaev_compute_from_neighbors(elem_idxs, coords, neighbors)
         if self._strategy == "cuaev" or self._strategy == "cuaev-interface":
             return self._cuaev_compute_from_neighbors(elem_idxs, coords, neighbors)
+        if self._strategy == "cuaev-fused":
+            raise RuntimeError("cuAEV-fused doesn't support `compute_from_neighbors`")
         raise RuntimeError(f"Invalid strategy {self._strategy}")
 
     def _pyaev_compute_from_neighbors(

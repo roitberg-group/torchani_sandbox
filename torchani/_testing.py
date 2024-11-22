@@ -14,7 +14,7 @@ from torch.testing._internal.common_utils import TestCase, make_tensor
 
 from torchani.constants import ATOMIC_NUMBER
 from torchani.annotations import Device
-from torchani.neighbors import all_pairs, Neighbors
+from torchani.neighbors import adaptive_list, Neighbors
 
 
 def _get_cls_name(cls: type, idx: int, params: tp.Dict[str, tp.Any]) -> str:
@@ -86,8 +86,8 @@ class ANITestCase(TestCase):
 class Molecs(tp.NamedTuple):
     coords: Tensor
     atomic_nums: Tensor
-    cell: Tensor
-    pbc: Tensor
+    cell: tp.Optional[Tensor]
+    pbc: tp.Optional[Tensor]
 
 
 def make_molecs(
@@ -124,9 +124,13 @@ def make_molecs(
         list(map(ATOMIC_NUMBER.get, symbols)), device=device, dtype=torch.long
     )
     atomic_nums = atomic_num_kinds[idxs].view(molecs_num, atoms_num)
-    cell = torch.eye(3, device=device, dtype=dtype) * (cell_size + 2.0e-3)
-    _pbc = torch.full((3,), fill_value=int(pbc), device=device, dtype=torch.bool)
-    return Molecs(coords, atomic_nums, cell, _pbc)
+    if pbc:
+        _pbc = torch.tensor([True, True, True], device=device, dtype=torch.bool)
+        _cell = torch.eye(3, device=device, dtype=dtype) * (cell_size + 2.0e-3)
+    else:
+        _pbc = None
+        _cell = None
+    return Molecs(coords, atomic_nums, _cell, _pbc)
 
 
 def make_molec(
@@ -150,7 +154,7 @@ def make_neighbors(
     device: tp.Literal["cpu", "cuda"] = "cpu",
 ) -> Neighbors:
     molec = make_molec(atoms, 10.0, False, symbols, seed, dtype, device)
-    return all_pairs(molec.atomic_nums, molec.coords, cutoff)
+    return adaptive_list(cutoff, molec.atomic_nums, molec.coords)
 
 
 __all__ = ["make_tensor", "TestCase", "ANITestCase", "expand"]

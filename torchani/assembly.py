@@ -314,7 +314,7 @@ class ANI(torch.nn.Module):
                 energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
             return SpeciesEnergies(elem_idxs, energies)
         # Branch that goes through the neighborlist
-        neighbors = self.neighborlist(elem_idxs, coords, self.cutoff, cell, pbc)
+        neighbors = self.neighborlist(self.cutoff, elem_idxs, coords, cell, pbc)
         energies = self.compute_from_neighbors(
             elem_idxs, coords, neighbors, charge, atomic, ensemble_values
         )
@@ -341,7 +341,7 @@ class ANI(torch.nn.Module):
         # Discard dist larger than the cutoff, which may be present if the neighbors
         # come from a program that uses a skin value to conditionally rebuild
         # (Verlet lists in MD engine). Also discard dummy atoms
-        neighbors = narrow_down(species, coords, self.cutoff, neighbor_idxs, shifts)
+        neighbors = narrow_down(self.cutoff, species, coords, neighbor_idxs, shifts)
         return self.compute_from_neighbors(
             elem_idxs, coords, neighbors, charge, atomic, ensemble_values
         )
@@ -751,7 +751,7 @@ class ANIq(ANI):
         # Discard dist larger than the cutoff, which may be present if the neighbors
         # come from a program that uses a skin value to conditionally rebuild
         # (Verlet lists in MD engine). Also discard dummy atoms
-        neighbors = narrow_down(species, coords, self.cutoff, neighbor_idxs, shifts)
+        neighbors = narrow_down(self.cutoff, species, coords, neighbor_idxs, shifts)
         if atomic:
             energies = coords.new_zeros(elem_idxs.shape)
         else:
@@ -790,7 +790,7 @@ class ANIq(ANI):
         self._check_inputs(species, coords, charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
 
-        neighbors = self.neighborlist(elem_idxs, coords, self.cutoff, cell, pbc)
+        neighbors = self.neighborlist(self.cutoff, elem_idxs, coords, cell, pbc)
         energies = coords.new_zeros(elem_idxs.shape[0])
         atomic_charges = coords.new_zeros(elem_idxs.shape)
         if atomic:

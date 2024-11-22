@@ -58,9 +58,9 @@ class Potential(_ChemModule):
         assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
 
         if coords.shape[0] == 1:
-            neighbors = adaptive_list(elem_idxs, coords, self.cutoff, cell, pbc)
+            neighbors = adaptive_list(self.cutoff, elem_idxs, coords, cell, pbc)
         else:
-            neighbors = all_pairs(elem_idxs, coords, self.cutoff, cell, pbc)
+            neighbors = all_pairs(self.cutoff, elem_idxs, coords, cell, pbc)
         return self.compute_from_neighbors(
             elem_idxs, coords, neighbors, atomic, ensemble_values
         )

@@ -737,7 +737,7 @@ class TestCUAEV(TestCase):
             coordinates = coordinates.clone().detach()
             coordinates.requires_grad_()
             atom_index12, _, _ = self.cuaev_computer_2x_use_interface.neighborlist(
-                species, coordinates, self.cutoff_2x
+                self.cutoff_2x, species, coordinates
             )
             assert species.shape[0] == 1
             (
@@ -775,7 +775,7 @@ class TestCUAEV(TestCase):
         coordinates.requires_grad_()
 
         atom_index12, _, _ = self.cuaev_computer_2x_use_interface.neighborlist(
-            species, coordinates, self.cutoff_2x
+            self.cutoff_2x, species, coordinates
         )
         assert species.shape[0] == 1
         (
