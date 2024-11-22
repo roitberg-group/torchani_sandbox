@@ -390,12 +390,13 @@ class TestAEVOnBoundary(TestCase):
 class TestAEVOnBenzenePBC(TestCase):
     def setUp(self):
         self.aev_computer = AEVComputer.like_1x()
-        self.species, self.coords, cell = read_xyz(
+        self.species, self.coords, cell, pbc = read_xyz(
             (Path(__file__).parent / "resources") / "benzene.xyz"
         )
         assert cell is not None
+        assert pbc is not None
         self.cell = cell
-        self.pbc = torch.tensor([True, True, True], dtype=torch.bool)
+        self.pbc = pbc
         self.species = SpeciesConverter(["H", "C", "N", "O"])(self.species)
         self.aev = self.aev_computer(self.species, self.coords, self.cell, self.pbc)
         self.natoms = self.aev.shape[1]

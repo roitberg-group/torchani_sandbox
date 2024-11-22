@@ -62,7 +62,7 @@ def benchmark(
     device = torch.empty(0, device=device).device
 
     def _run(model, file):
-        species, coords, _ = read_xyz(
+        species, coords, _, _ = read_xyz(
             Path(ROOT, "tests", "resources", file),
             device=device,
             dtype=torch.float,
