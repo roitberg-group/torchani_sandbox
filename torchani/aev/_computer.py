@@ -133,13 +133,9 @@ class AEVComputer(torch.nn.Module):
             strat = "cuaev" if self._cuaev_is_avail else "pyaev"
         if strat == "pyaev":
             pass
-        elif (
-            strat == "cuaev"
-            or strat == "cuaev-fused"
-            or strat == "cuaev-interface"
-            and not self._cuaev_is_avail
-        ):
-            raise ValueError(f"{strat} strategy is not available")
+        elif strat == "cuaev" or strat == "cuaev-fused" or strat == "cuaev-interface":
+            if not self._cuaev_is_avail:
+                raise ValueError(f"{strat} strategy is not available")
         else:
             raise ValueError("Unknown compute strategy")
         self._strategy = strat
