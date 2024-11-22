@@ -171,7 +171,7 @@ class ANI(torch.nn.Module):
         self._has_extra_pots = self._check_has_extra_pots()
 
     @torch.jit.export
-    def set_strategy(self, strategy: str = "pyaev") -> None:
+    def set_strategy(self, strategy: str) -> None:
         self.potentials["nnp"].aev_computer.set_strategy(strategy)
 
     @torch.jit.export
@@ -304,23 +304,16 @@ class ANI(torch.nn.Module):
         species, coords = species_coordinates
         self._check_inputs(species, coords, charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
-
-        # Optimized branch that uses the cuAEV-fused strategy
-        if (
-            not self._has_extra_pots
-            and self.potentials["nnp"].aev_computer._strategy == "cuaev-fused"
-        ):
-            aevs = self.potentials["nnp"].aev_computer(
-                elem_idxs, coords, cell=cell, pbc=pbc
-            )
+        # Optimized branch that may bypass the neighborlist through the cuAEV-fused
+        if not self._has_extra_pots and pbc is None:
+            aevs = self.potentials["nnp"].aev_computer(elem_idxs, coords)
             energies = self.potentials["nnp"].neural_networks(
-                elem_idxs, aevs, atomic=atomic, ensemble_values=ensemble_values
+                elem_idxs, aevs, atomic, ensemble_values
             )
             if self.energy_shifter._enabled:
                 energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
             return SpeciesEnergies(elem_idxs, energies)
-
-        # Branch that goes through internal neighborlist
+        # Branch that goes through the neighborlist
         neighbors = self.neighborlist(elem_idxs, coords, self.cutoff, cell, pbc)
         energies = self.compute_from_neighbors(
             elem_idxs, coords, neighbors, charge, atomic, ensemble_values
@@ -1157,10 +1150,8 @@ def simple_ani(
         - ``angular_start=0.8``
         - ``radial_cutoff=5.1``
     """
-    if strategy not in ["pyaev", "cuaev", "cuaev-fused"]:
+    if strategy not in ["pyaev", "cuaev"]:
         raise ValueError(f"Unavailable strategy: {strategy}")
-    if strategy == "cuaev-fused" and (dispersion or repulsion):
-        raise ValueError(f"{strategy} incompatible with external potentials")
     if use_cuda_ops:
         warnings.warn("use_cuda_ops is deprecated, please use strategy = 'cuaev'")
         strategy = "cuaev"
