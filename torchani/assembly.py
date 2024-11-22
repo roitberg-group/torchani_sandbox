@@ -80,7 +80,6 @@ from torchani.neighbors import (
 from torchani.electro import ChargeNormalizer
 from torchani.nn._internal import _ZeroANINetworks
 from torchani.constants import GSAES
-from torchani.utils import sort_by_element
 from torchani.paths import state_dicts_dir
 from torchani.constants import PERIODIC_TABLE, ATOMIC_NUMBER
 from torchani.potentials import (
@@ -877,8 +876,8 @@ class Assembler:
     def symbols(self) -> tp.Tuple[str, ...]:
         return self._symbols
 
-    def set_symbols(self, symbols: tp.Sequence[str], auto_sort: bool = True) -> None:
-        self._symbols = sort_by_element(symbols) if auto_sort else tuple(symbols)
+    def set_symbols(self, symbols: tp.Sequence[str]) -> None:
+        self._symbols = tuple(symbols)
 
     @property
     def fn_for_atomics(self) -> AtomicMaker:

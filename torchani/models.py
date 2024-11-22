@@ -116,7 +116,7 @@ def ANI1x(
         https://aip.scitation.org/doi/abs/10.1063/1.5023802
     """
     asm = Assembler(periodic_table_index=periodic_table_index)
-    asm.set_symbols(SYMBOLS_1X, auto_sort=False)
+    asm.set_symbols(SYMBOLS_1X)
     asm.set_atomic_networks(make_1x_network)
     asm.set_global_cutoff_fn("cosine")
     asm.set_aev_computer(angular="ani1x", radial="ani1x", strategy=strategy)
@@ -153,7 +153,7 @@ def ANI1ccx(
         https://doi.org/10.26434/chemrxiv.6744440.v1
     """
     asm = Assembler(periodic_table_index=periodic_table_index)
-    asm.set_symbols(SYMBOLS_1X, auto_sort=False)
+    asm.set_symbols(SYMBOLS_1X)
     asm.set_global_cutoff_fn("cosine")
     asm.set_aev_computer(radial="ani1x", angular="ani1x", strategy=strategy)
     asm.set_atomic_networks(make_1x_network)
@@ -187,7 +187,7 @@ def ANI2x(
         https://doi.org/10.26434/chemrxiv.11819268.v1
     """
     asm = Assembler(periodic_table_index=periodic_table_index)
-    asm.set_symbols(SYMBOLS_2X, auto_sort=False)
+    asm.set_symbols(SYMBOLS_2X)
     asm.set_global_cutoff_fn("cosine")
     asm.set_aev_computer(radial="ani2x", angular="ani2x", strategy=strategy)
     asm.set_atomic_networks(make_2x_network)
@@ -213,7 +213,7 @@ def ANImbis(
     Experimental ANI-2x model with MBIS charges
     """
     asm = Assembler(periodic_table_index=periodic_table_index, model_cls=ANIq)
-    asm.set_symbols(SYMBOLS_2X, auto_sort=False)
+    asm.set_symbols(SYMBOLS_2X)
     asm.set_global_cutoff_fn("cosine")
     asm.set_aev_computer(radial="ani2x", angular="ani2x", strategy=strategy)
     asm.set_atomic_networks(make_2x_network)
@@ -266,7 +266,7 @@ def ANIala(
     if model_index is not None:
         raise ValueError("Model index is not supported for ANIala")
     asm = Assembler(periodic_table_index=periodic_table_index)
-    asm.set_symbols(SYMBOLS_2X, auto_sort=False)
+    asm.set_symbols(SYMBOLS_2X)
     asm.set_global_cutoff_fn("cosine")
     asm.set_aev_computer(radial="ani2x", angular="ani2x", strategy=strategy)
     asm.set_atomic_networks(make_ala_network)
@@ -294,7 +294,7 @@ def ANIdr(
     HCNOFSCl elements
     """
     asm = Assembler(periodic_table_index=periodic_table_index)
-    asm.set_symbols(SYMBOLS_2X, auto_sort=False)
+    asm.set_symbols(SYMBOLS_2X)
     asm.set_global_cutoff_fn("smooth")
     asm.set_aev_computer(angular="ani2x", radial="ani2x", strategy=strategy)
     asm.set_atomic_networks(make_dr_network)

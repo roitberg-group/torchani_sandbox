@@ -131,8 +131,7 @@ afterwards (e.g. pair potentials, or other neural networks).
 
 Additionally, :obj:`~torchani.aev.AEVComputer` is now initialized with different inputs.
 If you prefer the old signature you can use the
-:obj:`~torchani.aev.AEVComputer.from_constants` constructor instead (we recommend using
-the new constructors however).
+:obj:`~torchani.aev.AEVComputer.from_constants` constructor instead.
 
 Usage of ``torchani.data``
 --------------------------
@@ -153,9 +152,9 @@ If you were previously doing:
 .. code-block:: python
 
     import torchani
-    aev_computer = torchani.AEVComputer(...)  # Lots of arguments
-    neural_networks = torchani.ANIModel(...)  # Lots of arguments
-    energy_shifter = torchani.EnergyShifter(...)  # More arguments
+    aev_computer = torchani.aev.AEVComputer(...)  # Lots of arguments
+    neural_networks = torchani.nn.ANIModel(...)  # Lots of arguments
+    energy_shifter = torchani.utils.EnergyShifter(...)  # More arguments
     model = torchani.nn.Sequential(aev_computer, neural_networks, energy_shifter)
 
 You should probably stop. This approach is error prone and verbose, and has multiple

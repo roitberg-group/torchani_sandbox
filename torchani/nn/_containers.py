@@ -197,8 +197,7 @@ class SpeciesConverter(torch.nn.Module):
     7, 1, 8])`` into a ``tensor([0, 1, 2, 0, 3])``
 
     Args:
-        symbols: |symbols| (it is recommended to order according to atomic number, which
-            you can do with `torchani.utils.sort_by_element`).
+        symbols: |symbols|
     """
 
     conv_tensor: Tensor

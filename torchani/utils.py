@@ -29,7 +29,7 @@ __all__ = [
     "ChemicalSymbolsToInts",
     "ChemicalSymbolsToAtomicNumbers",
     "AtomicNumbersToMasses",
-    "sort_by_element",
+    "sort_by_atomic_num",
     "EnergyShifter",
     "get_atomic_masses",
     "PERIODIC_TABLE",
@@ -456,7 +456,7 @@ def atomic_numbers_to_masses(
 get_atomic_masses = atomic_numbers_to_masses
 
 
-def sort_by_element(it: tp.Iterable[str]) -> tp.Tuple[str, ...]:
+def sort_by_atomic_num(it: tp.Iterable[str]) -> tp.Tuple[str, ...]:
     r"""Sort an iterable of chemical symbols by atomic number
 
     Args:
