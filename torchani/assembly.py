@@ -114,12 +114,6 @@ class ANI(torch.nn.Module):
         periodic_table_index: bool = True,
     ):
         super().__init__()
-        if not periodic_table_index:
-            warnings.warn(
-                "Setting 'periodic_table_index=False' is deprecated "
-                " and will be removed in the future"
-            )
-
         numbers = torch.tensor([ATOMIC_NUMBER[e] for e in symbols], dtype=torch.long)
         self.register_buffer("atomic_numbers", numbers)
 
@@ -135,40 +129,29 @@ class ANI(torch.nn.Module):
         self.energy_shifter = energy_shifter
         self.species_converter = SpeciesConverter(symbols).to(device)
 
-        potentials = potentials or {}
-        potentials["nnp"] = NNPotential(aev_computer, neural_networks)
-        # Sort potentials in order of decresing cutoff. The potential with the
-        # LARGEST cutoff is computed first, then sequentially things that need
-        # SMALLER cutoffs are computed.
-        self.potentials = torch.nn.ModuleDict(
-            {
-                k: v
-                for k, v in sorted(
-                    potentials.items(), key=lambda x: x[1].cutoff, reverse=True
-                )
-            }
-        )
-        self._has_extra_pots = self._check_has_extra_pots()
-        self.cutoff = next(iter(self.potentials.values())).cutoff
+        # Order of computation is not important for potentials
+        self.potentials = torch.nn.ModuleDict(potentials or {})
+        self.potentials["nnp"] = NNPotential(aev_computer, neural_networks)
+        self.cutoff = max(p.cutoff for p in self.potentials.values())
         self.periodic_table_index = periodic_table_index
+        self._has_extra_potentials = self._check_has_extra_potentials()
 
-    def _check_has_extra_pots(self) -> bool:
-        return bool(self.potentials) and any(
-            p._enabled for p in self.potentials.values()
+    def _check_has_extra_potentials(self) -> bool:
+        return (len(self.potentials) > 1) and any(
+            p._enabled for k, p in self.potentials.items() if k != "nnp"
         )
 
     @torch.jit.export
     def set_active_members(self, idxs: tp.List[int]) -> None:
         self.potentials["nnp"].neural_networks.set_active_members(idxs)
 
-    # TODO: This state should be part of ANI
     @torch.jit.unused
     def set_enabled(self, key: str, val: bool = True) -> None:
         if key == "energy_shifter":
             self.energy_shifter._enabled = val
         else:
             self.potentials[key]._enabled = val
-        self._has_extra_pots = self._check_has_extra_pots()
+        self._has_extra_potentials = self._check_has_extra_potentials()
 
     @torch.jit.export
     def set_strategy(self, strategy: str) -> None:
@@ -305,9 +288,14 @@ class ANI(torch.nn.Module):
         self._check_inputs(species, coords, charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
         # Optimized branch that may bypass the neighborlist through the cuAEV-fused
-        if not self._has_extra_pots and pbc is None:
+        if not self._has_extra_potentials and pbc is None:
+            energies = coords.new_zeros(elem_idxs.shape[0])
+            if atomic:
+                energies = energies.unsqueeze(1)
+            if ensemble_values:
+                energies = energies.unsqueeze(0)
             aevs = self.potentials["nnp"].aev_computer(elem_idxs, coords)
-            energies = self.potentials["nnp"].neural_networks(
+            energies = energies + self.potentials["nnp"].neural_networks(
                 elem_idxs, aevs, atomic, ensemble_values
             )
             if self.energy_shifter._enabled:
@@ -366,9 +354,10 @@ class ANI(torch.nn.Module):
             energies = energies.unsqueeze(1)
         if ensemble_values:
             energies = energies.unsqueeze(0)
+        first_neighbors = neighbors
         for pot in self.potentials.values():
             if pot._enabled:
-                neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
+                neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)
                 energies = energies + pot.compute_from_neighbors(
                     elem_idxs, coords, neighbors, atomic, ensemble_values
                 )
@@ -751,7 +740,9 @@ class ANIq(ANI):
         # Discard dist larger than the cutoff, which may be present if the neighbors
         # come from a program that uses a skin value to conditionally rebuild
         # (Verlet lists in MD engine). Also discard dummy atoms
-        neighbors = narrow_down(self.cutoff, species, coords, neighbor_idxs, shifts)
+        first_neighbors = narrow_down(
+            self.cutoff, species, coords, neighbor_idxs, shifts
+        )
         if atomic:
             energies = coords.new_zeros(elem_idxs.shape)
         else:
@@ -759,7 +750,7 @@ class ANIq(ANI):
         atomic_charges = coords.new_zeros(elem_idxs.shape)
         for pot in self.potentials.values():
             if pot._enabled:
-                neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
+                neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)
                 if hasattr(pot, "energies_and_atomic_charges"):
                     output = pot.energies_and_atomic_charges(
                         elem_idxs, coords, neighbors, charge, atomic, ensemble_values
@@ -790,7 +781,7 @@ class ANIq(ANI):
         self._check_inputs(species, coords, charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
 
-        neighbors = self.neighborlist(self.cutoff, elem_idxs, coords, cell, pbc)
+        first_neighbors = self.neighborlist(self.cutoff, elem_idxs, coords, cell, pbc)
         energies = coords.new_zeros(elem_idxs.shape[0])
         atomic_charges = coords.new_zeros(elem_idxs.shape)
         if atomic:
@@ -799,7 +790,7 @@ class ANIq(ANI):
             energies = coords.new_zeros(elem_idxs.shape[0])
         for pot in self.potentials.values():
             if pot._enabled:
-                neighbors = discard_outside_cutoff(neighbors, pot.cutoff)
+                neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)
                 if hasattr(pot, "energies_and_atomic_charges"):
                     output = pot.energies_and_atomic_charges(
                         elem_idxs, coords, neighbors, charge, atomic, ensemble_values
