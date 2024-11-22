@@ -15,7 +15,7 @@ pre-download the parameters by instantiating the models once before use.
 The models can be used directly once they are instantiated. Alternatively, they can be
 converted to an ASE calculator by calling `torchani.assembly.ANI.ase`.
 
-Some models have an interanl set of neural networks (`torchani.nn.ANIEnsemble`), and
+Some models have an interanl set of neural networks (`torchani.nn.Ensemble`), and
 they output their averaged values. Individual members of these ensembles can be accessed
 by indexing, and ``len(ANI)`` can be used to query the number of networks in it.
 

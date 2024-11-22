@@ -63,7 +63,7 @@ from torchani.nn import (
     SpeciesConverter,
     AtomicContainer,
     ANINetworks,
-    ANIEnsemble,
+    Ensemble,
     AtomicNetwork,
     AtomicMakerArg,
     AtomicMaker,
@@ -1054,7 +1054,7 @@ class Assembler:
                         )
                     )
                 )
-            neural_networks = ANIEnsemble(containers)
+            neural_networks = Ensemble(containers)
         else:
             neural_networks = self._container_cls(
                 self._build_atomic_networks(self.fn_for_atomics, aevcomp.out_dim)

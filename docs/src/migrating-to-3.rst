@@ -87,26 +87,15 @@ you should now do this instead:
     aevc = torchani.AEVComputer(...)
     # Note that the following classes have different names
     ani_nets = torchani.ANINetworks(...)
-    ensemble = torchani.ANIEnsemble(...)
+    ensemble = torchani.Ensemble(...)
 
     idxs = converter(atomic_nums)
     aevs = aevc(idxs, coords, cell, pbc)
     energies = animodel(idxs, aevs)
     energies = ensemble(ixs, aevs)
 
-.. NOTE The old behavior is also supported directly by using the old class names but we
-   omit to mention this here on purpose.
-
-Note that now the class names are :obj:`~torchani.nn.ANINetworks` instead of
-``ANIModel``, and :obj:`~torchani.nn.ANIEnsemble` instead of ``Ensemble``.
-
-The old signature is still supported by using the ``.call()`` method, but this is
-discouraged. An example:
-
-.. code-block:: python
-
-    aevc = torchani.AEVComputer(...)
-    _, aevs = aevc.call((species, coords), cell, pbc)  # Possible, but not recommended
+Note that ``torchani.nn.ANIModel`` has been renamed to :obj:`~torchani.nn.ANINetworks`.
+The old signature is still supported for now, but it will be removed in the future
 
 Extra notes on the :obj:`~torchani.aev.AEVComputer`
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

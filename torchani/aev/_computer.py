@@ -1,3 +1,4 @@
+import warnings
 import os
 import typing as tp
 
@@ -200,16 +201,18 @@ class AEVComputer(torch.nn.Module):
         Returns:
             |aevs|
         """
-        if not torch.jit.is_scripting():
+        if not (torch.jit.is_scripting() or torch.compiler.is_compiling()):
             if isinstance(elem_idxs, tuple):
-                raise ValueError(
+                warnings.warn(
                     "You seem to be attempting to call "
                     "`_, aevs = aev_computer((species, coords), cell, pbc)`. "
-                    "This signature was modified in TorchANI 3. "
+                    "This signature was modified in TorchANI 3, and will be removed"
                     "Use `aevs = aev_computer(species, coords, cell, pbc)` instead."
-                    "If you want the old behavior (discouraged) use"
-                    " `_, aevs = aev_computer.call((species, coords), cell, pbc)`."
                 )
+                cell = coords
+                pbc = cell
+                _elem_idxs, coords = elem_idxs
+                return SpeciesAEV(_elem_idxs, self(_elem_idxs, coords, cell, pbc))
             if pbc is not None and not pbc.any():
                 raise ValueError(
                     "pbc = torch.tensor([False, False, False]) is not supported anymore"
@@ -652,16 +655,6 @@ class AEVComputer(torch.nn.Module):
             strategy=strategy,
             neighborlist=neighborlist,
         )
-
-    def call(
-        self,
-        input_: tp.Tuple[Tensor, Tensor],
-        cell: tp.Optional[Tensor] = None,
-        pbc: tp.Optional[Tensor] = None,
-    ) -> SpeciesAEV:
-        r""":meta private:"""
-        elem_idxs, coords = input_
-        return SpeciesAEV(elem_idxs, self(elem_idxs, coords, cell, pbc))
 
     # Needed for bw compatibility
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
