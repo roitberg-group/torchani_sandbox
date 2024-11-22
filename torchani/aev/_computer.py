@@ -220,7 +220,7 @@ class AEVComputer(torch.nn.Module):
         assert coords.shape == (elem_idxs.shape[0], elem_idxs.shape[1], 3)
         assert self.angular.cutoff < self.radial.cutoff
 
-        if self._strategy == "cuev-fused":
+        if self._strategy == "cuaev-fused":
             if pbc is not None:
                 raise RuntimeError("cuAEV-fused doesn't support PBC")
             return self._cuaev_fused(elem_idxs, coords)
