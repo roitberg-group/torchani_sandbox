@@ -61,11 +61,10 @@ class MergedChargesNNPotential(NNPotential):
     ) -> EnergiesScalars:
         aevs = self.aev_computer.compute_from_neighbors(elem_idxs, coords, neighbors)
         energies_qs = self.neural_networks(elem_idxs, aevs, True, ensemble_values)
-        energies = energies_qs[:, :, 0]
+        energies, qs = energies_qs.unbind(-1)
         if not atomic:
             energies = energies.sum(dim=-1)
-        qs = self.charge_normalizer(elem_idxs, energies_qs[:, :, 1], charge)
-        return EnergiesScalars(energies, qs)
+        return EnergiesScalars(energies, self.charge_normalizer(elem_idxs, qs, charge))
 
 
 class SeparateChargesNNPotential(NNPotential):
@@ -95,5 +94,4 @@ class SeparateChargesNNPotential(NNPotential):
         aevs = self.aev_computer.compute_from_neighbors(elem_idxs, coords, neighbors)
         energies = self.neural_networks(elem_idxs, aevs, atomic, ensemble_values)
         qs = self.charge_networks(elem_idxs, aevs, atomic=True)
-        qs = self.charge_normalizer(elem_idxs, qs, charge)
-        return EnergiesScalars(energies, qs)
+        return EnergiesScalars(energies, self.charge_normalizer(elem_idxs, qs, charge))

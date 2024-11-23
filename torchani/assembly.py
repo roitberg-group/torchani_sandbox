@@ -312,10 +312,7 @@ class ANI(_ANI):
             if self.potentials["nnp"]._enabled:
                 aevs = self.potentials["nnp"].aev_computer(elem_idxs, coords, cell, pbc)
                 energies = energies + self.potentials["nnp"].neural_networks(
-                    elem_idxs,
-                    aevs,
-                    atomic,
-                    ensemble_values,
+                    elem_idxs, aevs, atomic, ensemble_values
                 )
             if self.energy_shifter._enabled:
                 energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
@@ -376,14 +373,7 @@ class ANI(_ANI):
 
         :meta private:
         """
-        return self(
-            species_coordinates,
-            cell,
-            pbc,
-            charge=charge,
-            atomic=True,
-            ensemble_values=ensemble_values,
-        )
+        return self(species_coordinates, cell, pbc, charge, True, ensemble_values)
 
     @torch.jit.unused
     def members_forces(
@@ -411,12 +401,7 @@ class ANI(_ANI):
         species, coordinates = species_coordinates
         coordinates.requires_grad_(True)
         elem_idxs, energies = self(
-            (species, coordinates),
-            cell,
-            pbc,
-            charge=charge,
-            atomic=False,
-            ensemble_values=True,
+            (species, coordinates), cell, pbc, charge, False, True
         )
         _forces = []
         for energy in energies:
@@ -457,14 +442,7 @@ class ANI(_ANI):
 
         :meta private:
         """
-        elem_idxs, energies = self(
-            species_coordinates,
-            cell,
-            pbc,
-            charge=charge,
-            atomic=False,
-            ensemble_values=True,
-        )
+        elem_idxs, energies = self(species_coordinates, cell, pbc, charge, False, True)
 
         if energies.shape[0] == 1:
             qbc_factors = torch.zeros_like(energies).squeeze(0)
@@ -496,14 +474,7 @@ class ANI(_ANI):
 
         :meta private:
         """
-        elem_idxs, energies = self(
-            species_coordinates,
-            cell=cell,
-            pbc=pbc,
-            charge=charge,
-            atomic=True,
-            ensemble_values=True,
-        )
+        elem_idxs, energies = self(species_coordinates, cell, pbc, charge, True, False)
 
         if energies.shape[0] == 1:
             stdev = torch.zeros_like(energies).squeeze(0)
@@ -560,7 +531,7 @@ class ANI(_ANI):
         :meta private:
         """
         species, mags = self.force_magnitudes(
-            species_coordinates, cell, pbc, ensemble_values=True
+            species_coordinates, cell, pbc, False, True
         )
 
         eps = 1e-8
