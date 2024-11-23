@@ -78,7 +78,9 @@ class TestRepulsion(ANITestCase):
             distances=torch.tensor([6.0], device=self.device),
             diff_vectors=torch.tensor([[6.0, 0, 0]], device=self.device),
         )
-        energies = self.rep.compute_from_neighbors(element_idxs, coords, neighbors).energies
+        energies = self.rep.compute_from_neighbors(
+            element_idxs, coords, neighbors
+        ).energies
         self.assertEqual(torch.tensor([0.0], device=self.device), energies)
 
     def testAtomicEnergy(self):
