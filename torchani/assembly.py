@@ -398,15 +398,13 @@ class ANI(_ANI):
 
         :meta private:
         """
-        species, coordinates = species_coordinates
-        coordinates.requires_grad_(True)
-        elem_idxs, energies = self(
-            (species, coordinates), cell, pbc, charge, False, True
-        )
+        species, coords = species_coordinates
+        coords.requires_grad_(True)
+        elem_idxs, energies = self((species, coords), cell, pbc, charge, False, True)
         _forces = []
         for energy in energies:
             _forces.append(
-                -torch.autograd.grad(energy.sum(), coordinates, retain_graph=True)[0]
+                -torch.autograd.grad(energy.sum(), coords, retain_graph=True)[0]
             )
         forces = torch.stack(_forces, dim=0)
         return SpeciesForces(elem_idxs, energies, forces)
@@ -474,7 +472,7 @@ class ANI(_ANI):
 
         :meta private:
         """
-        elem_idxs, energies = self(species_coordinates, cell, pbc, charge, True, False)
+        elem_idxs, energies = self(species_coordinates, cell, pbc, charge, True, True)
 
         if energies.shape[0] == 1:
             stdev = torch.zeros_like(energies).squeeze(0)
@@ -530,9 +528,7 @@ class ANI(_ANI):
 
         :meta private:
         """
-        species, mags = self.force_magnitudes(
-            species_coordinates, cell, pbc, False, True
-        )
+        species, mags = self.force_magnitudes(species_coordinates, cell, pbc, True)
 
         eps = 1e-8
         mean_mags = mags.mean(0)
