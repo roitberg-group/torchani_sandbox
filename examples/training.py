@@ -13,10 +13,9 @@ import torch.utils.tensorboard
 from tqdm import tqdm
 
 import torchani
-from torchani.assembly import ANI
+from torchani.arch import ANI, simple_ani
 from torchani.datasets import ANIDataset, ANIBatchedDataset, BatchedDataset
 from torchani.units import hartree2kcalpermol
-from torchani.assembly import simple_ani
 from torchani.grad import forces_for_training
 # %%
 # Device and dataset to run the training
