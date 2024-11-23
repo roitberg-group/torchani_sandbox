@@ -71,11 +71,7 @@ validation = valid_ds.as_dataloader(num_workers=0)
 #
 # Lets generate a model from scratch. For simplicity we use PyTorch's default random
 # initialization for the weights.
-model = simple_ani(
-    lot="wb97x-631gd",
-    symbols=("H", "C", "N", "O"),
-    repulsion=True,
-)
+model = simple_ani(("H", "C", "N", "O"), lot="wb97x-631gd", repulsion=True)
 # %%
 # Set up of optimizer and lr-scheduler
 optimizer = torch.optim.AdamW(

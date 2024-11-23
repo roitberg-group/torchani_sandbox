@@ -159,10 +159,9 @@ the factory functions in `torchani.assembly`, such as `torchani.assembly.simple_
 
     from torchani.assembly import simple_ani
 
-    # LoT is used for the ground state energies
-    model = simple_ani(lot="wb97x-631gd", symbols=("H", "C", "N", "O", "S"))
-    # The returned model is ready to train
+    # LoT is used for the ground state energies, returned model is ready to train
     # Consult the documentation for the relevant options
+    model = simple_ani(("H", "C", "N", "O", "S"), lot="wb97x-631gd")
 
 These functions are wrappers over `torchani.assembly.Assembler`, which you can also use
 to create your model. For example, to create a model just like `torchani.models.ANI2x`,
