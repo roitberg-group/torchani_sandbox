@@ -23,7 +23,7 @@ dependencies:
   - ase
 
   ## NVIDIA CUDA GPU support ##
-  - pytorch::pytorch-cuda=11.8  # Comment this line if installing on macOS, or to **disable** CUDA GPU support in any platform
+  - pytorch::pytorch-cuda=12.4  # Comment this line if installing on macOS, or to **disable** CUDA GPU support in any platform
   #- pytorch::cpuonly  # Uncomment this line to **disable** CUDA GPU support in Linux
 
   ## cuAEV and MNP ##
@@ -33,9 +33,9 @@ dependencies:
   - setuptools-scm>=8
   - gxx_linux-64=11.4
   - gcc_linux-64=11.4
-  - nvidia::cuda-libraries-dev=11.8
-  - nvidia::cuda-cccl=11.8
-  - nvidia::cuda-nvcc=11.8
+  - nvidia::cuda-libraries-dev=12.4
+  - nvidia::cuda-cccl=12.4
+  - nvidia::cuda-nvcc=12.4
 
   ## Running torchani/tests ##
   - coverage  # code coverage
