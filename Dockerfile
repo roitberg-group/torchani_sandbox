@@ -22,7 +22,7 @@ RUN ./download.sh
 COPY dev_requirements.txt .
 
 # Install optional dependencies
-RUN pip --root-user-action install -r dev_requirements.txt
+RUN pip install --root-user-action  -r dev_requirements.txt
 
 # Copy all other necessary repo files
 COPY . /repo
@@ -44,9 +44,10 @@ RUN \
 ARG BUILD_EXT=0
 RUN \
 if [ "$BUILD_EXT" = "0" ]; then \
-    pip --root-user-action install -v . ; \
+    pip install --root-user-action -v . ; \
 else \
-    pip --root-user-action install \
+    pip install \
+        --root-user-action \
         --no-build-isolation \
         --config-settings=--global-option=ext-"${BUILD_EXT}" \
         -v . ; \
