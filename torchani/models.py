@@ -340,6 +340,7 @@ def ANI2xr(
         periodic_table_index=periodic_table_index,
     )
     model.load_state_dict(_fetch_state_dict("ani2xr-preview.pt", private=True))
+    model.requires_grad_(False)
     model = model if model_index is None else model[model_index]
     model.to(device=device, dtype=dtype)
     return model
@@ -370,6 +371,7 @@ def ANI2dr(
         periodic_table_index=periodic_table_index,
     )
     model.load_state_dict(_fetch_state_dict("ani2dr-preview.pt", private=True))
+    model.requires_grad_(False)
     model = model if model_index is None else model[model_index]
     model.to(device=device, dtype=dtype)
     return model
