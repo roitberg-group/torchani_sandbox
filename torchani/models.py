@@ -67,7 +67,7 @@ import typing as tp
 from torchani.cutoffs import CutoffSmooth
 from torchani.utils import SYMBOLS_2X, SYMBOLS_1X
 from torchani.electro import ChargeNormalizer
-from torchani.arch import Assembler, ANI, ANIq, _fetch_state_dict
+from torchani.arch import Assembler, ANI, ANIq, _fetch_state_dict, simple_ani
 from torchani.neighbors import NeighborlistArg
 from torchani.potentials import TwoBodyDispersionD3, RepulsionXTB
 from torchani.annotations import Device, DType
@@ -313,3 +313,63 @@ def ANIdr(
     model.requires_grad_(False)
     model.to(device=device, dtype=dtype)
     return model if model_index is None else model[model_index]
+
+
+def ANI2xr(
+    model_index: tp.Optional[int] = None,
+    neighborlist: NeighborlistArg = "all_pairs",
+    strategy: str = "pyaev",
+    periodic_table_index: bool = True,
+    device: Device = None,
+    dtype: DType = None,
+) -> ANI:
+    r"""
+    Improved ANI model trained to the 2x dataset
+
+    Trained to the wB97X level of theory with an added repulsion potential, and smoother
+    PES.
+    """
+    model = simple_ani(
+        lot="wb97x-631gd",
+        symbols=("H", "C", "N", "O", "F", "S", "Cl"),
+        ensemble_size=8,
+        dispersion=False,
+        repulsion=True,
+        strategy=strategy,
+        neighborlist=neighborlist,
+        periodic_table_index=periodic_table_index,
+    )
+    model.load_state_dict(_fetch_state_dict("ani2xr-preview.pt", private=True))
+    model = model if model_index is None else model[model_index]
+    model.to(device=device, dtype=dtype)
+    return model
+
+
+def ANI2dr(
+    model_index: tp.Optional[int] = None,
+    neighborlist: NeighborlistArg = "all_pairs",
+    strategy: str = "pyaev",
+    periodic_table_index: bool = True,
+    device: Device = None,
+    dtype: DType = None,
+) -> ANI:
+    r"""
+    Improved ANI model trained to the 2x dataset
+
+    Trained to the B973c level of theory with added repulsion and dispersion potentials,
+    and smoother PES.
+    """
+    model = simple_ani(
+        lot="b973c-def2mtzvp",
+        symbols=("H", "C", "N", "O", "F", "S", "Cl"),
+        ensemble_size=8,
+        dispersion=True,
+        repulsion=True,
+        strategy=strategy,
+        neighborlist=neighborlist,
+        periodic_table_index=periodic_table_index,
+    )
+    model.load_state_dict(_fetch_state_dict("ani2dr-preview.pt", private=True))
+    model = model if model_index is None else model[model_index]
+    model.to(device=device, dtype=dtype)
+    return model
