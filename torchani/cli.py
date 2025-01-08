@@ -65,13 +65,34 @@ class DeviceKind(Enum):
 
 @main.command()
 def sp(
-    paths: tpx.Annotated[tp.List[Path], Argument(),],
-    output_path: tpx.Annotated[tp.Optional[Path], Option("-o", "--output", show_default=False),] = None,
-    model_key: tpx.Annotated[str, Option("-m", "--model"),] = "ANI2x",
-    device: tpx.Annotated[tp.Optional[DeviceKind], Option("-d", "--device"),] = None,
-    dtype: tpx.Annotated[tp.Optional[DTypeKind], Option("-t", "--dtype"),] = None,
-    forces: tpx.Annotated[bool, Option("-f/-F", "--forces/--no-forces"),] = False,
-    hessians: tpx.Annotated[bool, Option("-s/-S", "--hessians/--no-hessians"),] = False,
+    paths: tpx.Annotated[
+        tp.List[Path],
+        Argument(),
+    ],
+    output_path: tpx.Annotated[
+        tp.Optional[Path],
+        Option("-o", "--output", show_default=False),
+    ] = None,
+    model_key: tpx.Annotated[
+        str,
+        Option("-m", "--model"),
+    ] = "ANI2x",
+    device: tpx.Annotated[
+        tp.Optional[DeviceKind],
+        Option("-d", "--device"),
+    ] = None,
+    dtype: tpx.Annotated[
+        tp.Optional[DTypeKind],
+        Option("-t", "--dtype"),
+    ] = None,
+    forces: tpx.Annotated[
+        bool,
+        Option("-f/-F", "--forces/--no-forces"),
+    ] = False,
+    hessians: tpx.Annotated[
+        bool,
+        Option("-s/-S", "--hessians/--no-hessians"),
+    ] = False,
 ) -> None:
 
     model_key = model_key.lower().replace("ani", "ANI")
