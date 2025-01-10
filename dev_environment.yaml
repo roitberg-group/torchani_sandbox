@@ -49,7 +49,7 @@ dependencies:
   # Extra data backends for tests:
   - pandas  # Parquet backend
   - pyarrow  # Parquet backend
-  - zarr  # Zarr backend
+  - zarr<3  # Zarr backend
 
   ## Running scripts in torchani/tools ##
   - matplotlib

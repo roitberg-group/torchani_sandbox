@@ -721,12 +721,8 @@ class TestANIDatasetZarr(TestANIDataset):
         )
         self.new_store_name = self.tmp_dir.name / Path("new.zarr")
         # Compat with newer versions of zarr
-        if hasattr(zarr.storage, "DirectoryStore"):
-            store1 = zarr.storage.DirectoryStore(self.tmp_store_one_group.name)
-            store3 = zarr.storage.DirectoryStore(self.tmp_store_three_groups.name)
-        else:
-            store1 = zarr.storage.LocalStore(self.tmp_store_one_group.name)
-            store3 = zarr.storage.LocalStore(self.tmp_store_three_groups.name)
+        store1 = zarr.storage.DirectoryStore(self.tmp_store_one_group.name)
+        store3 = zarr.storage.DirectoryStore(self.tmp_store_three_groups.name)
         with zarr.hierarchy.open_group(
             store1, mode="w"
         ) as f1, zarr.hierarchy.open_group(store3, mode="w") as f3:
