@@ -123,6 +123,8 @@ def opt(
         output["forces"] = []
     if hessians:
         output["hessians"] = []
+    print("Sorry. Not implemented yet!")
+    raise Abort()
     for p in paths:
         znums, coords, cell, pbc = torchani.io.read_xyz(p, device=_device, dtype=_dtype)
         for (_znums, _coords) in zip(znums, coords):
@@ -135,8 +137,6 @@ def opt(
                 model, _znums, _coords, cell, pbc, forces=forces, hessians=hessians
             )
             # Optimization should be performed here
-            print("Sorry. Not implemented yet!")
-            raise Abort()
             output["energies"].extend(result["energies"].tolist())
             if forces:
                 output["forces"].extend(result["forces"].tolist())
