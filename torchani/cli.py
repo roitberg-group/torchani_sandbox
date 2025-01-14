@@ -79,7 +79,7 @@ def parse_device_and_dtype(
     elif device is DeviceKind.CPU:
         _device = "cpu"
     else:
-        _device = None
+        _device = "cuda" if torch.cuda.is_available() else "cpu"
     return _device, _dtype
 
 
@@ -135,6 +135,7 @@ def opt(
                 model, _znums, _coords, cell, pbc, forces=forces, hessians=hessians
             )
             # Optimization should be performed here
+            print("Sorry. Not implemented yet!")
             raise Abort()
             output["energies"].extend(result["energies"].tolist())
             if forces:
