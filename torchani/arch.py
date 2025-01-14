@@ -1017,8 +1017,6 @@ def simple_ani(
             cutoff=radial_cutoff,
         )
     if dispersion:
-        if radial_cutoff > 8.0:
-            raise ValueError("Radial cutoff must be less than 8.0 to use dispersion")
         asm.add_potential(
             TwoBodyDispersionD3,
             name="dispersion_d3",
