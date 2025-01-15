@@ -7,7 +7,6 @@ from torch.export import Dim
 import unittest
 
 from torchani._testing import ANITestCase, make_neighbors, make_molec
-from torchani.utils import SYMBOLS_2X
 from torchani.nn import ANINetworks
 from torchani.neighbors import (
     discard_outside_cutoff,
