@@ -12,7 +12,6 @@ from torchani.nn._core import (
     AtomicNetwork,
     AtomicOneHot,
     AtomicEmbedding,
-    _AtomicDummyEmbedding,
     _Embedding,
 )
 from torchani.nn._infer import BmmEnsemble, MNPNetworks
@@ -25,14 +24,12 @@ class SingleNN(AtomicContainer):
         network: Atomic network to wrap, output dimension should be equal
             to the number of supported elements
     """
-    embed: _Embedding
-
     def __init__(
         self,
         symbols: tp.Sequence[str],
         network: AtomicNetwork,
         embed_kind: str = "continuous",
-        embed_dims: int = 10,
+        embed_dims: tp.Optional[int] = None,
     ):
         super().__init__()
         self.num_species = len(symbols)
@@ -40,16 +37,21 @@ class SingleNN(AtomicContainer):
             raise ValueError(
                 "Output of final layer must be equal to the species num for SingleNN"
             )
+        self.do_embedding = True
+        self.embed: _Embedding
         if embed_kind == "one-hot":
             self.embed = AtomicOneHot(symbols)
-            if embed_dims != 10:
+            if embed_dims is not None:
                 raise ValueError("embed_dims is incompatible with 'one-hot'")
         elif embed_kind == "continuous":
+            if embed_dims is None:
+                embed_dims = 10
             self.embed = AtomicEmbedding(symbols, embed_dims)
         elif embed_kind == "none":
-            if embed_dims != 10:
+            if embed_dims is not None:
                 raise ValueError("embed_dims is incompatible with embed_kind='none'")
-            self.embed = _AtomicDummyEmbedding(symbols)
+            self.do_embedding = False
+            self.embed = _Embedding(symbols)
         else:
             raise ValueError(f"Unsupported embedding kind {embed_kind}")
         self.network = network
@@ -76,10 +78,13 @@ class SingleNN(AtomicContainer):
         assert elem_idxs.shape == aevs.shape[:-1]
         flat_elem_idxs = elem_idxs.flatten()
         aev = aevs.flatten(0, 1)
-        embedding = self.embed(flat_elem_idxs)
-        aev = torch.cat((aev, embedding), dim=-1)
+        if self.do_embedding:
+            embedding = self.embed(flat_elem_idxs)
+            aev = torch.cat((aev, embedding), dim=-1)
         output = self.network(aev)
-        scalars = torch.gather(output, 1, flat_elem_idxs.unsqueeze(1))
+        # TODO: Must be fixed, gather can't be used since there are dummy -1 idxs
+        scalars = torch.gather(output, 1, flat_elem_idxs.unsqueeze(1)).view(-1)
+        scalars[flat_elem_idxs == -1] = 0.0
         scalars = scalars.view_as(elem_idxs)
         if atomic:
             return scalars
