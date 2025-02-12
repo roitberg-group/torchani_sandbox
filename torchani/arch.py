@@ -648,11 +648,27 @@ class ANIq(_ANI):
         charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
+        _molecule_idxs: tp.Optional[Tensor] = None,
     ) -> SpeciesEnergiesAtomicCharges:
         species, coords = species_coordinates
         self._check_inputs(species, coords, charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
+
         neighbors = self.neighborlist(self.cutoff, elem_idxs, coords, cell, pbc)
+
+        # Experimental _molecule_idxs feature
+        # TODO include inside neighborlist if useful
+        if _molecule_idxs is not None:
+            if not (torch.jit.is_scripting() or torch.compiler.is_compiling()):
+                warnings.warn("molecule_idxs is experimental and subject to change")
+            if coords.shape[0] != 1:
+                raise ValueError("molecule_idxs expects only one conformation")
+            if len(_molecule_idxs) != coords.shape[1]:
+                raise ValueError(
+                    "molecule_idxs must be the same length as num atoms, if passed"
+                )
+            neighbors = discard_inter_molecule_pairs(neighbors, _molecule_idxs)
+
         result = self.compute_from_neighbors(
             elem_idxs, coords, neighbors, charge, atomic, ensemble_values
         )
