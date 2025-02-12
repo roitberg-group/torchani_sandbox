@@ -408,7 +408,9 @@ class ANI(_ANI):
         """
         species, coords = species_coordinates
         coords.requires_grad_(True)
-        elem_idxs, energies = self((species, coords), cell, pbc, charge, False, True, None)
+        elem_idxs, energies = self(
+            (species, coords), cell, pbc, charge, False, True, None
+        )
         _forces = []
         for energy in energies:
             _forces.append(
@@ -448,7 +450,9 @@ class ANI(_ANI):
 
         :meta private:
         """
-        elem_idxs, energies = self(species_coordinates, cell, pbc, charge, False, True, None)
+        elem_idxs, energies = self(
+            species_coordinates, cell, pbc, charge, False, True, None
+        )
 
         if energies.shape[0] == 1:
             qbc_factors = torch.zeros_like(energies).squeeze(0)
@@ -480,7 +484,9 @@ class ANI(_ANI):
 
         :meta private:
         """
-        elem_idxs, energies = self(species_coordinates, cell, pbc, charge, True, True, None)
+        elem_idxs, energies = self(
+            species_coordinates, cell, pbc, charge, True, True, None
+        )
 
         if energies.shape[0] == 1:
             stdev = torch.zeros_like(energies).squeeze(0)
