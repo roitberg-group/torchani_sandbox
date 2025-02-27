@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 .eggs
 *.egg-info/
-
+.idea/
 # setuptools-scm version file
 _version.py
 

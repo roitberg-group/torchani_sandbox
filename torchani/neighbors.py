@@ -188,7 +188,11 @@ def all_pairs(
     # Create a neighborlist for all molecules and all atoms.
     # Later screen dummy atoms
     device = species.device
-    neighbor_idxs = torch.triu_indices(atoms, atoms, 1, device=device)
+    if device.type == "mps":
+        neighbor_idxs = torch.triu_indices(atoms, atoms, 1, device="cpu").to(device)
+    else:
+        neighbor_idxs = torch.triu_indices(atoms, atoms, 1, device=device)
+    #neighbor_idxs = torch.triu_indices(atoms, atoms, 1, device=device)
     if molecs > 1:
         neighbor_idxs = neighbor_idxs.unsqueeze(1).repeat(1, molecs, 1)
         neighbor_idxs += atoms * torch.arange(molecs, device=device).view(1, -1, 1)
@@ -950,7 +954,12 @@ def neighbors_to_triples(neighbors: Neighbors) -> Triples:
     zcounts = torch.cat((counts.new_zeros(1), counts))
     dev = zcounts.device
     counts_max: int = int(zcounts.max())  # Dynamo can't get past this
-    max_local_pairs = torch.tril_indices(counts_max, counts_max, -1, device=dev)
+    if dev.type == "mps":
+        max_local_pairs = torch.tril_indices(counts_max, counts_max, -1, device="cpu").to(dev)
+    else:
+        max_local_pairs = torch.tril_indices(counts_max, counts_max, -1, device=dev)
+
+    #max_local_pairs = torch.tril_indices(counts_max, counts_max, -1, device=dev)
     mask = torch.arange(max_local_pairs.shape[1], device=dev) < pair_sizes.view(-1, 1)
     sort_local_pairs = max_local_pairs.repeat(1, pair_sizes.shape[0])[:, mask.view(-1)]
     sort_local_pairs += torch.cumsum(zcounts, dim=0).index_select(0, pair_indices)

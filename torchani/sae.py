@@ -26,10 +26,10 @@ class SelfEnergy(_ChemModule):
     self_energies: Tensor
     _enabled: bool
 
-    def __init__(self, symbols: tp.Sequence[str], self_energies: tp.Sequence[float]):
+    def __init__(self, symbols: tp.Sequence[str], self_energies: tp.Sequence[float], device=None):
         super().__init__(symbols)
         self_energies = self._validate_elem_seq("self_energies", self_energies)
-        self.register_buffer("self_energies", torch.tensor(self_energies))
+        self.register_buffer("self_energies", torch.tensor(self_energies, device=device))
         self._enabled = True
 
     # Return a sequence of GSAES sorted by element
