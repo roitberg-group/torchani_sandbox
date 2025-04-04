@@ -5,7 +5,6 @@ from torch import Tensor
 from torchani.models import BuiltinModel
 from torchani.tuples import SpeciesEnergies
 
-
 class ExCorrModel(BuiltinModel):
     #  It is necessary to pass "the coeff aev computer"  to init instead of the normal aev computer
     # typing may not like this, we can fix it later

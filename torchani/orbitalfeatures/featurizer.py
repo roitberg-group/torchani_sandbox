@@ -34,8 +34,10 @@ class ExCorrAEVComputer(AEVComputer):
         NOShfR = 16,
         NOShfA = 8,
         NOShfZ = 4,
-        LowerOShfR = 0.00,
-        UpperOShfR = 0.50,
+        LowerOShfS = -2.00,
+        UpperOShfS = 2.00,
+        LowerOShfR = -2.00,
+        UpperOShfR = 2.00,
         LowerOShfA = 0.00,
         UpperOShfA = 0.30,
         LowerOShfZ = 0.00,
@@ -71,9 +73,12 @@ class ExCorrAEVComputer(AEVComputer):
         self.use_angular_info_in_simple_orbital_aev = use_angular_info_in_simple_orbital_aev
         self.basis_functions = basis_functions
         self.use_geometric_aev = use_geometric_aev
+        self.NOShfR = NOShfS
         self.NOShfR = NOShfR
         self.NOShfA = NOShfA
         self.NOShfZ = NOShfZ
+        self.LowerOShfS = LowerOShfS
+        self.UpperOShfS = UpperOShfS
         self.LowerOShfR = LowerOShfR
         self.UpperOShfR = UpperOShfR
         self.LowerOShfA = LowerOShfA
@@ -130,6 +135,7 @@ class ExCorrAEVComputer(AEVComputer):
 
         aev = self.orbital_aev_computer(
                 coefficients=coefficients,
+                species=species,
                 use_simple_orbital_aev = self.use_simple_orbital_aev,
                 use_angular_info = self.use_angular_info_in_simple_orbital_aev,
                 basis_functions = self.basis_functions,
