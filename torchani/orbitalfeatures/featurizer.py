@@ -27,21 +27,23 @@ class ExCorrAEVComputer(AEVComputer):
         radial_terms='standard',
         angular_terms='standard',
         use_simple_orbital_aev: bool = True,
-        use_angular_info_in_simple_orbital_aev: bool = False,
-        basis_functions='spd',
+        use_angular_info: bool = False,
+        use_angular_radial_coupling: bool = False,
+        basis_functions = 'spd',
+        normalization_library = None,
         use_geometric_aev: bool = True,
         NOShfS = 16,
         NOShfR = 16,
         NOShfA = 8,
-        NOShfZ = 4,
+        NOShfZ = 1,
         LowerOShfS = -2.00,
         UpperOShfS = 2.00,
         LowerOShfR = -2.00,
         UpperOShfR = 2.00,
         LowerOShfA = 0.00,
         UpperOShfA = 0.30,
-        LowerOShfZ = 0.00,
-        UpperOShfZ = 5.00,
+        LowerOShfZ = 2.00,
+        UpperOShfZ = 2.00,
         OEtaR = 20.0,
         OEtaA = 12.0,
         OZeta = 14.0,
@@ -51,7 +53,9 @@ class ExCorrAEVComputer(AEVComputer):
         assert not use_cuaev_interface
         assert (basis_functions == 'spd' or basis_functions == 'sp' or basis_functions == 's')
         if ((basis_functions == 's') and use_simple_orbital_aev):
-            assert (not use_angular_info_in_simple_orbital_aev)
+            assert (not use_angular_info)
+        is (not use_angular_info):
+            assert (not use_angular_radial_coupling)
         super().__init__(
             Rcr,
             Rca,
@@ -69,8 +73,13 @@ class ExCorrAEVComputer(AEVComputer):
             radial_terms,
             angular_terms,
         )
+        if (normalization_library not None):
+            norm_file = Path(normalization_library)
+            self.normalization_library = torch.load(norm_file)
+
         self.use_simple_orbital_aev = use_simple_orbital_aev
-        self.use_angular_info_in_simple_orbital_aev = use_angular_info_in_simple_orbital_aev
+        self.use_angular_info = use_angular_info
+        self.use_angular_radial_coupling = use_angular_radial_coupling
         self.basis_functions = basis_functions
         self.use_geometric_aev = use_geometric_aev
         self.NOShfR = NOShfS
@@ -95,7 +104,7 @@ class ExCorrAEVComputer(AEVComputer):
                 orbital_aev_length = 13             
             elif basis_functions == 's':
                 orbital_aev_length = 9
-            if use_angular_info_in_simple_orbital_aev:
+            if  use_angular_info:
                 #Only p and d AOVs have angular info associated
                 #The number of s+d AOVs is simple_orbital_aev_length-9 (because we need to substract the 9 s AOVs)
                 #If we calculate the number of angles as N(N-1)/2 (with N the number of s+d AOVs), we have:
@@ -104,8 +113,20 @@ class ExCorrAEVComputer(AEVComputer):
             self.orbital_aev_computer = OrbitalAEVComputer()   
         else:
             #To do -> Include an AEV-like expansion for the AOVs
-            pass
-
+            if basis_functions == 'spd':
+                orbital_aev_length = 9*self.NOShfS+4*self.NOShfR+0 #To do RECALCULATE THIS AFTER DECIDING WHAT TO DO WITH THE D COEFFS<----------------------------------------------
+            elif basis_functions == 'sp':
+                orbital_aev_length = 9*self.NOShfS+4*self.NOShfR
+            elif basis_functions == 's':
+                orbital_aev_length = 9*self.NOShfS
+            if  use_angular_info:
+                nangles = int((orbital_aev_length-9)*(orbital_aev_length-10)/2)
+                angular_orbital_aev_length = nangles*NOShfZ
+                if use_angular_radial_coupling:
+                    angular_orbital_aev_length = angular_orbital_aev_length + 9*NOShfA
+                orbital_aev_length = orbital_aev_length + angular_orbital_aev_length
+            self.orbital_aev_computer = OrbitalAEVComputer()   
+        #To do: Do we actually need to define an orbital_aev_length if we are not using the geometric aevs?
         if use_geometric_aev:
             self.aev_length = self.radial_length + self.angular_length + orbital_aev_length
         else:
@@ -137,8 +158,10 @@ class ExCorrAEVComputer(AEVComputer):
                 coefficients=coefficients,
                 species=species,
                 use_simple_orbital_aev = self.use_simple_orbital_aev,
-                use_angular_info = self.use_angular_info_in_simple_orbital_aev,
+                use_angular_info = self.use_angular_info,
+                use_angular_radial_coupling = self.use_angular_radial_coupling,
                 basis_functions = self.basis_functions,
+                normalization_library = self.normalization_library,
                 NOShfR = self.NOShfR,
                 NOShfA = self.NOShfA,
                 NOShfZ = self.NOShfZ,

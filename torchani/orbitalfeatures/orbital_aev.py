@@ -2,16 +2,19 @@ import typing as tp
 import torch
 from torch import Tensor
 import numpy as np
+from torchani.utils import ChemicalSymbolsToInts
 
 # This calculates ONLY the coefficients part of the AEV
 class OrbitalAEVComputer(torch.nn.Module):
     def forward(
         self,
         coefficients: Tensor,
+        normalization_library = Tensor,
         species: Tensor,
         basis_functions: str,
         use_simple_orbital_aev: bool,
         use_angular_info: bool,
+        use_angular_radial_coupling: bool,
         NOShfS = int,
         NOShfR = int,
         NOShfA = int,
@@ -36,18 +39,32 @@ class OrbitalAEVComputer(torch.nn.Module):
         # Around each actual atom.
         
         s_coeffs, orbital_matrix = self._reshape_coefficients(coefficients,basis_functions)
+        Z_to_idx = {1: 0, 6: 1, 7: 2, 8: 3, 9: 4, 16: 5, 17: 6}
+
+        #Normalizes s_coeffs
+        # Convert species -> row indices
+        species_idx = self._map_species_to_idx(species, Z_to_idx)  # shape (nconf, natoms)
+
+        # Unpack normalization library
+        s_coeffs_mus, s_coeffs_sigmas, p_norms_mus, p_norms_sigmas = normalization_library   # unpack
+
+        s_coeffs = self._normalize(s_coeffs,species_idx,s_coeffs_mus,s_coeffs_sigmas)
 
         # Return "simple_orbital_aevs" if corresponding
         if use_simple_orbital_aev:
+            # Case s
             if basis_functions == 's':
-                return self._reshape_coefficients(coefficients,basis_functions) # shape (nconf, natoms, simple_orbital_aevs_length)                       
-            distances = torch.linalg.norm(orbital_matrix, dim=-1)
-            simple_orbital_aevs = torch.cat((s_coeffs, distances), dim=-1)
+                return self.s_coeffs_norm
+            # Case sp or spd                
+            p_norms = torch.linalg.norm(orbital_matrix, dim=-1)
+
+            p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
+
+            simple_orbital_aevs = torch.cat((s_coeffs, p_norms), dim=-1)
+            
             if use_angular_info:
-                angles = self._get_angles_from_orbital_matrix(orbital_matrix,distances,True)
+                angles = self._get_angles_from_orbital_matrix(orbital_matrix,p_norms,True)
                 simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles), dim=-1)
-                # TEST
-                # simple_orbital_aevs = angles
             return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
         
         else: # Return actual orbital_aevs
@@ -55,32 +72,32 @@ class OrbitalAEVComputer(torch.nn.Module):
             # Define s shifts and reshape for broadcasting
             OShfS = torch.linspace(LowerOShfS, UpperOShfS, NOShfS)
             OShfS = OShfS.view(1, 1, 1, NOShfS)
-            # Normalize s_coeffs based on predefined mu and sigma values on a given dataset
-            s_coeffs = self._normalice_s_coeffs(s_coeffs, species)
-            #To test normalization
-            # if basis_functions == 's':
-            #     return s_coeffs            
-            # Ensure the tensor is correctly shaped for broadcasting
-            s_coeffs = s_coeffs.view(nconf, natoms, nscoeffs, 1)            
+
+            # s_coeffs are already normalized here, so we only prepare the tensor for broadcasting
+            s_coeffs = s_coeffs.view(nconf, natoms, nscoeffs, 1)      
+
             # Compute the s component of the orbital AEV
             s_orbital_aev = torch.exp(-OEtaS * ((s_coeffs - OShfS) ** 2))
                        
             if basis_functions == 's':
                 return s_orbital_aev
 
-            distances = torch.linalg.norm(orbital_matrix, dim=-1)
-            _, _, ndistances = distances.shape                  
+            p_norms = torch.linalg.norm(orbital_matrix, dim=-1)
+
+            p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
+            
+            _, _, np_norms = p_norms.shape                  
             # Define r shifts and reshape for broadcasting
             OShfR = torch.linspace(LowerOShfR, UpperOShfR, NOShfR)
             OShfR = OShfR.view(1, 1, 1, NOShfR)
             # Ensure the tensor is correctly shaped for broadcasting
-            distances = distances.view(nconf, natoms, ndistances, 1)
+            p_norms = p_norms.view(nconf, natoms, np_norms, 1)
             # Compute the squared differences
-            radial_orbital_aev = torch.exp(-OEtaR * ((distances - OShfR) ** 2))
+            radial_orbital_aev = torch.exp(-OEtaR * ((p_norms - OShfR) ** 2))
             # Concatenate the s and radial contributions to the orbital aevs
             orbital_aev = torch.cat((s_orbital_aev, radial_orbital_aev), dim=-1)            
             if use_angular_info:
-                angles, avdistperangle = self._get_angles_from_orbital_matrix(orbital_matrix,distances,False)
+                angles, avdistperangle = self._get_angles_from_orbital_matrix(orbital_matrix,p_norms,False)
                 _, _, nangles = angles.shape
                 # Define r shifts for the angular component of the AEV and reshape for broadcasting
                 OShfA = torch.linspace(LowerOShfA, UpperOShfA, NOShfA)                
@@ -95,21 +112,23 @@ class OrbitalAEVComputer(torch.nn.Module):
                 OShfZ = OShfZ.expand(nconf, natoms, nangles, NOShfZ)  # Match dimensions
  
                 # Calculate factor1
-                factor1 = ((1 + torch.cos(expanded_angles - OShfZ)) / 2)**OZeta
+                angular_orbital_aev = ((1 + torch.cos(expanded_angles - OShfZ)) / 2)**OZeta
+                angular_orbital_aev = 2**(1-OZeta)*angular_orbital_aev.unsqueeze(-1)
 
-                # Expand avdistperangle for ShfA
-                expanded_avdistperangle = avdistperangle.unsqueeze(-1)  # Adding an extra dimension for ShfA
-                expanded_avdistperangle = expanded_avdistperangle.expand(-1, -1, -1, NOShfA)  # Match dimensions of ShfA
+                if (use_angular_radial_coupling):
+                    # Expand avdistperangle for ShfA
+                    expanded_avdistperangle = avdistperangle.unsqueeze(-1)  # Adding an extra dimension for ShfA
+                    expanded_avdistperangle = expanded_avdistperangle.expand(-1, -1, -1, NOShfA)  # Match dimensions of ShfA
 
-                # Expand ShfA to match avdistperangle
-                OShfA = OShfA.view(1, 1, 1, NOShfA)  # Reshape for broadcasting
-                OShfA = OShfA.expand(nconf, natoms, nangles, NOShfA)  # Match dimensions
+                    # Expand ShfA to match avdistperangle
+                    OShfA = OShfA.view(1, 1, 1, NOShfA)  # Reshape for broadcasting
+                    OShfA = OShfA.expand(nconf, natoms, nangles, NOShfA)  # Match dimensions
 
-                # Calculate factor2
-                factor2 = torch.exp(-OEtaA * (expanded_avdistperangle - OShfA)**2)
+                    # Calculate factor2
+                    factor2 = torch.exp(-OEtaA * (expanded_avdistperangle - OShfA)**2)
 
-                # Combine factors
-                angular_orbital_aev = 2 * factor1.unsqueeze(-1) * factor2.unsqueeze(3)
+                    # Combine factors
+                    angular_orbital_aev = angular_orbital_aev * factor2.unsqueeze(-1) #unsqueeze(3)?
 
                 # Reshape to the final desired shape
                 angular_orbital_aev = angular_orbital_aev.reshape(nconf, natoms, nangles * NOShfA * NOShfZ)
@@ -173,168 +192,21 @@ class OrbitalAEVComputer(torch.nn.Module):
 
         return s_coeffs, orbital_matrix
 
-    def _normalice_s_coeffs(
+
+    def _normalize(
         self,
-        s_coeffs: Tensor,
-        species: Tensor,
+        coeffs: Tensor,
+        species_idx: Tensor,
+        mus: Tensor,
+        sigmas: Tensor
     ) -> Tensor:
         
-        #For now this is written for H and O, with values extracted from an only-water dataset
-        #Define a Tensor with the values required for normalization:
-        s_coeffs_H_mu = [-0.0013891633279463555,
-                          0.052817133273316774,
-                          0.139812833597163,
-                          0.04197082575153015]
-        s_coeffs_O_mu = [0.3869724094534165,
-                         1.1195726605859562,
-                         4.597656411500856,
-                         4.18116756869605,
-                        -0.777753667038269,
-                         0.8991094564592526,
-                         0.25287442792706855]
-        raw_data = [
-           s_coeffs_H_mu,  # H = Z=1
-           s_coeffs_O_mu   # O = Z=8
-        ]
-        # Pad each row to length 9
-        padded_data = []
-        for row in raw_data:
-            row_padded = row + [0.0] * (9 - len(row))
-            padded_data.append(row_padded)
+        # Advanced indexing to fetch the right μ and σ for *each* atom
+        atom_mus = mus[species_idx, :]
+        atom_sigmas = sigmas[species_idx, :]
 
-        # Convert to a torch tensor of shape (2, 9)
-        s_coeffs_mus = torch.tensor(padded_data, dtype=torch.float)
-
-        #Does the same for the sigmas
-        s_coeffs_O_sigma = [0.01648580936203453,
-                            0.04360467004470585,
-                            0.10939958699162289,
-                            0.1452881891452822,
-                            0.24744978852384295,
-                            0.6757096584771374,
-                            0.15629951845443388]      
-        s_coeffs_H_sigma = [0.014984132924379046,
-                            0.06597323056314336,
-                            0.05229082868259066,
-                            0.10317217531939492]
-        raw_data = [
-           s_coeffs_H_sigma,  # H = Z=1
-           s_coeffs_O_sigma   # O = Z=8
-        ]
-        # Pad each row to length 9 (we padd sigma with 1 to avoid dividing by zero in the next step)
-        padded_data = []
-        for row in raw_data:
-            row_padded = row + [1.0] * (9 - len(row))
-            padded_data.append(row_padded)
-
-        # Convert to a torch tensor of shape (2, 9), here 2 is the number of atomic species
-        s_coeffs_sigmas = torch.tensor(padded_data, dtype=torch.float)        
-         
-        #####################################################################
-        # Now we normalize
-        # Example shapes:
-        # s_coeffs:        (nconformers, natoms, 9)
-        # species:         (nconformers, natoms) with entries in {1, 8}
-        # s_coeffs_mus:    (2, 9) -- first row for H, second row for O
-        # s_coeffs_sigmas: (2, 9) -- first row for H, second row for O
-
-        nconformers, natoms, _ = s_coeffs.shape # s_coeffs shape: (nconformers, natoms, 9)
-
-        # 1) Convert atomic numbers to 0/1 indices
-        #    0 => hydrogen (Z=1), 1 => oxygen (Z=8).
-        species_idx = (species == 8).long()  # shape (nconformers, natoms)
-
-        # 2) Use advanced indexing so that for each (i,j), we pick row 0 or 1
-        #    from s_coeffs_mus and s_coeffs_sigmas.
-        #    The result has shape (nconformers, natoms, 9).
-        atom_mus = s_coeffs_mus[species_idx, :]
-        atom_sigmas = s_coeffs_sigmas[species_idx, :]
-
-        # 3) Perform the normalization per atom
-        #    shape (nconformers, natoms, 9)
-        s_coeffs_normalized = (s_coeffs - atom_mus) / atom_sigmas
-        return s_coeffs_normalized
-
-
-    def _normalice_p_distances(
-        self,
-        distances: Tensor,
-        species: Tensor,
-    ) -> Tensor:
-        
-        #For now this is written for H and O, with values extracted from an only-water dataset
-        #Define a Tensor with the values required for normalization:
-
-        p_distances_O_mu = [0.04944367235325901,
-                         0.044594583975525556,
-                         0.04214927903340951]
-
-        raw_data = [
-           p_distances_O_mu   # O = Z=8
-        ]
-
-        # Pad to length 4
-        padded_data = []
-        for row in raw_data:
-            row_padded = row + [0.0] * (4 - len(row))
-            padded_data.append(row_padded)
-
-        # Convert to a torch tensor of shape (2, 9)
-        p_coeffs_mus = torch.tensor(padded_data, dtype=torch.float)
-
-        #Does the same for the sigmas
-        p_coeffs_O_sigma = [0.023578402218927527,
-                        0.06970818495769757,
-                        0.05985785104138217]    
-
-        raw_data = [
-           p_coeffs_O_sigma   # O = Z=8
-        ]
-        # Pad each row to length 9
-        padded_data = []
-        for row in raw_data:
-            row_padded = row + [0.0] * (9 - len(row))
-            padded_data.append(row_padded)
-
-        # Convert to a torch tensor of shape (2, 9)
-        s_coeffs_sigmas = torch.tensor(padded_data, dtype=torch.float)        
-         
-        #####################################################################
-        # Now we normalize
-        # Example shapes:
-        # s_coeffs:        (nconformers, natoms, 9)
-        # species:         (nconformers, natoms) with entries in {1, 8}
-        # s_coeffs_mus:    (2, 9) -- first row for H, second row for O
-        # s_coeffs_sigmas: (2, 9) -- first row for H, second row for O
-
-        nconformers, natoms, _ = s_coeffs.shape # s_coeffs shape: (nconformers, natoms, 9)
-
-        # 1) Convert atomic numbers to 0/1 indices
-        #    0 => hydrogen (Z=1), 1 => oxygen (Z=8).
-        species_idx = (species == 8).long()  # shape (nconformers, natoms)
-
-        # 2) Use advanced indexing so that for each (i,j), we pick row 0 or 1
-        #    from s_coeffs_mus and s_coeffs_sigmas.
-        #    The result has shape (nconformers, natoms, 9).
-        atom_mus = s_coeffs_mus[species_idx, :]
-        atom_sigmas = s_coeffs_sigmas[species_idx, :]
-
-        # 3) Perform the normalization per atom
-        #    shape (nconformers, natoms, 9)
-        s_coeffs_normalized = (s_coeffs - atom_mus) / atom_sigmas
-        return s_coeffs_normalized
-
-    # def _normalize_distances(
-    #     self,
-    #     distances: Tensor,
-    #     species: Tensor,
-    # ) -> Tensor:
-        
-    #     0.04944367235325901 0.023578402218927527
-    #     0.044594583975525556 0.06970818495769757
-    #     0.04214927903340951 0.05985785104138217
-    #     nconformers, natoms, naovs = distances.shape
-
+        coeffs_normalized = (coeffs - atom_mus) / atom_sigmas
+        return coeffs_normalized
 
     def _get_angles_from_orbital_matrix(
         self,
@@ -375,3 +247,21 @@ class OrbitalAEVComputer(torch.nn.Module):
                     avdistperangle[:, :, k] = (distances[:, :, i]+distances[:, :, j])/2.0
                     k = k + 1
             return angles,avdistperangle
+
+    def _map_species_to_idx(
+            self,
+            species: torch.Tensor, 
+            Z_to_idx: dict,
+    )-> Tensor:
+        """
+        species: shape (nconformers, natoms)
+        Returns a new tensor of same shape with the row index in [0..N-1].
+        """
+        # Initialize an integer tensor
+        species_idx = torch.empty_like(species, dtype=torch.long)
+
+        # For each known Z in Z_to_idx, fill in the appropriate row index
+        for z, row in Z_to_idx.items():
+            mask = (species == z)
+            species_idx[mask] = row
+        return species_idx
