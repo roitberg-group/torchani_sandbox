@@ -59,7 +59,7 @@ class SingleNN(AtomicContainer):
     def forward(
         self,
         elem_idxs: Tensor,
-        aevs: Tensor,
+        aevs: tp.Optional[Tensor] = None,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> Tensor:
@@ -75,6 +75,7 @@ class SingleNN(AtomicContainer):
         Returns:
             Tensor with the predicted scalars.
         """
+        assert aevs is not None
         assert elem_idxs.shape == aevs.shape[:-1]
         molecs, atoms = elem_idxs.shape
         flat_elem_idxs = elem_idxs.flatten()
@@ -218,7 +219,7 @@ class ANISharedNetworks(AtomicContainer):
     def forward(
         self,
         elem_idxs: Tensor,
-        aevs: Tensor,
+        aevs: tp.Optional[Tensor] = None,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> Tensor:
@@ -234,6 +235,7 @@ class ANISharedNetworks(AtomicContainer):
         Returns:
             Tensor with the predicted scalars.
         """
+        assert aevs is not None
         assert elem_idxs.shape == aevs.shape[:-1]
         flat_elem_idxs = elem_idxs.flatten()
         aev = aevs.flatten(0, 1)

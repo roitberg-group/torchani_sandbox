@@ -109,10 +109,11 @@ class BmmEnsemble(AtomicContainer):
     def forward(
         self,
         elem_idxs: Tensor,
-        aevs: Tensor,
+        aevs: tp.Optional[Tensor] = None,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> Tensor:
+        assert aevs is not None
         assert elem_idxs.shape == aevs.shape[:-1]
         assert aevs.shape[0] == 1, "BmmEnsemble only supports single-conformer inputs"
 
@@ -340,10 +341,11 @@ class MNPNetworks(AtomicContainer):
     def forward(
         self,
         elem_idxs: Tensor,
-        aevs: Tensor,
+        aevs: tp.Optional[Tensor] = None,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> Tensor:
+        assert aevs is not None
         assert elem_idxs.shape == aevs.shape[:-1]
         assert aevs.shape[0] == 1, "MNPNetworks only supports single-conformer inputs"
         assert not atomic, "MNPNetworks doesn't support atomic energies"
