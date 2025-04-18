@@ -356,7 +356,7 @@ class ANINetworks(AtomicContainer):
     def forward(
         self,
         elem_idxs: Tensor,
-        aevs: Tensor,
+        aevs: tp.Optional[Tensor] = None,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> Tensor:
@@ -383,6 +383,7 @@ class ANINetworks(AtomicContainer):
                 energies = self(elem_idxs[0], elem_idxs[1])
                 return SpeciesEnergies(elem_idxs[0], energies)
 
+        assert aevs is not None
         assert elem_idxs.shape == aevs.shape[:-1]
         flat_elem_idxs = elem_idxs.flatten()
         aev = aevs.flatten(0, 1)
@@ -578,7 +579,7 @@ class Ensemble(AtomicContainer):
     def forward(
         self,
         elem_idxs: Tensor,
-        aevs: Tensor,
+        aevs: tp.Optional[Tensor] = None,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> Tensor:
@@ -593,6 +594,7 @@ class Ensemble(AtomicContainer):
                 energies = self(elem_idxs[0], elem_idxs[1])
                 return SpeciesEnergies(elem_idxs[0], energies)
 
+        assert aevs is not None
         if ensemble_values:
             return self._ensemble_values(elem_idxs, aevs, atomic)
         if atomic:

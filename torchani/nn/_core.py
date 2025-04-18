@@ -77,10 +77,11 @@ class AtomicContainer(torch.nn.Module):
     def forward(
         self,
         elem_idxs: Tensor,
-        aevs: Tensor,
+        aevs: tp.Optional[Tensor] = None,
         atomic: bool = False,
         ensemble_values: bool = False,
     ) -> Tensor:
+        assert aevs is not None
         if atomic:
             return aevs.new_zeros(elem_idxs.shape)
         return aevs.new_zeros(elem_idxs.shape[0])
