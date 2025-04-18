@@ -92,12 +92,11 @@ class BmmEnsemble(AtomicContainer):
         self.num_species = ensemble.num_species
         if not hasattr(ensemble, "members"):
             raise TypeError("BmmEnsemble can only take an Ensemble as an input")
-        symbols = tuple(ensemble.member(0).atomics.keys())
-        self.atomics = torch.nn.ModuleList(
-            [
-                BmmAtomicNetwork([m.atomics[s] for m in ensemble.members])
-                for s in symbols
-            ]
+        self.atomics = torch.nn.ModuleDict(
+            {
+                s: BmmAtomicNetwork([m.atomics[s] for m in ensemble.members])
+                for s in ensemble.symbols
+            }
         )
 
         # bookkeeping for optimization
@@ -129,7 +128,7 @@ class BmmEnsemble(AtomicContainer):
 
         aevs = aevs.flatten(0, 1)
         energies = aevs.new_zeros(aevs.shape[0])
-        for i, bmm_atomic in enumerate(self.atomics):
+        for i, bmm_atomic in enumerate(self.atomics.values()):
             if self._idx_list[i].shape[0] > 0:
                 if not torch.jit.is_scripting():
                     torch.cuda.nvtx.range_push(f"bmm-species-{i}")
@@ -256,15 +255,14 @@ class MNPNetworks(AtomicContainer):
         # Detect "ensemble" case via duck typing
         self._is_bmm = hasattr(module, "members")
         if self._is_bmm:
-            symbols = tuple(module.member(0).atomics.keys())
-            self.atomics = torch.nn.ModuleList(
-                [
-                    BmmAtomicNetwork([m.atomics[s] for m in module.members])
-                    for s in symbols
-                ]
+            self.atomics = torch.nn.ModuleDict(
+                {
+                    s: BmmAtomicNetwork([m.atomics[s] for m in module.members])
+                    for s in module.symbols
+                }
             )
         else:
-            self.atomics = torch.nn.ModuleList(list(module.atomics.values()))
+            self.atomics = module.atomics
         self._use_mnp = use_mnp
 
         # Bookkeeping for optimization
