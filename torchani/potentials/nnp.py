@@ -63,7 +63,7 @@ class MergedChargesNNPotential(NNPotential):
         energies_qs = self.neural_networks(elem_idxs, aevs, True, ensemble_values)
         assert energies_qs.shape[1:] == (
             elem_idxs.shape[0],
-            elem_idxs.shape[2],
+            elem_idxs.shape[1],
             2,
         ), "Incorrect shape for merged charge networks"
         energies, qs = energies_qs.unbind(-1)
