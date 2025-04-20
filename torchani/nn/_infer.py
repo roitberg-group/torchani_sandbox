@@ -311,7 +311,7 @@ class MNPNetworks(AtomicContainer):
     def _copy_weights_and_biases(
         self,
     ) -> tp.Tuple[tp.List[Tensor], tp.List[Tensor], tp.List[int]]:
-        activation = self.atomics[0].activation
+        activation = next(iter(self.atomics.values())).activation
         if not isinstance(activation, TightCELU):
             raise ValueError(
                 f"Unsupported activation {type(activation)},"
@@ -320,7 +320,7 @@ class MNPNetworks(AtomicContainer):
         num_layers: tp.List[int] = []  # len: num_species
         weights: tp.List[Tensor] = []  # len: sum(num_species * num_layers[j])
         biases: tp.List[Tensor] = []  # len: sum(num_species * num_layers[j])
-        for atomic in self.atomics:
+        for atomic in self.atomics.values():
             if not isinstance(atomic.activation, type(activation)):
                 raise ValueError("All atomic networks must have the same activation fn")
             num_layers.append(len(atomic.layers) + 1)
@@ -363,7 +363,7 @@ class MNPNetworks(AtomicContainer):
             if torch.jit.is_scripting():
                 raise RuntimeError("JIT-MNPNetworks only supported with use_mnp=True")
             return PythonMNP.apply(
-                aevs, self._idx_list, self.atomics, self._stream_list
+                aevs, self._idx_list, self.atomics.values(), self._stream_list
             )
         # cppMNP
         return self._cpp_mnp(aevs)
