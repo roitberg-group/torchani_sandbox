@@ -61,7 +61,7 @@ class MergedChargesNNPotential(NNPotential):
         # AtomicContainer is assumed to output a tensor with a final dimension "2"
         # which holds energies and charges
         energies_qs = self.neural_networks(elem_idxs, aevs, True, ensemble_values)
-        assert energies_qs.shape[1:] == (
+        assert energies_qs.shape == (
             elem_idxs.shape[0],
             elem_idxs.shape[1],
             2,
