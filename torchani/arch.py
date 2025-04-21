@@ -84,6 +84,7 @@ from torchani.potentials import (
     Potential,
     RepulsionXTB,
     TwoBodyDispersionD3,
+    Coulomb,
 )
 from torchani.sae import SelfEnergy
 
@@ -359,7 +360,7 @@ class ANI(_ANI):
                 neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)
                 # Disregard atomic scalars that potentials may output
                 result = pot.compute_from_neighbors(
-                    elem_idxs, coords, neighbors, charge, atomic, ensemble_values
+                    elem_idxs, coords, neighbors, None, charge, atomic, ensemble_values
                 )
                 energies = energies + result.energies
         if self.energy_shifter._enabled:
@@ -582,6 +583,7 @@ class ANIq(_ANI):
         periodic_table_index: bool = True,
         charge_networks: tp.Optional[AtomicContainer] = None,
         charge_normalizer: tp.Optional[BaseChargeNormalizer] = None,
+        coulomb: tp.Optional[Potential] = None,
     ):
         super().__init__(
             symbols=symbols,
@@ -601,6 +603,11 @@ class ANIq(_ANI):
             self.potentials["nnp"] = SeparateChargesNNPotential(
                 _aev_computer, _nn, charge_networks, charge_normalizer
             )
+        if coulomb is not None:
+            self.coulomb = coulomb
+        else:
+            self.coulomb = Coulomb(self.symbols)
+            self.coulomb._enabled = False
 
     # Entrypoint that uses neighbors
     # For now this assumes that there is only one potential with ensemble values
@@ -630,7 +637,7 @@ class ANIq(_ANI):
             if pot._enabled:
                 neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)
                 _e, _qs = pot.compute_from_neighbors(
-                    elem_idxs, coords, neighbors, charge, atomic, ensemble_values
+                    elem_idxs, coords, neighbors, None, charge, atomic, ensemble_values
                 )
                 energies = energies + _e
                 if k == "nnp":
@@ -638,6 +645,10 @@ class ANIq(_ANI):
                     qs = qs + _qs
         if self.energy_shifter._enabled:
             energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
+        if self.coulomb._enabled:
+            energies = energies + self.coulomb.compute_from_neighbors(
+                elem_idxs, coords, neighbors, qs, charge, atomic, ensemble_values
+            )
         return EnergiesScalars(energies, qs)
 
     # NOTE: Currently fused-cuAEV is not supported for ANIq

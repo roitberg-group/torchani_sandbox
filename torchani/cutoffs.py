@@ -58,6 +58,18 @@ class CutoffCosine(Cutoff):
         return 0.5 * torch.cos(distances * (math.pi / cutoff)) + 0.5
 
 
+class CutoffBiweight(Cutoff):
+    r"""Use a bi-weight function as a cutoff"""
+    def forward(self, distances: Tensor, cutoff: float) -> Tensor:
+        return (1 - (distances / cutoff) ** 2) ** 2
+
+
+class CutoffTriweight(Cutoff):
+    r"""Use a tri-weight function as a cutoff"""
+    def forward(self, distances: Tensor, cutoff: float) -> Tensor:
+        return (1 - (distances / cutoff) ** 2) ** 3
+
+
 class CutoffSmooth(Cutoff):
     r"""Use an infinitely differentiable exponential cutoff"""
 
@@ -105,6 +117,10 @@ def _parse_cutoff_fn(
         cutoff_fn = CutoffCosine()
     elif cutoff_fn == "smooth":
         cutoff_fn = CutoffSmooth()
+    elif cutoff_fn == "biweight":
+        cutoff_fn = CutoffBiweight()
+    elif cutoff_fn == "triweight":
+        cutoff_fn = CutoffTriweight()
     elif not isinstance(cutoff_fn, Cutoff):
         raise ValueError(f"Unsupported cutoff fn: {cutoff_fn}")
     return tp.cast(Cutoff, cutoff_fn)
