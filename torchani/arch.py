@@ -643,12 +643,12 @@ class ANIq(_ANI):
                 if k == "nnp":
                     assert _qs is not None
                     qs = qs + _qs
-        if self.energy_shifter._enabled:
-            energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
         if self.coulomb._enabled:
             energies = energies + self.coulomb.compute_from_neighbors(
                 elem_idxs, coords, neighbors, qs, charge, atomic, ensemble_values
-            )
+            ).energies
+        if self.energy_shifter._enabled:
+            energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
         return EnergiesScalars(energies, qs)
 
     # NOTE: Currently fused-cuAEV is not supported for ANIq
