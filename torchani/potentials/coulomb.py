@@ -55,11 +55,11 @@ class Coulomb(BasePairPotential):
         *,  # Cutoff
         cutoff: float = math.inf,
         cutoff_fn: CutoffArg = "smooth",
-        damp: tp.Union[str, Damp] = "",
+        damp_fn: tp.Union[str, Damp] = "",
     ):
         super().__init__(symbols, cutoff=cutoff, cutoff_fn=cutoff_fn)
         self._dielectric = dielectric
-        self._damp_fn = parse_damp(damp)
+        self._damp_fn = parse_damp(damp_fn)
 
     def pair_energies(
         self,

@@ -583,7 +583,6 @@ class ANIq(_ANI):
         periodic_table_index: bool = True,
         charge_networks: tp.Optional[AtomicContainer] = None,
         charge_normalizer: tp.Optional[BaseChargeNormalizer] = None,
-        coulomb: tp.Optional[Potential] = None,
     ):
         super().__init__(
             symbols=symbols,
@@ -603,11 +602,11 @@ class ANIq(_ANI):
             self.potentials["nnp"] = SeparateChargesNNPotential(
                 _aev_computer, _nn, charge_networks, charge_normalizer
             )
-        if coulomb is not None:
-            self.coulomb = coulomb
-        else:
-            self.coulomb = Coulomb(self.symbols)
-            self.coulomb._enabled = False
+
+        # Push coulomb potential to the end if it is present, to ensure
+        # charges are calculated before the potential
+        if "coulomb" in self.potentials:
+            self.potentials["coulomb"] = self.potentials.pop("coulomb")
 
     # Entrypoint that uses neighbors
     # For now this assumes that there is only one potential with ensemble values
@@ -636,17 +635,20 @@ class ANIq(_ANI):
         for k, pot in self.potentials.items():
             if pot._enabled:
                 neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)
-                _e, _qs = pot.compute_from_neighbors(
-                    elem_idxs, coords, neighbors, None, charge, atomic, ensemble_values
-                )
+                if k == "coulomb":
+                    _e, _qs = pot.compute_from_neighbors(
+                        elem_idxs, coords, neighbors,
+                        qs, charge, atomic, ensemble_values
+                    )
+                else:
+                    _e, _qs = pot.compute_from_neighbors(
+                        elem_idxs, coords, neighbors,
+                        None, charge, atomic, ensemble_values
+                    )
                 energies = energies + _e
                 if k == "nnp":
                     assert _qs is not None
                     qs = qs + _qs
-        if self.coulomb._enabled:
-            energies = energies + self.coulomb.compute_from_neighbors(
-                elem_idxs, coords, neighbors, qs, charge, atomic, ensemble_values
-            ).energies
         if self.energy_shifter._enabled:
             energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
         return EnergiesScalars(energies, qs)
@@ -1096,6 +1098,7 @@ def simple_aniq(
     periodic_table_index: bool = True,
     neighborlist: NeighborlistArg = "all_pairs",
     normalize: bool = True,
+    coulomb: tp.Optional[str] = None,
 ) -> ANIq:
     r"""Flexible builder to create ANI-style models that output charges
 
@@ -1176,6 +1179,18 @@ def simple_aniq(
         asm.add_potential(
             TwoBodyDispersionD3, name="dispersion_d3", cutoff=8.0, kwargs=extra_kwargs
         )
+    if coulomb == "full":
+        asm.add_potential(Coulomb, name="coulomb")
+    elif coulomb == "erf":
+        asm.add_potential(
+            Coulomb, name="coulomb", cutoff=12.0, kwargs={"damp_fn": "erf"}
+        )
+    elif coulomb == "tanh":
+        asm.add_potential(
+            Coulomb, name="coulomb", cutoff=12.0, kwargs={"damp_fn": "tanh"}
+        )
+    else:
+        assert coulomb is None
     return tp.cast(ANIq, asm.assemble(ensemble_size))
 
 
