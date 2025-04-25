@@ -630,12 +630,15 @@ def ExCorrANI(
     atomic_maker: tp.Union[tp.Callable[[str, int], torch.nn.Module], str] = "ani2x",
     use_geometric_aev: bool = False,
     use_simple_orbital_aev: bool = True,
-    use_angular_info_in_simple_orbital_aev: bool = False,
+    use_angular_info: bool = False,
+    use_angular_radial_coupling: bool = False,
     basis_functions='spd',
+    normalization_library='None'
 ) -> BuiltinModel:
     asm = Assembler(ensemble_size=ensemble_size)
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
+    asm.set_normalization_library()
     # To use different featurizer you can add some flag that instead of
     # ExCorrAEVComputer puts smth else here
     asm.set_featurizer(
@@ -656,8 +659,10 @@ def ExCorrANI(
         ),
         extra={"use_geometric_aev": use_geometric_aev,
                "use_simple_orbital_aev": use_simple_orbital_aev,
-               "use_angular_info_in_simple_orbital_aev": use_angular_info_in_simple_orbital_aev,
-               "basis_functions": basis_functions
+               "use_angular_info": use_angular_info,
+               "use_angular_radial_coupling": bool,
+               "basis_functions": basis_functions,
+               "normalization_lib": normalization_library
                }
     )
     asm.set_atomic_maker(atomics._parse_atomics(atomic_maker))

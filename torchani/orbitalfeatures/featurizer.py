@@ -1,4 +1,5 @@
 import typing as tp
+from pathlib import Path
 
 import torch
 from torch import Tensor
@@ -44,6 +45,7 @@ class ExCorrAEVComputer(AEVComputer):
         UpperOShfA = 0.30,
         LowerOShfZ = 2.00,
         UpperOShfZ = 2.00,
+        OEtaS = 20.0,
         OEtaR = 20.0,
         OEtaA = 12.0,
         OZeta = 14.0,
@@ -54,7 +56,7 @@ class ExCorrAEVComputer(AEVComputer):
         assert (basis_functions == 'spd' or basis_functions == 'sp' or basis_functions == 's')
         if ((basis_functions == 's') and use_simple_orbital_aev):
             assert (not use_angular_info)
-        is (not use_angular_info):
+        if (not use_angular_info):
             assert (not use_angular_radial_coupling)
         super().__init__(
             Rcr,
@@ -76,13 +78,15 @@ class ExCorrAEVComputer(AEVComputer):
         if (normalization_library not None):
             norm_file = Path(normalization_library)
             self.normalization_library = torch.load(norm_file)
-
+        else:
+            self.normalization_library = None
+        
         self.use_simple_orbital_aev = use_simple_orbital_aev
         self.use_angular_info = use_angular_info
         self.use_angular_radial_coupling = use_angular_radial_coupling
         self.basis_functions = basis_functions
         self.use_geometric_aev = use_geometric_aev
-        self.NOShfR = NOShfS
+        self.NOShfS = NOShfS
         self.NOShfR = NOShfR
         self.NOShfA = NOShfA
         self.NOShfZ = NOShfZ
@@ -94,6 +98,7 @@ class ExCorrAEVComputer(AEVComputer):
         self.UpperOShfA = UpperOShfA
         self.LowerOShfZ = LowerOShfZ
         self.UpperOShfZ = UpperOShfZ
+        self.OEtaS = OEtaS
         self.OEtaR = OEtaR
         self.OEtaA = OEtaA
         self.OZeta = OZeta
@@ -114,14 +119,15 @@ class ExCorrAEVComputer(AEVComputer):
         else:
             #To do -> Include an AEV-like expansion for the AOVs
             if basis_functions == 'spd':
-                orbital_aev_length = 9*self.NOShfS+4*self.NOShfR+0 #To do RECALCULATE THIS AFTER DECIDING WHAT TO DO WITH THE D COEFFS<----------------------------------------------
+                #To do RECALCULATE THIS AFTER DECIDING WHAT TO DO WITH THE D COEFFS<
+                orbital_aev_length = 9*self.NOShfS+4*self.NOShfR+0 
             elif basis_functions == 'sp':
                 orbital_aev_length = 9*self.NOShfS+4*self.NOShfR
             elif basis_functions == 's':
                 orbital_aev_length = 9*self.NOShfS
             if  use_angular_info:
                 nangles = int((orbital_aev_length-9)*(orbital_aev_length-10)/2)
-                angular_orbital_aev_length = nangles*NOShfZ
+                angular_orbital_aev_length = nangles*self.NOShfZ
                 if use_angular_radial_coupling:
                     angular_orbital_aev_length = angular_orbital_aev_length + 9*NOShfA
                 orbital_aev_length = orbital_aev_length + angular_orbital_aev_length
@@ -171,6 +177,7 @@ class ExCorrAEVComputer(AEVComputer):
                 UpperOShfA = self.UpperOShfA,
                 LowerOShfZ = self.LowerOShfZ,
                 UpperOShfZ = self.UpperOShfZ,
+                OEtaS = self.OEtaS
                 OEtaR = self.OEtaR,
                 OEtaA = self.OEtaA,
                 OZeta = self.OZeta,

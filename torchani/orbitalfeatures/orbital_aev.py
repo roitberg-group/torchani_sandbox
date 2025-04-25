@@ -9,7 +9,7 @@ class OrbitalAEVComputer(torch.nn.Module):
     def forward(
         self,
         coefficients: Tensor,
-        normalization_library = Tensor,
+        normalization_library: Tensor,
         species: Tensor,
         basis_functions: str,
         use_simple_orbital_aev: bool,
@@ -54,7 +54,7 @@ class OrbitalAEVComputer(torch.nn.Module):
         if use_simple_orbital_aev:
             # Case s
             if basis_functions == 's':
-                return self.s_coeffs_norm
+                return s_coeffs
             # Case sp or spd                
             p_norms = torch.linalg.norm(orbital_matrix, dim=-1)
 
@@ -166,7 +166,7 @@ class OrbitalAEVComputer(torch.nn.Module):
         d_coeffs = coefficients[:, :, 21:]   # Shape: (nconformers, natoms, 24)
 
         if basis_functions == 's':
-            return s_coeffs, []
+            return s_coeffs, torch.tensor([])
         
         # Reshape p_coeffs to make it easier to handle individual components
         p_coeffs_reshaped = p_coeffs.view(nconformers, natoms, 4, 3)  # Shape: (nconformers, natoms, 4, 3)
@@ -235,7 +235,8 @@ class OrbitalAEVComputer(torch.nn.Module):
             for i in range(naovs):
                 for j in range(i+1, naovs):
                     cos_angles = torch.einsum('ijk,ijk->ij', orbital_matrix_normalized[:, :, i, :], orbital_matrix_normalized[:, :, j, :])
-                    angles[:, :, k] = torch.acos(0.9999 * cos_angles) # 0.95 is multiplied to the cos values to prevent acos from returning NaN.     
+                    cos_angles = torch.clamp(cos_angles, -0.9999, 0.9999)
+                    angles[:, :, k] = torch.acos(cos_angles)
                     k = k + 1
             return angles
         else:
@@ -243,7 +244,8 @@ class OrbitalAEVComputer(torch.nn.Module):
             for i in range(naovs):
                 for j in range(i+1, naovs):
                     cos_angles = torch.einsum('ijk,ijk->ij', orbital_matrix_normalized[:, :, i, :], orbital_matrix_normalized[:, :, j, :])
-                    angles[:, :, k] = torch.acos(0.9999 * cos_angles) # 0.95 is multiplied to the cos values to prevent acos from returning NaN.     
+                    cos_angles = torch.clamp(cos_angles, -0.9999, 0.9999)
+                    angles[:, :, k] = torch.acos(cos_angles)
                     avdistperangle[:, :, k] = (distances[:, :, i]+distances[:, :, j])/2.0
                     k = k + 1
             return angles,avdistperangle
