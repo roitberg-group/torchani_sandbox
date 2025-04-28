@@ -31,7 +31,7 @@ class ExCorrAEVComputer(AEVComputer):
         use_angular_info: bool = False,
         use_angular_radial_coupling: bool = False,
         basis_functions = 'spd',
-        normalization_library = None,
+        normalization_library = 'None',
         use_geometric_aev: bool = True,
         NOShfS = 16,
         NOShfR = 16,
@@ -75,11 +75,11 @@ class ExCorrAEVComputer(AEVComputer):
             radial_terms,
             angular_terms,
         )
-        if (normalization_library not None):
+        if (normalization_library != 'None'):
             norm_file = Path(normalization_library)
             self.normalization_library = torch.load(norm_file)
         else:
-            self.normalization_library = None
+            self.normalization_library = torch.tensor([])
         
         self.use_simple_orbital_aev = use_simple_orbital_aev
         self.use_angular_info = use_angular_info
@@ -177,7 +177,7 @@ class ExCorrAEVComputer(AEVComputer):
                 UpperOShfA = self.UpperOShfA,
                 LowerOShfZ = self.LowerOShfZ,
                 UpperOShfZ = self.UpperOShfZ,
-                OEtaS = self.OEtaS
+                OEtaS = self.OEtaS,
                 OEtaR = self.OEtaR,
                 OEtaA = self.OEtaA,
                 OZeta = self.OZeta,
