@@ -42,8 +42,17 @@ main = Typer(
     A PyTorch library for training, development and research of
     ANI-style neural networks, maintained by the *Roitberg Group*.
 
+    To execute single point calculations run `ani sp <path-to-xyz-file> -m <model>`
+    For example `ani sp methane.xyz -m ani2x`.
+
+    To download a dataset run `ani data pull <dataset-name> --lot <lot>`, where `<lot>`
+    is the level of theory.
+    For example, `ani data pull ANI1x --lot wb97x-631gd`.
+    To display available datasets `ani data ls`.
+    To remove a downloaded dataset `ani data rm <dataset-name> --lot <lot>`.
+
     Datasets and Models are saved in ``$TORCHANI_DATA_DIR/Datasets`` and
-    ``$TORCHANI_DATA_DIR/StateDicts`` respectively. By default
+    ``$TORCHANI_DATA_DIR/Models`` respectively. By default
     ``TORCHANI_DATA_DIR=~/.local/share/Torchani``.
     """,
 )
@@ -115,6 +124,7 @@ def opt(
     ] = False,
 ) -> None:
     r"""Execute a cartesian coords geom opt, using L-BFGS, with a TorchANI model"""
+    raise NotImplementedError()
     model_key = model_key.lower().replace("ani", "ANI")
     _device, _dtype = parse_device_and_dtype(device, dtype)
     model = getattr(torchani.models, model_key)(device=_device, dtype=_dtype)
@@ -128,7 +138,7 @@ def opt(
     raise Abort()
     for p in paths:
         znums, coords, cell, pbc = torchani.io.read_xyz(p, device=_device, dtype=_dtype)
-        for (_znums, _coords) in zip(znums, coords):
+        for _znums, _coords in zip(znums, coords):
             unpadded = torchani.utils.strip_redundant_padding(
                 {"species": _znums.unsqueeze(0), "coordinates": _coords.unsqueeze(0)}
             )
@@ -171,6 +181,10 @@ def sp(
         tp.Optional[DTypeKind],
         Option("-t", "--dtype"),
     ] = None,
+    atomic_charges: tpx.Annotated[
+        bool,
+        Option("-q/-Q", "--charges/--no-charges"),
+    ] = False,
     forces: tpx.Annotated[
         bool,
         Option("-f/-F", "--forces/--no-forces"),
@@ -191,16 +205,28 @@ def sp(
         output["hessians"] = []
     if forces:
         output["forces"] = []
+    if atomic_charges:
+        output["atomic_charges"] = []
     for p in paths:
         znums, coords, cell, pbc = torchani.io.read_xyz(p, device=_device, dtype=_dtype)
         result = torchani.single_point(
-            model, znums, coords, cell, pbc, forces=forces, hessians=hessians
+            model,
+            znums,
+            coords,
+            cell,
+            pbc,
+            forces=forces,
+            hessians=hessians,
+            atomic_charges=atomic_charges,
         )
         output["energies"].extend(result["energies"].tolist())
         if forces:
             output["forces"].extend(result["forces"].tolist())
         if hessians:
             output["hessians"].extend(result["hessians"].tolist())
+        if atomic_charges:
+            output["atomic_charges"].extend(result["atomic_charges"].tolist())
+
     if output_path is not None:
         output_path.write_text(json.dumps(output, indent=4))
     else:
@@ -353,7 +379,7 @@ def data_ls(
             except DatasetIntegrityError:
                 print(f"{d.name}, status: Error!")
         else:
-            print(f"{d.name}, status: Not checked")
+            print(d.name)
 
 
 @data_app.command("info", help="Display info regarding downloaded built-in datasets")
