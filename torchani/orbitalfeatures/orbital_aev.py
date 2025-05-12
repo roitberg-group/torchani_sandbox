@@ -47,7 +47,11 @@ class OrbitalAEVComputer(torch.nn.Module):
 
         # Unpack normalization library
         s_coeffs_mus, s_coeffs_sigmas, p_norms_mus, p_norms_sigmas = normalization_library   # unpack
-
+        
+        # Trims p normalization values to make them match other stuff
+        p_norms_mus=p_norms_mus[:,:4]
+        p_norms_sigmas = p_norms_sigmas[:,:4]
+            
         s_coeffs = self._normalize(s_coeffs,species_idx,s_coeffs_mus,s_coeffs_sigmas)
 
         # Return "simple_orbital_aevs" if corresponding
@@ -78,14 +82,17 @@ class OrbitalAEVComputer(torch.nn.Module):
 
             # Compute the s component of the orbital AEV
             s_orbital_aev = torch.exp(-OEtaS * ((s_coeffs - OShfS) ** 2))
-                       
+            
+            # Reshapes
+            s_orbital_aev = s_orbital_aev.view(nconf,natoms,nscoeffs*NOShfS)
+
             if basis_functions == 's':
                 return s_orbital_aev
 
             p_norms = torch.linalg.norm(orbital_matrix, dim=-1)
-
-            p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
             
+            p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
+
             _, _, np_norms = p_norms.shape                  
             # Define r shifts and reshape for broadcasting
             OShfR = torch.linspace(LowerOShfR, UpperOShfR, NOShfR)
@@ -95,6 +102,10 @@ class OrbitalAEVComputer(torch.nn.Module):
             # Compute the squared differences
             radial_orbital_aev = torch.exp(-OEtaR * ((p_norms - OShfR) ** 2))
             # Concatenate the s and radial contributions to the orbital aevs
+
+            # Reshapes
+            radial_orbital_aev = radial_orbital_aev.view(nconf,natoms,np_norms*NOShfR)
+
             orbital_aev = torch.cat((s_orbital_aev, radial_orbital_aev), dim=-1)            
             if use_angular_info:
                 angles, avdistperangle = self._get_angles_from_orbital_matrix(orbital_matrix,p_norms,False)
@@ -204,7 +215,7 @@ class OrbitalAEVComputer(torch.nn.Module):
         # Advanced indexing to fetch the right μ and σ for *each* atom
         atom_mus = mus[species_idx, :]
         atom_sigmas = sigmas[species_idx, :]
-
+       
         coeffs_normalized = (coeffs - atom_mus) / atom_sigmas
         return coeffs_normalized
 
