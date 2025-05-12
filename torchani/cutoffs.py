@@ -81,18 +81,6 @@ class CutoffCosine(Cutoff):
         return 0.5 * torch.cos(distances * (math.pi / cutoff)) + 0.5
 
 
-class CutoffBiweight(Cutoff):
-    r"""Use a bi-weight function as a cutoff"""
-    def forward(self, distances: Tensor, cutoff: float) -> Tensor:
-        return (1 - (distances / cutoff) ** 2) ** 2
-
-
-class CutoffTriweight(Cutoff):
-    r"""Use a tri-weight function as a cutoff"""
-    def forward(self, distances: Tensor, cutoff: float) -> Tensor:
-        return (1 - (distances / cutoff) ** 2) ** 3
-
-
 class CutoffSmooth(Cutoff):
     r"""Use an infinitely differentiable exponential cutoff
 
