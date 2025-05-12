@@ -251,31 +251,6 @@ def ANImbis(
     return model
 
 
-def ANIala(
-    model_index: tp.Optional[int] = None,
-    neighborlist: NeighborlistArg = "all_pairs",
-    strategy: str = "pyaev",
-    periodic_table_index: bool = True,
-    device: Device = None,
-    dtype: DType = None,
-) -> ANI:
-    r"""Experimental Model fine tuned to solvated frames of ALA dipeptide"""
-    if model_index is not None:
-        raise ValueError("Model index is not supported for ANIala")
-    asm = Assembler(periodic_table_index=periodic_table_index)
-    asm.set_symbols(SYMBOLS_2X)
-    asm.set_global_cutoff_fn("cosine")
-    asm.set_aev_computer(radial="ani2x", angular="ani2x", strategy=strategy)
-    asm.set_atomic_networks(ctor="aniala")
-    asm.set_neighborlist(neighborlist)
-    asm.set_gsaes_as_self_energies("wb97x-631gd")
-    model = tp.cast(ANI, asm.assemble(1))
-    model.load_state_dict(_fetch_state_dict("aniala_state_dict.pt", private=True))
-    model.requires_grad_(False)
-    model.to(device=device, dtype=dtype)
-    return model
-
-
 def ANI2xr(
     model_index: tp.Optional[int] = None,
     neighborlist: NeighborlistArg = "all_pairs",
