@@ -6,7 +6,7 @@ import torch
 
 from torchani._testing import ANITestCase, expand
 from torchani.utils import pad_atomic_properties
-from torchani.models import ANI1x, ANI2x, ANIdr
+from torchani.models import ANI1x, ANI2x, ANI2dr
 from torchani.units import hartree2kcalpermol
 
 
@@ -42,9 +42,9 @@ class TestANI2x(ANITestCase):
 
 
 @expand()
-class TestANIdr(ANITestCase):
+class TestANI2dr(ANITestCase):
     def setUp(self):
-        self.model = self._setup(ANIdr(model_index=0))
+        self.model = self._setup(ANI2dr(model_index=0))
 
     def testDiatomics(self):
         coordinates = torch.tensor(
@@ -59,7 +59,7 @@ class TestANIdr(ANITestCase):
 
         e = hartree2kcalpermol(e)
         e_expect = torch.tensor(
-            [-125122.7685, -499630.9805, -94078.2276, -577468.0107],
+            [-125121.86718750, -499631.78125000, -94128.17968750, -577468.50],
             device=self.device,
             dtype=torch.float,
         )
