@@ -888,6 +888,7 @@ NeighborlistArg = tp.Union[
         "all_pairs",
         "adaptive",
         "cell_list",
+        "fast_cell_list",
         "verlet_cell_list",
         "base",
     ],
