@@ -390,7 +390,7 @@ def cell_list(
         # Make cell large enough to deny PBC interaction (fast, not bottleneck)
         displ_coords, cell = compute_bounding_cell(
             coords.detach(),
-            eps=(cutoff + 1e-3),
+            eps=(2*cutoff + 1e-3),
         )
 
     # The cell is spanned by a 3D grid of "buckets" or "grid elements",
@@ -808,7 +808,7 @@ class VerletCellList(CellList):
             # Make cell large enough to avoid PBC interaction (fast, not bottleneck)
             displ_coords, cell = compute_bounding_cell(
                 coords.detach(),
-                eps=(cutoff + 1e-3),
+                eps=(2*cutoff + 1e-3),
             )
 
         # The grid uses a skin, but the narrowing uses the actual cutoff

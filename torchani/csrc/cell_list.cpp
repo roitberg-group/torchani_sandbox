@@ -61,7 +61,7 @@ void _validate_inputs(
             );
         }
     } else {
-        throw std::invalid_argument("Currently non-pbc is broken in FastCellList");
+        // throw std::invalid_argument("Currently non-pbc is broken in FastCellList");
         if (cell.has_value()) {
             throw std::invalid_argument("Cell is not supported if not using pbc");
         }
@@ -329,7 +329,7 @@ class CellListFunction : public torch::autograd::Function<CellListFunction> {
         } else {
             std::tie(displ_coords, out_cell) = compute_bounding_cell(
                 coords.detach(),
-                /* eps */ 1.0e-3,
+                /* eps */ (2 * cutoff + 1.0e-3),
                 /* displace */ true,
                 /* square */ false
             );
