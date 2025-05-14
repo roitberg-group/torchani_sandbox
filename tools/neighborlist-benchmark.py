@@ -38,11 +38,11 @@ def run(
     num_warm_up: tpx.Annotated[
         int,
         Option("-n", "--num-warm-up", help="Num of warm up steps"),
-    ] = 50,
+    ] = 70,
     num_profile: tpx.Annotated[
         int,
         Option("-n", "--num-profile", help="Num of profiling steps"),
-    ] = 20,
+    ] = 150,
     pbc: tpx.Annotated[
         bool,
         Option("-p/-P", "--pbc/--no-pbc", help="Benchmark for the PBC case"),
@@ -56,7 +56,7 @@ def run(
 
     target_atomic_density = 0.1
     # num_atoms / cell_size has to be a constant, equal to the water atomic density
-    # which is around ~0.1 Ang^-1
+    # which is around ~0.1 Ang^-3
 
     no_tqdm = not use_tqdm
     device = torch.device("cuda" if cuda else "cpu")
