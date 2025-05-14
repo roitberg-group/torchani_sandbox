@@ -25,6 +25,8 @@ from torchani.neighbors import (
 @expand()
 class TestCellListGrad(ANITestCase):
     def setUp(self):
+        if not CLIST_IS_INSTALLED:
+            raise unittest.SkipTest("Fast Cell List is not installed")
         self.clist = self._setup(CellList())
         self.flist = self._setup(FastCellList())
         self.mc = make_molec(100, 10.0, pbc=True, seed=1234, device=self.device)
