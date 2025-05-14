@@ -8,8 +8,8 @@ import torchani
 from torchani.io import read_xyz
 from torchani._testing import TestCase, expand, ANITestCase
 from torchani.aev import AEVComputer
+from torchani.csrc import CLIST_IS_INSTALLED
 from torchani.neighbors import (
-    CellList,
     setup_grid,
     coords_to_fractional,
     coords_to_grid_idx3,
@@ -127,6 +127,93 @@ class TestCellList(TestCase):
         AEVComputer.like_1x(neighborlist="cell_list")
 
 
+# TODO Deduplicate this code
+@expand()
+class TestFastCellListComparison(ANITestCase):
+    def setUp(self):
+        if not CLIST_IS_INSTALLED:
+            raise unittest.SkipTest("Only valid when cpp cell list is installed")
+        self.cutoff = 5.2
+        self.cell_size = self.cutoff * 3 + 0.1
+        # The length of the box is ~ (3 * 5.2 + 0.1) this so that
+        # 3 buckets in each direction are needed to cover it, if one uses
+        # a cutoff of 5.2 and a bucket length of 5.200001
+        # first bucket is 0 - 5.2, in 3 directions, and subsequent buckets
+        # are on top of that
+        self.species, self.coordinates, cell, pbc = read_xyz(
+            Path(Path(__file__).parent, "resources", "tight_cell.xyz"),
+            device=self.device,
+        )
+        self.pbc = pbc
+        self.cell = cell
+        self.num_to_test = 10
+
+    def _check_neighborlists_match(self, coords: Tensor):
+        species = torch.ones(coords.shape[:-1], dtype=torch.long, device=self.device)
+        aev_cl = self._setup(AEVComputer.like_1x(neighborlist="fast_cell_list"))
+        aev_fp = self._setup(AEVComputer.like_1x(neighborlist="all_pairs"))
+        aevs_cl = aev_cl(species, coords, cell=self.cell, pbc=self.pbc)
+        aevs_fp = aev_fp(species, coords, cell=self.cell, pbc=self.pbc)
+        self.assertEqual(aevs_cl, aevs_fp)
+
+    def testCellListMatchesAllPairs(self):
+        cut = self.cutoff
+        d = 0.5
+        batch = [
+            [
+                [cut / 2 - d, cut / 2 - d, cut / 2 - d],
+                [cut / 2 + 0.1, cut / 2 + 0.1, cut / 2 + 0.1],
+                [cut / 2, cut / 2 + 2.4 * cut, cut / 2 + 2.4 * cut],
+            ],
+            [
+                [cut / 2 - d, cut / 2 - d, cut / 2 - d],
+                [cut / 2 + 0.1, cut / 2 + 0.1, cut / 2 + 0.1],
+                [cut / 2 + 2.4 * cut, cut / 2 + 2.4 * cut, cut / 2 + 2.4 * cut],
+            ],
+            [
+                [1.0000e-03, 6.5207e00, 1.0000e-03],
+                [1.0000e-03, 1.5299e01, 1.3643e01],
+                [1.0000e-03, 2.1652e00, 1.5299e01],
+            ],
+            [
+                [1.5299e01, 1.0000e-03, 5.5613e00],
+                [1.0000e-03, 1.0000e-03, 3.8310e00],
+                [1.5299e01, 1.1295e01, 1.5299e01],
+            ],
+            [
+                [1.0000e-03, 1.0000e-03, 1.0000e-03],
+                [1.0389e01, 1.0000e-03, 1.5299e01],
+            ],
+        ]
+        for coordinates in batch:
+            self._check_neighborlists_match(
+                torch.tensor(coordinates, dtype=torch.float, device=self.device).view(
+                    1, -1, 3
+                )
+            )
+        self._check_neighborlists_match(self.coordinates)
+
+    def testCellListMatchesAllPairsRandomNoise(self):
+        for j in range(self.num_to_test):
+            noise = 0.1
+            coordinates = self.coordinates + torch.empty(
+                self.coordinates.shape, device=self.device
+            ).uniform_(-noise, noise)
+            self._check_neighborlists_match(coordinates)
+
+    def testCellListMatchesAllPairsRandomNormal(self):
+        for j in range(self.num_to_test):
+            coordinates = (
+                torch.randn((1, 10, 3), device=self.device, dtype=torch.float)
+                * 3
+                * self.cell_size
+            )
+            coordinates = torch.clamp(
+                coordinates, min=0.0001, max=self.cell_size - 0.0001
+            )
+            self._check_neighborlists_match(coordinates)
+
+
 @expand()
 class TestCellListComparison(ANITestCase):
     def setUp(self):
@@ -143,7 +230,6 @@ class TestCellListComparison(ANITestCase):
         )
         self.pbc = pbc
         self.cell = cell
-        self.clist = self._setup(CellList())
         self.num_to_test = 10
 
     def _check_neighborlists_match(self, coords: Tensor):
@@ -228,7 +314,6 @@ class TestCellListComparisonNoPBC(TestCellListComparison):
         )
         self.cell = None
         self.pbc = None
-        self.clist = self._setup(CellList())
         self.num_to_test = 10
 
 
