@@ -36,15 +36,15 @@ class ExCorrAEVComputer(AEVComputer):
         NOShfS = 16,
         NOShfR = 16,
         NOShfA = 8,
-        NOShfZ = 1,
+        NOShfTheta = 1,
         LowerOShfS = -2.00,
         UpperOShfS = 2.00,
         LowerOShfR = -2.00,
         UpperOShfR = 2.00,
         LowerOShfA = 0.00,
         UpperOShfA = 0.30,
-        LowerOShfZ = 2.00,
-        UpperOShfZ = 2.00,
+        LowerOShfTheta = 2.00,
+        UpperOShfTheta = 2.00,
         OEtaS = 20.0,
         OEtaR = 20.0,
         OEtaA = 12.0,
@@ -89,15 +89,15 @@ class ExCorrAEVComputer(AEVComputer):
         self.NOShfS = NOShfS
         self.NOShfR = NOShfR
         self.NOShfA = NOShfA
-        self.NOShfZ = NOShfZ
+        self.NOShfTheta = NOShfTheta
         self.LowerOShfS = LowerOShfS
         self.UpperOShfS = UpperOShfS
         self.LowerOShfR = LowerOShfR
         self.UpperOShfR = UpperOShfR
         self.LowerOShfA = LowerOShfA
         self.UpperOShfA = UpperOShfA
-        self.LowerOShfZ = LowerOShfZ
-        self.UpperOShfZ = UpperOShfZ
+        self.LowerOShfTheta = LowerOShfTheta
+        self.UpperOShfTheta = UpperOShfTheta
         self.OEtaS = OEtaS
         self.OEtaR = OEtaR
         self.OEtaA = OEtaA
@@ -127,7 +127,7 @@ class ExCorrAEVComputer(AEVComputer):
                 orbital_aev_length = 9*self.NOShfS
             if  use_angular_info:
                 nangles = int((orbital_aev_length-9)*(orbital_aev_length-10)/2)
-                angular_orbital_aev_length = nangles*self.NOShfZ
+                angular_orbital_aev_length = nangles*self.NOShfTheta
                 if use_angular_radial_coupling:
                     angular_orbital_aev_length = angular_orbital_aev_length + 9*NOShfA
                 orbital_aev_length = orbital_aev_length + angular_orbital_aev_length
@@ -170,13 +170,13 @@ class ExCorrAEVComputer(AEVComputer):
                 normalization_library = self.normalization_library,
                 NOShfR = self.NOShfR,
                 NOShfA = self.NOShfA,
-                NOShfZ = self.NOShfZ,
+                NOShfTheta = self.NOShfTheta,
                 LowerOShfR = self.LowerOShfR,
                 UpperOShfR = self.UpperOShfR,
                 LowerOShfA = self.LowerOShfA,
                 UpperOShfA = self.UpperOShfA,
-                LowerOShfZ = self.LowerOShfZ,
-                UpperOShfZ = self.UpperOShfZ,
+                LowerOShfTheta = self.LowerOShfTheta,
+                UpperOShfTheta = self.UpperOShfTheta,
                 OEtaS = self.OEtaS,
                 OEtaR = self.OEtaR,
                 OEtaA = self.OEtaA,

@@ -18,15 +18,15 @@ class OrbitalAEVComputer(torch.nn.Module):
         NOShfS = int,
         NOShfR = int,
         NOShfA = int,
-        NOShfZ = int,
+        NOShfTheta = int,
         LowerOShfS = float,
         UpperOShfS = float,
         LowerOShfR = float,
         UpperOShfR = float,
         LowerOShfA = float,
         UpperOShfA = float,
-        LowerOShfZ = float,
-        UpperOShfZ = float,
+        LowerOShfTheta = float,
+        UpperOShfTheta = float,
         OEtaS = float,
         OEtaR = float,
         OEtaA = float,
@@ -65,7 +65,6 @@ class OrbitalAEVComputer(torch.nn.Module):
             p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
 
             simple_orbital_aevs = torch.cat((s_coeffs, p_norms), dim=-1)
-            
             if use_angular_info:
                 angles = self._get_angles_from_orbital_matrix(orbital_matrix,p_norms,True)
                 simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles), dim=-1)
@@ -98,9 +97,10 @@ class OrbitalAEVComputer(torch.nn.Module):
             OShfR = torch.linspace(LowerOShfR, UpperOShfR, NOShfR)
             OShfR = OShfR.view(1, 1, 1, NOShfR)
             # Ensure the tensor is correctly shaped for broadcasting
-            p_norms = p_norms.view(nconf, natoms, np_norms, 1)
+            p_norms_exp = p_norms[..., None]          # add dim, no data copy
+            # p_norms = p_norms.view(nconf, natoms, np_norms, 1)
             # Compute the squared differences
-            radial_orbital_aev = torch.exp(-OEtaR * ((p_norms - OShfR) ** 2))
+            radial_orbital_aev = torch.exp(-OEtaR * ((p_norms_exp - OShfR) ** 2))
             # Concatenate the s and radial contributions to the orbital aevs
 
             # Reshapes
@@ -110,23 +110,27 @@ class OrbitalAEVComputer(torch.nn.Module):
             if use_angular_info:
                 angles, avdistperangle = self._get_angles_from_orbital_matrix(orbital_matrix,p_norms,False)
                 _, _, nangles = angles.shape
-                # Define r shifts for the angular component of the AEV and reshape for broadcasting
-                OShfA = torch.linspace(LowerOShfA, UpperOShfA, NOShfA)                
+                print("nangles: ", nangles)
                 # Define angle sections and reshape for broadcasting
-                OShfZ = torch.linspace(LowerOShfZ, UpperOShfZ, NOShfZ)                
+                OShfTheta = torch.linspace(LowerOShfTheta, UpperOShfTheta, NOShfTheta)
+                print("OShfTheta", OShfTheta)
                 # Expand angles for ShfZ
                 expanded_angles = angles.unsqueeze(-1)  # Adding an extra dimension for broadcasting ShfZ
-                expanded_angles = expanded_angles.expand(-1, -1, -1, NOShfZ)  # Explicitly expand to match ShfZ
+                expanded_angles = expanded_angles.expand(-1, -1, -1, NOShfTheta)  # Explicitly expand to match ShfZ
 
                 # Expand ShfZ to match angles
-                OShfZ = OShfZ.view(1, 1, 1, NOShfZ)  # Reshape for broadcasting
-                OShfZ = OShfZ.expand(nconf, natoms, nangles, NOShfZ)  # Match dimensions
+                OShfTheta = OShfTheta.view(1, 1, 1, NOShfTheta)  # Reshape for broadcasting
+                OShfTheta = OShfTheta.expand(nconf, natoms, nangles, NOShfTheta)  # Match dimensions
  
                 # Calculate factor1
-                angular_orbital_aev = ((1 + torch.cos(expanded_angles - OShfZ)) / 2)**OZeta
+                angular_orbital_aev = ((1 + torch.cos(expanded_angles - OShfTheta)) / 2)**OZeta
+                print("angular_orbital_aev shape:", angular_orbital_aev.shape)
                 angular_orbital_aev = 2**(1-OZeta)*angular_orbital_aev.unsqueeze(-1)
+                print("angular_orbital_aev shape:", angular_orbital_aev.shape)
 
                 if (use_angular_radial_coupling):
+                        # Define r shifts for the angular component of the AEV and reshape for broadcasting
+                    OShfA = torch.linspace(LowerOShfA, UpperOShfA, NOShfA)  
                     # Expand avdistperangle for ShfA
                     expanded_avdistperangle = avdistperangle.unsqueeze(-1)  # Adding an extra dimension for ShfA
                     expanded_avdistperangle = expanded_avdistperangle.expand(-1, -1, -1, NOShfA)  # Match dimensions of ShfA
@@ -141,9 +145,13 @@ class OrbitalAEVComputer(torch.nn.Module):
                     # Combine factors
                     angular_orbital_aev = angular_orbital_aev * factor2.unsqueeze(-1) #unsqueeze(3)?
 
-                # Reshape to the final desired shape
-                angular_orbital_aev = angular_orbital_aev.reshape(nconf, natoms, nangles * NOShfA * NOShfZ)
-               
+                    # Reshape to the final desired shape
+                    print(angular_orbital_aev.shape)
+                    print(nconf, natoms, nangles * NOShfA * NOShfTheta)
+                    angular_orbital_aev = angular_orbital_aev.reshape(nconf, natoms, nangles * NOShfA * NOShfTheta)
+
+                angular_orbital_aev = angular_orbital_aev.reshape(nconf, natoms, nangles *NOShfTheta)
+
                 orbital_aev = torch.cat((orbital_aev, angular_orbital_aev), dim=-1) 
 
         return orbital_aev
