@@ -64,12 +64,10 @@ For more details consult the examples documentation
 import typing as tp
 import importlib
 
-from torchani.cutoffs import CutoffSmooth
 from torchani.utils import SYMBOLS_2X, SYMBOLS_1X, SYMBOLS_2X_ZNUM_ORDER
 from torchani.electro import ChargeNormalizer
 from torchani.arch import Assembler, ANI, ANIq, _fetch_state_dict, simple_ani
 from torchani.neighbors import NeighborlistArg
-from torchani.potentials import TwoBodyDispersionD3, RepulsionXTB
 from torchani.annotations import Device, DType
 from torchani.nn._internal import _ANINetworksDiscardFirstScalar
 from torchani.paths import custom_models_dir
