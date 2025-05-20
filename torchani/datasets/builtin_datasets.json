@@ -39,8 +39,8 @@
  },
  "ANI1q": {
   "default-lot": "wb97x-631gd",
-  "doi": "TODO",
-  "article": "TODO",
+  "doi": "10.1038/s41597-020-0473-z",
+  "article": "The ANI-1ccx and ANI-1x data sets, coupled-cluster and density functional theory properties for molecules",
   "info": "Very limited subset of ANI-1x for which 'atomic CM5 charges' are available. This dataset is not meant to be trained to on its own",
   "lot": {
    "wb97x-631gd": {
@@ -53,8 +53,8 @@
  },
  "ANI2qHeavy": {
   "info": "Subset of ANI-2x 'heavy' for which 'atomic CM5 charges' are available. This dataset is not meant to be trained to on its own",
-  "doi": "TODO",
-  "article": "TODO",
+  "doi": "10.1021/acs.jctc.0c00121",
+  "article": "Extending the Applicability of the ANI Deep Learning Molecular Potential to Sulfur and Halogens",
   "lot": {
    "wb97x-631gd": {
     "archive": "ANI-2q_heavy-wb97x-631gd.tar.gz",
@@ -67,8 +67,8 @@
  },
  "ANI1ccx": {
   "default-lot": "ccsd(t)star-cbs",
-  "doi": "TODO",
-  "article": "TODO",
+  "doi": "10.1038/s41597-020-0473-z",
+  "article": "The ANI-1ccx and ANI-1x data sets, coupled-cluster and density functional theory properties for molecules",
   "info": "This dataset also has Hartree Fock (HF) energies, RI-MP2 energies and forces and DPLNO-CCSD(T) energies for different basis sets and PNO settings. This dataset was originally used for transfer learning, not direct training",
   "lot": {
    "ccsd(t)star-cbs": {
@@ -80,8 +80,8 @@
   }
  },
  "ANI1x": {
-  "doi": "TODO",
-  "article": "TODO",
+  "doi": "10.1038/s41597-020-0473-z",
+  "article": "The ANI-1ccx and ANI-1x data sets, coupled-cluster and density functional theory properties for molecules",
   "lot": {
    "wb97x-631gd": {
     "archive": "ANI-1x-wb97x-631gd.tar.gz",
@@ -117,8 +117,8 @@
   "default-lot": "wb97x-631gd"
  },
  "ANI2x": {
-  "doi": "TODO",
-  "article": "TODO",
+  "doi": "10.1021/acs.jctc.0c00121",
+  "article": "Extending the Applicability of the ANI Deep Learning Molecular Potential to Sulfur and Halogens",
   "info": "In all cases the 'v2' and '2x' datasets are supersets of the 'v1' and '1x' datasets, so everything that is in the v1/1x datasets is also in the v2/2x datasets, which contain extra structures, except for some wb97X/def2-TZVPP data points for which there are 'v1' values but not 'v2' values",
   "lot": {
    "wb97x-631gd": {
@@ -161,8 +161,8 @@
   "default-lot": "wb97x-631gd"
  },
  "COMP6v1": {
-  "doi": "TODO",
-  "article": "TODO",
+  "doi": "10.1038/s41597-020-0473-z",
+  "article": "The ANI-1ccx and ANI-1x data sets, coupled-cluster and density functional theory properties for molecules",
   "info": "Test set, not meant for direct training. In all cases the 'v2' and '2x' datasets are supersets of the 'v1' and '1x' datasets, so everything that is in the v1/1x datasets is also in the v2/2x datasets, which contain extra structures, except for some wb97X/def2-TZVPP data points for which there are 'v1' values but not 'v2' values. Note that the ANI-BenchMD, S66x8 and the ``13`` molecules (with 13 heavy atoms) of GDB-10to13 were recalculated using ORCA 5.0 instead of 4.2, with default integration grids. The numerical difference is not significant for the purposes of training",
   "lot": {
    "wb97x-631gd": {
@@ -214,8 +214,8 @@
   "default-lot": "wb97x-631gd"
  },
  "COMP6v2": {
-  "doi": "TODO",
-  "article": "TODO",
+  "doi": "10.1021/acs.jctc.0c00121",
+  "article": "Extending the Applicability of the ANI Deep Learning Molecular Potential to Sulfur and Halogens",
   "info": "Test set, not meant for direct training. Note that the ANI-BenchMD, S66x8 and the ``13`` molecules (with 13 heavy atoms) of GDB-10to13 were recalculated using ORCA 5.0 instead of 4.2, with default integration grids. The numerical difference is not significant for the purposes of training",
   "lot": {
    "wb97x-631gd": {
@@ -266,8 +266,8 @@
   "default-lot": "wb97x-631gd"
  },
  "ANI1e": {
-    "article": "ANI-1E: An equilibrium database from the ANI-1 database",
-    "doi": "TODO",
+    "article": "Impact of the Characteristics of Quantum Chemical Databases on Machine Learning Prediction of Tautomerization Energies",
+    "doi": "10.1021/acs.jctc.1c00363",
     "info": "Structures corresponding to all smiles extracted from the ANI-1x dataset, embedded in 3D space and optimized with PM7. This dataset does not have forces, but it has other physical properties: Rotational constants A, B, C (GHz); dipole and polarizability magnitudes (Debye and a_0^3 respectively); energy of HOMO and LUMO, and HOMO-LUMO gap (Ha); average <r^2> (spatial extent, a_0^2); zero point vibrational energies (ZPVE, Ha); zero Kelvin internal energy (Ha); thermal quantities, U, H, G, C_v, at 298.15 K (C_v in cal/K/mol, rest in Ha)",
   "default-lot": "wb97x-631gd",
   "lot": {
