@@ -347,7 +347,9 @@ def ANIr2s(
     dtype: DType = None,
     solvent: tp.Optional[str] = None,
 ) -> ANI:
-    r"""The ANI-r2s model, trained to the R2SCAN-3c level of theory
+    r"""[NOT AVAILABLE YET] The ANI-r2s model, trained to the R2SCAN-3c level of theory
+
+    If you want access to this model please contact the Roitberg Group.
 
     R2SCAN models are trained with the def2-mTZVPP basis set, on the ANI-2x-R2SCAN
     dataset. There are different R2SCAN models trained using different SMD implicit
@@ -391,6 +393,9 @@ def ANIr2s_ch3cn(
     device: Device = None,
     dtype: DType = None,
 ) -> ANI:
+    r"""[NOT AVAILABLE YET] The ANI-r2s model, trained to the R2SCAN-3c level of theory
+
+    If you want access to this model please contact the Roitberg Group."""
     return ANIr2s(
         model_index,
         neighborlist,
@@ -410,6 +415,9 @@ def ANIr2s_chcl3(
     device: Device = None,
     dtype: DType = None,
 ) -> ANI:
+    r"""[NOT AVAILABLE YET] The ANI-r2s model, trained to the R2SCAN-3c level of theory
+
+    If you want access to this model please contact the Roitberg Group."""
     return ANIr2s(
         model_index,
         neighborlist,
@@ -429,6 +437,9 @@ def ANIr2s_water(
     device: Device = None,
     dtype: DType = None,
 ) -> ANI:
+    r"""[NOT AVAILABLE YET] The ANI-r2s model, trained to the R2SCAN-3c level of theory
+
+    If you want access to this model please contact the Roitberg Group."""
     return ANIr2s(
         model_index,
         neighborlist,
