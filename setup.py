@@ -8,8 +8,10 @@ import sys
 
 from setuptools import setup
 
-
-CUDA_MAJOR, CUDA_MINOR = tuple(map(int, torch.version.cuda.split(".")))
+if torch.version.cuda is not None:
+    CUDA_MAJOR, CUDA_MINOR = tuple(map(int, torch.version.cuda.split(".")))
+else:
+    CUDA_MAJOR, CUDA_MINOR = (0, 0)
 TORCH_MAJOR, TORCH_MINOR = tuple(map(int, torch.__version__.split(".")[:2]))
 
 
