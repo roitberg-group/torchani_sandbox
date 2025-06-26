@@ -1,4 +1,3 @@
-import torch
 from copy import deepcopy
 import typing as tp
 import textwrap
@@ -8,16 +7,13 @@ import sys
 
 from setuptools import setup
 
-if torch.version.cuda is not None:
-    CUDA_MAJOR, CUDA_MINOR = tuple(map(int, torch.version.cuda.split(".")))
-else:
-    CUDA_MAJOR, CUDA_MINOR = (0, 0)
-TORCH_MAJOR, TORCH_MINOR = tuple(map(int, torch.__version__.split(".")[:2]))
-
 
 def maybe_download_cub(torch_include_dirs: tp.Iterable[str]) -> str:
+    import torch
+
+    cuda_ver = float(torch.version.cuda) if torch.version.cuda is not None else 0
     # Cub is not required for cuda 12.8 or higher
-    if CUDA_MAJOR >= 12 and CUDA_MINOR >= 8:
+    if cuda_ver >= 12.8:
         return ""
     print("-" * 75)
     print("The CUB library is needed to build the cuAEV extension")
@@ -140,9 +136,7 @@ def will_not_build_extensions_warning(torch_import_error: bool = False) -> None:
 
 
 TORCHANI_FLAGS = {"ext", "ext-all-sms", "ext-debug", "ext-no-opt"}
-SUPPORTED_SMS = {"60", "61", "70", "75", "80", "86"}
-if CUDA_MAJOR >= 12 and CUDA_MINOR >= 8:
-    SUPPORTED_SMS.update({"90", "100"})
+SUPPORTED_SMS = {"60", "61", "70", "75", "80", "86", "90", "100"}
 for sm in SUPPORTED_SMS:
     TORCHANI_FLAGS.add(f"ext-sm{sm}")
 
@@ -190,13 +184,12 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
         print("-" * 75)
         print("Will add all SMs torch supports")
         sms = {"60", "61", "70"}
-        _torch_cuda = torch.version.cuda
-        cuda_version = float(_torch_cuda) if _torch_cuda is not None else 0
-        if cuda_version >= 10:
+        cuda_ver = float(torch.version.cuda) if torch.version.cuda is not None else 0
+        if cuda_ver >= 10:
             sms.add("75")
-        if cuda_version >= 11:
+        if cuda_ver >= 11:
             sms.add("80")
-        if cuda_version >= 11.1:
+        if cuda_ver >= 11.1:
             sms.add("86")
         return sms
 
@@ -257,7 +250,7 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
 
     # CUB needed to build the cuAEV, download it if not found bundled with Torch
     include_paths_kwargs: tp.Dict[str, tp.Any]
-    if TORCH_MAJOR >= 2 and TORCH_MINOR >= 7:
+    if float("".join(torch.__version__.split(".")[:2])) >= 2.7:
         include_paths_kwargs = {"device_type": "cuda"}
     else:
         include_paths_kwargs = {"cuda": True}
