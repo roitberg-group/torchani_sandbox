@@ -624,7 +624,7 @@ class ANIq(_ANI):
             energies = energies.unsqueeze(1)
         if ensemble_values:
             energies = energies.unsqueeze(0)
-            qs = energies.unsqueeze(0)
+            qs = qs.unsqueeze(0)
 
         first_neighbors = neighbors
         for k, pot in self.potentials.items():
@@ -899,8 +899,8 @@ class Assembler:
         Returns:
             `ANI` model, ready to train.
         """
-        if ensemble_size < 0:
-            raise ValueError("Ensemble size must be positive")
+        if ensemble_size <= 0:
+            raise ValueError("Ensemble size must be strict positive")
         if not self.symbols:
             raise RuntimeError("Symbols not set. Call 'set_symbols()' before assembly")
         if self._aevcomp is None:
