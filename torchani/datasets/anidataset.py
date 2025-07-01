@@ -1,3 +1,4 @@
+import typing_extensions as tpx
 import typing as tp
 import inspect
 import math
@@ -22,6 +23,7 @@ from torchani.annotations import (
     Backend,
     Grouping,
     NumpyConformers,
+    NumberOrStrArray,
     MixedConformers,
     StrPath,
     IdxLike,
@@ -117,7 +119,7 @@ _numbers_to_symbols = np.vectorize(lambda x: PERIODIC_TABLE[x])
 
 # Base class for ANIDataset and _ANISubdataset
 class _ANIDatasetBase(tp.Mapping[str, Conformers]):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self) -> None:
         # "properties" is read only, needed for validation of inputs, it may
         # change if a property is renamed or deleted. num_conformers and
         # num_conformer_groups are all calculated on the fly to guarantee
@@ -164,19 +166,32 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
         return iter(self._group_sizes.keys())
 
     def numpy_items(
-        self, limit: float = math.inf, **kwargs
+        self,
+        limit: float = math.inf,
+        properties: tp.Optional[tp.Iterable[str]] = None,
+        chem_symbols: bool = False,
+        exclude_dummy: bool = False,
     ) -> tp.Iterator[tp.Tuple[str, NumpyConformers]]:
         count = 0
         for group_name in self.keys():
             count += 1
-            yield group_name, getattr(self, "get_numpy_conformers")(
-                group_name, **kwargs
+            yield group_name, self.get_numpy_conformers(
+                group_name,
+                properties=properties,
+                chem_symbols=chem_symbols,
+                exclude_dummy=exclude_dummy,
             )
             if count >= limit:
                 return
 
-    def numpy_values(self, **kwargs) -> tp.Iterator[NumpyConformers]:
-        for k, v in self.numpy_items(**kwargs):
+    def numpy_values(
+        self,
+        limit: float = math.inf,
+        properties: tp.Optional[tp.Iterable[str]] = None,
+        chem_symbols: bool = False,
+        exclude_dummy: bool = False,
+    ) -> tp.Iterator[NumpyConformers]:
+        for k, v in self.numpy_items(limit, properties, chem_symbols, exclude_dummy):
             yield v
 
     def num_chunks(self, max_size: int = 2500) -> int:
@@ -187,9 +202,14 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
             chunks += bool(extra)
         return chunks
 
-    def chunked_items(
-        self, max_size: int = 2500, limit: float = math.inf, **kwargs
-    ) -> tp.Iterator[tp.Tuple[str, int, MixedConformers]]:
+    def chunked_numpy_items(
+        self,
+        max_size: int = 2500,
+        limit: float = math.inf,
+        properties: tp.Optional[tp.Iterable[str]] = None,
+        chem_symbols: bool = False,
+        exclude_dummy: bool = False,
+    ) -> tp.Iterator[tp.Tuple[str, int, NumpyConformers]]:
         r"""Sequentially iterate over chunked pieces of the dataset with a maximum size
 
         The iteration is "chunked" into pieces, so instead of yielding groups
@@ -207,46 +227,84 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
         The second element in the yielded tuple is the cumulative conformer count
         previous to the yielded tuple.
         """
-        getter = kwargs.pop("getter", "get_conformers")
         chunk_count = 0
         for group_name in self.keys():
             cumulative_conformer_count = 0
-            conformers = getattr(self, getter)(group_name, **kwargs)
+            conformers = self.get_numpy_conformers(
+                group_name,
+                properties=properties,
+                chem_symbols=chem_symbols,
+                exclude_dummy=exclude_dummy,
+            )
             any_key = next(iter(conformers.keys()))
-            keys_copy = list(conformers.keys())
-            splitted_conformers: NumpyConformers = dict()
-            for k in keys_copy:
-                if getter == "get_conformers":
-                    splits = torch.split(conformers.pop(k), max_size)
-                else:
-                    splits = tuple(
-                        conformers[k][j:j + max_size]
-                        for j in range(0, len(conformers[k]), max_size)
-                    )
-                splitted_conformers.update({k: splits})
-            num_chunks = len(splitted_conformers[any_key])
-            for j in range(num_chunks):
+            split_conformers: dict[str, list[NumberOrStrArray]] = {}
+            splits = range(0, len(conformers[any_key]), max_size)
+            for k in list(conformers.keys()):
+                split_conformers[k] = [
+                    conformers[k][slice(j, j + max_size)] for j in splits
+                ]
+            for j in range(len(splits)):
                 chunk_count += 1
-                chunk_to_yield = {k: v[j] for k, v in splitted_conformers.items()}
+                chunk_to_yield = {k: v[j] for k, v in split_conformers.items()}
                 yield group_name, cumulative_conformer_count, chunk_to_yield
                 cumulative_conformer_count += len(chunk_to_yield[any_key])
                 if chunk_count >= limit:
                     return
 
-    def chunked_numpy_items(
-        self, **kwargs
-    ) -> tp.Iterator[tp.Tuple[str, int, MixedConformers]]:
-        kwargs.update({"getter": "get_numpy_conformers"})
-        yield from self.chunked_items(**kwargs)
-
-    def iter_key_idx_conformers(
-        self, limit: float = math.inf, **kwargs
+    def chunked_items(
+        self,
+        max_size: int = 2500,
+        limit: float = math.inf,
+        properties: tp.Optional[tp.Iterable[str]] = None,
+        chem_symbols: bool = False,
+        exclude_dummy: bool = False,
     ) -> tp.Iterator[tp.Tuple[str, int, Conformers]]:
-        kwargs = kwargs.copy()
-        getter = kwargs.pop("getter", "get_conformers")
+        properties = properties or self.tensor_properties
+        for group_name, cumcount, chunk in self.chunked_numpy_items(
+            max_size, limit, properties, chem_symbols, exclude_dummy
+        ):
+            yield group_name, cumcount, {
+                k: torch.from_numpy(v) for k, v in chunk.items()
+            }
+
+    def get_conformers(
+        self,
+        group_name: str,
+        idx: IdxLike = None,
+        properties: tp.Optional[tp.Iterable[str]] = None,
+        raise_if_keyerror: bool = True,
+    ) -> Conformers:
+        r"""Get conformers in a given group in the dataset
+
+        Can obtain conformers with specified indices, and including only
+        specified properties. Conformers are dict of the form {property:
+        Tensor}, where properties are strings"""
+        properties = properties or self.tensor_properties
+        result = self.get_numpy_conformers(
+            group_name, idx, properties, raise_if_keyerror
+        )
+        return {k: torch.from_numpy(v) for k, v in result.items()}
+
+    def get_numpy_conformers(
+        self,
+        group_name: str,
+        idx: IdxLike = None,
+        properties: tp.Optional[tp.Iterable[str]] = None,
+        chem_symbols: bool = False,
+        exclude_dummy: bool = False,
+        raise_if_keyerror: bool = True,
+    ) -> NumpyConformers:
+        r"""Same as get_conformers but conformers are a dict {property: ndarray}"""
+        raise NotImplementedError("Must be implemented by subclasses")
+
+    def iter_key_idx_numpy_conformers(
+        self,
+        limit: float = math.inf,
+        properties: tp.Optional[tp.Iterable[str]] = None,
+    ) -> tp.Iterator[tp.Tuple[str, int, NumpyConformers]]:
         count = 0
         for k, size in self._group_sizes.items():
-            conformers = getattr(self, getter)(k, **kwargs)
+            conformers = self.get_numpy_conformers(k, properties=properties)
             for idx in range(size):
                 count += 1
                 single_conformer = {k: conformers[k][idx] for k in conformers.keys()}
@@ -254,18 +312,27 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
                 if count >= limit:
                     return
 
-    def iter_key_idx_numpy_conformers(
-        self, **kwargs
+    def iter_key_idx_conformers(
+        self,
+        limit: float = math.inf,
+        properties: tp.Optional[tp.Iterable[str]] = None,
     ) -> tp.Iterator[tp.Tuple[str, int, Conformers]]:
-        kwargs.update({"getter": "get_numpy_conformers"})
-        yield from self.iter_key_idx_conformers(**kwargs)
+        properties = properties or self.tensor_properties
+        for key, idx, conformer in self.iter_key_idx_numpy_conformers(
+            limit, properties
+        ):
+            yield key, idx, {k: torch.from_numpy(v) for k, v in conformer.items()}
 
-    def iter_conformers(self, **kwargs) -> tp.Iterator[Conformers]:
-        for _, _, c in self.iter_key_idx_conformers(**kwargs):
+    def iter_conformers(
+        self, limit: float = math.inf, properties: tp.Optional[tp.Iterable[str]] = None
+    ) -> tp.Iterator[Conformers]:
+        for _, _, c in self.iter_key_idx_conformers(limit, properties):
             yield c
 
-    def iter_numpy_conformers(self, **kwargs) -> tp.Iterator[Conformers]:
-        for _, _, c in self.iter_key_idx_numpy_conformers(**kwargs):
+    def iter_numpy_conformers(
+        self, limit: float = math.inf, properties: tp.Optional[tp.Iterable[str]] = None
+    ) -> tp.Iterator[NumpyConformers]:
+        for _, _, c in self.iter_key_idx_numpy_conformers(limit, properties):
             yield c
 
 
@@ -273,7 +340,7 @@ class _ANIDatasetBase(tp.Mapping[str, Conformers]):
 # Decorator that wraps functions that modify the dataset in place. Makes
 # sure that cache updating happens after dataset modification
 def _needs_cache_update(
-    method: tp.Callable[..., "_ANISubdataset"]
+    method: tp.Callable[..., "_ANISubdataset"],
 ) -> tp.Callable[..., "_ANISubdataset"]:
     @wraps(method)
     def method_with_cache_update(
@@ -297,13 +364,6 @@ def _broadcast(method):
 # should be delegated to one subdataset
 def _delegate(method):
     method._mark = "delegate"
-    return method
-
-
-# methods marked with this decorator
-# should be delegated to one subdataset, and return a value != "self"
-def _delegate_with_return(method):
-    method._mark = "delegate_with_return"
     return method
 
 
@@ -463,26 +523,6 @@ class _ANISubdataset(_ANIDatasetBase):
             return idx_
         return idx
 
-    @_delegate_with_return
-    def get_conformers(
-        self,
-        group_name: str,
-        idx: IdxLike = None,
-        properties: tp.Optional[tp.Iterable[str]] = None,
-    ) -> Conformers:
-        r"""Get conformers in a given group in the dataset
-
-        Can obtain conformers with specified indices, and including only
-        specified properties. Conformers are dict of the form {property:
-        Tensor}, where properties are strings"""
-        numpy_conformers = self.get_numpy_conformers(group_name, idx, properties)
-        return {
-            k: torch.as_tensor(numpy_conformers[k])
-            for k in set(numpy_conformers.keys())
-            if not any(re.match(pattern, k) for pattern in _ALWAYS_STRING_PATTERNS)
-        }
-
-    @_delegate_with_return
     def get_numpy_conformers(
         self,
         group_name: str,
@@ -490,8 +530,8 @@ class _ANISubdataset(_ANIDatasetBase):
         properties: tp.Optional[tp.Iterable[str]] = None,
         chem_symbols: bool = False,
         exclude_dummy: bool = False,
+        raise_if_keyerror: bool = True,
     ) -> NumpyConformers:
-        r"""Same as get_conformers but conformers are a dict {property: ndarray}"""
         if properties is None:
             properties = self.properties
         needed_properties = (
@@ -504,7 +544,13 @@ class _ANISubdataset(_ANIDatasetBase):
             f = self._get_open_store(stack, "r")
             if exclude_dummy:
                 needed_properties = needed_properties - set(f._dummy_properties.keys())
-            numpy_conformers = {p: f[group_name][p] for p in needed_properties}
+            try:
+                group = f[group_name]
+            except KeyError:
+                if raise_if_keyerror:
+                    raise KeyError(f"{group_name} does not exist") from None
+                return {}
+            numpy_conformers = {p: group[p] for p in needed_properties}
         idx_ = self._parse_index(idx)
         if idx_ is not None:
             numpy_conformers.update(
@@ -661,12 +707,11 @@ class _ANISubdataset(_ANIDatasetBase):
                 )
             else:
                 for group_name in self.keys():
-                    shape: tp.Tuple[int, ...] = (_get_num_conformers(f[group_name]),)
+                    group = f[group_name]
+                    shape: tp.Tuple[int, ...] = (_get_num_conformers(group),)
                     if is_atomic:
-                        shape += (_get_num_atoms(f[group_name]),)
-                    f[group_name][dest_key] = np.full(
-                        shape + extra_dims_, fill_value, dtype
-                    )
+                        shape += (_get_num_atoms(group),)
+                    group[dest_key] = np.full(shape + extra_dims_, fill_value, dtype)
         return self
 
     def _attach_dummy_properties(self, dummy_properties: tp.Dict[str, tp.Any]) -> None:
@@ -820,10 +865,7 @@ class _ANISubdataset(_ANIDatasetBase):
         """
         self._check_unique_element_key()
         new_ds = _ANISubdataset(
-            "tmp",
-            "by_num_atoms",
-            self._store.backend,
-            verbose=False
+            "tmp", "by_num_atoms", self._store.backend, verbose=False
         )
         try:
             with new_ds.keep_open("r+") as rwds:
@@ -1070,7 +1112,10 @@ class ANIDataset(_ANIDatasetBase):
         self,
         locations: tp.Union[tp.Iterable[StrPath], StrPath],
         names: tp.Optional[tp.Union[tp.Iterable[str], str]] = None,
-        **kwargs,
+        grouping: tp.Optional[Grouping] = None,
+        backend: tp.Optional[Backend] = None,
+        verbose: bool = True,
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ):
         super().__init__()
         # _datasets is an OrderedDict {name: _ANISubdataset}.
@@ -1084,12 +1129,20 @@ class ANIDataset(_ANIDatasetBase):
         if not len(names) == len(locations):
             raise ValueError("Length of locations and names must be equal")
         self._datasets = OrderedDict(
-            (n, _ANISubdataset(loc, **kwargs)) for n, loc in zip(names, locations)
+            (n, _ANISubdataset(loc, grouping, backend, verbose, dummy_properties))
+            for n, loc in zip(names, locations)
         )
         self._update_cache()
 
     @classmethod
-    def from_dir(cls, dir_: StrPath, **kwargs):
+    def from_dir(
+        cls,
+        dir_: StrPath,
+        grouping: tp.Optional[Grouping] = None,
+        backend: tp.Optional[Backend] = None,
+        verbose: bool = True,
+        dummy_properties: tp.Optional[tp.Dict[str, tp.Any]] = None,
+    ) -> tpx.Self:
         r"""
         Initializes datasets from all files in a given directory
 
@@ -1101,14 +1154,43 @@ class ANIDataset(_ANIDatasetBase):
             raise ValueError("Input should be a directory")
         locations = sorted([p for p in dir_.iterdir() if p.suffix != ".tar.gz"])
         names = [p.stem for p in locations]
-        return cls(locations=locations, names=names, **kwargs)
+        return cls(locations, names, grouping, backend, verbose, dummy_properties)
 
     @property
     def grouping(self) -> tp.Union[Grouping, tp.Literal["legacy"]]:
         return self._first_subds.grouping
 
+    def copy(self, path: StrPath, verbose: bool = True) -> "ANIDataset":
+        return concatenate(self, path, verbose=verbose)
+
+    def get_numpy_conformers(
+        self,
+        group_name: str,
+        idx: IdxLike = None,
+        properties: tp.Optional[tp.Iterable[str]] = None,
+        chem_symbols: bool = False,
+        exclude_dummy: bool = False,
+        raise_if_keyerror: bool = True,
+    ) -> NumpyConformers:
+        properties = properties or self.properties
+        names, key = self._parse_key(group_name)
+        result: dict[str, list[NumberOrStrArray]] = {p: [] for p in properties}
+        with self.keep_open("r") as rods:
+            for name in names:
+                numpy_conformers = rods._datasets[name].get_numpy_conformers(
+                    key, idx, properties, raise_if_keyerror=False
+                )
+                if numpy_conformers:
+                    for p in properties:
+                        result[p].append(numpy_conformers[p])
+        if all(len(result[p]) == 0 for p in properties) and raise_if_keyerror:
+            raise KeyError(f"No groups {group_name} found")
+        return {
+            k: tp.cast(NumberOrStrArray, np.concatenate(v)) for k, v in result.items()
+        }
+
     @contextmanager
-    def keep_open(self, mode: str = "r") -> tp.Iterator["ANIDataset"]:
+    def keep_open(self, mode: str = "r") -> tp.Iterator[tpx.Self]:
         with ExitStack() as stack:
             for k in self._datasets.keys():
                 self._datasets[k] = stack.enter_context(
@@ -1184,18 +1266,12 @@ class ANIDataset(_ANIDatasetBase):
 
             @wraps(unbound_method)
             def delegated_call(group_name: str, *args, **kwargs) -> "ANIDataset":
-                name, k = self._parse_key(group_name)
-                self._datasets[name] = getattr(self._datasets[name], method)(
-                    k, *args, **kwargs
-                )
+                names, k = self._parse_key(group_name)
+                for name in names:
+                    self._datasets[name] = getattr(self._datasets[name], method)(
+                        k, *args, **kwargs
+                    )
                 return self._update_cache()
-
-        elif mark == "delegate_with_return":
-
-            @wraps(unbound_method)
-            def delegated_call(group_name: str, *args, **kwargs) -> tp.Any:
-                name, k = self._parse_key(group_name)
-                return getattr(self._datasets[name], method)(k, *args, **kwargs)
 
         elif mark == "broadcast":
 
@@ -1226,7 +1302,7 @@ class ANIDataset(_ANIDatasetBase):
     def _first_subds(self) -> "_ANISubdataset":
         return next(iter(self._datasets.values()))
 
-    def _update_cache(self) -> "ANIDataset":
+    def _update_cache(self) -> tpx.Self:
         self._group_sizes = OrderedDict(
             (k if self.num_stores == 1 else f"{name}/{k}", v)
             for name, ds in self._datasets.items()
@@ -1251,13 +1327,15 @@ class ANIDataset(_ANIDatasetBase):
         self._properties = self._first_subds.properties
         return self
 
-    def _parse_key(self, key: str) -> tp.Tuple[str, str]:
-        tokens = key.split("/")
-        if self.num_stores == 1:
-            return self._first_name, "/".join(tokens)
-        return tokens[0], "/".join(tokens[1:])
+    def _parse_key(self, key: str) -> tp.Tuple[tp.List[str], str]:
+        # If a name/group is passed, split it, otherwise return all names
+        if "/" in key:
+            name, group = key.split("/")
+            return [name], group
+        return self.store_names, key
 
 
+# TODO: Type correctly
 def concatenate(
     source: ANIDataset,
     dest_location: StrPath,
@@ -1267,28 +1345,34 @@ def concatenate(
 ) -> ANIDataset:
     r"""Combine all the backing stores in a given ANIDataset into one"""
     dest_location = Path(dest_location).resolve()
-    if source.grouping not in ["by_formula", "by_num_atoms"]:
+    grouping = source.grouping
+    if grouping not in ["by_formula", "by_num_atoms"]:
         raise ValueError("Please regroup your dataset before concatenating")
 
-    dest = ANIDataset("tmp", backend=backend, grouping=source.grouping, verbose=False)
+    # Cast required by mypy but guaranteed by the if check
+    dest = type(source)(
+        "tmp", backend=backend, grouping=tp.cast(Grouping, grouping), verbose=False
+    )
     try:
-        for k, v in tqdm(
-            source.numpy_items(),
-            desc="Concatenating datasets",
-            total=source.num_conformer_groups,
-            disable=not verbose,
-        ):
-            dest.append_conformers(k.split("/")[-1], v)
+        with source.keep_open("r") as source_ds, dest.keep_open("r+") as dest_ds:
+            for k, v in tqdm(
+                source_ds.numpy_items(),
+                desc="Concatenating datasets",
+                total=source.num_conformer_groups,
+                disable=not verbose,
+            ):
+                dest_ds.append_conformers(k.split("/")[-1], v)
     except Exception:
         dest._first_subds._store.location.clear()
 
     dest._first_subds._store.location.root = dest_location
     if delete_originals:
-        for subds in tqdm(
-            source._datasets.values(),
-            desc="Deleting original stores",
-            total=source.num_stores,
-            disable=not verbose,
-        ):
-            subds._store.location.clear()
+        with source.keep_open("r+") as source_ds:
+            for subds in tqdm(
+                source_ds._datasets.values(),
+                desc="Deleting original stores",
+                total=source.num_stores,
+                disable=not verbose,
+            ):
+                subds._store.location.clear()
     return dest
