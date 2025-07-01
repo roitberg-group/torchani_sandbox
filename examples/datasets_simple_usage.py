@@ -113,8 +113,10 @@ print(num_conformers)
 # ----------
 #
 # To access individual conformers or subsets of conformers we use "conformer"
-# methods, get_conformers and iter_conformers
-conformer = ds.get_conformers("file1/CH4", 0)
+# methods, get_conformers and iter_conformers. A file can be specified too. If a file
+# is not specified, the result is the concatenation of the conformers fetched for all
+# files
+conformer = ds.get_conformers("CH4", 0)
 print(conformer)
 conformer = ds.get_conformers("file1/CH4", 1)
 print(conformer)
@@ -124,25 +126,25 @@ print(conformer)
 # conformers from the same group, which is faster. Since we copy the data forh
 # simplicity, this allows all fancy indexing operations (directly indexing
 # using h5py for example does not).
-conformers = ds.get_conformers("file1/CH4", [0, 1])
+conformers = ds.get_conformers("CH4", [0, 1])
 print(conformers)
 
 ###############################################################################
 # We can also access all the group if we don't pass an index, same as normal indexing
-conformer = ds.get_conformers("file1/CH4")
+conformer = ds.get_conformers("CH4")
 print(conformer)
 
 ###############################################################################
 # Finally, it is possible to also specify which properties we want using 'properties'
-conformer = ds.get_conformers("file1/CH4", [0, 3], properties=("species", "energies"))
+conformer = ds.get_conformers("CH4", [0, 3], properties=("species", "energies"))
 print(conformer)
 
 ###############################################################################
 # If you want you can also get the conformers as numpy arrays by calling
 # get_numpy_conformers.  this has an optional flag "chem_symbols" which if
 # specified "True" will output the elements as strings ('C', 'H', 'H', ... etc)
-conformer = ds.get_numpy_conformers("file1/CH4", [0, 1], chem_symbols=True)
-print(conformer)
+numpy_conformers = ds.get_numpy_conformers("CH4", [0, 1], chem_symbols=True)
+print(numpy_conformers)
 
 ###############################################################################
 # We can iterate over all conformers sequentially by calling iter_conformer,
