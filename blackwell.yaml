@@ -1,15 +1,12 @@
-name: ani
+name: ani-blackwell
 channels:
   - nodefaults
-  - https://conda.anaconda.org/pytorch
-  - https://conda.anaconda.org/nvidia
   - https://conda.anaconda.org/conda-forge
 dependencies:
   ## Required dependencies to run TorchANI ##
   - python=3.11
   - pip>=24.0
   - numpy=2.1
-  - pytorch::pytorch=2.5  # Modify to 'pytorch::pytorch=2' if installing on macOS
   - typing_extensions>=4.0.0
   - h5py  # HDF5 backend for datasets
   - tqdm  # progress bar util
@@ -23,20 +20,12 @@ dependencies:
   # Used for molecular dynamics and for tests/tools/docs
   - ase
 
-  ## NVIDIA CUDA GPU support ##
-  - pytorch::pytorch-cuda=12.4  # Comment this line if installing on macOS, or to **disable** CUDA GPU support in any platform
-  #- pytorch::cpuonly  # Uncomment this line to **disable** CUDA GPU support in Linux
-
   ## cuAEV and MNP ##
-  # For more details consult the "developer notes" section in README.md
-  # If installing on macOS, or if CUDA GPU support is **disabled**, comment all lines on this block
   - setuptools>=64
   - setuptools-scm>=8
   - gxx_linux-64=12.2
   - gcc_linux-64=12.2
-  - nvidia::cuda-libraries-dev=12.4
-  - nvidia::cuda-cccl=12.4
-  - nvidia::cuda-nvcc=12.4
+  # CUDA Toolkit must be present in host!
 
   ## Running torchani/tests ##
   - coverage  # code coverage
@@ -63,3 +52,6 @@ dependencies:
   - sphinx-gallery
   - pydata-sphinx-theme
   - tensorboard
+  - pip:
+    - torch==2.7.1
+    - --index-url https://download.pytorch.org/whl/cu128

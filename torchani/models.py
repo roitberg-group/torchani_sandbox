@@ -64,12 +64,10 @@ For more details consult the examples documentation
 import typing as tp
 import importlib
 
-from torchani.cutoffs import CutoffSmooth
 from torchani.utils import SYMBOLS_2X, SYMBOLS_1X, SYMBOLS_2X_ZNUM_ORDER
 from torchani.electro import ChargeNormalizer
 from torchani.arch import Assembler, ANI, ANIq, _fetch_state_dict, simple_ani
 from torchani.neighbors import NeighborlistArg
-from torchani.potentials import TwoBodyDispersionD3, RepulsionXTB
 from torchani.annotations import Device, DType
 from torchani.nn._internal import _ANINetworksDiscardFirstScalar
 from torchani.paths import custom_models_dir
@@ -242,7 +240,7 @@ def ANImbis(
     shifter_state_dict = {
         "self_energies": ani2x_state_dict["energy_shifter.self_energies"]
     }
-    charge_nn_state_dict = _fetch_state_dict("charge_nn_state_dict.pt", private=True)
+    charge_nn_state_dict = _fetch_state_dict("charge_nn_state_dict.pt", private=False)
     model.energy_shifter.load_state_dict(shifter_state_dict)
     model.potentials["nnp"].aev_computer.load_state_dict(aev_state_dict)
     model.potentials["nnp"].neural_networks.load_state_dict(energy_nn_state_dict)
@@ -278,43 +276,6 @@ def ANIala(
     return model
 
 
-def ANIdr(
-    model_index: tp.Optional[int] = None,
-    neighborlist: NeighborlistArg = "all_pairs",
-    strategy: str = "pyaev",
-    periodic_table_index: bool = True,
-    device: Device = None,
-    dtype: DType = None,
-) -> ANI:
-    r"""
-    ANI model trained with both dispersion and repulsion
-
-    The level of theory is B973c, it is an ensemble of 7 models. It predicts energies on
-    HCNOFSCl elements
-    """
-    asm = Assembler(periodic_table_index=periodic_table_index)
-    asm.set_symbols(SYMBOLS_2X)
-    asm.set_global_cutoff_fn("smooth")
-    asm.set_aev_computer(angular="ani2x", radial="ani2x", strategy=strategy)
-    asm.set_atomic_networks(ctor="anidr")
-    asm.add_potential(RepulsionXTB, name="repulsion_xtb", cutoff=5.3)
-    asm.add_potential(
-        TwoBodyDispersionD3,
-        name="dispersion_d3",
-        cutoff=8.5,
-        cutoff_fn=CutoffSmooth(order=4),
-        kwargs={"functional": "B973c"},
-    )
-    asm.set_neighborlist(neighborlist)
-    asm.set_gsaes_as_self_energies("b973c-def2mtzvp")
-    model = tp.cast(ANI, asm.assemble(7))
-    model.load_state_dict(_fetch_state_dict("anidr_state_dict.pt", private=True))
-    model = model if model_index is None else model[model_index]
-    model.requires_grad_(False)
-    model.to(device=device, dtype=dtype)
-    return model
-
-
 def ANI2xr(
     model_index: tp.Optional[int] = None,
     neighborlist: NeighborlistArg = "all_pairs",
@@ -339,7 +300,7 @@ def ANI2xr(
         neighborlist=neighborlist,
         periodic_table_index=periodic_table_index,
     )
-    model.load_state_dict(_fetch_state_dict("ani2xr-preview.pt", private=True))
+    model.load_state_dict(_fetch_state_dict("ani2xr.pt", private=False))
     model = model if model_index is None else model[model_index]
     model.requires_grad_(False)
     model.to(device=device, dtype=dtype)
@@ -370,7 +331,7 @@ def ANI2dr(
         neighborlist=neighborlist,
         periodic_table_index=periodic_table_index,
     )
-    model.load_state_dict(_fetch_state_dict("ani2dr-preview.pt", private=True))
+    model.load_state_dict(_fetch_state_dict("ani2dr.pt", private=False))
     model = model if model_index is None else model[model_index]
     model.requires_grad_(False)
     model.to(device=device, dtype=dtype)
@@ -500,7 +461,7 @@ def SnnANI2xr(
         repulsion=True,
         sections=6,
     )
-    model.load_state_dict(_fetch_state_dict("snn-ani2xr-preview.pt", private=True))
+    model.load_state_dict(_fetch_state_dict("snn-ani2xr.pt", private=False))
     model = model if model_index is None else model[model_index]
     model.requires_grad_(False)
     model.to(device=device, dtype=dtype)

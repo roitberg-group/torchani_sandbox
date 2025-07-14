@@ -6,6 +6,7 @@ import math
 import torch
 from torch import Tensor
 
+from torchani.csrc import CLIST_IS_INSTALLED
 from torchani.utils import map_to_central, cumsum_from_zero, fast_masked_select
 
 
@@ -126,10 +127,10 @@ def compute_bounding_cell(
     largest_dist = max_ - min_
     if square:
         cell = (
-            torch.eye(3, dtype=torch.float, device=coords.device) * largest_dist.max()
+            torch.eye(3, dtype=coords.dtype, device=coords.device) * largest_dist.max()
         )
     else:
-        cell = torch.eye(3, dtype=torch.float, device=coords.device) * largest_dist
+        cell = torch.eye(3, dtype=coords.dtype, device=coords.device) * largest_dist
     if displace:
         # Benchmarks show that these assert coords > 0.0 slows things down a bit
         return coords - min_, cell
@@ -274,6 +275,25 @@ def _all_pairs_pbc_shifts(cutoff: float, cell: Tensor, pbc: Tensor) -> Tensor:
     )
 
 
+class FastCellList(Neighborlist):
+    r"""This class is experimental and requires the compiled Cell-List extension"""
+    def __init__(self) -> None:
+        super().__init__()
+        if not CLIST_IS_INSTALLED:
+            raise RuntimeError("Cell list extension is not installed")
+
+    def forward(
+        self,
+        cutoff: float,
+        species: Tensor,
+        coords: Tensor,
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None,
+    ) -> Neighbors:
+        output = torch.ops.cell_list.cell_list(cutoff, species, coords, cell, pbc)
+        return Neighbors(*output)
+
+
 class CellList(Neighborlist):
     r"""Compute pairs of neighbors using the 'Cell List' algorithm.
 
@@ -370,7 +390,7 @@ def cell_list(
         # Make cell large enough to deny PBC interaction (fast, not bottleneck)
         displ_coords, cell = compute_bounding_cell(
             coords.detach(),
-            eps=(cutoff + 1e-3),
+            eps=(2 * cutoff + 1e-3),
         )
 
     # The cell is spanned by a 3D grid of "buckets" or "grid elements",
@@ -474,7 +494,7 @@ def _cell_list(
     # 5) Get the necessary shifts. If no PBC is needed also get rid of the
     # image_pairs_between that need wrapping
     shift_idxs_within = torch.zeros(
-        _image_pairs_within.shape[1],
+        _image_pairs_within.size(1),
         3,
         device=grid_shape.device,
         dtype=torch.long,
@@ -532,24 +552,17 @@ def _offset_idx3() -> Tensor:
 
 # Input shapes are (molecs, atoms, 3) (3, 3) (3,)
 def coords_to_grid_idx3(coords: Tensor, cell: Tensor, grid_shape: Tensor) -> Tensor:
-    # 1) Fractionalize coords. After this coords lie in [0., 1.)
-    fractionals = coords_to_fractional(coords, cell)  # shape (C, A, 3)
-    # 2) Assign to each fractional its corresponding grid_idx3
-    return torch.floor(fractionals * grid_shape).to(torch.long)
+    # Transform and wrap all coords to be relative to the cell vectors
+    #
+    # Fractionalize coords and assign corresponding grid_idx3
+    return (coords_to_fractional(coords, cell) * grid_shape).floor().long()
 
 
 def coords_to_fractional(coords: Tensor, cell: Tensor) -> Tensor:
-    # Transform and wrap all coords to be relative to the cell vectors
-    #
     # Input to this function may have coords outside the box. If the
     # coordinate is 0.16 or 3.15 times the cell length, it is turned into 0.16
     # or 0.15 respectively.
-    # All output coords are in the range [0.0, 1.0)
-    fractional_coords = torch.matmul(coords, cell.inverse())
-    fractional_coords -= fractional_coords.floor()
-    fractional_coords[fractional_coords >= 1.0] += -1.0
-    fractional_coords[fractional_coords < 0.0] += 1.0
-    return fractional_coords
+    return torch.remainder(coords @ cell.inverse(), 1.0)
 
 
 def flatten_idx3(
@@ -631,7 +644,7 @@ def setup_grid(
     # it is only a lower bound used to calculate the grid size, it is the minimum
     # size that spawns a new bucket in the grid.
     spherical_factor = torch.tensor(
-        [1.0, 1.0, 1.0], dtype=torch.float, device=cell.device
+        [1.0, 1.0, 1.0], dtype=cell.dtype, device=cell.device
     )  # TODO: calculate correctly
     bucket_length_lower_bound = (
         spherical_factor * cutoff / buckets_per_cutoff
@@ -795,7 +808,7 @@ class VerletCellList(CellList):
             # Make cell large enough to avoid PBC interaction (fast, not bottleneck)
             displ_coords, cell = compute_bounding_cell(
                 coords.detach(),
-                eps=(cutoff + 1e-3),
+                eps=(2 * cutoff + 1e-3),
             )
 
         # The grid uses a skin, but the narrowing uses the actual cutoff
@@ -867,7 +880,8 @@ class VerletCellList(CellList):
             - map_to_central(self._prev_coords, self._prev_cell, pbc) * scaling
         )
         dist_squared = delta.pow(2).sum(-1)
-        return bool((dist_squared > (self.skin / 2) ** 2).all())
+        half_skin_squared = (self.skin / 2) ** 2
+        return bool((dist_squared < half_skin_squared).all())
 
 
 NeighborlistArg = tp.Union[
@@ -889,6 +903,8 @@ def _parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
         neighborlist = CellList()
     elif neighborlist == "adaptive":
         neighborlist = AdaptiveList()
+    elif neighborlist == "fast_cell_list":
+        neighborlist = FastCellList()
     elif neighborlist == "base":
         neighborlist = Neighborlist()
     elif neighborlist == "verlet_cell_list":
