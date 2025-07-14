@@ -130,7 +130,13 @@ def addSummaryEmptyLine():
 
 
 def benchmark(
-    speciesPositions, aev_comp, nn_single_model, nn_neural_networks, runbackward=False, mol_info=None, verbose=True
+    speciesPositions,
+    aev_comp,
+    nn_single_model,
+    nn_neural_networks,
+    runbackward=False,
+    mol_info=None,
+    verbose=True,
 ):
     global runcounter
     global last_py_speed
@@ -302,7 +308,12 @@ def run(file, nnp_ref, nnp_cuaev, runbackward, maxatoms=10000):
     if not args.nsight:
         print("Original TorchANI:")
         aev_ref, delta_ref, force_ref = benchmark(
-            speciesPositions, nnp_ref.aev_computer, single_model_ref, neural_networks_ref, runbackward, mol_info
+            speciesPositions,
+            nnp_ref.aev_computer,
+            single_model_ref,
+            neural_networks_ref,
+            runbackward,
+            mol_info,
         )
         print()
     else:
@@ -311,11 +322,22 @@ def run(file, nnp_ref, nnp_cuaev, runbackward, maxatoms=10000):
     print("CUaev:")
     # warm up
     _, _, _ = benchmark(
-        speciesPositions, nnp_cuaev.aev_computer, single_model, neural_networks, runbackward, mol_info, verbose=False
+        speciesPositions,
+        nnp_cuaev.aev_computer,
+        single_model,
+        neural_networks,
+        runbackward,
+        mol_info,
+        verbose=False,
     )
     # run
     aev, delta, force_cuaev = benchmark(
-        speciesPositions, nnp_cuaev.aev_computer, single_model, neural_networks, runbackward, mol_info,
+        speciesPositions,
+        nnp_cuaev.aev_computer,
+        single_model,
+        neural_networks,
+        runbackward,
+        mol_info,
     )
 
     if args.nsight:
@@ -550,14 +572,21 @@ if __name__ == "__main__":
     num_models = neural_networks_ref.total_members_num
     single_model_ref = neural_networks_ref.members[0]
     if args.infer_model:
-        neural_networks = neural_networks_ref.to_infer_model(use_mnp=args.mnp).to(device)
+        neural_networks = neural_networks_ref.to_infer_model(use_mnp=args.mnp).to(
+            device
+        )
         single_model = single_model_ref.to_infer_model(use_mnp=args.mnp).to(device)
     energy_shifter = nnp_ref.energy_shifter
 
     # if run for plots
     if args.plot:
         maxatoms_arr = np.concatenate(
-            [[300,], [3000]]
+            [
+                [
+                    300,
+                ],
+                [3000],
+            ]
         )
         file = "6ZDH.pdb"
         run_for_plot(file, maxatoms_arr, nnp_ref, nnp_cuaev)

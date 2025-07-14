@@ -1,4 +1,3 @@
-import typing as tp
 import time
 import argparse
 import gc
@@ -11,7 +10,6 @@ from tqdm import tqdm
 from torchani.models import ANI1x
 from torchani.units import hartree2kcalpermol
 from torchani.datasets import batch_all_in_ram
-from tool_utils import time_functions
 from torchani import datasets
 
 summary = ""
