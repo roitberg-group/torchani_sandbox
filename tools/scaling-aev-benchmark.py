@@ -576,6 +576,9 @@ if __name__ == "__main__":
             device
         )
         single_model = single_model_ref.to_infer_model(use_mnp=args.mnp).to(device)
+    else:
+        neural_networks = neural_networks_ref
+        single_model = single_model_ref
     energy_shifter = nnp_ref.energy_shifter
 
     # if run for plots
