@@ -17,7 +17,7 @@ Tensor map_to_central(const Tensor& coordinates, const Tensor& cell, const Tenso
 Tensor setup_grid(const Tensor& cell, double cutoff, int64_t buckets_per_cutoff = 1, double extra_space = 1.0e-5) {
   Tensor spherical_factor = cell.new_ones({3});
   Tensor bucket_length_lower_bound = (spherical_factor * cutoff / buckets_per_cutoff) + extra_space;
-  Tensor cell_lengths = torch::norm(cell, 2, 0);
+  Tensor cell_lengths = torch::norm(cell, 2, 1);
   Tensor grid_shape = torch::floor_divide(cell_lengths, bucket_length_lower_bound).to(torch::kLong);
   return grid_shape;
 }

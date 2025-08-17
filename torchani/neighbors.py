@@ -651,7 +651,7 @@ def setup_grid(
     ) + extra_space
 
     # Lengths of each cell edge are given by norm of each cell basis vector
-    cell_lengths = torch.linalg.norm(cell, dim=0)
+    cell_lengths = torch.linalg.norm(cell, dim=1)
 
     # For example, if a cell length is "3 * bucket_length_lower_bound + eps" it
     # can be covered with 3 buckets if they are stretched to be slightly larger
