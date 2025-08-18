@@ -386,7 +386,8 @@ def fast_adaptive_list(
     )
     if coords.shape[1] < threshold:
         return all_pairs(cutoff, species, coords, cell, pbc)
-    return torch.ops.cell_list.cell_list(cutoff, species, coords, cell, pbc)
+    output = torch.ops.cell_list.cell_list(cutoff, species, coords, cell, pbc)
+    return Neighbors(*output)
 
 
 def adaptive_list(
