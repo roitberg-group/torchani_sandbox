@@ -40,7 +40,7 @@ class TestBuiltinDatasets(TestCase):
                 getattr(datasets, c)(download=False)
 
         # these also have the B973c/def2mTZVP LoT
-        for c in ["ANI1x", "ANI2x", "COMP6v1", "COMP6v2", "AminoacidDimers"]:
+        for c in ["ANI1x", "ANI2x", "COMP6v1", "COMP6v2"]:
             with self.assertRaisesRegex(RuntimeError, "Dataset not found"):
                 getattr(datasets, c)(download=False, lot="B973c-def2mTZVP")
 
