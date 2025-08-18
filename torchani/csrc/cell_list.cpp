@@ -6,12 +6,11 @@
 using torch::Tensor;
 using torch::autograd::tensor_list;
 
-Tensor map_to_central(const Tensor& coordinates, const Tensor& cell, const Tensor& pbc) {
-  Tensor inv_cell = torch::inverse(cell);
-  Tensor coordinates_cell = torch::matmul(coordinates, inv_cell);
-  coordinates_cell -= coordinates_cell.floor() * pbc;
-  Tensor mapped_coordinates = torch::matmul(coordinates_cell, cell);
-  return mapped_coordinates;
+Tensor map_to_central(const Tensor& coords, const Tensor& cell) {
+  Tensor frac = torch::remainder(torch::matmul(coords, cell.inverse()), 1.0);
+  frac.index_put_({(frac >= 1.0).nonzero().flatten()}, frac - 1.0);
+  frac.index_put_({(frac < 0.0).nonzero().flatten()}, frac + 1.0);
+  return torch::matmul(frac, cell);
 }
 
 Tensor setup_grid(const Tensor& cell, double cutoff, int64_t buckets_per_cutoff = 1, double extra_space = 1.0e-5) {
@@ -56,7 +55,6 @@ void _validate_inputs(
       throw std::invalid_argument("This neighborlist doesn't support PBC only in some directions");
     }
   } else {
-    // throw std::invalid_argument("Currently non-pbc is broken in FastCellList");
     if (cell.has_value()) {
       throw std::invalid_argument("Cell is not supported if not using pbc");
     }
@@ -121,8 +119,10 @@ std::tuple<Tensor, Tensor> compute_bounding_cell(
 }
 
 Tensor coords_to_grid_idx3(const Tensor& coords, const Tensor& cell, const Tensor& grid_shape) {
-  Tensor fractional_coords = torch::remainder(torch::matmul(coords, cell.inverse()), 1.0);
-  return (fractional_coords * grid_shape).floor().to(torch::kLong);
+  Tensor frac = torch::remainder(torch::matmul(coords, cell.inverse()), 1.0);
+  frac.index_put_({(frac >= 1.0).nonzero().flatten()}, frac - 1.0);
+  frac.index_put_({(frac < 0.0).nonzero().flatten()}, frac + 1.0);
+  return (frac * grid_shape).floor().to(torch::kLong);
 }
 
 Tensor flatten_idx3(const Tensor& idx3, const Tensor& grid_shape) {
@@ -309,7 +309,7 @@ class CellListFunction : public torch::autograd::Function<CellListFunction> {
     tensor_list outs;
     if (pbc.has_value()) {
       Tensor shifts = torch::matmul(shift_idxs.to(out_cell.dtype()), out_cell);
-      Tensor map_coords = map_to_central(coords, out_cell.detach(), pbc.value());
+      Tensor map_coords = map_to_central(coords, out_cell.detach());
       outs = narrow_down(cutoff, species, map_coords, neighbor_idxs, shifts);
     } else {
       outs = narrow_down(cutoff, species, coords, neighbor_idxs);
