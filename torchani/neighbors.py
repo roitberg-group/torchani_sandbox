@@ -342,6 +342,53 @@ class AdaptiveList(Neighborlist):
         return adaptive_list(cutoff, species, coords, cell, pbc, self._thresh_nopbc)
 
 
+class FastAdaptiveList(Neighborlist):
+    r"""This class is experimental and requires the compiled Cell-List extension"""
+
+    def __init__(self, threshold: int = 190, threshold_nopbc: int = 1770) -> None:
+        super().__init__()
+        self._thresh = threshold
+        self._thresh_nopbc = threshold_nopbc
+        if not CLIST_IS_INSTALLED:
+            raise RuntimeError("Cell list extension is not installed")
+
+    def forward(
+        self,
+        cutoff: float,
+        species: Tensor,
+        coords: Tensor,
+        cell: tp.Optional[Tensor] = None,
+        pbc: tp.Optional[Tensor] = None,
+    ) -> Neighbors:
+        if pbc is not None:
+            return fast_adaptive_list(cutoff, species, coords, cell, pbc, self._thresh)
+        return fast_adaptive_list(
+            cutoff, species, coords, cell, pbc, self._thresh_nopbc
+        )
+
+
+def fast_adaptive_list(
+    cutoff: float,
+    species: Tensor,
+    coords: Tensor,
+    cell: tp.Optional[Tensor] = None,
+    pbc: tp.Optional[Tensor] = None,
+    threshold: int = 190,
+) -> Neighbors:
+    _validate_inputs(
+        cutoff,
+        species,
+        coords,
+        cell,
+        pbc,
+        supports_batches=False,
+        supports_individual_pbc=False,
+    )
+    if coords.shape[1] < threshold:
+        return all_pairs(cutoff, species, coords, cell, pbc)
+    return torch.ops.cell_list.cell_list(cutoff, species, coords, cell, pbc)
+
+
 def adaptive_list(
     cutoff: float,
     species: Tensor,
@@ -657,9 +704,7 @@ def setup_grid(
     # to the fact that the sphere of radius "cutoff" around an atom needs
     # some more room to fit in nonorthogonal boxes.
     sin_alpha_beta_gamma = (
-        torch.linalg.norm(
-            torch.cross(cell[[1, 0, 0]], cell[[2, 2, 1]], dim=1), dim=1
-        )
+        torch.linalg.norm(torch.cross(cell[[1, 0, 0]], cell[[2, 2, 1]], dim=1), dim=1)
         / cell_lengths[[1, 0, 0]]
         / cell_lengths[[2, 2, 1]]
     )
@@ -908,7 +953,9 @@ NeighborlistArg = tp.Union[
     tp.Literal[
         "all_pairs",
         "adaptive",
+        "fast_adaptive",
         "cell_list",
+        "fast_cell_list",
         "verlet_cell_list",
         "base",
     ],
@@ -923,6 +970,8 @@ def _parse_neighborlist(neighborlist: NeighborlistArg = "base") -> Neighborlist:
         neighborlist = CellList()
     elif neighborlist == "adaptive":
         neighborlist = AdaptiveList()
+    elif neighborlist == "fast_adaptive":
+        neighborlist = FastAdaptiveList()
     elif neighborlist == "fast_cell_list":
         neighborlist = FastCellList()
     elif neighborlist == "base":
