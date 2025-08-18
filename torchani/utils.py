@@ -234,6 +234,7 @@ def strip_redundant_padding(
     return properties
 
 
+# TODO: Reduce code repetition with neighbors.py
 def map_to_central(coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
     r"""Map atoms outside the unit cell into the cell using PBC
 
@@ -245,14 +246,21 @@ def map_to_central(coordinates: Tensor, cell: Tensor, pbc: Tensor) -> Tensor:
         Tensor of coordinates of atoms mapped to the unit cell.
     """
     # Step 1: convert coordinates from standard cartesian coordinate to unit
-    # cell coordinates
-    inv_cell = torch.inverse(cell)
-    coordinates_cell = torch.matmul(coordinates, inv_cell)
-    # Step 2: wrap cell coordinates into [0, 1)
-    coordinates_cell -= coordinates_cell.floor() * pbc
-    # Step 3: convert from cell coordinates back to standard cartesian
-    # coordinate
-    return torch.matmul(coordinates_cell, cell)
+    # cell coordinates, and wrap them into [0, 1) using torch.remainder
+    coordinates_cell = torch.remainder((coordinates @ cell.inverse()), cell.new_ones(3))
+    # NOTE: When coords have a very small neg value they are wrapped to 1
+    # this is so since 1_f32 - 1e-8_f32 = 1_f32
+    # torch.remainder(-1.e-8, 1.0) == 1.0
+    #
+    # The other possibilities are most likely redundant and not required
+    coordinates_cell[coordinates_cell >= 1.0] -= 1.0
+    coordinates_cell[coordinates_cell < 0.0] += 1.0
+    # Step 2: convert from cell coordinates back to standard cartesian
+    # coordinate, and substitute back those for which pbc is off
+    out_coordinates = torch.matmul(coordinates_cell, cell)
+    # Only substitute those
+    out_coordinates[:, :, ~pbc] = coordinates[:, :, ~pbc].clone()
+    return out_coordinates
 
 
 class _NumbersConvert(torch.nn.Module):

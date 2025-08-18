@@ -562,7 +562,15 @@ def coords_to_fractional(coords: Tensor, cell: Tensor) -> Tensor:
     # Input to this function may have coords outside the box. If the
     # coordinate is 0.16 or 3.15 times the cell length, it is turned into 0.16
     # or 0.15 respectively.
-    return torch.remainder(coords @ cell.inverse(), 1.0)
+    out = torch.remainder(coords @ cell.inverse(), 1.0)
+    # NOTE: When coords have a very small neg value they are wrapped to 1
+    # this is so since 1_f32 - 1e-8_f32 = 1_f32
+    # torch.remainder(-1.e-8, 1.0) == 1.0
+    #
+    # The other possibilities are most likely redundant and not required
+    out[out >= 1.0] -= 1.0
+    out[out < 0.0] += 1.0
+    return out
 
 
 def flatten_idx3(
