@@ -35,8 +35,10 @@ def discard_inter_molecule_pairs(
     r"""Discard neighbors that don't belong to the same molecule"""
     molecule_neighbor_idxs = molecule_idxs[neighbors.indices]
     internal_idxs = (
-        molecule_neighbor_idxs[0, :] == molecule_neighbor_idxs[1, :]
-    ).nonzero().view(-1)
+        (molecule_neighbor_idxs[0, :] == molecule_neighbor_idxs[1, :])
+        .nonzero()
+        .view(-1)
+    )
     indices = neighbors.indices.index_select(1, internal_idxs)
     distances = neighbors.distances.index_select(0, internal_idxs)
     diff_vectors = neighbors.diff_vectors.index_select(0, internal_idxs)
@@ -277,6 +279,7 @@ def _all_pairs_pbc_shifts(cutoff: float, cell: Tensor, pbc: Tensor) -> Tensor:
 
 class FastCellList(Neighborlist):
     r"""This class is experimental and requires the compiled Cell-List extension"""
+
     def __init__(self) -> None:
         super().__init__()
         if not CLIST_IS_INSTALLED:
@@ -637,12 +640,7 @@ def setup_grid(
     # be 2 for SANDER, not sure. If this is changed then the surround_offsets
     # must also be changed
     #
-    # NOTE: extra_space is currently hardcoded to be consistent with SANDER
-    #
-    # The spherical factor is different from 1 in the case of nonorthogonal
-    # boxes and accounts for the "spherical protrusion", which is related
-    # to the fact that the sphere of radius "cutoff" around an atom needs
-    # some more room to fit in nonorthogonal boxes.
+    # NOTE: extra_space is currently hardcoded to be consistent with SANDER / PMEMD
 
     # To get the shape of the grid (number of "buckets" or "grid elements"
     # in each direction) calculate first a lower bound, and afterwards
@@ -651,15 +649,29 @@ def setup_grid(
     # NOTE: This is not actually the bucket length used in the grid,
     # it is only a lower bound used to calculate the grid size, it is the minimum
     # size that spawns a new bucket in the grid.
-    spherical_factor = torch.tensor(
-        [1.0, 1.0, 1.0], dtype=cell.dtype, device=cell.device
-    )  # TODO: calculate correctly
+    # Lengths of each cell edge are given by norm of each cell basis vector
+    cell_lengths = torch.linalg.norm(cell, dim=1)
+
+    # The spherical factor is different from 1 in the case of nonorthogonal
+    # boxes and accounts for the "spherical protrusion", which is related
+    # to the fact that the sphere of radius "cutoff" around an atom needs
+    # some more room to fit in nonorthogonal boxes.
+    sin_alpha_beta_gamma = (
+        torch.linalg.norm(
+            torch.cross(cell[[1, 0, 0]], cell[[2, 2, 1]], dim=1), dim=1
+        )
+        / cell_lengths[[1, 0, 0]]
+        / cell_lengths[[2, 2, 1]]
+    )
+    spherical_factor = (
+        cell.new_ones(3)
+        / sin_alpha_beta_gamma[[1, 0, 0]]
+        / sin_alpha_beta_gamma[[2, 2, 1]]
+    )
+
     bucket_length_lower_bound = (
         spherical_factor * cutoff / buckets_per_cutoff
     ) + extra_space
-
-    # Lengths of each cell edge are given by norm of each cell basis vector
-    cell_lengths = torch.linalg.norm(cell, dim=0)
 
     # For example, if a cell length is "3 * bucket_length_lower_bound + eps" it
     # can be covered with 3 buckets if they are stretched to be slightly larger
