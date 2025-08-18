@@ -22,12 +22,12 @@ Tensor setup_grid(
     int64_t buckets_per_cutoff = 1,
     double extra_space = 1.0e-5
 ) {
-
     auto opts = torch::TensorOptions().dtype(torch::kLong).device(cell.device());
     Tensor idx0 = torch::tensor({1, 0, 0}, opts);
     Tensor idx1 = torch::tensor({2, 2, 1}, opts);
     Tensor cell_lengths = torch::norm(cell, 2, 1);
-    Tensor cross = torch::cross(cell.index_select(0, idx0), cell.index_select(0, idx1), 1);
+    Tensor cross =
+        torch::cross(cell.index_select(0, idx0), cell.index_select(0, idx1), 1);
     Tensor sin_alpha_beta_gamma = torch::norm(cross, 2, 1) /
         cell_lengths.index_select(0, idx0) / cell_lengths.index_select(0, idx1);
 
