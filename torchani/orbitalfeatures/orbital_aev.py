@@ -83,7 +83,10 @@ class OrbitalAEVComputer(torch.nn.Module):
             s_orbital_aev = torch.exp(-OEtaS * ((s_coeffs - OShfS) ** 2))
             
             # Reshapes
+            print("S SHAPE: ", s_orbital_aev.shape)
             s_orbital_aev = s_orbital_aev.view(nconf,natoms,nscoeffs*NOShfS)
+
+            # s_orbital_aev = s_terms.sum(dim=2)
 
             if basis_functions == 's':
                 return s_orbital_aev
