@@ -1,5 +1,4 @@
 import typing as tp
-import unittest
 import os
 
 import torch
@@ -51,11 +50,13 @@ class TestAEVSanityChecks(TestCase):
         # see each other
         # TODO: It is unclear how the thermo integration scheme works in the sense
         # of the *absolute energies*
-
+        #
         # TODO: It is unclear whether it is possible to directly use the output energies
         # and make atoms appear and disappear by taking (1 - lambda) and (lambda)
         # in those energies, maybe this is dumber than we think
         # Why is the parametrization *inside the variables themselves*???
+        # TODO: I believe this is dumb, actually we don't need all of this
+        # "lambda parametrized aev" situation
         self.coords = torch.tensor(
             [
                 [
@@ -68,7 +69,6 @@ class TestAEVSanityChecks(TestCase):
             ]
         )
 
-    @unittest.skipIf(True, "Fails, needs work")
     def testIdxs(self):
         disappearing_idxs = torch.tensor([[3]])
         appearing_idxs = torch.tensor([[4]])
@@ -78,10 +78,15 @@ class TestAEVSanityChecks(TestCase):
         aevs_0 = self.aev_computer.forward_for_ti(
             species, self.coords, ti_factor, appearing_idxs, disappearing_idxs
         )
-        aevs_std_0 = self.aev_computer(species[:, :-1], self.coords[:, :-1])
-        print(aevs_0, aevs_std_0)
-        # breakpoint()
 
+        radial_len = self.aev_computer.radial_len
+        angular_len = self.aev_computer.angular_len
+        angular_slc = slice(radial_len, radial_len + angular_len)
+
+        aevs_std_0 = self.aev_computer(species[:, :-1], self.coords[:, :-1])
+        for i, aev in enumerate(aevs_std_0[0, :]):
+            self.assertEqual(aevs_0[0, i, :radial_len], aev[:radial_len])
+            self.assertEqual(aevs_0[0, i, angular_slc], aev[angular_slc])
         ti_factor = torch.tensor(1.0)
         aevs_1 = self.aev_computer.forward_for_ti(
             species, self.coords, ti_factor, appearing_idxs, disappearing_idxs
@@ -89,7 +94,10 @@ class TestAEVSanityChecks(TestCase):
         aevs_std_1 = self.aev_computer(
             species[:, [0, 1, 2, 4]], self.coords[:, [0, 1, 2, 4]]
         )
-        print(aevs_1, aevs_std_1)
+        for i, aev in enumerate(aevs_std_1[0, :]):
+            idx = [0, 1, 2, 4][i]
+            self.assertEqual(aevs_1[0, idx, :radial_len], aev[:radial_len])
+            self.assertEqual(aevs_1[0, idx, angular_slc], aev[angular_slc])
 
 
 class TestAEVForTI(TestAEV):

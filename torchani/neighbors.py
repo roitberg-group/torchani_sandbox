@@ -72,7 +72,7 @@ def discard_non_interacting_ti_pairs(
         (neighbors.indices.unsqueeze(-1) == disappearing_idxs).any(-1).any(0)
     )  # (pairs,)
 
-    interacting_mask = ~(pair_is_appearing | pair_is_disappearing)
+    interacting_mask = ~(pair_is_appearing & pair_is_disappearing)
 
     interacting_idxs = interacting_mask.nonzero().view(-1)
     indices = neighbors.indices.index_select(1, interacting_idxs)

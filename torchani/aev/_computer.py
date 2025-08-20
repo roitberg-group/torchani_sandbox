@@ -848,6 +848,8 @@ class AEVComputerForThermoIntegration(AEVComputer):
         appearing_idxs: Tensor,
         disappearing_idxs: Tensor,
     ) -> Tensor:
+        # NOTE: side idxs are not directly idxs into the coords tensor,
+        # they are idxs into the neighbor_idxs tensor
         num_molecs, num_atoms = elem_idxs.shape
         neighbor_elem_idxs = elem_idxs.view(-1)[neighbor_idxs]  # shape (2, pairs)
 
@@ -859,6 +861,14 @@ class AEVComputerForThermoIntegration(AEVComputer):
             species12_small[1],
             species12_small[0],
         )
+
+        neighbor12_small = neighbor_idxs[:, side_idxs]
+        triple_atom_side_idxs = torch.where(
+            sign12 == 1,
+            neighbor12_small[1],
+            neighbor12_small[0],
+        )
+
         # shape (CxAxSp, Z)
         angular_aev = terms.new_zeros(
             (num_molecs * num_atoms * self.num_species_pairs, self.angular.num_feats)
@@ -877,23 +887,32 @@ class AEVComputerForThermoIntegration(AEVComputer):
         )
         central_is_non_ti = central_is_not_appearing & central_is_not_disappearing
 
-        side_is_appearing = ((side_idxs.unsqueeze(-1) == appearing_idxs).any(-1)).any(0)
+        side_is_appearing = (
+            (triple_atom_side_idxs.unsqueeze(-1) == appearing_idxs).any(-1)
+        ).any(0)
 
         side_is_disappearing = (
-            (side_idxs.unsqueeze(-1) == disappearing_idxs).any(-1)
+            (triple_atom_side_idxs.unsqueeze(-1) == disappearing_idxs).any(-1)
         ).any(0)
         terms_factor = terms.new_ones(terms.size(0))
-        terms_factor[central_is_non_ti & side_is_appearing] = ti_factor
-        terms_factor[central_is_non_ti & side_is_disappearing] = 1 - ti_factor
-        terms_factor = terms_factor.unsqueeze(-1)
+        terms_factor[
+            central_is_non_ti & (side_is_appearing & ~side_is_disappearing)
+        ] = ti_factor
+        terms_factor[
+            central_is_non_ti & (~side_is_appearing & side_is_disappearing)
+        ] = (1 - ti_factor)
+        # TODO: It is not clear what to do with coupling terms, where the central
+        # atom is TI, and the other 2 atoms are 1 appearing, 1 disappearing
+        # for now they set to 0 always. Clearly for the endpoints they should be 0
+        terms_factor[central_is_non_ti & (side_is_appearing & side_is_disappearing)] = (
+            0.0
+        )
         # shape (T,)
         # NOTE: Casting is necessary in C++ due to a LibTorch bug
-
-        # triple_element_side_idxs has a 8, This is bad since triu_index is 8 x 8
         index = central_idx * self.num_species_pairs + self.triu_index[
             triple_element_side_idxs[0], triple_element_side_idxs[1]
         ].to(torch.long)
-        angular_aev.index_add_(0, index, terms_factor * terms)
+        angular_aev.index_add_(0, index, terms_factor.unsqueeze(-1) * terms)
         # shape (C, A, SpxZ)
         return angular_aev.reshape(num_molecs, num_atoms, self.angular_len)
 
