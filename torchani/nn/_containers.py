@@ -15,6 +15,7 @@ from torchani.nn._core import (
     _Embedding,
 )
 from torchani.nn._infer import BmmEnsemble, MNPNetworks
+from torchani.utils import flatten_ti_idxs
 
 
 class SingleNN(AtomicContainer):
@@ -24,6 +25,7 @@ class SingleNN(AtomicContainer):
         network: Atomic network to wrap, output dimension should be equal
             to the number of supported elements
     """
+
     def __init__(
         self,
         symbols: tp.Sequence[str],
@@ -205,6 +207,7 @@ class ANISharedNetworks(AtomicContainer):
             will share networks if the same ref is used for different keys
         alias: Allow the class to map different elements to the same atomic network.
     """
+
     def __init__(
         self,
         shared: AtomicNetwork,
@@ -281,9 +284,7 @@ class ANISharedNetworks(AtomicContainer):
         for s in symbols:
             layer_dims = (out_shared,) + dims.get(s, default_dims) + (out_dim,)
             modules[s] = AtomicNetwork(
-                layer_dims=layer_dims,
-                activation=activation,
-                bias=bias
+                layer_dims=layer_dims, activation=activation, bias=bias
             )
         return cls(shared, modules)
 
@@ -439,9 +440,7 @@ class ANINetworks(AtomicContainer):
         for s in symbols:
             layer_dims = (in_dim,) + dims.get(s, default_dims) + (out_dim,)
             modules[s] = AtomicNetwork(
-                layer_dims=layer_dims,
-                activation=activation,
-                bias=bias
+                layer_dims=layer_dims, activation=activation, bias=bias
             )
         return cls(modules)
 
@@ -599,7 +598,8 @@ class Ensemble(AtomicContainer):
             raise ValueError("All modules must support the same number of elements")
 
         self.register_buffer(
-            "atomic_numbers", next(iter(modules)).atomic_numbers, persistent=False)
+            "atomic_numbers", next(iter(modules)).atomic_numbers, persistent=False
+        )
 
     def __len__(self) -> int:
         # for bw compat
@@ -732,3 +732,48 @@ class SpeciesConverter(torch.nn.Module):
                     f" Supported elements are: {self.atomic_numbers}"
                 )
         return elem_idxs.to(atomic_nums.device)
+
+
+class ANINetworksForThermoIntegration(ANINetworks):
+    def forward_for_ti(
+        self,
+        elem_idxs: Tensor,
+        aevs: Tensor,
+        ti_factor: Tensor,
+        appearing_idxs: Tensor,  # (C, max-appearing-atoms,)
+        disappearing_idxs: Tensor,  # (C, max-disappearing-atoms,)
+        atomic: bool = False,
+        ensemble_values: bool = False,
+    ) -> Tensor:
+        assert elem_idxs.shape == aevs.shape[:-1]
+
+        flat_elem_idxs = elem_idxs.flatten()
+        appearing_idxs = flatten_ti_idxs(appearing_idxs)
+        disappearing_idxs = flatten_ti_idxs(disappearing_idxs)
+
+        aev = aevs.flatten(0, 1)
+        scalars = aev.new_zeros(flat_elem_idxs.shape + (self.out_dim,))
+        for i, m in enumerate(self.atomics.values()):
+            selected_idxs = (flat_elem_idxs == i).nonzero().view(-1)
+            if selected_idxs.shape[0] > 0:
+                input_ = aev.index_select(0, selected_idxs)
+                outputs = m(input_).view(-1, self.out_dim)
+
+                outputs_factor = outputs.new_ones(outputs.size(0))
+                selected_appearing = (
+                    selected_idxs.unsqueeze(-1) == appearing_idxs
+                ).any(-1)
+                selected_disappearing = (
+                    selected_idxs.unsqueeze(-1) == disappearing_idxs
+                ).any(-1)
+                outputs_factor[selected_appearing] = ti_factor
+                outputs_factor[selected_disappearing] = 1 - ti_factor
+                outputs_factor = outputs_factor.unsqueeze(-1)
+
+                scalars.index_add_(0, selected_idxs, outputs_factor * outputs)
+
+        scalars = scalars.view(elem_idxs.shape[0], elem_idxs.shape[1], self.out_dim)
+        scalars = scalars.squeeze(-1)
+        if atomic:
+            return scalars
+        return scalars.sum(dim=1)

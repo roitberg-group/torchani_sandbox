@@ -16,7 +16,7 @@ from torchani.neighbors import (
     NeighborlistArg,
     Neighbors,
 )
-from torchani.utils import cumsum_from_zero
+from torchani.utils import flatten_ti_idxs
 from torchani.cutoffs import CutoffArg
 from torchani.aev._terms import (
     _parse_angular_term,
@@ -697,17 +697,6 @@ class AEVComputerForThermoIntegration(AEVComputer):
         assert self.angular.cutoff < self.radial.cutoff
 
         neighbors = self.neighborlist(self.radial.cutoff, elem_idxs, coords, cell, pbc)
-
-        # Flatten TI idxs in case we are working on a batch
-        appearing_idxs = self.flatten_ti_idxs(appearing_idxs)
-        disappearing_idxs = self.flatten_ti_idxs(disappearing_idxs)
-
-        # Filter out non-interacting TI pairs (the ones which have both an "appearing"
-        # and a "disappearing" atom)
-        neighbors = discard_non_interacting_ti_pairs(
-            neighbors, appearing_idxs, disappearing_idxs
-        )
-
         return self.compute_from_neighbors_for_ti(
             elem_idxs,
             coords,
@@ -716,14 +705,6 @@ class AEVComputerForThermoIntegration(AEVComputer):
             appearing_idxs,
             disappearing_idxs,
         )
-
-    @staticmethod
-    def flatten_ti_idxs(idxs: Tensor) -> Tensor:
-        non_dummy = idxs > 0
-        displacement_for_flat_idxs = non_dummy.count_nonzero(dim=-1)
-        displacement_for_flat_idxs = cumsum_from_zero(displacement_for_flat_idxs)
-        idxs += displacement_for_flat_idxs.unsqueeze(-1)
-        return torch.masked_select(idxs, non_dummy)
 
     def compute_from_neighbors_for_ti(
         self,
@@ -736,6 +717,16 @@ class AEVComputerForThermoIntegration(AEVComputer):
     ) -> Tensor:
         if self._print_aev_branch:
             print("Executing branch: pyAEV")
+        # Flatten TI idxs in case we are working on a batch
+        appearing_idxs = flatten_ti_idxs(appearing_idxs)
+        disappearing_idxs = flatten_ti_idxs(disappearing_idxs)
+
+        # Filter out non-interacting TI pairs (the ones which have both an "appearing"
+        # and a "disappearing" atom)
+        neighbors = discard_non_interacting_ti_pairs(
+            neighbors, appearing_idxs, disappearing_idxs
+        )
+
         terms = self.radial(neighbors.distances)  # (pairs, rad)
 
         # (molecs, atoms, species * rad)
