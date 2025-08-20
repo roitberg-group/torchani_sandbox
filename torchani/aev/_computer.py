@@ -17,7 +17,7 @@ from torchani.neighbors import (
     Neighbors,
 )
 from torchani.utils import flatten_ti_idxs
-from torchani.cutoffs import CutoffArg
+from torchani.cutoffs import CutoffArg, _parse_cutoff_fn
 from torchani.aev._terms import (
     _parse_angular_term,
     _parse_radial_term,
@@ -90,6 +90,11 @@ class AEVComputer(torch.nn.Module):
         # Terms
         self.radial = _parse_radial_term(radial)
         self.angular = _parse_angular_term(angular)
+        if cutoff_fn is not None:
+            _cutoff_fn = _parse_cutoff_fn(cutoff_fn)
+            self.radial.cutoff_fn = _cutoff_fn
+            self.angular.cutoff_fn = _cutoff_fn
+
         if not (self.angular.cutoff_fn.is_same(self.radial.cutoff_fn)):
             raise ValueError("Cutoff fn must be the same for angular and radial terms")
         if self.angular.cutoff > self.radial.cutoff:
