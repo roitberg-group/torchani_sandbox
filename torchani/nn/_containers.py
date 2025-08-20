@@ -735,6 +735,15 @@ class SpeciesConverter(torch.nn.Module):
 
 
 class ANINetworksForThermoIntegration(ANINetworks):
+    def __init__(
+        self,
+        modules: tp.Dict[str, AtomicNetwork],
+        scale_ti_aevs: bool = False,
+        alias: bool = False,
+    ):
+        super().__init__(modules, alias)
+        self._scale_aevs = scale_ti_aevs
+
     def forward_for_ti(
         self,
         elem_idxs: Tensor,
@@ -757,20 +766,26 @@ class ANINetworksForThermoIntegration(ANINetworks):
             selected_idxs = (flat_elem_idxs == i).nonzero().view(-1)
             if selected_idxs.shape[0] > 0:
                 input_ = aev.index_select(0, selected_idxs)
-                outputs = m(input_).view(-1, self.out_dim)
 
-                outputs_factor = outputs.new_ones(outputs.size(0))
+                scale_factor = input_.new_ones(input_.size(0))
                 selected_appearing = (
                     selected_idxs.unsqueeze(-1) == appearing_idxs
                 ).any(-1)
                 selected_disappearing = (
                     selected_idxs.unsqueeze(-1) == disappearing_idxs
                 ).any(-1)
-                outputs_factor[selected_appearing] = ti_factor
-                outputs_factor[selected_disappearing] = 1 - ti_factor
-                outputs_factor = outputs_factor.unsqueeze(-1)
+                scale_factor[selected_appearing] = ti_factor
+                scale_factor[selected_disappearing] = 1 - ti_factor
+                scale_factor = scale_factor.unsqueeze(-1)
 
-                scalars.index_add_(0, selected_idxs, outputs_factor * outputs)
+                if self._scale_aevs:
+                    # Scale the AEVs E = NN(G * lambda | (1 - lambda))
+                    outputs = m(scale_factor * input_).view(-1, self.out_dim)
+                else:
+                    # Scale the energies E * lambda | (1 - lambda) = NN(G)
+                    outputs = scale_factor * m(input_).view(-1, self.out_dim)
+
+                scalars.index_add_(0, selected_idxs, outputs)
 
         scalars = scalars.view(elem_idxs.shape[0], elem_idxs.shape[1], self.out_dim)
         scalars = scalars.squeeze(-1)

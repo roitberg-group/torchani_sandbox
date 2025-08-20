@@ -603,7 +603,7 @@ class ANIForThermoIntegration(_ANI):
         self.potentials["nnp"] = NNPotentialForThermoIntegration(_aev_computer, _nn)
 
     @classmethod
-    def from_ani_model(cls, model: _ANI) -> tpx.Self:
+    def from_ani_model(cls, model: _ANI, scale_ti_aevs: bool = False) -> tpx.Self:
 
         symbols = deepcopy(model.symbols)
         _nn = deepcopy(model.neural_networks)
@@ -620,7 +620,9 @@ class ANIForThermoIntegration(_ANI):
         )
         if not isinstance(_nn, ANINetworks):
             raise ValueError("Only building from ANINetworks is currently supported")
-        nn = ANINetworksForThermoIntegration(dict(_nn.atomics))
+        nn = ANINetworksForThermoIntegration(
+            dict(_nn.atomics), scale_ti_aevs=scale_ti_aevs
+        )
         return cls(
             symbols, aev_computer, nn, energy_shifter, potentials, periodic_table_index
         )
