@@ -2,7 +2,6 @@ import typing as tp
 import torch
 from torch import Tensor
 import numpy as np
-from torchani.utils import ChemicalSymbolsToInts
 
 # This calculates ONLY the coefficients part of the AEV
 class OrbitalAEVComputer(torch.nn.Module):
@@ -15,23 +14,23 @@ class OrbitalAEVComputer(torch.nn.Module):
         use_simple_orbital_aev: bool,
         use_angular_info: bool,
         use_angular_radial_coupling: bool,
-        NOShfS = int,
-        NOShfR = int,
-        NOShfA = int,
-        NOShfTheta = int,
-        LowerOShfS = float,
-        UpperOShfS = float,
-        LowerOShfR = float,
-        UpperOShfR = float,
-        LowerOShfA = float,
-        UpperOShfA = float,
-        LowerOShfTheta = float,
-        UpperOShfTheta = float,
-        OEtaS = float,
-        OEtaR = float,
-        OEtaA = float,
-        OZeta = float,
-    ) -> Tensor:
+        NOShfS: int,
+        NOShfR: int,
+        NOShfA: int,
+        NOShfTheta: int,
+        LowerOShfS: float,
+        UpperOShfS: float,
+        LowerOShfR: float,
+        UpperOShfR: float,
+        LowerOShfA: float,
+        UpperOShfA: float,
+        LowerOShfTheta: float,
+        UpperOShfTheta: float,
+        OEtaS: float,
+        OEtaR: float,
+        OEtaA: float,
+        OZeta: float,
+    ) -> Tensor:    
         # We first need to reshape the coefficients for their manipulation
         # The s-type coefficients are processed with a custom radial AEV computer
         # The p and d-type coefficientes form an orbital matrix that basically
@@ -51,7 +50,9 @@ class OrbitalAEVComputer(torch.nn.Module):
         # Trims p normalization values to make them match other stuff
         p_norms_mus=p_norms_mus[:,:4]
         p_norms_sigmas = p_norms_sigmas[:,:4]
-            
+
+        p_norms = self._normalize(p_norms, species_idx, mus.to(device=device, dtype=dtype), sig.to(device=device, dtype=dtype))
+
         s_coeffs = self._normalize(s_coeffs,species_idx,s_coeffs_mus,s_coeffs_sigmas)
 
         # Return "simple_orbital_aevs" if corresponding
@@ -59,7 +60,8 @@ class OrbitalAEVComputer(torch.nn.Module):
             # Case s
             if basis_functions == 's':
                 return s_coeffs
-            # Case sp or spd                
+            # Case sp or spd           
+            print("FLAGS: use_simple_orbital_aev is True, basis_functions is ", basis_functions)     
             p_norms = torch.linalg.norm(orbital_matrix, dim=-1)
 
             p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
@@ -71,9 +73,11 @@ class OrbitalAEVComputer(torch.nn.Module):
             return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
         
         else: # Return actual orbital_aevs
+            # In this case will need to know the device and dtype of the input tensors
+            device, dtype = coefficients.device, coefficients.dtype
             nconf, natoms, nscoeffs = s_coeffs.shape
             # Define s shifts and reshape for broadcasting
-            OShfS = torch.linspace(LowerOShfS, UpperOShfS, NOShfS)
+            OShfS = torch.linspace(LowerOShfS, UpperOShfS, NOShfS, device=device, dtype=dtype)
             OShfS = OShfS.view(1, 1, 1, NOShfS)
 
             # s_coeffs are already normalized here, so we only prepare the tensor for broadcasting
@@ -97,7 +101,7 @@ class OrbitalAEVComputer(torch.nn.Module):
 
             _, _, np_norms = p_norms.shape                  
             # Define r shifts and reshape for broadcasting
-            OShfR = torch.linspace(LowerOShfR, UpperOShfR, NOShfR)
+            OShfR = torch.linspace(LowerOShfR, UpperOShfR, NOShfR, device=device, dtype=dtype)
             OShfR = OShfR.view(1, 1, 1, NOShfR)
             # Ensure the tensor is correctly shaped for broadcasting
             p_norms_exp = p_norms[..., None]          # add dim, no data copy
@@ -115,7 +119,7 @@ class OrbitalAEVComputer(torch.nn.Module):
                 _, _, nangles = angles.shape
                 print("nangles: ", nangles)
                 # Define angle sections and reshape for broadcasting
-                OShfTheta = torch.linspace(LowerOShfTheta, UpperOShfTheta, NOShfTheta)
+                OShfTheta = torch.linspace(LowerOShfTheta, UpperOShfTheta, NOShfTheta, device=device, dtype=dtype)
                 print("OShfTheta", OShfTheta)
                 # Expand angles for ShfZ
                 expanded_angles = angles.unsqueeze(-1)  # Adding an extra dimension for broadcasting ShfZ
@@ -132,8 +136,8 @@ class OrbitalAEVComputer(torch.nn.Module):
                 print("angular_orbital_aev shape:", angular_orbital_aev.shape)
 
                 if (use_angular_radial_coupling):
-                        # Define r shifts for the angular component of the AEV and reshape for broadcasting
-                    OShfA = torch.linspace(LowerOShfA, UpperOShfA, NOShfA)  
+                    # Define r shifts for the angular component of the AEV and reshape for broadcasting
+                    OShfA = torch.linspace(LowerOShfA, UpperOShfA, NOShfA, device=device, dtype=dtype)  
                     # Expand avdistperangle for ShfA
                     expanded_avdistperangle = avdistperangle.unsqueeze(-1)  # Adding an extra dimension for ShfA
                     expanded_avdistperangle = expanded_avdistperangle.expand(-1, -1, -1, NOShfA)  # Match dimensions of ShfA
@@ -146,14 +150,15 @@ class OrbitalAEVComputer(torch.nn.Module):
                     factor2 = torch.exp(-OEtaA * (expanded_avdistperangle - OShfA)**2)
 
                     # Combine factors
-                    angular_orbital_aev = angular_orbital_aev * factor2.unsqueeze(-1) #unsqueeze(3)?
+                    # angular_orbital_aev = angular_orbital_aev * factor2.unsqueeze(-1) #unsqueeze(3)?
+                    angular_orbital_aev = angular_orbital_aev.unsqueeze(-1) * factor2.unsqueeze(-2)  #TODO check this (B,N,K,NOShfTheta,NOShfA)
 
                     # Reshape to the final desired shape
                     print(angular_orbital_aev.shape)
                     print(nconf, natoms, nangles * NOShfA * NOShfTheta)
                     angular_orbital_aev = angular_orbital_aev.reshape(nconf, natoms, nangles * NOShfA * NOShfTheta)
-
-                angular_orbital_aev = angular_orbital_aev.reshape(nconf, natoms, nangles *NOShfTheta)
+                else:
+                    angular_orbital_aev = angular_orbital_aev.reshape(nconf, natoms, nangles *NOShfTheta)
 
                 orbital_aev = torch.cat((orbital_aev, angular_orbital_aev), dim=-1) 
 
@@ -251,7 +256,7 @@ class OrbitalAEVComputer(torch.nn.Module):
            
         # Calculate angles between each vector and the following vectors
         nangles = int((naovs-1)*naovs/2)
-        angles = torch.zeros((nconformers, natoms,nangles))
+        angles = torch.zeros((nconformers, natoms,nangles), device=orbital_matrix.device, dtype=orbital_matrix.dtype)
         k = 0
         if use_simple_orbital_aev:
             for i in range(naovs):
@@ -282,7 +287,7 @@ class OrbitalAEVComputer(torch.nn.Module):
         Returns a new tensor of same shape with the row index in [0..N-1].
         """
         # Initialize an integer tensor
-        species_idx = torch.empty_like(species, dtype=torch.long)
+        species_idx = torch.zeros_like(species, dtype=torch.long)
 
         # For each known Z in Z_to_idx, fill in the appropriate row index
         for z, row in Z_to_idx.items():
