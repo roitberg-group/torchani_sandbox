@@ -37,7 +37,7 @@ class OrbitalAEVComputer(torch.nn.Module):
         # Describes the coordinates in the "space of coefficients" of fake atoms
         # Around each actual atom.
         
-        s_coeffs, orbital_matrix = self._reshape_coefficients(coefficients,basis_functions)
+        s_coeffs, p_matrix = self._reshape_coefficients(coefficients,basis_functions)
         Z_to_idx = {1: 0, 6: 1, 7: 2, 8: 3, 9: 4, 16: 5, 17: 6}
 
         #Normalizes s_coeffs
@@ -51,8 +51,6 @@ class OrbitalAEVComputer(torch.nn.Module):
         p_norms_mus=p_norms_mus[:,:4]
         p_norms_sigmas = p_norms_sigmas[:,:4]
 
-        p_norms = self._normalize(p_norms, species_idx, mus.to(device=device, dtype=dtype), sig.to(device=device, dtype=dtype))
-
         s_coeffs = self._normalize(s_coeffs,species_idx,s_coeffs_mus,s_coeffs_sigmas)
 
         # Return "simple_orbital_aevs" if corresponding
@@ -62,13 +60,13 @@ class OrbitalAEVComputer(torch.nn.Module):
                 return s_coeffs
             # Case sp or spd           
             print("FLAGS: use_simple_orbital_aev is True, basis_functions is ", basis_functions)     
-            p_norms = torch.linalg.norm(orbital_matrix, dim=-1)
+            p_norms = torch.linalg.norm(p_matrix, dim=-1)
 
             p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
 
             simple_orbital_aevs = torch.cat((s_coeffs, p_norms), dim=-1)
             if use_angular_info:
-                angles = self._get_angles_from_orbital_matrix(orbital_matrix,p_norms,True)
+                angles = self._get_angles_from_p_matrix(p_matrix,p_norms,True)
                 simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles), dim=-1)
             return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
         
@@ -95,7 +93,7 @@ class OrbitalAEVComputer(torch.nn.Module):
             if basis_functions == 's':
                 return s_orbital_aev
 
-            p_norms = torch.linalg.norm(orbital_matrix, dim=-1)
+            p_norms = torch.linalg.norm(p_matrix, dim=-1)
             
             p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
 
@@ -115,7 +113,7 @@ class OrbitalAEVComputer(torch.nn.Module):
 
             orbital_aev = torch.cat((s_orbital_aev, radial_orbital_aev), dim=-1)            
             if use_angular_info:
-                angles, avdistperangle = self._get_angles_from_orbital_matrix(orbital_matrix,p_norms,False)
+                angles, avdistperangle = self._get_angles_from_p_matrix(p_matrix,p_norms,False)
                 _, _, nangles = angles.shape
                 print("nangles: ", nangles)
                 # Define angle sections and reshape for broadcasting
@@ -169,22 +167,31 @@ class OrbitalAEVComputer(torch.nn.Module):
         coefficients: Tensor,
         basis_functions: str,
     ) -> tp.Tuple[Tensor, Tensor]:
-        """ Output: A tuple containing 2 tensors: one with the s-type coefficients,
-        and another with the p and d-type coefficients in the form of a matrix.
+        """ Output: A tuple containing 3 tensors: one with the s-type coefficients,
+        another with the p-type coefficients in the form of a matrix, and another
+        with invariants from the d-type coefficients.
 
-        The obtained orbital matrix will look like:
+        The obtained p matrix will look like:
 
         [p0x  p0y  p0z]
         ...
         [p3x  p3y  p3z]
-        [d0xx d0yy d0zz]
-        [d0zy d0zx d0xy]
-        ...
-        [d3xx d3yy d3zz]
-        [d3zy d3zx d3xy]
 
         Where each row of this matrix is an Atomic Orbital Vector (AOV). This resembles the
-        diff_vec tensor (for a single atom) fron the geometric AEVs.
+        diff_vec tensor (for a single atom) fron the geometric AEVs. 
+        
+        And the d coefficients will be first organized as tensors Q
+        [
+        [d0xx d0xy d0xz],
+        [d0yx d0yy d0yz],
+        [d0zx d0zy d0zz],
+
+        ...
+        [d3xx d3xy d3xz],
+        [d3yx d3yy d3yz],
+        [d3zx d3zy d3zz]
+        ]
+
         """
         nconformers, natoms, _ = coefficients.shape
 
@@ -193,15 +200,15 @@ class OrbitalAEVComputer(torch.nn.Module):
         d_coeffs = coefficients[:, :, 21:]   # Shape: (nconformers, natoms, 24)
 
         if basis_functions == 's':
-            return s_coeffs, torch.tensor([])
+            return s_coeffs, torch.tensor([]), torch.tensor([])
         
         # Reshape p_coeffs to make it easier to handle individual components
         p_coeffs_reshaped = p_coeffs.view(nconformers, natoms, 4, 3)  # Shape: (nconformers, natoms, 4, 3)
 
         if basis_functions == 'sp':
-            return s_coeffs, p_coeffs_reshaped #In this case the orbital_matrix only have AOVs from p-type coeffients
+            return s_coeffs, p_coeffs_reshaped, torch.tensor([]) #In this case the p_matrix only have AOVs from p-type coeffients
         
-        # If we are in the 'spd' case, the orbital_matrix includes also AOVs from d-type coefficients
+        # If we are in the 'spd' case, the p_matrix includes also AOVs from d-type coefficients
 
         # Reshape d_coeffs to make it easier to handle individual components
         # Correcting the reordering of d_coeffs
@@ -215,9 +222,9 @@ class OrbitalAEVComputer(torch.nn.Module):
         d_off_diagonal = d_coeffs_reshaped_reordered[:, :, :, 3:]
 
         # Concatenate modified p and d coefficients to form the desired "matrix"                
-        orbital_matrix = torch.cat([p_coeffs_reshaped, d_diagonal, d_off_diagonal], dim=2)  # Shape (nconformers, natoms, 12, 3)
+        p_matrix = torch.cat([p_coeffs_reshaped, d_diagonal, d_off_diagonal], dim=2)  # Shape (nconformers, natoms, 12, 3)
 
-        return s_coeffs, orbital_matrix
+        return s_coeffs, p_matrix, q_matrix
 
 
     def _normalize(
@@ -231,13 +238,14 @@ class OrbitalAEVComputer(torch.nn.Module):
         # Advanced indexing to fetch the right μ and σ for *each* atom
         atom_mus = mus[species_idx, :]
         atom_sigmas = sigmas[species_idx, :]
-       
+        print("DEBUGGING")
+        print(atom_mus.shape,atom_sigmas.shape,coeffs.shape)
         coeffs_normalized = (coeffs - atom_mus) / atom_sigmas
         return coeffs_normalized
 
-    def _get_angles_from_orbital_matrix(
+    def _get_angles_from_p_matrix(
         self,
-        orbital_matrix: Tensor,
+        p_matrix: Tensor,
         distances: Tensor,
         use_simple_orbital_aev: bool,
     ) -> Tensor:
@@ -245,23 +253,23 @@ class OrbitalAEVComputer(torch.nn.Module):
         # Normalize the vectors using the provided distances
 
         # Create a mask for the zero vectors in the orbital matrix
-        zero_mask = (orbital_matrix.abs() < 1e-12).all(dim=-1)
+        zero_mask = (p_matrix.abs() < 1e-12).all(dim=-1)
 
         # Perform the normalization, avoid division by zero by using where
-        orbital_matrix_normalized = torch.where(
+        p_matrix_normalized = torch.where(
         zero_mask.unsqueeze(-1),
-        torch.zeros_like(orbital_matrix),
-        orbital_matrix / distances.unsqueeze(-1)        
+        torch.zeros_like(p_matrix),
+        p_matrix / distances.unsqueeze(-1)        
         )
            
         # Calculate angles between each vector and the following vectors
         nangles = int((naovs-1)*naovs/2)
-        angles = torch.zeros((nconformers, natoms,nangles), device=orbital_matrix.device, dtype=orbital_matrix.dtype)
+        angles = torch.zeros((nconformers, natoms,nangles), device=p_matrix.device, dtype=p_matrix.dtype)
         k = 0
         if use_simple_orbital_aev:
             for i in range(naovs):
                 for j in range(i+1, naovs):
-                    cos_angles = torch.einsum('ijk,ijk->ij', orbital_matrix_normalized[:, :, i, :], orbital_matrix_normalized[:, :, j, :])
+                    cos_angles = torch.einsum('ijk,ijk->ij', p_matrix_normalized[:, :, i, :], p_matrix_normalized[:, :, j, :])
                     cos_angles = torch.clamp(cos_angles, -0.9999, 0.9999)
                     angles[:, :, k] = torch.acos(cos_angles)
                     k = k + 1
@@ -270,7 +278,7 @@ class OrbitalAEVComputer(torch.nn.Module):
             avdistperangle = torch.zeros((nconformers, natoms, nangles))        
             for i in range(naovs):
                 for j in range(i+1, naovs):
-                    cos_angles = torch.einsum('ijk,ijk->ij', orbital_matrix_normalized[:, :, i, :], orbital_matrix_normalized[:, :, j, :])
+                    cos_angles = torch.einsum('ijk,ijk->ij', p_matrix_normalized[:, :, i, :], p_matrix_normalized[:, :, j, :])
                     cos_angles = torch.clamp(cos_angles, -0.9999, 0.9999)
                     angles[:, :, k] = torch.acos(cos_angles)
                     avdistperangle[:, :, k] = (distances[:, :, i]+distances[:, :, j])/2.0
