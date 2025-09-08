@@ -136,6 +136,8 @@ class _ANI(torch.nn.Module):
 
     @torch.jit.export
     def set_active_members(self, idxs: tp.List[int]) -> None:
+        # NOTE: Awkward ignore directive and assert required due to pytorch typing not
+        # being great
         nn = self.potentials["nnp"].neural_networks
         assert not isinstance(nn, Tensor)
         nn.set_active_members(idxs)  # type: ignore[operator]
@@ -150,6 +152,8 @@ class _ANI(torch.nn.Module):
 
     @torch.jit.export
     def set_strategy(self, strategy: str) -> None:
+        # NOTE: Awkward ignore directive and assert required due to pytorch typing not
+        # being great
         computer = self.potentials["nnp"].aev_computer
         assert not isinstance(computer, Tensor)
         computer.set_strategy(strategy)  # type: ignore[operator]
@@ -340,7 +344,8 @@ class ANI(_ANI):
             if ensemble_values:
                 energies = energies.unsqueeze(0)
             if self.potentials["nnp"]._enabled:
-                # Guaranteed to be an NNPotential
+                # Guaranteed to be an NNPotential. PyTorch typing is not great,
+                # so the ignore directives are required
                 aevs = self.potentials["nnp"].aev_computer(
                     elem_idxs,
                     coords,
@@ -397,8 +402,9 @@ class ANI(_ANI):
             energies = energies.unsqueeze(0)
         first_neighbors = neighbors
         for pot in self.potentials.values():
-            # NOTE: Guaranteed since potentials[key] must hold a Potential
             if pot._enabled:
+                # Guaranteed to be an Potential. PyTorch typing is not great,
+                # so the ignore directives are required
                 neighbors = discard_outside_cutoff(
                     first_neighbors,
                     pot.cutoff,  # type: ignore[arg-type]
