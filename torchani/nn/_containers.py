@@ -24,6 +24,7 @@ class SingleNN(AtomicContainer):
         network: Atomic network to wrap, output dimension should be equal
             to the number of supported elements
     """
+
     def __init__(
         self,
         symbols: tp.Sequence[str],
@@ -205,6 +206,7 @@ class ANISharedNetworks(AtomicContainer):
             will share networks if the same ref is used for different keys
         alias: Allow the class to map different elements to the same atomic network.
     """
+
     def __init__(
         self,
         shared: AtomicNetwork,
@@ -225,7 +227,7 @@ class ANISharedNetworks(AtomicContainer):
         self.register_buffer("atomic_numbers", atomic_numbers, persistent=False)
 
     def __getitem__(self, idx: str) -> AtomicNetwork:
-        return self.atomics[idx]
+        return tp.cast(AtomicNetwork, self.atomics[idx])
 
     def forward(
         self,
@@ -281,9 +283,7 @@ class ANISharedNetworks(AtomicContainer):
         for s in symbols:
             layer_dims = (out_shared,) + dims.get(s, default_dims) + (out_dim,)
             modules[s] = AtomicNetwork(
-                layer_dims=layer_dims,
-                activation=activation,
-                bias=bias
+                layer_dims=layer_dims, activation=activation, bias=bias
             )
         return cls(shared, modules)
 
@@ -369,10 +369,12 @@ class ANINetworks(AtomicContainer):
             [ATOMIC_NUMBER[e] for e in modules], dtype=torch.long
         )
         self.register_buffer("atomic_numbers", atomic_numbers, persistent=False)
-        self.out_dim: int = next(iter(self.atomics.values())).final_layer.out_features
+
+        final_layer = next(iter(self.atomics.values())).final_layer
+        self.out_dim: int = final_layer.out_features  # type: ignore
 
     def __getitem__(self, idx: str) -> AtomicNetwork:
-        return self.atomics[idx]
+        return tp.cast(AtomicNetwork, self.atomics[idx])
 
     def forward(
         self,
@@ -439,9 +441,7 @@ class ANINetworks(AtomicContainer):
         for s in symbols:
             layer_dims = (in_dim,) + dims.get(s, default_dims) + (out_dim,)
             modules[s] = AtomicNetwork(
-                layer_dims=layer_dims,
-                activation=activation,
-                bias=bias
+                layer_dims=layer_dims, activation=activation, bias=bias
             )
         return cls(modules)
 
@@ -599,7 +599,8 @@ class Ensemble(AtomicContainer):
             raise ValueError("All modules must support the same number of elements")
 
         self.register_buffer(
-            "atomic_numbers", next(iter(modules)).atomic_numbers, persistent=False)
+            "atomic_numbers", next(iter(modules)).atomic_numbers, persistent=False
+        )
 
     def __len__(self) -> int:
         # for bw compat
