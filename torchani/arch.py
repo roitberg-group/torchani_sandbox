@@ -91,6 +91,7 @@ from torchani.sae import SelfEnergy
 
 class _ANI(torch.nn.Module):
 
+    cutoff: float
     atomic_numbers: Tensor
     periodic_table_index: bool
 
@@ -120,9 +121,12 @@ class _ANI(torch.nn.Module):
         self.species_converter = SpeciesConverter(symbols).to(device)
 
         # Order of computation is not important for potentials
+        # NOTE: ModuleDict erases types of values, mypy can't tell
+        # that all values are Potential
         self.potentials = torch.nn.ModuleDict(potentials or {})
         self.potentials["nnp"] = NNPotential(aev_computer, neural_networks)
-        self.cutoff = max(p.cutoff for p in self.potentials.values())
+        # NOTE: Guaranteed since potentials[key] must hold a Potential
+        self.cutoff = max(p.cutoff for p in self.potentials.values())  # type: ignore
         self.periodic_table_index = periodic_table_index
         self._has_extra_potentials = self._check_has_extra_potentials()
 
@@ -131,19 +135,22 @@ class _ANI(torch.nn.Module):
 
     @torch.jit.export
     def set_active_members(self, idxs: tp.List[int]) -> None:
-        self.potentials["nnp"].neural_networks.set_active_members(idxs)
+        # NOTE: Guaranteed since "nnp" key must hold an NNPotential
+        self.potentials["nnp"].neural_networks.set_active_members(idxs)  # type: ignore
 
     @torch.jit.unused
     def set_enabled(self, key: str, val: bool = True) -> None:
         if key == "energy_shifter":
             self.energy_shifter._enabled = val
         else:
-            self.potentials[key]._enabled = val
+            # NOTE: Guaranteed since potentials[key] must hold a Potential
+            self.potentials[key]._enabled = val  # type: ignore
         self._has_extra_potentials = self._check_has_extra_potentials()
 
     @torch.jit.export
     def set_strategy(self, strategy: str) -> None:
-        self.potentials["nnp"].aev_computer.set_strategy(strategy)
+        # NOTE: Guaranteed since "nnp" key must hold an NNPotential
+        self.potentials["nnp"].aev_computer.set_strategy(strategy)  # type: ignore
 
     # Entrypoint that uses neighbors
     # For now this assumes that there is only one potential with ensemble values
@@ -212,8 +219,8 @@ class _ANI(torch.nn.Module):
         Assumes that the atomic networks are multi layer perceptrons (MLPs)
         with `torchani.nn.TightCELU` activation functions.
         """
-        _infer = self.potentials["nnp"].neural_networks.to_infer_model(use_mnp=use_mnp)
-        self.potentials["nnp"].neural_networks = _infer
+        _infer = self.nnp.neural_networks.to_infer_model(use_mnp=use_mnp)
+        self.nnp.neural_networks = _infer
         return self
 
     def ase(
@@ -247,32 +254,40 @@ class _ANI(torch.nn.Module):
 
     # TODO This is confusing, it may be a good idea to deprecate it, or at least warn
     def __len__(self):
-        return self.potentials["nnp"].neural_networks.get_active_members_num()
+        return self.nnp.neural_networks.get_active_members_num()
 
     # TODO This is confusing, it may be a good idea to deprecate it, or at least warn?
     def __getitem__(self, idx: int) -> tpx.Self:
-        _nn = self.potentials["nnp"].neural_networks
+        _nn = self.neural_networks
         if not hasattr(_nn, "members"):
             raise ValueError("Can only fetch submodel from an ensemble")
-        self.potentials["nnp"].neural_networks = None  # type: ignore
+        self.neural_networks = None  # type: ignore
         model = deepcopy(self)
-        self.potentials["nnp"].neural_networks = _nn
-        model.potentials["nnp"].neural_networks = deepcopy(_nn[idx])
+        self.nnp.neural_networks = _nn
+        # _nn is guaranteed to be indexable since it has "members" attr
+        model.nnp.neural_networks = deepcopy(_nn[idx])  # type: ignore
         return model
+
+    # Needed for client classes that depend on accessing aev_computer directly
+    @property
+    @torch.jit.unused
+    def nnp(self) -> NNPotential:
+        r""":meta private:"""
+        return tp.cast(NNPotential, self.potentials["nnp"])
 
     # Needed for client classes that depend on accessing aev_computer directly
     @property
     @torch.jit.unused
     def neural_networks(self) -> AtomicContainer:
         r""":meta private:"""
-        return self.potentials["nnp"].neural_networks
+        return self.nnp.neural_networks
 
     # Needed for client classes that depend on accessing neural_networks directly
     @property
     @torch.jit.unused
     def aev_computer(self) -> AEVComputer:
         r""":meta private:"""
-        return self.potentials["nnp"].aev_computer
+        return self.nnp.aev_computer
 
     # Needed for bw compatibility
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
@@ -321,8 +336,9 @@ class ANI(_ANI):
             if ensemble_values:
                 energies = energies.unsqueeze(0)
             if self.potentials["nnp"]._enabled:
-                aevs = self.potentials["nnp"].aev_computer(elem_idxs, coords, cell, pbc)
-                energies = energies + self.potentials["nnp"].neural_networks(
+                # Guaranteed to be an NNPotential
+                aevs = self.potentials["nnp"].aev_computer(elem_idxs, coords, cell, pbc)  # type: ignore  # noqa:E501
+                energies = energies + self.potentials["nnp"].neural_networks(  # type: ignore  # noqa:E501
                     elem_idxs, aevs, atomic, ensemble_values
                 )
             if self.energy_shifter._enabled:
@@ -370,9 +386,10 @@ class ANI(_ANI):
         first_neighbors = neighbors
         for pot in self.potentials.values():
             if pot._enabled:
-                neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)
+                # NOTE: Guaranteed since potentials[key] must hold a Potential
+                neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)  # type: ignore  # noqa:E501
                 # Disregard atomic scalars that potentials may output
-                result = pot.compute_from_neighbors(
+                result = pot.compute_from_neighbors(  # type: ignore
                     elem_idxs, coords, neighbors, charge, atomic, ensemble_values
                 )
                 energies = energies + result.energies
@@ -605,8 +622,8 @@ class ANIq(_ANI):
             potentials=potentials,
             periodic_table_index=periodic_table_index,
         )
-        _nn = self.potentials["nnp"].neural_networks
-        _aev_computer = self.potentials["nnp"].aev_computer
+        _nn = self.nnp.neural_networks
+        _aev_computer = self.nnp.aev_computer
         if charge_networks is None:
             self.potentials["nnp"] = MergedChargesNNPotential(
                 _aev_computer, _nn, charge_normalizer
@@ -642,8 +659,8 @@ class ANIq(_ANI):
         first_neighbors = neighbors
         for k, pot in self.potentials.items():
             if pot._enabled:
-                neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)
-                _e, _qs = pot.compute_from_neighbors(
+                neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)  # type: ignore  # noqa:E501
+                _e, _qs = pot.compute_from_neighbors(  # type: ignore
                     elem_idxs, coords, neighbors, charge, atomic, ensemble_values
                 )
                 energies = energies + _e

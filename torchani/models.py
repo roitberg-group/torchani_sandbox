@@ -243,8 +243,8 @@ def ANImbis(
     }
     charge_nn_state_dict = _fetch_state_dict("charge_nn_state_dict.pt", private=False)
     model.energy_shifter.load_state_dict(shifter_state_dict)
-    model.potentials["nnp"].aev_computer.load_state_dict(aev_state_dict)
-    model.potentials["nnp"].neural_networks.load_state_dict(energy_nn_state_dict)
+    model.nnp.aev_computer.load_state_dict(aev_state_dict)
+    model.nnp.neural_networks.load_state_dict(energy_nn_state_dict)
     model.potentials["nnp"].charge_networks.load_state_dict(charge_nn_state_dict)
     model = model if model_index is None else model[model_index]
     model.requires_grad_(False)
