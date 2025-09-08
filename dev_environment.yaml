@@ -30,7 +30,7 @@ dependencies:
   ## cuAEV and MNP ##
   # For more details consult the "developer notes" section in README.md
   # If installing on macOS, or if CUDA GPU support is **disabled**, comment all lines on this block
-  - setuptools>=64
+  - setuptools>=75.6
   - setuptools-scm>=8
   - gxx_linux-64=12.2
   - gcc_linux-64=12.2

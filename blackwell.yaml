@@ -21,7 +21,7 @@ dependencies:
   - ase
 
   ## cuAEV and MNP ##
-  - setuptools>=64
+  - setuptools>=75.6
   - setuptools-scm>=8
   - gxx_linux-64=12.2
   - gcc_linux-64=12.2
