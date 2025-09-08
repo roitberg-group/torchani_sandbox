@@ -39,7 +39,7 @@ repository = "https://github.com/aiqm/torchani"
 # NOTE: If installed with build isolation torch can't be accessed and
 # the CUDA and C++ extensions can't be compiled
 [build-system]
-requires = ["setuptools>=75.6", "setuptools-scm>=8"]
+requires = ["setuptools>=75.6", "setuptools-scm>=8", "packaging>=25"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]

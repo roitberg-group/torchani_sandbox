@@ -23,6 +23,7 @@ dependencies:
   ## cuAEV and MNP ##
   - setuptools>=75.6
   - setuptools-scm>=8
+  - packaging>=25
   - gxx_linux-64=12.2
   - gcc_linux-64=12.2
   # CUDA Toolkit must be present in host!

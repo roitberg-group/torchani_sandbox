@@ -32,6 +32,7 @@ dependencies:
   # If installing on macOS, or if CUDA GPU support is **disabled**, comment all lines on this block
   - setuptools>=75.6
   - setuptools-scm>=8
+  - packaging>=25
   - gxx_linux-64=12.2
   - gcc_linux-64=12.2
   - nvidia::cuda-libraries-dev=12.4
