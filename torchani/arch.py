@@ -1206,7 +1206,9 @@ def _fetch_state_dict(
 ) -> tp.OrderedDict[str, Tensor]:
     # NOTE: torch.hub caches remote state_dicts after first download
     if local:
-        dict_ = torch.load(state_dict_file, map_location=torch.device("cpu"))
+        dict_ = torch.load(
+            state_dict_file, map_location=torch.device("cpu"), weights_only=True
+        )
         return OrderedDict(dict_)
     try:
         repo_id = "roitberg-group"
@@ -1223,7 +1225,7 @@ def _fetch_state_dict(
             local_dir=str(state_dicts_dir()),
             token=True if private else None,
         )
-        dict_ = torch.load(path, map_location=torch.device("cpu"))
+        dict_ = torch.load(path, map_location=torch.device("cpu"), weights_only=True)
     except Exception:
         if private:
             url = "http://moria.chem.ufl.edu/animodel/private/"
