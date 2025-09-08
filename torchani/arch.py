@@ -126,31 +126,33 @@ class _ANI(torch.nn.Module):
         self.potentials = torch.nn.ModuleDict(potentials or {})
         self.potentials["nnp"] = NNPotential(aev_computer, neural_networks)
         # NOTE: Guaranteed since potentials[key] must hold a Potential
-        self.cutoff = max(p.cutoff for p in self.potentials.values())  # type:ignore
+        self.cutoff = max(p.cutoff for p in self.potentials.values())  # type: ignore
         self.periodic_table_index = periodic_table_index
         self._has_extra_potentials = self._check_has_extra_potentials()
+        self._dummy = Potential(self.symbols)  # Register class for jit
 
     def _check_has_extra_potentials(self) -> bool:
         return any(p._enabled for k, p in self.potentials.items() if k != "nnp")
 
     @torch.jit.export
     def set_active_members(self, idxs: tp.List[int]) -> None:
-        # NOTE: Guaranteed since "nnp" key must hold an NNPotential
-        self.potentials["nnp"].neural_networks.set_active_members(idxs)
+        nn = self.potentials["nnp"].neural_networks
+        assert not isinstance(nn, Tensor)
+        nn.set_active_members(idxs)  # type: ignore[operator]
 
     @torch.jit.unused
     def set_enabled(self, key: str, val: bool = True) -> None:
         if key == "energy_shifter":
             self.energy_shifter._enabled = val
         else:
-            # NOTE: Guaranteed since potentials[key] must hold a Potential
-            self.potentials[key]._enabled = val  # type:ignore
+            tp.cast(Potential, self.potentials[key])._enabled = val
         self._has_extra_potentials = self._check_has_extra_potentials()
 
     @torch.jit.export
     def set_strategy(self, strategy: str) -> None:
-        # NOTE: Guaranteed since "nnp" key must hold an NNPotential
-        self.potentials["nnp"].aev_computer.set_strategy(strategy)
+        computer = self.potentials["nnp"].aev_computer
+        assert not isinstance(computer, Tensor)
+        computer.set_strategy(strategy)  # type: ignore[operator]
 
     # Entrypoint that uses neighbors
     # For now this assumes that there is only one potential with ensemble values
@@ -261,19 +263,21 @@ class _ANI(torch.nn.Module):
         _nn = self.neural_networks
         if not hasattr(_nn, "members"):
             raise ValueError("Can only fetch submodel from an ensemble")
-        self.neural_networks = None  # type:ignore
+        self.nnp.neural_networks = None  # type: ignore
         model = deepcopy(self)
-        self.nnp.neural_networks = _nn
+        self.nnp.neural_networks = tp.cast(AtomicContainer, _nn)
         # _nn is guaranteed to be indexable since it has "members" attr
-        model.nnp.neural_networks = deepcopy(_nn[idx])  # type:ignore
+        model.nnp.neural_networks = deepcopy(_nn[idx])  # type: ignore
         return model
 
-    # Needed for client classes that depend on accessing aev_computer directly
+    # Needed for typing
     @property
     @torch.jit.unused
     def nnp(self) -> NNPotential:
         r""":meta private:"""
-        return tp.cast(NNPotential, self.potentials["nnp"])
+        nnp = self.potentials["nnp"]
+        assert isinstance(nnp, NNPotential)
+        return nnp
 
     # Needed for client classes that depend on accessing aev_computer directly
     @property
@@ -342,13 +346,13 @@ class ANI(_ANI):
                     coords,
                     cell,
                     pbc,
-                )
+                )  # type: ignore[operator]
                 energies = energies + self.potentials["nnp"].neural_networks(
                     elem_idxs,
                     aevs,
                     atomic,
                     ensemble_values,
-                )
+                )  # type: ignore[operator]
             if self.energy_shifter._enabled:
                 energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
             return SpeciesEnergies(elem_idxs, energies)
@@ -393,16 +397,15 @@ class ANI(_ANI):
             energies = energies.unsqueeze(0)
         first_neighbors = neighbors
         for pot in self.potentials.values():
+            # NOTE: Guaranteed since potentials[key] must hold a Potential
             if pot._enabled:
-                # NOTE: Guaranteed since potentials[key] must hold a Potential
                 neighbors = discard_outside_cutoff(
                     first_neighbors,
-                    pot.cutoff,
+                    pot.cutoff,  # type: ignore[arg-type]
                 )
-                # Disregard atomic scalars that potentials may output
                 result = pot.compute_from_neighbors(
                     elem_idxs, coords, neighbors, charge, atomic, ensemble_values
-                )
+                )  # type: ignore[operator]
                 energies = energies + result.energies
         if self.energy_shifter._enabled:
             energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
@@ -670,10 +673,13 @@ class ANIq(_ANI):
         first_neighbors = neighbors
         for k, pot in self.potentials.items():
             if pot._enabled:
-                neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)
+                neighbors = discard_outside_cutoff(
+                    first_neighbors,
+                    pot.cutoff,  # type: ignore[arg-type]
+                )
                 _e, _qs = pot.compute_from_neighbors(
                     elem_idxs, coords, neighbors, charge, atomic, ensemble_values
-                )
+                )  # type: ignore[operator]
                 energies = energies + _e
                 if k == "nnp":
                     assert _qs is not None
