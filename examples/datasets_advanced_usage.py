@@ -20,8 +20,9 @@ from torchani.datasets.filters import filter_by_high_force
 # script.
 file1_path = Path.cwd() / "file1.h5"
 file2_path = Path.cwd() / "file2.h5"
-shutil.copy(Path.cwd() / "../dataset/ani1-up_to_gdb4/ani_gdb_s01.h5", file1_path)
-shutil.copy(Path.cwd() / "../dataset/ani1-up_to_gdb4/ani_gdb_s02.h5", file2_path)
+data_source = Path.cwd().parent / "dev-data" / "hf-data" / "dataset" / "ani1-up_to_gdb4"
+shutil.copy(data_source / "ani_gdb_s01.h5", file1_path)
+shutil.copy(data_source / "ani_gdb_s02.h5", file2_path)
 ds = ANIDataset(locations=(file1_path, file2_path), names=("file1", "file2"))
 # %%
 # Property deletion / renaming
