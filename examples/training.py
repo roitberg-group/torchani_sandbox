@@ -90,7 +90,7 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
 latest_training_state_checkpoint_path = Path("./latest_training_state.pt").resolve()
 best_model_state_checkpoint_path = Path("./best_model_state.pt").resolve()
 if latest_training_state_checkpoint_path.exists():
-    checkpoint = torch.load(latest_training_state_checkpoint_path)
+    checkpoint = torch.load(latest_training_state_checkpoint_path, weights_only=True)
     model.load_state_dict(checkpoint["model"])
     scheduler.load_state_dict(checkpoint["scheduler"])
     optimizer.load_state_dict(checkpoint["optimizer"])

@@ -1,7 +1,8 @@
-name: ani-blackwell
+name: ani-condatorch
 channels:
   - nodefaults
   - https://conda.anaconda.org/conda-forge
+  - https://conda.anaconda.org/nvidia
 dependencies:
   ## Required dependencies to run TorchANI ##
   - python=3.11
@@ -53,6 +54,6 @@ dependencies:
   - sphinx-gallery
   - pydata-sphinx-theme
   - tensorboard
-  - pip:
-    - torch==2.8
-    - --index-url https://download.pytorch.org/whl/cu129
+  # Fix pytorch buildstring to ensure correct CUDA version
+  - conda-forge::pytorch=2.7.1=cuda129_generic_py311_hc87bd2f_203
+  - nvidia::cuda-toolkit=12.9
