@@ -15,10 +15,6 @@ dependencies:
   - rich  # CLI support
   - huggingface_hub  # Datasets
 
-  # Fix pytorch buildstring to ensure correct CUDA version (Linux only)
-  # (replace with conda-forge::pytorch for macOS)
-  - conda-forge::pytorch=2.7.1=cuda129_generic_py311_hc87bd2f_203
-
   # Optional dependencies follow:
 
   ## ASE interface ##
@@ -31,8 +27,8 @@ dependencies:
   - packaging>=25
   - gxx_linux-64=12.2
   - gcc_linux-64=12.2
+  # (comment the cuda-toolkit line for macOS)
   # CUDA Toolkit must be present in host, for instance, by installing:
-  # (comment the following line for macOS)
   - nvidia::cuda-toolkit=12.9
 
   ## Running torchani/tests ##
@@ -60,3 +56,9 @@ dependencies:
   - sphinx-gallery
   - pydata-sphinx-theme
   - tensorboard
+
+  # Pytorch (using pip)
+  - pip:
+    - torch=2.8
+    # (comment the following line for macOOs)
+    - --index-url https://download.pytorch.org/whl/cu129
