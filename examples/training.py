@@ -20,7 +20,7 @@ from torchani.grad import forces_for_training
 # %%
 # Device and dataset to run the training
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-ds = ANIDataset("../dev-data/hf-data/ani-1x/sample.h5")
+ds = ANIDataset("../dev-data/hf-data/dataset/ani-1x/sample.h5")
 # %%
 # We prebatch the dataset to train with memory efficiency, keeping a good
 # performance.
