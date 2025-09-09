@@ -1,7 +1,6 @@
 name: ani
 channels:
   - nodefaults
-  - https://conda.anaconda.org/pytorch
   - https://conda.anaconda.org/nvidia
   - https://conda.anaconda.org/conda-forge
 dependencies:
@@ -9,7 +8,6 @@ dependencies:
   - python=3.11
   - pip>=24.0
   - numpy=2.1
-  - pytorch::pytorch=2.5  # Modify to 'pytorch::pytorch=2' if installing on macOS
   - typing_extensions>=4.0.0
   - h5py  # HDF5 backend for datasets
   - tqdm  # progress bar util
@@ -17,27 +15,25 @@ dependencies:
   - rich  # CLI support
   - huggingface_hub  # Datasets
 
+  # Fix pytorch buildstring to ensure correct CUDA version (Linux only)
+  # (replace with conda-forge::pytorch for macOS)
+  - conda-forge::pytorch=2.7.1=cuda129_generic_py311_hc87bd2f_203
+
   # Optional dependencies follow:
 
   ## ASE interface ##
   # Used for molecular dynamics and for tests/tools/docs
   - ase
 
-  ## NVIDIA CUDA GPU support ##
-  - pytorch::pytorch-cuda=12.4  # Comment this line if installing on macOS, or to **disable** CUDA GPU support in any platform
-  #- pytorch::cpuonly  # Uncomment this line to **disable** CUDA GPU support in Linux
-
   ## cuAEV and MNP ##
-  # For more details consult the "developer notes" section in README.md
-  # If installing on macOS, or if CUDA GPU support is **disabled**, comment all lines on this block
   - setuptools>=75.6
   - setuptools-scm>=8
   - packaging>=25
   - gxx_linux-64=12.2
   - gcc_linux-64=12.2
-  - nvidia::cuda-libraries-dev=12.4
-  - nvidia::cuda-cccl=12.4
-  - nvidia::cuda-nvcc=12.4
+  # CUDA Toolkit must be present in host, for instance, by installing:
+  # (comment the following line for macOS)
+  - nvidia::cuda-toolkit=12.9
 
   ## Running torchani/tests ##
   - coverage  # code coverage
