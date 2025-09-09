@@ -31,7 +31,7 @@ pydata-sphinx-theme
 tensorboard
 
 # Tools: Utils for running various scripts found in /torchani/tools/
-pynvml
+nvidia-ml-py
 matplotlib
 jinja2
 

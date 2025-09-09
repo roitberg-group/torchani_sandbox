@@ -44,7 +44,7 @@ dependencies:
 
   ## Running scripts in torchani/tools ##
   - matplotlib
-  - pynvml
+  - nvidia-ml-py
   - jinja2  # Templating engine to build generated code and docs
 
   ## Building torchani/docs ##
