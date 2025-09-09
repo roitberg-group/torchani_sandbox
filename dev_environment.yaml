@@ -59,6 +59,6 @@ dependencies:
 
   # Pytorch (using pip)
   - pip:
-    - torch=2.8
+    - torch==2.8
     # (comment the following line for macOOs)
     - --index-url https://download.pytorch.org/whl/cu129
