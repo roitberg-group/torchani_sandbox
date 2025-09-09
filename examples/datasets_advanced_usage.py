@@ -16,7 +16,7 @@ from torchani.datasets import ANIDataset, concatenate
 from torchani.datasets.filters import filter_by_high_force
 # %%
 # Again for the purposes of this example we will copy and modify two files
-# inside torchani/dataset, which can be downloaded by running the download.sh
+# inside torchani/dataset, which can be downloaded by running the download-dev-data.sh
 # script.
 file1_path = Path.cwd() / "file1.h5"
 file2_path = Path.cwd() / "file2.h5"

@@ -80,7 +80,7 @@ dev dependencies:
 
 ```bash
 # Download files needed for testing and building the docs (optional)
-bash ./download.sh
+bash ./download-dev-data.sh
 
 # Build the documentation (optional)
 sphinx-build docs/src docs/build

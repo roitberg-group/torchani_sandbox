@@ -16,8 +16,8 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 RUN apt update && apt install -y wget git unzip ninja-build rsync clang-format
 
 # Download test data
-COPY ./download.sh .
-RUN ./download.sh
+COPY ./download-dev-data.sh .
+RUN ./download-dev-data.sh
 
 # Copy pip optional dependencies file
 COPY dev_requirements.txt .

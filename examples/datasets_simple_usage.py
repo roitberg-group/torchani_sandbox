@@ -25,7 +25,7 @@ from torchani.datasets import ANIDataset
 
 ###############################################################################
 # For the purposes of this example we will copy and modify two files inside
-# torchani/dataset, which can be downloaded by running the download.sh script
+# torchani/dataset, which can be downloaded by running the download-dev-data.sh script
 file1_path = Path.cwd() / "file1.h5"
 file2_path = Path.cwd() / "file2.h5"
 data_source = Path.cwd().parent / "dev-data" / "hf-data" / "dataset" / "ani1-up_to_gdb4"
