@@ -46,10 +46,10 @@ git clone https://github.com/roitberg-group/torchani_sandbox.git
 cd ./torchani_sandbox
 
 # Create a conda (or mamba) environment
-# Note that dev_environment.yaml contains many optional dependencies needed to
+# Note that environment.yaml contains many optional dependencies needed to
 # build the compiled extensions, build the documentation, and run tests and tools
 # You can comment these out if you are not planning to do that
-conda env create -f ./dev_environment.yaml
+conda env create -f ./environment.yaml
 ```
 
 Instead of using a `conda` (or `mamba`) environment you can use a python `venv`,
@@ -120,7 +120,7 @@ conda install -c conda-forge ase
 #### From source in macOS
 
 Note that there is no CUDA support on `macOS` and TorchANI is **untested** with
-Apple Metal Performance Shaders (MPS). The `dev_environment.yaml` file needs
+Apple Metal Performance Shaders (MPS). The `environment.yaml` file needs
 slight modifications if installing on `macOS`. Please consult the corresponding
 file and modify it before creating the `conda` environment.
 
