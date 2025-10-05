@@ -21,9 +21,7 @@ TorchANI 2.0 check out the [migration guide](https://aiqm.github.io/torchani/mig
 are very few breaking changes, most code should work with minimal modifications. If
 you can't figure something out please open a GitHub issue, we are here to help!
 
-If you find a bug of TorchANI, or have some feature request, also feel free to open a GitHub issue.
-
-TorchANI 2.0 is currently tested against PyTorch 2.8 and CUDA 12.8
+If you find a bug of TorchANI, or have some feature request, also feel free to open a GitHub issue. TorchANI 2.0 is currently tested against PyTorch 2.8 and CUDA 12.8
 
 If you find this work useful please cite the following articles:
 - *TorchANI 2.0: An extensible, high performance library for the design, training, and use of NN-IPs* <br>
