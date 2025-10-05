@@ -6,6 +6,7 @@
 </picture>
 </div>
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![PyPI](https://img.shields.io/pypi/v/torchani.svg)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/torchani.svg) [![conda page](https://img.shields.io/badge/conda--package-page-blue)](https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
 [![ci workflow](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/ci.yaml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/ci.yaml)
