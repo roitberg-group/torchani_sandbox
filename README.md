@@ -7,8 +7,7 @@
 </div>
 
 ![PyPI](https://img.shields.io/pypi/v/torchani.svg)
-![PyPI - Downloads](https://img.shields.io/pypi/dm/torchani.svg)
-[![conda page](https://img.shields.io/badge/conda--package-page-blue)](https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/torchani.svg) [![conda page](https://img.shields.io/badge/conda--package-page-blue)](https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
 [![ci workflow](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/ci.yaml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/ci.yaml)
 [![conda workflow](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/build-conda-pkg.yaml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/build-conda-pkg.yaml)
 
@@ -25,6 +24,21 @@ you can't figure something out please open a GitHub issue, we are here to help!
 If you find a bug of TorchANI, or have some feature request, also feel free to open a GitHub issue.
 
 TorchANI 2.0 is currently tested against PyTorch 2.8 and CUDA 12.8
+
+If you find this work useful please cite the following articles:
+- *TorchANI 2.0: An extensible, high performance library for the design, training, and use of NN-IPs* <br>
+    Preprint, re-implementation of TorchANI enabling this interface: https://chemrxiv.org/engage/chemrxiv/article-details/6890d92523be8e43d6b9bbba
+- *TorchANI: A Free and Open Source PyTorch-Based Deep Learning Implementation of the ANI Neural Network Potentials* <br>
+    Original TorchANI implementation: https://pubs.acs.org/doi/10.1021/acs.jcim.0c00451
+
+To run molecular dynamics (full ML or ML/MM) with [Amber (sander or
+pmemd)](https://ambermd.org/AmberTools.php) check out
+[the TorchANI-Amber interface](https://github.com/roitberg-group/torchani-amber),
+and the relevant publications:
+- *TorchANI-Amber: Bridging neural network potentials and classical biomolecular simulations* <br>
+    Preprint, main TorchANI-Amber article: https://chemrxiv.org/engage/chemrxiv/article-details/68a63e8b728bf9025e64ee01
+- *Advancing Multiscale Molecular Modeling with Machine Learning-Derived Electrostatics* <br>
+    For the ML/MM capabilities: https://pubs.acs.org/doi/10.1021/acs.jctc.4c01792
 
 ## Installation
 
