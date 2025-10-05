@@ -24,7 +24,7 @@ you can't figure something out please open a GitHub issue, we are here to help!
 
 If you find a bug of TorchANI, or have some feature request, also feel free to open a GitHub issue.
 
-TorchANI 2.0 is currently tested against PyTorch 2.5 and CUDA 12.4
+TorchANI 2.0 is currently tested against PyTorch 2.8 and CUDA 12.8
 
 ## Installation
 
