@@ -61,7 +61,7 @@ fi
 # CONDA_TOKEN must be passed as a secret
 ARG PUBLIC_RELEASE=0
 RUN --mount=type=secret,id=CONDA_TOKEN \
-if [ "${PUBLIC_RELEASE}" = "1" ] || [ "${PUBLIC_RELEASE}" = "truej" ]; then \
+if [ "${PUBLIC_RELEASE}" = "1" ] || [ "${PUBLIC_RELEASE}" = "true" ]; then \
     CONDA_TOKEN=`cat /run/secrets/CONDA_TOKEN` \
     && anaconda --token "${CONDA_TOKEN}" \
         upload --user roitberg-group --force ./conda-pkgs/linux-64/*.tar.gz ; \
