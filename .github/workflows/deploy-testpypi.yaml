@@ -24,4 +24,4 @@ jobs:
         run: |
           python -m pip install build twine
           python -m build
-          twine upload -u zasdfgbnm-bot -p ${{secrets.zasdfgbnm_bot_test_pypi_password}} --repository testpypi dist/*
+          twine upload -u zasdfgbnm-bot -p ${{secrets.ZASDFGBNM_BOT_TEST_PYPI_PASSWORD}} --repository testpypi --verbose dist/*
