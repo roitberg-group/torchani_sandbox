@@ -9,8 +9,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![PyPI](https://img.shields.io/pypi/v/torchani.svg)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/torchani.svg) [![conda page](https://img.shields.io/badge/conda--package-page-blue)](https://roitberg.chem.ufl.edu/projects/conda-packages-uf-gainesville)
-[![ci workflow](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/ci.yaml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/ci.yaml)
-[![conda workflow](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/build-conda-pkg.yaml/badge.svg)](https://github.com/roitberg-group/torchani_sandbox/actions/workflows/build-conda-pkg.yaml)
+[![ci workflow](https://github.com/aiqm/torchani/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/aiqm/torchani/actions/workflows/ci.yaml)
+[![conda workflow](https://github.com/aiqm/torchani/actions/workflows/build-conda-pkg.yaml/badge.svg?branch=main)](https://github.com/aiqm/torchani/actions/workflows/build-conda-pkg.yaml)
 
 TorchANI 2.0 is an open-source library that supports training, development, and research
 of ANI-style neural network interatomic potentials. It was originally developed and is
@@ -55,7 +55,7 @@ To build and install TorchANI directly from the GitHub repo do the following:
 
 ```bash
 # Clone the repo and cd to the directory
-git clone https://github.com/roitberg-group/torchani_sandbox.git
+git clone https://github.com/aiqm/torchani.git
 cd ./torchani_sandbox
 
 # Create a conda (or mamba) environment
@@ -106,6 +106,7 @@ pytest -v .
 This process works for most use cases, but for more details regarding building
 the CUDA and C++ extensions refer to [TorchANI CSRC](torchani/csrc).
 
+<!--
 ### From the internal Roitberg Group servers, using conda or pip
 
 To install the internal version of TorchANI, hosted in the internal
@@ -129,7 +130,7 @@ but it doesn't include either the ase module, to use it run also:
 ```bash
 conda install -c conda-forge ase
 ```
-
+-->
 #### From source in macOS
 
 Note that there is no CUDA support on `macOS` and TorchANI is **untested** with
