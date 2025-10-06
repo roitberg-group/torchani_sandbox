@@ -20,8 +20,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: deploy
+      - name: build
         run: |
           python -m pip install build twine
           python -m build
           twine upload --verbose dist/*
+
+      - name: publish-to-testpypi
+        uses: pypa/gh-action-pypi-publish@release/v1
