@@ -11,6 +11,10 @@ env:
 jobs:
   deploy-testpypi:
     runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: checkout-repo
         uses: actions/checkout@v5
