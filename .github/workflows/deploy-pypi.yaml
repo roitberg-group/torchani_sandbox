@@ -31,5 +31,5 @@ jobs:
 
       - name: publish-to-testpypi
         uses: pypa/gh-action-pypi-publish@release/v1
-          with:
-            verbose: true
+        with:
+          verbose: true
