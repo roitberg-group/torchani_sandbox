@@ -1233,30 +1233,36 @@ def _fetch_state_dict(
             state_dict_file, map_location=torch.device("cpu"), weights_only=True
         )
         return OrderedDict(dict_)
+
+    repo_id = "roitberg-group"
+    if state_dict_file == "charge_nn_state_dict.pt":
+        model_name = "animbis"
+    else:
+        model_name = state_dict_file.replace("_state_dict.pt", "").replace(".pt", "")
+    hf_kw = dict(
+        repo_id=f"{repo_id}/{model_name}",
+        filename=state_dict_file,
+        repo_type="model",
+        local_dir=str(state_dicts_dir()),
+        token=True if private else None,
+    )
     try:
-        repo_id = "roitberg-group"
-        if state_dict_file == "charge_nn_state_dict.pt":
-            model_name = "animbis"
-        else:
-            model_name = state_dict_file.replace("_state_dict.pt", "").replace(
-                ".pt", ""
-            )
-        path = hf_hub_download(
-            repo_id=f"{repo_id}/{model_name}",
-            filename=state_dict_file,
-            repo_type="model",
-            local_dir=str(state_dicts_dir()),
-            token=True if private else None,
-        )
+        path = hf_hub_download(**hf_kw, local_files_only=True)  # type: ignore
         dict_ = torch.load(path, map_location=torch.device("cpu"), weights_only=True)
     except Exception:
-        if private:
-            url = "http://moria.chem.ufl.edu/animodel/private/"
-        else:
-            url = "https://github.com/roitberg-group/torchani_model_zoo/releases/download/v0.1/"  # noqa: E501
-        dict_ = torch.hub.load_state_dict_from_url(
-            f"{url}/{state_dict_file}",
-            model_dir=str(state_dicts_dir()),
-            map_location=torch.device("cpu"),
-        )
+        try:
+            path = hf_hub_download(**hf_kw, force_download=True)  # type: ignore
+            dict_ = torch.load(
+                path, map_location=torch.device("cpu"), weights_only=True
+            )
+        except Exception:
+            if private:
+                url = "http://moria.chem.ufl.edu/animodel/private/"
+            else:
+                url = "https://github.com/roitberg-group/torchani_model_zoo/releases/download/v0.1/"  # noqa: E501
+            dict_ = torch.hub.load_state_dict_from_url(
+                f"{url}/{state_dict_file}",
+                model_dir=str(state_dicts_dir()),
+                map_location=torch.device("cpu"),
+            )
     return OrderedDict(dict_)

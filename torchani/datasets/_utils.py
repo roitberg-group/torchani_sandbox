@@ -88,24 +88,31 @@ def _fetch_and_create_builtin_dataset(
                 ds_name.lower().replace("ANI1q", "ani1x").replace("ANI1e", "ani1x")
             )
             repo_id = f"roitberg-group/{repo_name}"
+            hf_kw = dict(
+                repo_id=repo_id,
+                filename=archive,
+                local_dir=dest_dir,
+                repo_type="dataset",
+            )
             try:
-                file_path = hf_hub_download(
-                    repo_id=repo_id,
-                    filename=archive,
-                    local_dir=dest_dir,
-                    repo_type="dataset",
-                )
+                file_path = hf_hub_download(**hf_kw, local_files_only=True)
                 with tarfile.open(file_path, "r:gz") as f:
                     f.extractall(dest_dir)
                 Path(file_path).unlink()
             except Exception:
-                # Fall back to internal server if huggingface_hub is not available
-                download_and_extract(
-                    url=f"{_BASE_URL}{archive}",
-                    file_name=archive,
-                    dest_dir=dest_dir,
-                    verbose=verbose,
-                )
+                try:
+                    file_path = hf_hub_download(**hf_kw, force_download=True)
+                    with tarfile.open(file_path, "r:gz") as f:
+                        f.extractall(dest_dir)
+                    Path(file_path).unlink()
+                except Exception:
+                    # Fall back to internal server if huggingface_hub is not available
+                    download_and_extract(
+                        url=f"{_BASE_URL}{archive}",
+                        file_name=archive,
+                        dest_dir=dest_dir,
+                        verbose=verbose,
+                    )
         else:
             download_and_extract(
                 url=f"{_BASE_URL}{archive}",
