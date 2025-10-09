@@ -25,6 +25,7 @@ cutoff must be larger than the angular cutoff, and it is recommended that the an
 cutoff is kept small, 3.5 Ang or less).
 """
 
+import logging
 from copy import deepcopy
 import warnings
 import math
@@ -1246,10 +1247,15 @@ def _fetch_state_dict(
         local_dir=str(state_dicts_dir()),
         token=True if private else None,
     )
+    logger = logging.getLogger("huggingface_hub")
+    curr_level = logger.getEffectiveLevel()
+    logger.setLevel(logging.ERROR)
     try:
+        # First attempt local file
         path = hf_hub_download(**hf_kw, local_files_only=True)  # type: ignore
         dict_ = torch.load(path, map_location=torch.device("cpu"), weights_only=True)
     except Exception:
+        # Try downloading from hf
         try:
             path = hf_hub_download(**hf_kw, force_download=True)  # type: ignore
             dict_ = torch.load(
@@ -1265,4 +1271,5 @@ def _fetch_state_dict(
                 model_dir=str(state_dicts_dir()),
                 map_location=torch.device("cpu"),
             )
+    logger.setLevel(curr_level)
     return OrderedDict(dict_)

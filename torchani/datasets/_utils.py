@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from huggingface_hub import hf_hub_download
 import tarfile
@@ -94,12 +95,16 @@ def _fetch_and_create_builtin_dataset(
                 local_dir=dest_dir,
                 repo_type="dataset",
             )
+            logger = logging.getLogger("huggingface_hub")
+            curr_level = logger.getEffectiveLevel()
+            logger.setLevel(logging.ERROR)
             try:
                 file_path = hf_hub_download(**hf_kw, local_files_only=True)
                 with tarfile.open(file_path, "r:gz") as f:
                     f.extractall(dest_dir)
                 Path(file_path).unlink()
             except Exception:
+                # Try downloading from hf
                 try:
                     file_path = hf_hub_download(**hf_kw, force_download=True)
                     with tarfile.open(file_path, "r:gz") as f:
@@ -113,6 +118,7 @@ def _fetch_and_create_builtin_dataset(
                         dest_dir=dest_dir,
                         verbose=verbose,
                     )
+            logger.setLevel(curr_level)
         else:
             download_and_extract(
                 url=f"{_BASE_URL}{archive}",
