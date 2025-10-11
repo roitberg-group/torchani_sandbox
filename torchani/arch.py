@@ -25,6 +25,7 @@ cutoff must be larger than the angular cutoff, and it is recommended that the an
 cutoff is kept small, 3.5 Ang or less).
 """
 
+import logging
 from copy import deepcopy
 import warnings
 import math
@@ -1233,30 +1234,42 @@ def _fetch_state_dict(
             state_dict_file, map_location=torch.device("cpu"), weights_only=True
         )
         return OrderedDict(dict_)
+
+    repo_id = "roitberg-group"
+    if state_dict_file == "charge_nn_state_dict.pt":
+        model_name = "animbis"
+    else:
+        model_name = state_dict_file.replace("_state_dict.pt", "").replace(".pt", "")
+    hf_kw = dict(
+        repo_id=f"{repo_id}/{model_name}",
+        filename=state_dict_file,
+        repo_type="model",
+        local_dir=str(state_dicts_dir()),
+        token=True if private else None,
+    )
+    logger = logging.getLogger("huggingface_hub")
+    curr_level = logger.getEffectiveLevel()
+    logger.setLevel(logging.ERROR)
     try:
-        repo_id = "roitberg-group"
-        if state_dict_file == "charge_nn_state_dict.pt":
-            model_name = "animbis"
-        else:
-            model_name = state_dict_file.replace("_state_dict.pt", "").replace(
-                ".pt", ""
-            )
-        path = hf_hub_download(
-            repo_id=f"{repo_id}/{model_name}",
-            filename=state_dict_file,
-            repo_type="model",
-            local_dir=str(state_dicts_dir()),
-            token=True if private else None,
-        )
+        # First attempt local file
+        path = hf_hub_download(**hf_kw, local_files_only=True)  # type: ignore
         dict_ = torch.load(path, map_location=torch.device("cpu"), weights_only=True)
     except Exception:
-        if private:
-            url = "http://moria.chem.ufl.edu/animodel/private/"
-        else:
-            url = "https://github.com/roitberg-group/torchani_model_zoo/releases/download/v0.1/"  # noqa: E501
-        dict_ = torch.hub.load_state_dict_from_url(
-            f"{url}/{state_dict_file}",
-            model_dir=str(state_dicts_dir()),
-            map_location=torch.device("cpu"),
-        )
+        # Try downloading from hf
+        try:
+            path = hf_hub_download(**hf_kw, force_download=True)  # type: ignore
+            dict_ = torch.load(
+                path, map_location=torch.device("cpu"), weights_only=True
+            )
+        except Exception:
+            if private:
+                url = "http://moria.chem.ufl.edu/animodel/private/"
+            else:
+                url = "https://github.com/roitberg-group/torchani_model_zoo/releases/download/v0.1/"  # noqa: E501
+            dict_ = torch.hub.load_state_dict_from_url(
+                f"{url}/{state_dict_file}",
+                model_dir=str(state_dicts_dir()),
+                map_location=torch.device("cpu"),
+            )
+    logger.setLevel(curr_level)
     return OrderedDict(dict_)
