@@ -88,7 +88,7 @@ class OrbitalAEVComputer(torch.nn.Module):
                     angles = torch.cat((angles_pp,angles_pq,angles_qq),dim=-1)
                     simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles), dim=-1)
                     #TESTING
-                    simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles_pp), dim=-1)
+                    # simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles_pp), dim=-1)
                 # return  torch.cat((D_norms,angles_pq,angles_qq), dim = -1)  # shape (nconf, natoms, simple_orbital_aevs_length)         
                 return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
 
