@@ -37,7 +37,7 @@ class OrbitalAEVComputer(torch.nn.Module):
         # Describes the coordinates in the "space of coefficients" of fake atoms
         # Around each actual atom.
         
-        s_coeffs, p_matrix = self._reshape_coefficients(coefficients,basis_functions)
+        s_coeffs, p_matrix, D_blocks = self._reshape_coefficients(coefficients,basis_functions)
         Z_to_idx = {1: 0, 6: 1, 7: 2, 8: 3, 9: 4, 16: 5, 17: 6}
 
         #Normalizes s_coeffs
@@ -59,17 +59,41 @@ class OrbitalAEVComputer(torch.nn.Module):
             if basis_functions == 's':
                 return s_coeffs
             # Case sp or spd           
-            print("FLAGS: use_simple_orbital_aev is True, basis_functions is ", basis_functions)     
+
             p_norms = torch.linalg.norm(p_matrix, dim=-1)
 
             p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
 
-            simple_orbital_aevs = torch.cat((s_coeffs, p_norms), dim=-1)
-            if use_angular_info:
-                angles = self._get_angles_from_p_matrix(p_matrix,p_norms,True)
-                simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles), dim=-1)
-            return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
-        
+
+            if basis_functions == 'sp':
+                simple_orbital_aevs = torch.cat((s_coeffs, p_norms), dim=-1)
+                if use_angular_info:
+                    angles = self._get_angles_from_p_matrix(p_matrix,p_norms,True)
+                    simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles), dim=-1)
+                return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
+            else: # Case spd   
+                #D blocks: (B, N, 4, 3, 3)
+                D_norms = torch.linalg.norm(D_blocks, dim=(3,4)) # Frobenius norm of each Q block -> (B,N,4)
+                # D_norms = self._normalize(D_norms, species_idx, d_norms_mus, d_norms_sigmas) #TODO: normalization of D norms?
+                #-----------------------
+                # TEST
+                B, N, _ = coefficients.shape
+                d_raw = coefficients[:, :, 21:].reshape(B, N, 24)  # (B,N,24)
+                return d_raw
+                # END TEST
+                #-----------------------
+                simple_orbital_aevs = torch.cat((s_coeffs, p_norms, D_norms), dim=-1)
+                if use_angular_info:
+                    angles_pp = self._get_angles_from_p_matrix(p_matrix,p_norms,True)
+                    angles_pq = self._get_angles_p_d_blocks(p_matrix,D_blocks,p_norms,D_norms)
+                    angles_qq = self._get_angles_d_blocks(D_blocks,D_norms)
+                    angles = torch.cat((angles_pp,angles_pq,angles_qq),dim=-1)
+                    simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles), dim=-1)
+                    #TESTING
+                    simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles_pp), dim=-1)
+                # return  torch.cat((D_norms,angles_pq,angles_qq), dim = -1)  # shape (nconf, natoms, simple_orbital_aevs_length)         
+                return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
+
         else: # Return actual orbital_aevs
             # In this case will need to know the device and dtype of the input tensors
             device, dtype = coefficients.device, coefficients.dtype
@@ -85,7 +109,6 @@ class OrbitalAEVComputer(torch.nn.Module):
             s_orbital_aev = torch.exp(-OEtaS * ((s_coeffs - OShfS) ** 2))
             
             # Reshapes
-            print("S SHAPE: ", s_orbital_aev.shape)
             s_orbital_aev = s_orbital_aev.view(nconf,natoms,nscoeffs*NOShfS)
 
             # s_orbital_aev = s_terms.sum(dim=2)
@@ -115,10 +138,10 @@ class OrbitalAEVComputer(torch.nn.Module):
             if use_angular_info:
                 angles, avdistperangle = self._get_angles_from_p_matrix(p_matrix,p_norms,False)
                 _, _, nangles = angles.shape
-                print("nangles: ", nangles)
+
                 # Define angle sections and reshape for broadcasting
                 OShfTheta = torch.linspace(LowerOShfTheta, UpperOShfTheta, NOShfTheta, device=device, dtype=dtype)
-                print("OShfTheta", OShfTheta)
+
                 # Expand angles for ShfZ
                 expanded_angles = angles.unsqueeze(-1)  # Adding an extra dimension for broadcasting ShfZ
                 expanded_angles = expanded_angles.expand(-1, -1, -1, NOShfTheta)  # Explicitly expand to match ShfZ
@@ -129,9 +152,7 @@ class OrbitalAEVComputer(torch.nn.Module):
  
                 # Calculate factor1
                 angular_orbital_aev = ((1 + torch.cos(expanded_angles - OShfTheta)) / 2)**OZeta
-                print("angular_orbital_aev shape:", angular_orbital_aev.shape)
                 angular_orbital_aev = 2**(1-OZeta)*angular_orbital_aev.unsqueeze(-1)
-                print("angular_orbital_aev shape:", angular_orbital_aev.shape)
 
                 if (use_angular_radial_coupling):
                     # Define r shifts for the angular component of the AEV and reshape for broadcasting
@@ -215,16 +236,42 @@ class OrbitalAEVComputer(torch.nn.Module):
         # Transformation [Dxx, Dxy, Dyy, Dzx, Dzy, Dzz] -> [Dxx, Dyy, Dzz, Dzy, Dzx, Dxy]
         # which maps to indices [0, 2, 5, 4, 3, 1] respectively
         d_coeffs_reshaped = d_coeffs.view(nconformers, natoms, 4, 6)  # Shape: (nconformers, natoms, 4, 6)
-        d_coeffs_reshaped_reordered = d_coeffs_reshaped[:, :, :, [0, 2, 5, 4, 3, 1]]
+        d_coeffs_reshaped = d_coeffs.view(nconformers, natoms, 4, 6)  # (B, N, 4, 6)
 
-        # Splitting into two groups: diagonal [Dxx, Dyy, Dzz] and off-diagonal [Dzy, Dzx, Dxy]
-        d_diagonal = d_coeffs_reshaped_reordered[:, :, :, :3]
-        d_off_diagonal = d_coeffs_reshaped_reordered[:, :, :, 3:]
+        # Unpack Cartesian components (xx, xy, yy, zx, zy, zz)
+        Dxx = d_coeffs_reshaped[..., 0]  # (B,N,4)
+        Dxy = d_coeffs_reshaped[..., 1]
+        Dyy = d_coeffs_reshaped[..., 2]
+        Dzx = d_coeffs_reshaped[..., 3]  # xz
+        Dzy = d_coeffs_reshaped[..., 4]  # yz
+        Dzz = d_coeffs_reshaped[..., 5]
 
-        # Concatenate modified p and d coefficients to form the desired "matrix"                
-        p_matrix = torch.cat([p_coeffs_reshaped, d_diagonal, d_off_diagonal], dim=2)  # Shape (nconformers, natoms, 12, 3)
+        # Build D blocks: (B, N, 4, 3, 3)
+        D_blocks = torch.zeros(
+            (nconformers, natoms, 4, 3, 3), dtype=coefficients.dtype, device=coefficients.device
+            )
+        # Row x: [xx, xy, xz]
+        D_blocks[:, :, :, 0, 0] = Dxx
+        D_blocks[:, :, :, 0, 1] = Dxy
+        D_blocks[:, :, :, 0, 2] = Dzx
+        # Row y: [yx, yy, yz]
+        D_blocks[:, :, :, 1, 0] = Dxy
+        D_blocks[:, :, :, 1, 1] = Dyy
+        D_blocks[:, :, :, 1, 2] = Dzy
+        # Row z: [zx, zy, zz]
+        D_blocks[:, :, :, 2, 0] = Dzx
+        D_blocks[:, :, :, 2, 1] = Dzy
+        D_blocks[:, :, :, 2, 2] = Dzz
 
-        return s_coeffs, p_matrix, q_matrix
+        # --- Make traceless: Q = D - (Tr D / 3) I ---
+        tr_D = D_blocks[..., 0, 0] + D_blocks[..., 1, 1] + D_blocks[..., 2, 2]     # (B,N,4)
+        I3 = torch.eye(3, dtype=D_blocks.dtype, device=D_blocks.device).view(1,1,1,3,3)
+        D_blocks = D_blocks - (tr_D[..., None, None] / 3.0) * I3                   # (B,N,4,3,3)
+
+        # Flatten for downstream use
+        # q_matrix = D_blocks.view(nconformers, natoms, 12, 3)                        # (B,N,12,3)
+
+        return s_coeffs, p_coeffs_reshaped, D_blocks
 
 
     def _normalize(
@@ -285,6 +332,35 @@ class OrbitalAEVComputer(torch.nn.Module):
                     k = k + 1
             return angles,avdistperangle
 
+    def _get_angles_p_d_blocks(self,
+                               p_matrix: Tensor,
+                               D_blocks: Tensor,
+                               p_norms: Tensor,
+                               D_norms: Tensor):
+        nconformers, natoms, naovs = p_norms.shape
+        _, _, ndblocks, _, _ = D_blocks.shape
+        nangles = naovs*ndblocks
+        angles = torch.zeros((nconformers, natoms,nangles), device=p_matrix.device, dtype=p_matrix.dtype)
+        k = 0
+        for i in range(naovs):
+            for j in range(ndblocks):
+                angles[:, :, k] = self._Q_vs_p_angle(D_blocks[:,:,j,:,:],p_matrix[:,:,i,:])
+                k = k + 1
+        return angles
+    
+    def _get_angles_d_blocks(self,
+                             D_blocks: Tensor,
+                             D_norms: Tensor):
+        nconformers, natoms, ndblocks, _, _ = D_blocks.shape
+        nangles = int((ndblocks-1)*ndblocks/2)
+        angles = torch.zeros((nconformers, natoms,nangles), device=D_blocks.device, dtype=D_blocks.dtype)
+        k = 0
+        for i in range(ndblocks):
+            for j in range(i+1, ndblocks):
+                angles[:, :, k] = self._tensor_angle(D_blocks[:,:,i,:,:],D_blocks[:,:,j,:,:])
+                k = k + 1
+        return angles
+
     def _map_species_to_idx(
             self,
             species: torch.Tensor, 
@@ -302,3 +378,23 @@ class OrbitalAEVComputer(torch.nn.Module):
             mask = (species == z)
             species_idx[mask] = row
         return species_idx
+
+    def _frob_norm(self, M: Tensor, eps: float = 1e-12) -> Tensor:
+        # Frobenius norm per (batch, atom, block) over the last two dims
+        # e.g. Q.shape == (B, N, 3, 3) -> returns (B, N)
+        return torch.linalg.norm(M, dim=(-2, -1)).clamp_min(eps)
+
+    def _tensor_angle(self, A: Tensor, B: Tensor, eps: float = 1e-12) -> Tensor:
+        # A, B: (..., 3, 3) -> returns (...,) angle in radians
+        num = torch.einsum('...ij,...ij->...', A, B)
+        den = self._frob_norm(A, eps) * self._frob_norm(B, eps)
+        c = torch.clamp(num / den, -0.999999, 0.999999)
+        return torch.acos(c)
+
+    def _Q_vs_p_angle(self, Q: Tensor, p: Tensor, eps: float = 1e-12) -> Tensor:
+        # Q: (..., 3, 3), p: (..., 3) -> returns (...,) angle in radians
+        p_hat = p / p.norm(dim=-1, keepdim=True).clamp_min(eps)
+        num = torch.einsum('...i,...ij,...j->...', p_hat, Q, p_hat)
+        den = self._frob_norm(Q, eps)
+        c = torch.clamp(num / den, -0.999999, 0.999999)
+        return torch.acos(c)
