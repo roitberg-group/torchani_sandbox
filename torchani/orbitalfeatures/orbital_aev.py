@@ -45,13 +45,12 @@ class OrbitalAEVComputer(torch.nn.Module):
         species_idx = self._map_species_to_idx(species, Z_to_idx)  # shape (nconf, natoms)
 
         # Unpack normalization library
-        s_coeffs_mus, s_coeffs_sigmas, p_norms_mus, p_norms_sigmas = normalization_library   # unpack
+        # s_coeffs_mus, s_coeffs_sigmas, p_norms_mus, p_norms_sigmas = normalization_library   # unpack
         
-        # Trims p normalization values to make them match other stuff
-        p_norms_mus=p_norms_mus[:,:4]
-        p_norms_sigmas = p_norms_sigmas[:,:4]
-
-        s_coeffs = self._normalize(s_coeffs,species_idx,s_coeffs_mus,s_coeffs_sigmas)
+        # # Trims p normalization values to make them match other stuff
+        # p_norms_mus=p_norms_mus[:,:4]
+        # p_norms_sigmas = p_norms_sigmas[:,:4]
+        # s_coeffs = self._normalize(s_coeffs,species_idx,s_coeffs_mus,s_coeffs_sigmas) #TODO: normalization of D norms?
 
         # Return "simple_orbital_aevs" if corresponding
         if use_simple_orbital_aev:
@@ -62,8 +61,7 @@ class OrbitalAEVComputer(torch.nn.Module):
 
             p_norms = torch.linalg.norm(p_matrix, dim=-1)
 
-            p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
-
+            # p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas) #TODO: normalization of D norms?
 
             if basis_functions == 'sp':
                 simple_orbital_aevs = torch.cat((s_coeffs, p_norms), dim=-1)
@@ -77,9 +75,9 @@ class OrbitalAEVComputer(torch.nn.Module):
                 # D_norms = self._normalize(D_norms, species_idx, d_norms_mus, d_norms_sigmas) #TODO: normalization of D norms?
                 #-----------------------
                 # TEST
-                B, N, _ = coefficients.shape
-                d_raw = coefficients[:, :, 21:].reshape(B, N, 24)  # (B,N,24)
-                return d_raw
+                # B, N, _ = coefficients.shape
+                # d_raw = coefficients[:, :, 21:].reshape(B, N, 24)  # (B,N,24)
+                # return d_raw
                 # END TEST
                 #-----------------------
                 simple_orbital_aevs = torch.cat((s_coeffs, p_norms, D_norms), dim=-1)
@@ -118,7 +116,7 @@ class OrbitalAEVComputer(torch.nn.Module):
 
             p_norms = torch.linalg.norm(p_matrix, dim=-1)
             
-            p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
+            # p_norms = self._normalize(p_norms, species_idx, p_norms_mus, p_norms_sigmas)
 
             _, _, np_norms = p_norms.shape                  
             # Define r shifts and reshape for broadcasting
