@@ -638,7 +638,7 @@ def ExCorrANI(
     asm = Assembler(ensemble_size=ensemble_size)
     asm.set_symbols(symbols)
     asm.set_global_cutoff_fn(cutoff_fn)
-    asm.set_normalization_library()
+#    asm.set_normalization_library()
     # To use different featurizer you can add some flag that instead of
     # ExCorrAEVComputer puts smth else here
     asm.set_featurizer(
@@ -661,8 +661,8 @@ def ExCorrANI(
                "use_simple_orbital_aev": use_simple_orbital_aev,
                "use_angular_info": use_angular_info,
                "use_angular_radial_coupling": bool,
-               "basis_functions": basis_functions,
-               "normalization_lib": normalization_library
+               "basis_functions": basis_functions
+#               "normalization_lib": normalization_library
                }
     )
     asm.set_atomic_maker(atomics._parse_atomics(atomic_maker))

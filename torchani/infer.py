@@ -11,8 +11,19 @@ from torchani.utils import check_openmp_threads
 from torchani.tuples import SpeciesEnergies
 
 
-mnp_is_installed = 'torchani.mnp' in importlib.metadata.metadata(
-    __package__.split('.')[0]).get_all('Provides')
+#mnp_is_installed = 'torchani.mnp' in importlib.metadata.metadata(
+#    __package__.split('.')[0]).get_all('Provides')
+
+import importlib.util
+
+# Robustly detect whether the optional submodule exists.
+try:
+    _spec = importlib.util.find_spec('torchani.mnp')
+    mnp_is_installed = _spec is not None
+except Exception:
+    # Fail closed: treat as not installed if discovery itself fails
+    mnp_is_installed = False
+
 
 if mnp_is_installed:
     # We need to import torchani.mnp to tell PyTorch to initialize torch.ops.mnp
