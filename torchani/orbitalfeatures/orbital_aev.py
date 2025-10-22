@@ -71,7 +71,7 @@ class OrbitalAEVComputer(torch.nn.Module):
                 return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
             else: # Case spd   
                 #D blocks: (B, N, 4, 3, 3)
-                D_norms = torch.linalg.norm(D_blocks, dim=(3,4)) # Frobenius norm of each Q block -> (B,N,4)
+                D_norms = torch.linalg.norm(D_blocks, dim=(3,4)) # Frobenius norm of each D block -> (B,N,4)
                 # D_norms = self._normalize(D_norms, species_idx, d_norms_mus, d_norms_sigmas) #TODO: normalization of D norms?
                 #-----------------------
                 # TEST
@@ -90,6 +90,7 @@ class OrbitalAEVComputer(torch.nn.Module):
                     #TESTING
                     # simple_orbital_aevs = torch.cat((simple_orbital_aevs, angles_pp), dim=-1)
                 # return  torch.cat((D_norms,angles_pq,angles_qq), dim = -1)  # shape (nconf, natoms, simple_orbital_aevs_length)         
+                # print(f"Simple orbital AEVs shape: {simple_orbital_aevs.shape}")
                 return simple_orbital_aevs  # shape (nconf, natoms, simple_orbital_aevs_length)
 
         else: # Return actual orbital_aevs

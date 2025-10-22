@@ -56,8 +56,8 @@ class ExCorrAEVComputer(AEVComputer):
         assert (basis_functions == 'spd' or basis_functions == 'sp' or basis_functions == 's')
         if ((basis_functions == 's') and use_simple_orbital_aev):
             assert (not use_angular_info)
-        if (not use_angular_info):
-            assert (not use_angular_radial_coupling)
+        # if (not use_angular_info):
+        #     assert (not use_angular_radial_coupling)
         super().__init__(
             Rcr,
             Rca,
@@ -102,20 +102,45 @@ class ExCorrAEVComputer(AEVComputer):
         self.OEtaR = OEtaR
         self.OEtaA = OEtaA
         self.OZeta = OZeta
+
         if use_simple_orbital_aev:
-            if basis_functions == 'spd':
-                orbital_aev_length = 21
+            # Base scalar parts
+            if basis_functions == 's':
+                n_p, n_d = 0, 0
             elif basis_functions == 'sp':
-                orbital_aev_length = 13             
-            elif basis_functions == 's':
-                orbital_aev_length = 9
-            if  use_angular_info:
-                #Only p and d AOVs have angular info associated
-                #The number of s+d AOVs is simple_orbital_aev_length-9 (because we need to substract the 9 s AOVs)
-                #If we calculate the number of angles as N(N-1)/2 (with N the number of s+d AOVs), we have:
-                nangles = int((orbital_aev_length-9)*(orbital_aev_length-10)/2)
-                orbital_aev_length = orbital_aev_length + nangles
-            self.orbital_aev_computer = OrbitalAEVComputer()   
+                n_p, n_d = 4, 0
+            elif basis_functions == 'spd':
+                n_p, n_d = 4, 4
+            else:
+                raise ValueError(f"Unknown basis_functions={basis_functions!r}. Expected 's', 'sp', or 'spd'.")
+
+            base = 9 + n_p + n_d  # 9 s-coeffs + norms of p (4) + norms of d (4)
+
+            # Angles only for p/d AOVs
+            nangles = 0
+            if use_angular_info and (n_p + n_d) > 0:
+                n_aovs = n_p + n_d
+                nangles = n_aovs * (n_aovs - 1) // 2
+
+            orbital_aev_length = base + nangles
+
+            # e.g., s=9; sp=13/19; spd=17/45
+            self.orbital_aev_computer = OrbitalAEVComputer()
+
+        # if use_simple_orbital_aev:
+        #     if basis_functions == 'spd':
+        #         orbital_aev_length = 21
+        #     elif basis_functions == 'sp':
+        #         orbital_aev_length = 13             
+        #     elif basis_functions == 's':
+        #         orbital_aev_length = 9
+        #     if  use_angular_info:
+        #         #Only p and d AOVs have angular info associated
+        #         #The number of s+d AOVs is simple_orbital_aev_length-9 (because we need to substract the 9 s AOVs)
+        #         #If we calculate the number of angles as N(N-1)/2 (with N the number of s+d AOVs), we have:
+        #         nangles = int((orbital_aev_length-9)*(orbital_aev_length-10)/2)
+        #         orbital_aev_length = orbital_aev_length + nangles
+        #     self.orbital_aev_computer = OrbitalAEVComputer()   
         else:
             #To do -> Include an AEV-like expansion for the AOVs
             if basis_functions == 'spd':
