@@ -1055,6 +1055,9 @@ def simple_ani(
     periodic_table_index: bool = True,
     neighborlist: NeighborlistArg = "all_pairs",
     repulsion_cutoff: bool = True,
+    self_energies: tp.Union[
+        tp.Optional[tp.Dict[str, float]], tp.Literal["zero"]
+    ] = None,
 ) -> ANI:
     r"""Flexible builder to create ANI-style models
 
@@ -1092,7 +1095,12 @@ def simple_ani(
         kwargs={"bias": bias, "activation": parse_activation(activation)},
     )
     asm.set_neighborlist(neighborlist)
-    asm.set_gsaes_as_self_energies(lot)
+    if self_energies == "zero":
+        asm.set_zeros_as_self_energies()
+    elif self_energies is not None:
+        asm.set_self_energies(self_energies)
+    else:
+        asm.set_gsaes_as_self_energies(lot)
     if repulsion:
         asm.add_potential(
             RepulsionXTB,
@@ -1140,6 +1148,9 @@ def simple_aniq(
     periodic_table_index: bool = True,
     neighborlist: NeighborlistArg = "all_pairs",
     normalize: bool = True,
+    self_energies: tp.Union[
+        tp.Optional[tp.Dict[str, float]], tp.Literal["zero"]
+    ] = None,
 ) -> ANIq:
     r"""Flexible builder to create ANI-style models that output charges
 
@@ -1209,10 +1220,12 @@ def simple_aniq(
         )
 
     asm.set_neighborlist(neighborlist)
-    if not dummy_energies:
-        asm.set_gsaes_as_self_energies(lot)
-    else:
+    if self_energies == "zero" or dummy_energies:
         asm.set_zeros_as_self_energies()
+    elif self_energies is not None:
+        asm.set_self_energies(self_energies)
+    else:
+        asm.set_gsaes_as_self_energies(lot)
     if repulsion and not dummy_energies:
         asm.add_potential(RepulsionXTB, name="repulsion_xtb", cutoff=radial_cutoff)
     if dispersion and not dummy_energies:
