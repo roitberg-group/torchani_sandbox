@@ -1055,7 +1055,9 @@ def simple_ani(
     periodic_table_index: bool = True,
     neighborlist: NeighborlistArg = "all_pairs",
     repulsion_cutoff: bool = True,
-    self_energies: tp.Union[tp.Optional[tp.Dict[str, float]], str] = None,
+    self_energies: tp.Union[
+        tp.Optional[tp.Dict[str, float]], tp.Literal["zero"]
+    ] = None,
 ) -> ANI:
     r"""Flexible builder to create ANI-style models
 
@@ -1146,7 +1148,9 @@ def simple_aniq(
     periodic_table_index: bool = True,
     neighborlist: NeighborlistArg = "all_pairs",
     normalize: bool = True,
-    self_energies: tp.Union[tp.Optional[tp.Dict[str, float]], str] = None,
+    self_energies: tp.Union[
+        tp.Optional[tp.Dict[str, float]], tp.Literal["zero"]
+    ] = None,
 ) -> ANIq:
     r"""Flexible builder to create ANI-style models that output charges
 
