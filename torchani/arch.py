@@ -135,6 +135,77 @@ class _ANI(torch.nn.Module):
     def _check_has_extra_potentials(self) -> bool:
         return any(p._enabled for k, p in self.potentials.items() if k != "nnp")
 
+    def legacy_state_dict(self) -> tp.Any:
+        r"""Get a state dict compatible with old torchani versions"""
+        state_dict = self.state_dict()
+        device = state_dict["potentials.nnp.aev_computer.radial.shifts"].device
+        dtype = state_dict["potentials.nnp.aev_computer.radial.shifts"].dtype
+        new_state_dict = {
+            "aev_computer.default_shifts": torch.zeros(
+                (0, 3), dtype=torch.int64, device=device
+            ),
+            "aev_computer.default_cell": torch.eye(
+                3, dtype=dtype, device=device
+            ),
+        }
+        for k, v in state_dict.items():
+            if k == "atomic_numbers":
+                continue
+            if k.startswith("potentials.nnp.aev_computer"):
+                new_key = (
+                    k.replace("potentials.nnp.", "")
+                    .replace("angular.sections", "ShfZ")
+                    .replace("angular.shifts", "ShfA")
+                    .replace("radial.shifts", "ShfR")
+                    .replace("angular.zeta", "Zeta")
+                    .replace("radial.eta", "EtaR")
+                    .replace("angular.eta", "EtaA")
+                )
+                if "radial.shifts" in k:
+                    v = v.view(1, -1)
+                if "angular.shifts" in k:
+                    v = v.view(1, 1, -1, 1)
+                if "angular.sections" in k:
+                    v = v.view(1, 1, 1, -1)
+                if "radial.eta" in k:
+                    v = v.view(1, 1)
+                if "angular.eta" in k:
+                    v = v.view(1, 1, 1, 1)
+                if "zeta" in k:
+                    v = v.view(1, 1, 1, 1)
+            elif k.startswith("potentials.nnp.neural_networks"):
+                new_key = (
+                    k.replace("members.", "")
+                    .replace("atomics.", "")
+                    .replace("layers.", "")
+                    .replace("potentials.nnp.", "")
+                )
+            else:
+                new_key = k
+            new_state_dict[new_key] = v
+        largest_layer = max(
+            int(m.split(".")[-2])
+            for m in new_state_dict.keys()
+            if ("neural_networks" in m and "final_layer" not in m)
+        )
+        new_state_dict = {
+            k.replace("final_layer", str(largest_layer + 1)): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".3.weight", ".6.weight").replace(".3.bias", ".6.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".2.weight", ".4.weight").replace(".2.bias", ".4.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".1.weight", ".2.weight").replace(".1.bias", ".2.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        return new_state_dict
+
     @torch.jit.export
     def set_active_members(self, idxs: tp.List[int]) -> None:
         # NOTE: Awkward ignore directive and assert required due to pytorch typing not
