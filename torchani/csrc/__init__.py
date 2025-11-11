@@ -55,6 +55,8 @@ if os.getenv("TORCHANI_NO_WARN_EXTENSIONS") != "1":
     if _missing:
         warnings.warn(
             f"The extensions: {_missing} are not installed and will not be available."
+            " To install the extensions first install the CUDA Toolkit, and afterwards "
+            " run `ani build-extensions`"
             " To suppress warn set the env var TORCHANI_NO_WARN_EXTENSIONS=1"
             " For example, if using bash,"
             " you may add `export TORCHANI_NO_WARN_EXTENSIONS=1` to your .bashrc"
