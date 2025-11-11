@@ -53,7 +53,7 @@ We also recommended you first install a specific torch version, with a specific 
 toolkit backend, for example:
 
 ```bash
-pip install torch==2.9 --index-url https://download.pytorch.org/whl/cu129
+pip install torch==2.8 --index-url https://download.pytorch.org/whl/cu129
 ```
 
 for the version with CUDA 12.9. This is not strictly required, but is easier if you want
