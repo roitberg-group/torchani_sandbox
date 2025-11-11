@@ -174,20 +174,6 @@ def _build_extensions(
     for f in build_dir.iterdir():
         if f.suffix != ".so":
             f.unlink()
-    from torchani.csrc import CUAEV_IS_INSTALLED, MNP_IS_INSTALLED, CLIST_IS_INSTALLED
-
-    if CUAEV_IS_INSTALLED:
-        print("cuAEV extension successfully installed")
-    else:
-        print("cuAEV extension failed to load")
-    if MNP_IS_INSTALLED:
-        print("MNP extension successfully installed")
-    else:
-        print("MNP extension failed to load")
-    if CLIST_IS_INSTALLED:
-        print("Experimental FastCellList extension successfully installed")
-    else:
-        print("Cell List extension failed to load")
 
 
 @main.command()
