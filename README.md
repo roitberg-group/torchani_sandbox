@@ -22,7 +22,8 @@ TorchANI 2.0 check out the [migration guide](https://aiqm.github.io/torchani/mig
 are very few breaking changes, most code should work with minimal modifications. If
 you can't figure something out please open a GitHub issue, we are here to help!
 In the meantime, you can pin torchani to version 2.2.4 (pip install 'torchani==2.2.4'), which does not
-have breaking changes.
+have breaking changes. If you require the old state dicts of ANI models you can access
+them by calling `.legacy_state_dict()` instead of `.state_dict()`
 
 If you find a bug in TorchANI 2.0, or have some feature request, also feel free to open
 a GitHub issue. TorchANI 2.0 is currently tested against PyTorch 2.8 and CUDA 12.8
