@@ -176,7 +176,7 @@ def _build_extensions(
             f.unlink()
 
 
-@main.command()
+@main.command(hidden=True)
 def opt(
     paths: tpx.Annotated[
         tp.List[Path],
