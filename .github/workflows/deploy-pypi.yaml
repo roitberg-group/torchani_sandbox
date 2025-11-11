@@ -23,7 +23,7 @@ env:
 jobs:
   build_package:
     name: build-package
-    runs-on: [self-hosted, ipickering]
+    runs-on: ubuntu-latest
     steps:
       - name: checkout-repo
         uses: actions/checkout@v5
@@ -54,7 +54,7 @@ jobs:
 
   publish_to_testpypi:
     needs: build_package
-    runs-on: [self-hosted, ipickering]
+    runs-on: ubuntu-latest
     if: ${{ github.event.inputs.upload-testpypi == 'true' }}
     environment:
       name: testpypi
@@ -75,7 +75,7 @@ jobs:
 
   publish_to_pypi:
     needs: build_package
-    runs-on: [self-hosted, ipickering]
+    runs-on: ubuntu-latest
     if: ${{ github.event.inputs.upload-pypi == 'true' }}
     environment:
       name: pypi
