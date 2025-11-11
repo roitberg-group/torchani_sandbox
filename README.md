@@ -21,6 +21,8 @@ comprehensive [documentation](https://aiqm.github.io/torchani/).
 TorchANI 2.0 check out the [migration guide](https://aiqm.github.io/torchani/migrating-to-2.html#torchani-migrating), there
 are very few breaking changes, most code should work with minimal modifications. If
 you can't figure something out please open a GitHub issue, we are here to help!
+In the meantime, you can pin torchani to version 2.2.4 (pip install 'torchani==2.2.4'), which does not
+have breaking changes.
 
 If you find a bug in TorchANI 2.0, or have some feature request, also feel free to open
 a GitHub issue. TorchANI 2.0 is currently tested against PyTorch 2.8 and CUDA 12.8
