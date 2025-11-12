@@ -25,6 +25,7 @@ cutoff must be larger than the angular cutoff, and it is recommended that the an
 cutoff is kept small, 3.5 Ang or less).
 """
 
+import logging
 from copy import deepcopy
 import warnings
 import math
@@ -35,6 +36,7 @@ import typing as tp
 import torch
 from torch import Tensor
 import typing_extensions as tpx
+from huggingface_hub import hf_hub_download
 
 from torchani.tuples import (
     SpeciesEnergies,
@@ -91,6 +93,7 @@ from torchani.sae import SelfEnergy
 
 class _ANI(torch.nn.Module):
 
+    cutoff: float
     atomic_numbers: Tensor
     periodic_table_index: bool
 
@@ -120,30 +123,113 @@ class _ANI(torch.nn.Module):
         self.species_converter = SpeciesConverter(symbols).to(device)
 
         # Order of computation is not important for potentials
+        # NOTE: ModuleDict erases types of values, mypy can't tell
+        # that all values are Potential
         self.potentials = torch.nn.ModuleDict(potentials or {})
         self.potentials["nnp"] = NNPotential(aev_computer, neural_networks)
-        self.cutoff = max(p.cutoff for p in self.potentials.values())
+        # NOTE: Guaranteed since potentials[key] must hold a Potential
+        self.cutoff = max(p.cutoff for p in self.potentials.values())  # type: ignore
         self.periodic_table_index = periodic_table_index
         self._has_extra_potentials = self._check_has_extra_potentials()
+        self._dummy = Potential(self.symbols)  # Register class for jit
 
     def _check_has_extra_potentials(self) -> bool:
         return any(p._enabled for k, p in self.potentials.items() if k != "nnp")
 
+    def legacy_state_dict(self) -> tp.Any:
+        r"""Get a state dict compatible with old torchani versions"""
+        state_dict = self.state_dict()
+        device = state_dict["potentials.nnp.aev_computer.radial.shifts"].device
+        dtype = state_dict["potentials.nnp.aev_computer.radial.shifts"].dtype
+        new_state_dict = {
+            "aev_computer.default_shifts": torch.zeros(
+                (0, 3), dtype=torch.int64, device=device
+            ),
+            "aev_computer.default_cell": torch.eye(
+                3, dtype=dtype, device=device
+            ),
+        }
+        for k, v in state_dict.items():
+            if k == "atomic_numbers":
+                continue
+            if k.startswith("potentials.nnp.aev_computer"):
+                new_key = (
+                    k.replace("potentials.nnp.", "")
+                    .replace("angular.sections", "ShfZ")
+                    .replace("angular.shifts", "ShfA")
+                    .replace("radial.shifts", "ShfR")
+                    .replace("angular.zeta", "Zeta")
+                    .replace("radial.eta", "EtaR")
+                    .replace("angular.eta", "EtaA")
+                )
+                if "radial.shifts" in k:
+                    v = v.view(1, -1)
+                if "angular.shifts" in k:
+                    v = v.view(1, 1, -1, 1)
+                if "angular.sections" in k:
+                    v = v.view(1, 1, 1, -1)
+                if "radial.eta" in k:
+                    v = v.view(1, 1)
+                if "angular.eta" in k:
+                    v = v.view(1, 1, 1, 1)
+                if "zeta" in k:
+                    v = v.view(1, 1, 1, 1)
+            elif k.startswith("potentials.nnp.neural_networks"):
+                new_key = (
+                    k.replace("members.", "")
+                    .replace("atomics.", "")
+                    .replace("layers.", "")
+                    .replace("potentials.nnp.", "")
+                )
+            else:
+                new_key = k
+            new_state_dict[new_key] = v
+        largest_layer = max(
+            int(m.split(".")[-2])
+            for m in new_state_dict.keys()
+            if ("neural_networks" in m and "final_layer" not in m)
+        )
+        new_state_dict = {
+            k.replace("final_layer", str(largest_layer + 1)): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".3.weight", ".6.weight").replace(".3.bias", ".6.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".2.weight", ".4.weight").replace(".2.bias", ".4.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".1.weight", ".2.weight").replace(".1.bias", ".2.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        return new_state_dict
+
     @torch.jit.export
     def set_active_members(self, idxs: tp.List[int]) -> None:
-        self.potentials["nnp"].neural_networks.set_active_members(idxs)
+        # NOTE: Awkward ignore directive and assert required due to pytorch typing not
+        # being great
+        nn = self.potentials["nnp"].neural_networks
+        assert not isinstance(nn, Tensor)
+        nn.set_active_members(idxs)  # type: ignore[operator]
 
     @torch.jit.unused
     def set_enabled(self, key: str, val: bool = True) -> None:
         if key == "energy_shifter":
             self.energy_shifter._enabled = val
         else:
-            self.potentials[key]._enabled = val
+            tp.cast(Potential, self.potentials[key])._enabled = val
         self._has_extra_potentials = self._check_has_extra_potentials()
 
     @torch.jit.export
     def set_strategy(self, strategy: str) -> None:
-        self.potentials["nnp"].aev_computer.set_strategy(strategy)
+        # NOTE: Awkward ignore directive and assert required due to pytorch typing not
+        # being great
+        computer = self.potentials["nnp"].aev_computer
+        assert not isinstance(computer, Tensor)
+        computer.set_strategy(strategy)  # type: ignore[operator]
 
     # Entrypoint that uses neighbors
     # For now this assumes that there is only one potential with ensemble values
@@ -177,6 +263,7 @@ class _ANI(torch.nn.Module):
         charge: int = 0,
         atomic: bool = False,
         ensemble_values: bool = False,
+        _molecule_idxs: tp.Optional[Tensor] = None,
     ) -> EnergiesScalars:
         r"""This entrypoint supports input from an external neighborlist
 
@@ -184,10 +271,22 @@ class _ANI(torch.nn.Module):
         """
         self._check_inputs(species, coords, charge)
         elem_idxs = self.species_converter(species, nop=not self.periodic_table_index)
+
         # Discard dist larger than the cutoff, which may be present if the neighbors
         # come from a program that uses a skin value to conditionally rebuild
         # (Verlet lists in MD engine). Also discard dummy atoms
         neighbors = narrow_down(self.cutoff, species, coords, neighbor_idxs, shifts)
+
+        if _molecule_idxs is not None:
+            if not (torch.jit.is_scripting() or torch.compiler.is_compiling()):
+                warnings.warn("molecule_idxs is experimental and subject to change")
+            if coords.shape[0] != 1:
+                raise ValueError("molecule_idxs expects only one conformation")
+            if len(_molecule_idxs) != coords.shape[1]:
+                raise ValueError(
+                    "molecule_idxs must be the same length as num atoms, if passed"
+                )
+            neighbors = discard_inter_molecule_pairs(neighbors, _molecule_idxs)
         return self.compute_from_neighbors(
             elem_idxs, coords, neighbors, charge, atomic, ensemble_values
         )
@@ -199,8 +298,8 @@ class _ANI(torch.nn.Module):
         Assumes that the atomic networks are multi layer perceptrons (MLPs)
         with `torchani.nn.TightCELU` activation functions.
         """
-        _infer = self.potentials["nnp"].neural_networks.to_infer_model(use_mnp=use_mnp)
-        self.potentials["nnp"].neural_networks = _infer
+        _infer = self.nnp.neural_networks.to_infer_model(use_mnp=use_mnp)
+        self.nnp.neural_networks = _infer
         return self
 
     def ase(
@@ -234,32 +333,42 @@ class _ANI(torch.nn.Module):
 
     # TODO This is confusing, it may be a good idea to deprecate it, or at least warn
     def __len__(self):
-        return self.potentials["nnp"].neural_networks.get_active_members_num()
+        return self.nnp.neural_networks.get_active_members_num()
 
     # TODO This is confusing, it may be a good idea to deprecate it, or at least warn?
     def __getitem__(self, idx: int) -> tpx.Self:
-        _nn = self.potentials["nnp"].neural_networks
+        _nn = self.neural_networks
         if not hasattr(_nn, "members"):
             raise ValueError("Can only fetch submodel from an ensemble")
-        self.potentials["nnp"].neural_networks = None  # type: ignore
+        self.nnp.neural_networks = None  # type: ignore
         model = deepcopy(self)
-        self.potentials["nnp"].neural_networks = _nn
-        model.potentials["nnp"].neural_networks = deepcopy(_nn[idx])
+        self.nnp.neural_networks = tp.cast(AtomicContainer, _nn)
+        # _nn is guaranteed to be indexable since it has "members" attr
+        model.nnp.neural_networks = deepcopy(_nn[idx])  # type: ignore
         return model
+
+    # Needed for typing
+    @property
+    @torch.jit.unused
+    def nnp(self) -> NNPotential:
+        r""":meta private:"""
+        nnp = self.potentials["nnp"]
+        assert isinstance(nnp, NNPotential)
+        return nnp
 
     # Needed for client classes that depend on accessing aev_computer directly
     @property
     @torch.jit.unused
     def neural_networks(self) -> AtomicContainer:
         r""":meta private:"""
-        return self.potentials["nnp"].neural_networks
+        return self.nnp.neural_networks
 
     # Needed for client classes that depend on accessing neural_networks directly
     @property
     @torch.jit.unused
     def aev_computer(self) -> AEVComputer:
         r""":meta private:"""
-        return self.potentials["nnp"].aev_computer
+        return self.nnp.aev_computer
 
     # Needed for bw compatibility
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs) -> None:
@@ -308,10 +417,20 @@ class ANI(_ANI):
             if ensemble_values:
                 energies = energies.unsqueeze(0)
             if self.potentials["nnp"]._enabled:
-                aevs = self.potentials["nnp"].aev_computer(elem_idxs, coords, cell, pbc)
+                # Guaranteed to be an NNPotential. PyTorch typing is not great,
+                # so the ignore directives are required
+                aevs = self.potentials["nnp"].aev_computer(
+                    elem_idxs,
+                    coords,
+                    cell,
+                    pbc,
+                )  # type: ignore[operator]
                 energies = energies + self.potentials["nnp"].neural_networks(
-                    elem_idxs, aevs, atomic, ensemble_values
-                )
+                    elem_idxs,
+                    aevs,
+                    atomic,
+                    ensemble_values,
+                )  # type: ignore[operator]
             if self.energy_shifter._enabled:
                 energies = energies + self.energy_shifter(elem_idxs, atomic=atomic)
             return SpeciesEnergies(elem_idxs, energies)
@@ -357,9 +476,13 @@ class ANI(_ANI):
         first_neighbors = neighbors
         for pot in self.potentials.values():
             if pot._enabled:
-                neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)
-                # Disregard atomic scalars that potentials may output
-                result = pot.compute_from_neighbors(
+                # Guaranteed to be an Potential. PyTorch typing is not great,
+                # so the ignore directives are required
+                neighbors = discard_outside_cutoff(
+                    first_neighbors,
+                    pot.cutoff,  # type: ignore[arg-type]
+                )
+                result = pot.compute_from_neighbors(  # type: ignore[operator]
                     elem_idxs, coords, neighbors, None, charge, atomic, ensemble_values
                 )
                 energies = energies + result.energies
@@ -592,8 +715,8 @@ class ANIq(_ANI):
             potentials=potentials,
             periodic_table_index=periodic_table_index,
         )
-        _nn = self.potentials["nnp"].neural_networks
-        _aev_computer = self.potentials["nnp"].aev_computer
+        _nn = self.nnp.neural_networks
+        _aev_computer = self.nnp.aev_computer
         if charge_networks is None:
             self.potentials["nnp"] = MergedChargesNNPotential(
                 _aev_computer, _nn, charge_normalizer
@@ -634,14 +757,15 @@ class ANIq(_ANI):
         first_neighbors = neighbors
         for k, pot in self.potentials.items():
             if pot._enabled:
-                neighbors = discard_outside_cutoff(first_neighbors, pot.cutoff)
+                neighbors = discard_outside_cutoff(
+                    first_neighbors, pot.cutoff)  # type: ignore[arg-type]
                 if k == "coulomb":
-                    _e, _qs = pot.compute_from_neighbors(
+                    _e, _qs = pot.compute_from_neighbors(  # type: ignore[operator]
                         elem_idxs, coords, neighbors,
                         qs, charge, atomic, ensemble_values
                     )
                 else:
-                    _e, _qs = pot.compute_from_neighbors(
+                    _e, _qs = pot.compute_from_neighbors(  # type: ignore[operator]
                         elem_idxs, coords, neighbors,
                         None, charge, atomic, ensemble_values
                     )
@@ -1013,6 +1137,9 @@ def simple_ani(
     periodic_table_index: bool = True,
     neighborlist: NeighborlistArg = "all_pairs",
     repulsion_cutoff: bool = True,
+    self_energies: tp.Union[
+        tp.Optional[tp.Dict[str, float]], tp.Literal["zero"]
+    ] = None,
 ) -> ANI:
     r"""Flexible builder to create ANI-style models
 
@@ -1050,7 +1177,12 @@ def simple_ani(
         kwargs={"bias": bias, "activation": parse_activation(activation)},
     )
     asm.set_neighborlist(neighborlist)
-    asm.set_gsaes_as_self_energies(lot)
+    if self_energies == "zero":
+        asm.set_zeros_as_self_energies()
+    elif self_energies is not None:
+        asm.set_self_energies(self_energies)
+    else:
+        asm.set_gsaes_as_self_energies(lot)
     if repulsion:
         asm.add_potential(
             RepulsionXTB,
@@ -1099,6 +1231,10 @@ def simple_aniq(
     neighborlist: NeighborlistArg = "all_pairs",
     normalize: bool = True,
     coulomb: tp.Optional[str] = None,
+    coulomb_cutoff: tp.Optional[float] = None,
+    self_energies: tp.Union[
+        tp.Optional[tp.Dict[str, float]], tp.Literal["zero"]
+    ] = None,
 ) -> ANIq:
     r"""Flexible builder to create ANI-style models that output charges
 
@@ -1168,10 +1304,12 @@ def simple_aniq(
         )
 
     asm.set_neighborlist(neighborlist)
-    if not dummy_energies:
-        asm.set_gsaes_as_self_energies(lot)
-    else:
+    if self_energies == "zero" or dummy_energies:
         asm.set_zeros_as_self_energies()
+    elif self_energies is not None:
+        asm.set_self_energies(self_energies)
+    else:
+        asm.set_gsaes_as_self_energies(lot)
     if repulsion and not dummy_energies:
         asm.add_potential(RepulsionXTB, name="repulsion_xtb", cutoff=radial_cutoff)
     if dispersion and not dummy_energies:
@@ -1182,12 +1320,14 @@ def simple_aniq(
     if coulomb == "full":
         asm.add_potential(Coulomb, name="coulomb")
     elif coulomb == "erf":
+        coulomb_cutoff = 12.0 if coulomb_cutoff is None else coulomb_cutoff
         asm.add_potential(
-            Coulomb, name="coulomb", cutoff=12.0, kwargs={"damp_fn": "erf"}
+            Coulomb, name="coulomb", cutoff=coulomb_cutoff, kwargs={"damp_fn": "erf"}
         )
     elif coulomb == "tanh":
+        coulomb_cutoff = 12.0 if coulomb_cutoff is None else coulomb_cutoff
         asm.add_potential(
-            Coulomb, name="coulomb", cutoff=12.0, kwargs={"damp_fn": "tanh"}
+            Coulomb, name="coulomb", cutoff=coulomb_cutoff, kwargs={"damp_fn": "tanh"}
         )
     else:
         assert coulomb is None
@@ -1201,18 +1341,46 @@ def _fetch_state_dict(
 ) -> tp.OrderedDict[str, Tensor]:
     # NOTE: torch.hub caches remote state_dicts after first download
     if local:
-        dict_ = torch.load(state_dict_file, map_location=torch.device("cpu"))
+        dict_ = torch.load(
+            state_dict_file, map_location=torch.device("cpu"), weights_only=True
+        )
         return OrderedDict(dict_)
-    PUBLIC_ZOO_URL = (
-        "https://github.com/roitberg-group/torchani_model_zoo/releases/download/v0.1/"
-    )
-    if private:
-        url = "http://moria.chem.ufl.edu/animodel/private/"
+
+    repo_id = "roitberg-group"
+    if state_dict_file == "charge_nn_state_dict.pt":
+        model_name = "animbis"
     else:
-        url = PUBLIC_ZOO_URL
-    dict_ = torch.hub.load_state_dict_from_url(
-        f"{url}/{state_dict_file}",
-        model_dir=str(state_dicts_dir()),
-        map_location=torch.device("cpu"),
+        model_name = state_dict_file.replace("_state_dict.pt", "").replace(".pt", "")
+    hf_kw = dict(
+        repo_id=f"{repo_id}/{model_name}",
+        filename=state_dict_file,
+        repo_type="model",
+        local_dir=str(state_dicts_dir()),
+        token=True if private else None,
     )
+    logger = logging.getLogger("huggingface_hub")
+    curr_level = logger.getEffectiveLevel()
+    logger.setLevel(logging.ERROR)
+    try:
+        # First attempt local file
+        path = hf_hub_download(**hf_kw, local_files_only=True)  # type: ignore
+        dict_ = torch.load(path, map_location=torch.device("cpu"), weights_only=True)
+    except Exception:
+        # Try downloading from hf
+        try:
+            path = hf_hub_download(**hf_kw, force_download=True)  # type: ignore
+            dict_ = torch.load(
+                path, map_location=torch.device("cpu"), weights_only=True
+            )
+        except Exception:
+            if private:
+                url = "http://moria.chem.ufl.edu/animodel/private/"
+            else:
+                url = "https://github.com/roitberg-group/torchani_model_zoo/releases/download/v0.1/"  # noqa: E501
+            dict_ = torch.hub.load_state_dict_from_url(
+                f"{url}/{state_dict_file}",
+                model_dir=str(state_dicts_dir()),
+                map_location=torch.device("cpu"),
+            )
+    logger.setLevel(curr_level)
     return OrderedDict(dict_)

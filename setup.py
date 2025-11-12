@@ -9,6 +9,12 @@ from setuptools import setup
 
 
 def maybe_download_cub(torch_include_dirs: tp.Iterable[str]) -> str:
+    import torch
+
+    cuda_ver = float(torch.version.cuda) if torch.version.cuda is not None else 0
+    # Cub is not required for cuda 12.8 or higher
+    if cuda_ver >= 12.8:
+        return ""
     print("-" * 75)
     print("The CUB library is needed to build the cuAEV extension")
     for d in torch_include_dirs:
@@ -92,6 +98,24 @@ def mnp_extension_kwargs(debug: bool) -> tp.Dict[str, tp.Any]:
     )
 
 
+def clist_extension_kwargs(debug: bool) -> tp.Dict[str, tp.Any]:
+    print("-" * 75)
+    print("Will build Cell List")
+
+    cxx_args = ["-std=c++17", "-fopenmp"]
+    if debug:
+        cxx_args.append("-DTORCHANI_DEBUG")
+
+    print("C++ compiler args:")
+    for arg in cxx_args:
+        print(f"    {arg}")
+    return dict(
+        name="torchani.cell_list",
+        sources=["torchani/csrc/cell_list.cpp"],
+        extra_compile_args={"cxx": cxx_args},
+    )
+
+
 def will_not_build_extensions_warning(torch_import_error: bool = False) -> None:
     print("-" * 75)
     if torch_import_error:
@@ -112,7 +136,13 @@ def will_not_build_extensions_warning(torch_import_error: bool = False) -> None:
 
 
 TORCHANI_FLAGS = {"ext", "ext-all-sms", "ext-debug", "ext-no-opt"}
-SUPPORTED_SMS = {"60", "61", "70", "75", "80", "86"}
+# Pascal: 60, 61
+# Volta: 70 (1st gen TensorCore)
+# Turing: 75 (2nd gen TensorCore)
+# Ampere: 80, 86 (3d gen TensorCore)
+# Ada Lovelace, Hopper: 89 (4th gen TensorCore)
+# Blackwell: 100 (5th gen TensorCore)
+SUPPORTED_SMS = {"60", "61", "70", "75", "80", "86", "89", "100"}
 for sm in SUPPORTED_SMS:
     TORCHANI_FLAGS.add(f"ext-sm{sm}")
 
@@ -160,14 +190,16 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
         print("-" * 75)
         print("Will add all SMs torch supports")
         sms = {"60", "61", "70"}
-        _torch_cuda = torch.version.cuda
-        cuda_version = float(_torch_cuda) if _torch_cuda is not None else 0
-        if cuda_version >= 10:
+        cuda_ver = float(torch.version.cuda) if torch.version.cuda is not None else 0
+        if cuda_ver >= 10:
             sms.add("75")
-        if cuda_version >= 11:
+        if cuda_ver >= 11:
             sms.add("80")
-        if cuda_version >= 11.1:
+        if cuda_ver >= 11.1:
             sms.add("86")
+            sms.add("89")
+        if cuda_ver >= 12.8:
+            sms.add("100")
         return sms
 
     def collect_compatible_sms() -> tp.Set[str]:
@@ -189,17 +221,27 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
 
     # Flags for requesting specific SMs
     sms: tp.Set[str] = set()
+    TORCHANI_BUILD_SMS = os.getenv("TORCHANI_SMS", "").split(",")
     for sm in SUPPORTED_SMS:
-        if f"ext-sm{sm}" in sys.argv:
-            sys.argv.remove(f"ext-sm{sm}")
+        if f"ext-sm{sm}" in sys.argv or sm in TORCHANI_BUILD_SMS:
+            try:
+                sys.argv.remove(f"ext-sm{sm}")
+            except ValueError:
+                pass
             sms.add(sm)
     # Flag for requesting compatible SMs detection
-    if "ext" in sys.argv:
-        sys.argv.remove("ext")
+    if "ext" in sys.argv or os.getenv("TORCHANI_BUILD_EXT"):
+        try:
+            sys.argv.remove("ext")
+        except ValueError:
+            pass
         sms.update(collect_compatible_sms())
     # Flag for requesting all sms
-    if "ext-all-sms" in sys.argv:
-        sys.argv.remove("ext-all-sms")
+    if "ext-all-sms" in sys.argv or os.getenv("TORCHANI_BUILD_ALL_SMS"):
+        try:
+            sys.argv.remove("ext-all-sms")
+        except ValueError:
+            pass
         sms.update(collect_all_sms())
 
     # Compile extensions with DEBUG infomation
@@ -223,9 +265,15 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
 
     cuaev_kwargs = cuaev_extension_kwargs(sms, debug, opt)
     mnp_kwargs = mnp_extension_kwargs(debug=debug)
+    clist_kwargs = clist_extension_kwargs(debug=debug)
 
     # CUB needed to build the cuAEV, download it if not found bundled with Torch
-    torch_include_dirs = torch.utils.cpp_extension.include_paths(cuda=True)
+    include_paths_kwargs: tp.Dict[str, tp.Any]
+    if float(".".join(torch.__version__.split(".")[:2])) >= 2.7:
+        include_paths_kwargs = {"device_type": "cuda"}
+    else:
+        include_paths_kwargs = {"cuda": True}
+    torch_include_dirs = torch.utils.cpp_extension.include_paths(**include_paths_kwargs)
     cub_include_dir = maybe_download_cub(torch_include_dirs)
     if cub_include_dir:
         cuaev_kwargs["include_dirs"].append(cub_include_dir)
@@ -234,7 +282,11 @@ def setup_kwargs() -> tp.Dict[str, tp.Any]:
     # CUDA libraries, so CUDAExtension is needed
     print("-" * 75)
     return {
-        "ext_modules": [CUDAExtension(**cuaev_kwargs), CUDAExtension(**mnp_kwargs)],
+        "ext_modules": [
+            CUDAExtension(**cuaev_kwargs),
+            CUDAExtension(**mnp_kwargs),
+            CUDAExtension(**clist_kwargs),
+        ],
         "cmdclass": {
             "build_ext": BuildExtension.with_options(
                 no_python_abi_suffix=True,

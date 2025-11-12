@@ -38,15 +38,19 @@ def run(
     num_warm_up: tpx.Annotated[
         int,
         Option("-n", "--num-warm-up", help="Num of warm up steps"),
-    ] = 50,
+    ] = 100,
     num_profile: tpx.Annotated[
         int,
         Option("-n", "--num-profile", help="Num of profiling steps"),
-    ] = 20,
+    ] = 200,
     pbc: tpx.Annotated[
         bool,
         Option("-p/-P", "--pbc/--no-pbc", help="Benchmark for the PBC case"),
     ] = True,
+    free_cuda_cache: tpx.Annotated[
+        bool,
+        Option("--free-cuda-cache/--no-free-cuda-cache"),
+    ] = False,
 ) -> None:
     import torch
     from torchani.neighbors import _parse_neighborlist
@@ -56,7 +60,7 @@ def run(
 
     target_atomic_density = 0.1
     # num_atoms / cell_size has to be a constant, equal to the water atomic density
-    # which is around ~0.1 Ang^-1
+    # which is around ~0.1 Ang^-3
 
     no_tqdm = not use_tqdm
     device = torch.device("cuda" if cuda else "cpu")
@@ -112,8 +116,8 @@ def run(
                     cell=molecs.cell,
                     pbc=molecs.pbc,
                 )
-                if cuda:
-                    torch.cuda.empty_cache()
+            if cuda and free_cuda_cache:
+                torch.cuda.empty_cache()
             if k != "dummy":
                 timer.start_profiling()
             slice_ = slice(num_warm_up, num_warm_up + num_profile)
@@ -133,8 +137,8 @@ def run(
                     pbc=molecs.pbc,
                 )
                 timer.end_range(str(n))
-                if cuda:
-                    torch.cuda.empty_cache()
+            if cuda and free_cuda_cache:
+                torch.cuda.empty_cache()
             if k != "dummy":
                 timer.stop_profiling()
                 timer.dump_csv(
@@ -170,7 +174,7 @@ def plot() -> None:
         ax.set_xlabel("Num. atoms")
         ax.set_ylabel("Median walltime per call, CUDA (ms)")
         # ax.set_title("PBC benchmark")
-        ax.legend()
+        ax.legend(markerscale=2.5)
     # plt.savefig("/home/ipickering/Figures/pbc-neighborlist")
 
     fig, ax = plt.subplots()
@@ -195,7 +199,7 @@ def plot() -> None:
         ax.set_xlabel("Num. atoms")
         ax.set_ylabel("Median walltime per call, CUDA (ms)")
         # ax.set_title("No-PBC benchmark")
-        ax.legend()
+        ax.legend(markerscale=2.5)
     # plt.savefig("/home/ipickering/Figures/no-pbc-neighborlist")
     plt.show()
 

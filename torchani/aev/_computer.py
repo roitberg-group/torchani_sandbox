@@ -15,7 +15,7 @@ from torchani.neighbors import (
     NeighborlistArg,
     Neighbors,
 )
-from torchani.cutoffs import CutoffArg
+from torchani.cutoffs import CutoffArg, _parse_cutoff_fn
 from torchani.aev._terms import (
     _parse_angular_term,
     _parse_radial_term,
@@ -88,6 +88,11 @@ class AEVComputer(torch.nn.Module):
         # Terms
         self.radial = _parse_radial_term(radial)
         self.angular = _parse_angular_term(angular)
+        if cutoff_fn is not None:
+            _cutoff_fn = _parse_cutoff_fn(cutoff_fn)
+            self.radial.cutoff_fn = _cutoff_fn
+            self.angular.cutoff_fn = _cutoff_fn
+
         if not (self.angular.cutoff_fn.is_same(self.radial.cutoff_fn)):
             raise ValueError("Cutoff fn must be the same for angular and radial terms")
         if self.angular.cutoff > self.radial.cutoff:
@@ -673,3 +678,36 @@ class AEVComputer(torch.nn.Module):
             )
             state_dict[k] = state_dict.pop(oldk)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
+    def legacy_state_dict(self) -> tp.Any:
+        r"""Get a state dict compatible with old torchani versions"""
+        state_dict = self.state_dict()
+        device = state_dict["radial.shifts"].device
+        dtype = state_dict["radial.shifts"].dtype
+        new_state_dict = {
+            "default_shifts": torch.zeros((0, 3), dtype=torch.int64, device=device),
+            "default_cell": torch.eye(3, dtype=dtype, device=device),
+        }
+        for k, v in state_dict.items():
+            new_key = (
+                k.replace("angular.sections", "ShfZ")
+                .replace("angular.shifts", "ShfA")
+                .replace("radial.shifts", "ShfR")
+                .replace("angular.zeta", "Zeta")
+                .replace("radial.eta", "EtaR")
+                .replace("angular.eta", "EtaA")
+            )
+            if "radial.shifts" in k:
+                v = v.view(1, -1)
+            if "angular.shifts" in k:
+                v = v.view(1, 1, -1, 1)
+            if "angular.sections" in k:
+                v = v.view(1, 1, 1, -1)
+            if "radial.eta" in k:
+                v = v.view(1, 1)
+            if "angular.eta" in k:
+                v = v.view(1, 1, 1, 1)
+            if "zeta" in k:
+                v = v.view(1, 1, 1, 1)
+            new_state_dict[new_key] = v
+        return new_state_dict

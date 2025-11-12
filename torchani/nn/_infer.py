@@ -35,15 +35,7 @@ def _check_openmp_threads() -> None:
         raise RuntimeError(f"OMP_NUM_THREADS set to an incorrect value: {num_threads}")
 
 
-@jit_unused_if_no_mnp()
-def _is_same_tensor_optimized(last: Tensor, current: Tensor) -> bool:
-    if torch.jit.is_scripting():
-        return torch.ops.mnp.is_same_tensor(last, current)
-    return last.data_ptr() == current.data_ptr()
-
-
 def _is_same_tensor(last: Tensor, current: Tensor) -> bool:
-    # Potentially, slower fallback if MNP is not installed (until JIT supports data_ptr)
     same_shape = last.shape == current.shape
     if not same_shape:
         return False
@@ -94,7 +86,7 @@ class BmmEnsemble(AtomicContainer):
             raise TypeError("BmmEnsemble can only take an Ensemble as an input")
         self.atomics = torch.nn.ModuleDict(
             {
-                s: BmmAtomicNetwork([m.atomics[s] for m in ensemble.members])
+                s: BmmAtomicNetwork([m.atomics[s] for m in ensemble.members])  # type: ignore # noqa:E501
                 for s in ensemble.symbols
             }
         )
@@ -117,12 +109,7 @@ class BmmEnsemble(AtomicContainer):
         assert aevs.shape[0] == 1, "BmmEnsemble only supports single-conformer inputs"
 
         # Initialize each elem_idxs if it has not been init or the species has changed
-        if self._MNP_IS_INSTALLED:
-            same_elem_idxs = _is_same_tensor_optimized(self._last_species, elem_idxs)
-        else:
-            same_elem_idxs = _is_same_tensor(self._last_species, elem_idxs)
-
-        if not same_elem_idxs:
+        if not _is_same_tensor(self._last_species, elem_idxs):
             self._idx_list = _make_idx_list(elem_idxs, self.num_species, self._idx_list)
         self._last_species = elem_idxs
 
@@ -237,14 +224,11 @@ class MNPNetworks(AtomicContainer):
 
         # MNP strategy in general is hard to maintain so emit warnings
         if use_mnp:
-            warnings.warn(
-                "MNPNetworks with MNP C++ extension is experimental."
-                " It has a complex implementation, and may be removed in the future."
-            )
+            warnings.warn("MNPNetworks with MNP C++ extension is experimental.")
         else:
             warnings.warn(
                 "MNPNetworks with no MNP C++ extension is not optimized."
-                " It is meant as a proof of concept and may be removed in the future."
+                " It is meant only for testing purposes"
             )
 
         self._MNP_IS_INSTALLED = MNP_IS_INSTALLED
@@ -257,12 +241,12 @@ class MNPNetworks(AtomicContainer):
         if self._is_bmm:
             self.atomics = torch.nn.ModuleDict(
                 {
-                    s: BmmAtomicNetwork([m.atomics[s] for m in module.members])
+                    s: BmmAtomicNetwork([m.atomics[s] for m in module.members])  # type: ignore # noqa:E501
                     for s in module.symbols
                 }
             )
         else:
-            self.atomics = module.atomics
+            self.atomics = module.atomics  # type: ignore
         self._use_mnp = use_mnp
 
         # Bookkeeping for optimization
@@ -323,15 +307,15 @@ class MNPNetworks(AtomicContainer):
         for atomic in self.atomics.values():
             if not isinstance(atomic.activation, type(activation)):
                 raise ValueError("All atomic networks must have the same activation fn")
-            num_layers.append(len(atomic.layers) + 1)
+            num_layers.append(len(atomic.layers) + 1)  # type: ignore
             if isinstance(atomic, BmmAtomicNetwork):
                 for layer in itertools.chain(atomic.layers, [atomic.final_layer]):
-                    weights.append(layer.weight.clone().detach())
-                    biases.append(layer.bias.clone().detach())
+                    weights.append(layer.weight.clone().detach())  # type: ignore
+                    biases.append(layer.bias.clone().detach())  # type: ignore
             elif isinstance(atomic, AtomicNetwork):
                 for layer in itertools.chain(atomic.layers, [atomic.final_layer]):
-                    weights.append(layer.weight.clone().detach().transpose(0, 1))
-                    biases.append(layer.bias.clone().detach().unsqueeze(0))
+                    weights.append(layer.weight.clone().detach().transpose(0, 1))  # type: ignore  # noqa:E501
+                    biases.append(layer.bias.clone().detach().unsqueeze(0))  # type: ignore  # noqa:E501
             else:
                 raise ValueError(f"Unsupported atomic network {type(atomic)}")
         return weights, biases, num_layers
@@ -349,12 +333,7 @@ class MNPNetworks(AtomicContainer):
         assert not atomic, "MNPNetworks doesn't support atomic energies"
         aevs = aevs.flatten(0, 1)
 
-        if self._MNP_IS_INSTALLED:
-            same_species = _is_same_tensor_optimized(self._last_species, elem_idxs)
-        else:
-            same_species = _is_same_tensor(self._last_species, elem_idxs)
-
-        if not same_species:
+        if not _is_same_tensor(self._last_species, elem_idxs):
             self._idx_list = _make_idx_list(elem_idxs, self.num_species, self._idx_list)
         self._last_species = elem_idxs
 

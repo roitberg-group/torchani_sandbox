@@ -24,6 +24,7 @@ class SingleNN(AtomicContainer):
         network: Atomic network to wrap, output dimension should be equal
             to the number of supported elements
     """
+
     def __init__(
         self,
         symbols: tp.Sequence[str],
@@ -205,6 +206,7 @@ class ANISharedNetworks(AtomicContainer):
             will share networks if the same ref is used for different keys
         alias: Allow the class to map different elements to the same atomic network.
     """
+
     def __init__(
         self,
         shared: AtomicNetwork,
@@ -225,7 +227,7 @@ class ANISharedNetworks(AtomicContainer):
         self.register_buffer("atomic_numbers", atomic_numbers, persistent=False)
 
     def __getitem__(self, idx: str) -> AtomicNetwork:
-        return self.atomics[idx]
+        return tp.cast(AtomicNetwork, self.atomics[idx])
 
     def forward(
         self,
@@ -281,9 +283,7 @@ class ANISharedNetworks(AtomicContainer):
         for s in symbols:
             layer_dims = (out_shared,) + dims.get(s, default_dims) + (out_dim,)
             modules[s] = AtomicNetwork(
-                layer_dims=layer_dims,
-                activation=activation,
-                bias=bias
+                layer_dims=layer_dims, activation=activation, bias=bias
             )
         return cls(shared, modules)
 
@@ -357,6 +357,38 @@ class ANINetworks(AtomicContainer):
             state_dict[new_key] = state_dict.pop(k)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
+    def legacy_state_dict(self) -> tp.Any:
+        r"""Get a state dict compatible with old torchani versions"""
+        state_dict = self.state_dict()
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            new_key = (
+                k.replace("members.", "").replace("atomics.", "").replace("layers.", "")
+            )
+            new_state_dict[new_key] = v
+        largest_layer = max(
+            int(m.split(".")[-2])
+            for m in new_state_dict.keys()
+            if ("final_layer" not in m)
+        )
+        new_state_dict = {
+            k.replace("final_layer", str(largest_layer + 1)): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".3.weight", ".6.weight").replace(".3.bias", ".6.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".2.weight", ".4.weight").replace(".2.bias", ".4.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".1.weight", ".2.weight").replace(".1.bias", ".2.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        return new_state_dict
+
     def __init__(self, modules: tp.Dict[str, AtomicNetwork], alias: bool = False):
         super().__init__()
         if any(s not in PERIODIC_TABLE for s in modules):
@@ -369,10 +401,12 @@ class ANINetworks(AtomicContainer):
             [ATOMIC_NUMBER[e] for e in modules], dtype=torch.long
         )
         self.register_buffer("atomic_numbers", atomic_numbers, persistent=False)
-        self.out_dim: int = next(iter(self.atomics.values())).final_layer.out_features
+
+        final_layer = next(iter(self.atomics.values())).final_layer
+        self.out_dim: int = final_layer.out_features  # type: ignore
 
     def __getitem__(self, idx: str) -> AtomicNetwork:
-        return self.atomics[idx]
+        return tp.cast(AtomicNetwork, self.atomics[idx])
 
     def forward(
         self,
@@ -439,9 +473,7 @@ class ANINetworks(AtomicContainer):
         for s in symbols:
             layer_dims = (in_dim,) + dims.get(s, default_dims) + (out_dim,)
             modules[s] = AtomicNetwork(
-                layer_dims=layer_dims,
-                activation=activation,
-                bias=bias
+                layer_dims=layer_dims, activation=activation, bias=bias
             )
         return cls(modules)
 
@@ -587,6 +619,38 @@ class Ensemble(AtomicContainer):
                 state_dict["".join((prefix, "members.", suffix))] = state_dict.pop(k)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
+    def legacy_state_dict(self) -> tp.Any:
+        r"""Get a state dict compatible with old torchani versions"""
+        state_dict = self.state_dict()
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            new_key = (
+                k.replace("members.", "").replace("atomics.", "").replace("layers.", "")
+            )
+            new_state_dict[new_key] = v
+        largest_layer = max(
+            int(m.split(".")[-2])
+            for m in new_state_dict.keys()
+            if ("final_layer" not in m)
+        )
+        new_state_dict = {
+            k.replace("final_layer", str(largest_layer + 1)): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".3.weight", ".6.weight").replace(".3.bias", ".6.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".2.weight", ".4.weight").replace(".2.bias", ".4.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        new_state_dict = {
+            k.replace(".1.weight", ".2.weight").replace(".1.bias", ".2.bias"): v
+            for k, v in new_state_dict.items()
+        }
+        return new_state_dict
+
     def __init__(self, modules: tp.Iterable[AtomicContainer], repeats: bool = False):
         super().__init__()
         if not repeats and len(set(map(id, modules))) != len(tuple(modules)):
@@ -599,7 +663,12 @@ class Ensemble(AtomicContainer):
             raise ValueError("All modules must support the same number of elements")
 
         self.register_buffer(
-            "atomic_numbers", next(iter(modules)).atomic_numbers, persistent=False)
+            "atomic_numbers", next(iter(modules)).atomic_numbers, persistent=False
+        )
+
+    def __len__(self) -> int:
+        # for bw compat
+        return self.total_members_num
 
     def forward(
         self,
