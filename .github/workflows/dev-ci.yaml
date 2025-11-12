@@ -1,11 +1,11 @@
-name: ci
+name: dev-ci
 
 on:
   workflow_dispatch:
   pull_request:
   push:
     branches:
-      - main
+      - dev
   schedule:
     - cron: '0 0 * * *'
   release:
