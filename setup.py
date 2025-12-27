@@ -124,15 +124,10 @@ def cuda_extension(build_all=False):
     else:  # no gpu detected
         print('Will build for all SMs')
         nvcc_args.append("-gencode=arch=compute_60,code=sm_60")
-        nvcc_args.append("-gencode=arch=compute_61,code=sm_61")
         nvcc_args.append("-gencode=arch=compute_70,code=sm_70")
         cuda_version = float(torch.version.cuda)
-        if cuda_version >= 10:
-            nvcc_args.append("-gencode=arch=compute_75,code=sm_75")
         if cuda_version >= 11:
             nvcc_args.append("-gencode=arch=compute_80,code=sm_80")
-        if cuda_version >= 11.1:
-            nvcc_args.append("-gencode=arch=compute_86,code=sm_86")
         if cuda_version >= 11.8:
             nvcc_args.append("-gencode=arch=compute_89,code=sm_89")
         if cuda_version >= 12.0:
