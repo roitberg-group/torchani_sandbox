@@ -1,6 +1,11 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
+#include <cuda_runtime.h>
+#if CUDART_VERSION >= 12000
+#include <nvtx3/nvToolsExt.h>
+#else
 #include <nvToolsExt.h>
+#endif
 #include <omp.h>
 #include <torch/extension.h>
 
