@@ -1728,7 +1728,7 @@ void cuaev_forward(
   // set cuda device and stream
   at::cuda::CUDAGuard device_guard(coordinates_t.device().index());
   at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
-  at::globalContext().lazyInitCUDA();
+  at::globalContext().lazyInitDevice(c10::DeviceType::CUDA);
 
   // buffer to store all the pairwise distance (Rij)
   Tensor atomJ_t = torch::empty(total_natom_pairs, d_options.dtype(torch::kInt32));
@@ -1822,7 +1822,7 @@ void cuaev_forward_with_half_nbrlist(
   // set cuda device and stream
   at::cuda::CUDAGuard device_guard(coordinates_t.device().index());
   at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
-  at::globalContext().lazyInitCUDA();
+  at::globalContext().lazyInitDevice(c10::DeviceType::CUDA);
 
   // radial and angular share the same data of atomI, startIdxJ and nI
   result.atomI_t = torch::empty(total_atoms * 2, d_options.dtype(torch::kInt32));
@@ -1913,7 +1913,7 @@ void cuaev_forward_with_full_nbrlist(
   // set cuda device and stream
   at::cuda::CUDAGuard device_guard(coordinates_t.device().index());
   at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
-  at::globalContext().lazyInitCUDA();
+  at::globalContext().lazyInitDevice(c10::DeviceType::CUDA);
 
   // radial and angular share the same data of atomI, startIdxJ and nI
   result.atomI_t = torch::empty(total_atoms * 2, d_options.dtype(torch::kInt32));
