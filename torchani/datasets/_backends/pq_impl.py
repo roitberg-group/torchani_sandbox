@@ -17,7 +17,9 @@ try:
     import cudf
     _CUDF_AVAILABLE = True
     default_engine = cudf
-except ImportError:
+except (ImportError, RuntimeError, Exception) as e:
+    # cudf may fail to import if CUDA is not available (e.g., during Docker build)
+    # RuntimeError or other exceptions can occur from CUDA validation
     _CUDF_AVAILABLE = False
 
 try:
