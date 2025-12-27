@@ -154,15 +154,21 @@ def cuda_extension(build_all=False):
 
 
 def mnp_extension():
+    import torch
     from torch.utils.cpp_extension import CUDAExtension
     cxx_args = ['-std=c++17', '-fopenmp']
     if CUAEV_DEBUG:
         cxx_args.append('-DTORCHANI_DEBUG')
+    
+    # CUDA 12+ uses NVTX3 which is header-only, no library needed
+    cuda_version = float(torch.version.cuda.split('.')[0])
+    libs = [] if cuda_version >= 12 else ['nvToolsExt']
+    
     return CUDAExtension(
         name='torchani.mnp',
         sources=["torchani/csrc/mnp.cpp"],
         extra_compile_args={'cxx': cxx_args},
-        libraries=['nvToolsExt'])
+        libraries=libs)
 
 
 def ext_kwargs():
