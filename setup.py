@@ -28,6 +28,10 @@ FAST_BUILD_EXT = FAST_BUILD_EXT or '--ext' in sys.argv
 if '--ext' in sys.argv:
     sys.argv.remove('--ext')
 
+# Also check environment variable for modern build systems
+BUILD_EXT_ALL_SM = BUILD_EXT_ALL_SM or os.environ.get('TORCHANI_BUILD_ALL_EXTENSIONS', '0') == '1'
+FAST_BUILD_EXT = FAST_BUILD_EXT or os.environ.get('TORCHANI_BUILD_EXTENSIONS', '0') == '1'
+
 # Use along with --cuaev for CI test to reduce compilation time on Non-GPUs system
 ONLY_BUILD_SM80 = '--only-sm80' in sys.argv
 if ONLY_BUILD_SM80:
@@ -53,7 +57,14 @@ with open("README.md", "r") as fh:
 
 def maybe_download_cub():
     import torch
-    dirs = torch.utils.cpp_extension.include_paths(cuda=True)
+    
+    # CUDA 12+ includes CUB natively - no need to download
+    cuda_version = float(torch.version.cuda.split('.')[0])
+    if cuda_version >= 12:
+        log.info(f'CUDA {torch.version.cuda} includes CUB natively, skipping download')
+        return []
+    
+    dirs = torch.utils.cpp_extension.include_paths()
     for d in dirs:
         cubdir = os.path.join(d, 'cub')
         log.info(f'Searching for cub at {cubdir}...')
@@ -122,6 +133,12 @@ def cuda_extension(build_all=False):
             nvcc_args.append("-gencode=arch=compute_80,code=sm_80")
         if cuda_version >= 11.1:
             nvcc_args.append("-gencode=arch=compute_86,code=sm_86")
+        if cuda_version >= 11.8:
+            nvcc_args.append("-gencode=arch=compute_89,code=sm_89")
+        if cuda_version >= 12.0:
+            nvcc_args.append("-gencode=arch=compute_90,code=sm_90")
+        if cuda_version >= 12.6:
+            nvcc_args.append("-gencode=arch=compute_100,code=sm_100")
     if CUAEV_DEBUG:
         nvcc_args.append('-DTORCHANI_DEBUG')
     if CUAEV_OPT:
@@ -133,18 +150,19 @@ def cuda_extension(build_all=False):
         name='torchani.cuaev',
         sources=["torchani/csrc/cuaev.cpp", "torchani/csrc/aev.cu"],
         include_dirs=include_dirs,
-        extra_compile_args={'cxx': ['-std=c++14'], 'nvcc': nvcc_args})
+        extra_compile_args={'cxx': ['-std=c++17'], 'nvcc': nvcc_args})
 
 
 def mnp_extension():
     from torch.utils.cpp_extension import CUDAExtension
-    cxx_args = ['-std=c++14', '-fopenmp']
+    cxx_args = ['-std=c++17', '-fopenmp']
     if CUAEV_DEBUG:
         cxx_args.append('-DTORCHANI_DEBUG')
     return CUDAExtension(
         name='torchani.mnp',
         sources=["torchani/csrc/mnp.cpp"],
-        extra_compile_args={'cxx': cxx_args})
+        extra_compile_args={'cxx': cxx_args},
+        libraries=['nvToolsExt'])
 
 
 def ext_kwargs():
