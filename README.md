@@ -1,1 +1,1 @@
-⚠️  **Important**: DO NOT USE THIS REPOSITORY, use https://aiqm.github.io/torchani.git instead
+⚠️  **Important**: DO NOT USE THIS REPOSITORY, use https://github.com/aiqm/torchani/ instead
